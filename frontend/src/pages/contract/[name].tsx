@@ -60,7 +60,7 @@ export default function ContractPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Admin Wallets</CardTitle>
+            <CardTitle>Smart Contract Wallets</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-3 gap-4">
             {contract.AdminWallets?.map((wallet: any, index: number) => (

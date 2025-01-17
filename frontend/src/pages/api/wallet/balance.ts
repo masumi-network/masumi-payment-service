@@ -50,13 +50,15 @@ export default async function handler(
 
   try {
     const balanceResponse = await fetch(
-      `https://cardano-mainnet.blockfrost.io/api/v0/addresses/${address}`,
+      `https://cardano-preprod.blockfrost.io/api/v0/addresses/${address}`,
       {
         headers: {
           'project_id': apiKey as string,
         },
       }
     );
+
+    console.log(balanceResponse);
 
     if (!balanceResponse.ok) {
       throw new Error('Failed to fetch ADA balance');
@@ -69,7 +71,7 @@ export default async function handler(
 
     // Fetch asset balances to find USDM
     const assetsResponse = await fetch(
-      `https://cardano-mainnet.blockfrost.io/api/v0/addresses/${address}/assets`,
+      `https://cardano-preprod.blockfrost.io/api/v0/addresses/${address}/assets`,
       {
         headers: {
           'project_id': apiKey as string,

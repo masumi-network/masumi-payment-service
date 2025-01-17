@@ -4,14 +4,13 @@ interface AppState {
   paymentSources: any[];
   contracts: any[];
   wallets: any[];
-  // ... other state properties
 }
 
 type AppAction = 
   | { type: 'SET_PAYMENT_SOURCES'; payload: any[] }
   | { type: 'SET_CONTRACTS'; payload: any[] }
   | { type: 'SET_WALLETS'; payload: any[] }
-  // ... other action types
+
 
 const initialAppState: AppState = {
   paymentSources: [],
@@ -67,7 +66,7 @@ export function AppProvider({ children, initialState }: AppProviderProps) {
 export function useAppContext() {
   const context = useContext(AppContext);
   if (context === undefined) {
-    throw new Error('useAppContext must be used within an AppProvider');
+    throw new Error('Put it in AppProvider');
   }
   return context;
 }

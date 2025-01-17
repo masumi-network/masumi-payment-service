@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ChevronDown, ChevronUp } from "lucide-react";
+import Transak from '@transak/transak-sdk';
 
 export function WalletCard({ 
   type,
@@ -14,16 +15,57 @@ export function WalletCard({
   address: string;
   contractName: string;
 }) {
-  const [adaBalance, setAdaBalance] = useState<number>(0);
-  const [usdmBalance, setUsdmBalance] = useState<number>(0);
+  const [adaBalance, setAdaBalance] = useState<number | null>(null);
+  const [usdmBalance, setUsdmBalance] = useState<number | null>(null);
   const [isRegistered, setIsRegistered] = useState<boolean>(false);
   const { state } = useAppContext();
   const router = useRouter();
 
+  const fetchBalancePreprod = async (address: string) => {
+    const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
+    const BASE_URL = `https://cardano-${type === 'mainnet' ? 'mainnet' : 'preprod'}.blockfrost.io/api/v0`;
+  
+    try {
+      const response = await fetch(`${BASE_URL}/addresses/${address}/utxos`, {
+        headers: {
+          project_id: API_KEY,
+        },
+      });
+  
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+  
+      const utxos = await response.json();
+      const usdmPolicyId = "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad";
+      const usdmHex = "0014df105553444d"
+  
+      const balanceAda = utxos.reduce((total: any, utxo: any) => {
+        const value = utxo.amount.find((amt: any) => amt.unit === "lovelace");
+        return total + (value ? parseInt(value.quantity) : 0);
+      }, 0);
+
+      const balanceUsdm = utxos.reduce((total: any, utxo: any) => {
+        const value = utxo.amount.find((amt: any) => amt.unit?.startsWith(usdmPolicyId));
+        return total + (value ? parseInt(value.quantity) : 0);
+      }, 0);
+
+      console.log(utxos);
+  
+      return {
+        ada: balanceAda / 1000000,
+        usdm: balanceUsdm || 0
+      };
+    } catch (error: any) {
+      console.error("Error fetching balance:", error.message);
+      return null;
+    }
+  };
+
   useEffect(() => {
     const fetchBalances = async () => {
       const defaultContract = state.paymentSources?.[0];
-      const apiKey = defaultContract?.blockfrostKey;
+      const apiKey = defaultContract?.blockfrostApiKey;
 
       if (!apiKey) {
         console.error('No Blockfrost API key found');
@@ -31,12 +73,9 @@ export function WalletCard({
       }
 
       try {
-        const response = await fetch(`/api/wallet/balance?address=${address}&apiKey=${apiKey}`);
-        if (!response.ok) throw new Error('Failed to fetch balance');
-        
-        const data = await response.json();
-        setAdaBalance(data.ada);
-        setUsdmBalance(data.usdm);
+        const data: any = await fetchBalancePreprod(address);
+        setAdaBalance(data?.ada || "0");
+        setUsdmBalance(data?.usdm || "0");
       } catch (error) {
         console.error('Error fetching wallet balances:', error);
       }
@@ -47,9 +86,36 @@ export function WalletCard({
     }
   }, [address, state.paymentSources]);
 
-  const handleTopUp = (e:any) => {
+  const handleTopUp = (e: any) => {
     e.stopPropagation();
-    window.open('https://transak.com', '_blank');
+    
+    const transak = new (Transak as any)({
+      apiKey: process.env.NEXT_PUBLIC_TRANSAK_API_KEY,
+      environment: process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'STAGING',
+      defaultCryptoCurrency: 'ADA',
+      walletAddress: address,
+      defaultNetwork: type === 'mainnet' ? 'cardano' : 'cardano_preprod',
+      cryptoCurrencyList: 'ADA',
+      defaultPaymentMethod: 'credit_debit_card',
+      exchangeScreenTitle: 'Top up your wallet',
+      hideMenu: true,
+      themeColor: '#000000',
+      hostURL: window.location.origin,
+      widgetHeight: '650px',
+      widgetWidth: '450px'
+    });
+
+    transak.init();
+
+    // Add event listeners
+    transak.on(transak.EVENTS.TRANSAK_WIDGET_CLOSE, () => {
+      transak.close();
+    });
+
+    transak.on(transak.EVENTS.TRANSAK_ORDER_SUCCESSFUL, (orderData: any) => {
+      console.log('Order successful:', orderData);
+      transak.close();
+    });
   };
 
   const handleExport = (e:any) => {
@@ -58,7 +124,7 @@ export function WalletCard({
 
   const handleViewExplorer = (e:any) => {
     e.stopPropagation();
-    window.open(`https://masumi.network/explorer/address/${address}`, '_blank');
+    window.open(`https://masumi.network/explorer/?address=${address}`, '_blank');
   };
 
   const handleDeregister = (e:any) => {
@@ -90,8 +156,8 @@ export function WalletCard({
         </div>
 
         <div className="grid gap-2">
-          <div className="text-sm">ADA Balance: {adaBalance.toLocaleString()} ₳</div>
-          <div className="text-sm">USDM Balance: {usdmBalance.toLocaleString()} USDM</div>
+          <div className="text-sm">ADA Balance: {adaBalance?.toLocaleString() || "..."} ₳</div>
+          <div className="text-sm">USDM Balance: {usdmBalance?.toLocaleString() || "..."} USDM</div>
           {type === 'hot' && (
             <div className="text-sm">Status: {isRegistered ? 'Registered' : 'Not registered'}</div>
           )}
