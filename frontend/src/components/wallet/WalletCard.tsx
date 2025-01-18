@@ -254,6 +254,7 @@ export function WalletCard({
                 setShowDeleteDialog(true);
               }}
               disabled={isUpdating}
+              style={{ maxWidth: '100px' }}
             >
               Remove Wallet
             </Button>

@@ -21,8 +21,8 @@ export default async function handler(
 
     const details = JSON.stringify({
       id: payload.id,
-      latestIdentifier: payload.latestIdentifier || "optional-identifier",
-      page: payload.page || 1,
+      latestIdentifier: payload.latestIdentifier || undefined,
+      page: payload.page || undefined,
       blockfrostApiKey: payload.blockfrostApiKey || undefined,
       CollectionWallet: payload.CollectionWallet || undefined,
       AddPurchasingWallets: payload.AddPurchasingWallets || undefined,
