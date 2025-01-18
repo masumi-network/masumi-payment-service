@@ -165,8 +165,10 @@ export default function ContractPage() {
   };
 
   const handleRemoveWallet = async (type: 'purchasing' | 'selling', walletId: string) => {
+    setIsUpdating(true);
+    setDeleteError(null);
+
     try {
-      setIsUpdating(true);
       const response = await fetch('/api/update-payment-source', {
         method: 'PATCH',
         headers: {
@@ -182,10 +184,12 @@ export default function ContractPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to remove ${type} wallet`);
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Failed to remove ${type} wallet`);
       }
 
       const { data } = await response.json();
+      
       dispatch({
         type: 'SET_PAYMENT_SOURCES',
         payload: state.paymentSources.map((c: any) => 
@@ -193,10 +197,11 @@ export default function ContractPage() {
         ),
       });
 
+      setShowDeleteModal(false);
       toast.success(`${type} wallet removed successfully`);
-    } catch (error) {
+    } catch (error: any) {
+      setDeleteError(error.message);
       console.error(`Failed to remove ${type} wallet:`, error);
-      toast.error(`Failed to remove ${type} wallet`);
     } finally {
       setIsUpdating(false);
     }
@@ -356,7 +361,7 @@ export default function ContractPage() {
 
       {showCreateModal && (
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-          <CreateWalletModal type={selectedWalletType} onClose={() => setShowCreateModal(false)} />
+          <CreateWalletModal type={selectedWalletType} onClose={() => setShowCreateModal(false)} contractId={contract.id} />
         </Dialog>
       )}
       
