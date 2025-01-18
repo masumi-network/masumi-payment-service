@@ -48,7 +48,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     if (path === '/') return 'Overview';
     if (path === '/settings') return 'Settings';
     if (path === '/wallets') return 'Wallets';
-    if (path === '/contract/[name]') return `Contract: ${contractName}`;
+    if (path === '/contract/[name]') return `Contract ID: ${contractName}`;
     if (path.includes('/wallet/')) return 'Wallet Details';
     
     return 'Overview';
