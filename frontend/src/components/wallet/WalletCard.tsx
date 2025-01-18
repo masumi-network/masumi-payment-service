@@ -3,8 +3,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import Transak from '@transak/transak-sdk';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 export function WalletCard({ 
   type,
@@ -17,7 +19,9 @@ export function WalletCard({
 }) {
   const [adaBalance, setAdaBalance] = useState<number | null>(null);
   const [usdmBalance, setUsdmBalance] = useState<number | null>(null);
+  const [fetchingBalance, setFetchingBalance] = useState<boolean>(true)
   const [isRegistered, setIsRegistered] = useState<boolean>(false);
+  const [balanceError, setBalanceError] = useState<any>(null)
   const { state } = useAppContext();
   const router = useRouter();
 
@@ -26,20 +30,21 @@ export function WalletCard({
     const BASE_URL = `https://cardano-${type === 'mainnet' ? 'mainnet' : 'preprod'}.blockfrost.io/api/v0`;
   
     try {
+      setFetchingBalance(true)
       const response = await fetch(`${BASE_URL}/addresses/${address}/utxos`, {
         headers: {
           project_id: API_KEY,
         },
       });
-  
+      
       if (!response.ok) {
         throw new Error(`Error: ${response.statusText}`);
       }
-  
+      
       const utxos = await response.json();
       const usdmPolicyId = "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad";
       const usdmHex = "0014df105553444d"
-  
+      
       const balanceAda = utxos.reduce((total: any, utxo: any) => {
         const value = utxo.amount.find((amt: any) => amt.unit === "lovelace");
         return total + (value ? parseInt(value.quantity) : 0);
@@ -73,18 +78,38 @@ export function WalletCard({
       }
 
       try {
+        setFetchingBalance(true)
+        setBalanceError(null)
         const data: any = await fetchBalancePreprod(address);
         setAdaBalance(data?.ada || "0");
         setUsdmBalance(data?.usdm || "0");
+        setFetchingBalance(false)
       } catch (error) {
         console.error('Error fetching wallet balances:', error);
+        setFetchingBalance(false)
+        setBalanceError(error)
       }
     };
-
+    
     if (address) {
       fetchBalances();
     }
   }, [address, state.paymentSources]);
+  
+  const refreshBalance = async()=>{
+    try{
+      setBalanceError(null)
+      setFetchingBalance(true)
+      const data:any = await fetchBalancePreprod(address)
+      setAdaBalance(data?.ada || "0")
+      setUsdmBalance(data?.usdm || "0")
+      setFetchingBalance(false)
+    } catch(error){
+      console.error('Error fetching wallet balances:', error);
+      setFetchingBalance(false)
+      setBalanceError(error)
+    }
+  }
 
   const handleTopUp = (e: any) => {
     e.stopPropagation();
@@ -107,7 +132,6 @@ export function WalletCard({
 
     transak.init();
 
-    // Add event listeners
     transak.on(transak.EVENTS.TRANSAK_WIDGET_CLOSE, () => {
       transak.close();
     });
@@ -135,6 +159,12 @@ export function WalletCard({
     return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
   };
 
+  const handleCopyAddress = (e: React.MouseEvent, address: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(address);
+    toast.success('Address copied to clipboard!');
+  };
+
   const getDisplayContent = () => {
     if (!address) {
       switch (type) {
@@ -152,12 +182,26 @@ export function WalletCard({
     return (
       <>
         <div className="flex justify-between items-center">
-          <div className="text-sm truncate flex-1">Address: {shortenAddress(address)}</div>
+          <div className="text-sm truncate flex-1">
+            Address: {shortenAddress(address)}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-4 w-4 ml-2"
+              onClick={(e) => handleCopyAddress(e, address)}
+            >
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-2">
-          <div className="text-sm">ADA Balance: {adaBalance?.toLocaleString() || "..."} ₳</div>
-          <div className="text-sm">USDM Balance: {usdmBalance?.toLocaleString() || "..."} USDM</div>
+          {!fetchingBalance ? <>
+            <div className="text-sm">ADA Balance: {adaBalance?.toLocaleString() || "..."} ₳</div>
+            <div className="text-sm">USDM Balance: {usdmBalance?.toLocaleString() || "..."} USDM</div>
+          </> : <div className="text-sm">
+            fetching balance...
+          </div> }
           {type === 'hot' && (
             <div className="text-sm">Status: {isRegistered ? 'Registered' : 'Not registered'}</div>
           )}

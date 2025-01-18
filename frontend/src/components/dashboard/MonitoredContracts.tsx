@@ -65,7 +65,7 @@ export function MonitoredContracts({ paymentSourceData }: any) {
                 <TableHead>Network</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Last Updated</TableHead>
+                <TableHead>Date Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -85,7 +85,7 @@ export function MonitoredContracts({ paymentSourceData }: any) {
                       {contract.isSyncing ? 'Syncing' : 'Active'}
                     </span>
                   </TableCell>
-                  <TableCell>{new Date(contract.updatedAt).toLocaleString()}</TableCell>
+                  <TableCell>{new Date(contract.createdAt).toLocaleString()}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

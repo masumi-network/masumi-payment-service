@@ -26,9 +26,6 @@ function InitializeApp() {
             const sourceResponse = await fetch('/api/payment-source');
             const sourceData = await sourceResponse.json();
             const sources = sourceData?.data?.paymentSources || [];
-            if (sources.length > 0) {
-              sources[0].name = 'default';
-            }
             dispatch({ type: 'SET_PAYMENT_SOURCES', payload: sources });
           } catch (error) {
             console.error('Failed to fetch payment sources:', error);

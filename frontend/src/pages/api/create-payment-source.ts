@@ -12,7 +12,7 @@ export default async function handler(
   try {
     const payload = req.body
 
-    if (!payload.addressToCheck || !payload.blockfrostApiKey) {
+    if (!payload.blockfrostApiKey || !payload.AdminWallets?.length) {
       return res.status(400).json({
         status: 'error',
         message: 'Missing required fields'
@@ -29,16 +29,13 @@ export default async function handler(
       body: JSON.stringify({
         network: payload.network,
         paymentType: payload.paymentType,
-        addressToCheck: payload.addressToCheck,
         blockfrostApiKey: payload.blockfrostApiKey,
-        scriptJSON: payload.scriptJSON || '{}',
-        registryJSON: payload.registryJSON || '{}',
         AdminWallets: payload.AdminWallets,
         FeeReceiverNetworkWallet: payload.FeeReceiverNetworkWallet,
         FeePermille: payload.FeePermille,
         CollectionWallet: payload.CollectionWallet,
         PurchasingWallets: payload.PurchasingWallets,
-        SellingWallet: payload.SellingWallet
+        SellingWallets: payload.SellingWallets
       })
     })
 

@@ -1,10 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Search, Copy } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 type TransactionType = string;
 
@@ -61,6 +63,7 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
     const fetchTransactions = async () => {
       setIsLoading(true);
       try {
+        console.log("contractAddress", contractAddress)
         const queryParams = new URLSearchParams({
           ...(contractAddress && { contractAddress }),
           ...(network && { network }),
@@ -222,18 +225,32 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
         )}
       </CardContent>
       <Dialog open={!!selectedTransaction} onOpenChange={() => setSelectedTransaction(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
           </DialogHeader>
           {selectedTransaction && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="col-span-2">
                   <h4 className="font-semibold mb-1">Transaction ID</h4>
-                  <p className="text-sm font-mono">
-                    {shortenText(selectedTransaction.identifier, MAX_ID_LENGTH)}
-                  </p>
+                  <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+                    <p className="text-sm font-mono break-all">
+                      {shortenText(selectedTransaction.identifier, MAX_ID_LENGTH)}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 ml-auto shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(selectedTransaction.identifier);
+                        toast.success('Transaction ID copied to clipboard!');
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <h4 className="font-semibold mb-1">Type</h4>
@@ -243,16 +260,11 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
                   <h4 className="font-semibold mb-1">Created</h4>
                   <p className="text-sm">{new Date(selectedTransaction.createdAt).toLocaleString()}</p>
                 </div>
-                {selectedTransaction.createdAt !== selectedTransaction.updatedAt && (
-                  <div>
-                    <h4 className="font-semibold mb-1">Updated</h4>
-                    <p className="text-sm">{new Date(selectedTransaction.updatedAt).toLocaleString()}</p>
-                  </div>
-                )}
               </div>
+
               <div className="space-y-2">
                 <h4 className="font-semibold">Transaction Details</h4>
-                <div className="grid grid-cols-2 gap-4 rounded-md border p-4">
+                <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                   <div>
                     <h5 className="text-sm font-medium mb-1">Status</h5>
                     <p className={`text-sm ${getStatusColor(selectedTransaction.status, !!selectedTransaction.errorType)}`}>
@@ -277,7 +289,25 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
                   </div>
                   <div className="col-span-2">
                     <h5 className="text-sm font-medium mb-1">Transaction Hash</h5>
-                    <p className="text-sm font-mono break-all">{selectedTransaction.txHash || '-'}</p>
+                    {selectedTransaction.txHash ? (
+                      <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+                        <p className="text-sm font-mono break-all">{selectedTransaction.txHash}</p>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 ml-auto shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(selectedTransaction.txHash!);
+                            toast.success('Transaction hash copied to clipboard!');
+                          }}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No transaction hash available</p>
+                    )}
                   </div>
                   {/* <div className="col-span-2">
                     <h5 className="text-sm font-medium mb-1">UTXO</h5>

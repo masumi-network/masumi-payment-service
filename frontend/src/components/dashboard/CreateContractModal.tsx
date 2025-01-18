@@ -10,7 +10,6 @@ type CreateContractModalProps = {
 type FormData = {
   network: 'MAINNET' | 'PREPROD';
   paymentType: string;
-  addressToCheck: string;
   blockfrostApiKey: string;
   adminWallets: { walletAddress: string }[];
   feeReceiverWallet: { walletAddress: string };
@@ -23,27 +22,32 @@ type FormData = {
     walletMnemonic: string;
     note?: string;
   }[];
-  sellingWallet: {
+  sellingWallets: {
     walletMnemonic: string;
     note?: string;
-  };
+  }[];
 }
 
 const initialFormData: FormData = {
   network: 'PREPROD',
   paymentType: 'WEB3_CARDANO_V1',
-  addressToCheck: '',
   blockfrostApiKey: '',
   adminWallets: [{ walletAddress: '' }],
   feeReceiverWallet: { walletAddress: '' },
   feePermille: 50,
-  collectionWallet: { walletAddress: '' },
-  purchasingWallets: [{ walletMnemonic: '' }],
-  sellingWallet: { walletMnemonic: '' }
+  collectionWallet: { walletAddress: '', note: '' },
+  purchasingWallets: [{ walletMnemonic: '', note: '' }],
+  sellingWallets: [{ walletMnemonic: '', note: '' }]
 };
 
 export function CreateContractModal({ onClose }: CreateContractModalProps) {
-  const [formData, setFormData] = useState<FormData>(initialFormData);
+  const { state } = useAppContext();
+  const defaultBlockfrostApiKey = state.paymentSources?.[0]?.blockfrostApiKey || '';
+  
+  const [formData, setFormData] = useState<FormData>({
+    ...initialFormData,
+    blockfrostApiKey: defaultBlockfrostApiKey
+  });
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const { dispatch } = useAppContext();
@@ -53,10 +57,6 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
     setIsLoading(true);
 
     try {
-      if (!formData.addressToCheck.trim()) {
-        setError('Contract address is required');
-        return;
-      }
       if (!formData.blockfrostApiKey.trim()) {
         setError('Blockfrost API key is required');
         return;
@@ -80,16 +80,13 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
       const payload = {
         network: formData.network,
         paymentType: formData.paymentType,
-        addressToCheck: formData.addressToCheck,
         blockfrostApiKey: formData.blockfrostApiKey,
-        scriptJSON: '{}',
-        registryJSON: '{}',
         AdminWallets: formData.adminWallets.filter(w => w.walletAddress.trim()),
         FeeReceiverNetworkWallet: formData.feeReceiverWallet,
         FeePermille: formData.feePermille,
         CollectionWallet: formData.collectionWallet,
         PurchasingWallets: formData.purchasingWallets.filter(w => w.walletMnemonic.trim()),
-        SellingWallet: formData.sellingWallet
+        SellingWallets: [formData.sellingWallets[0]]
       };
 
       const response = await fetch('/api/create-payment-source', {
@@ -171,19 +168,6 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">
-                  Contract Address <span className="text-destructive">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 rounded-md bg-background border"
-                  value={formData.addressToCheck}
-                  onChange={(e) => setFormData({ ...formData, addressToCheck: e.target.value })}
-                  placeholder="Enter contract address"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">
                   Blockfrost API Key <span className="text-destructive">*</span>
                 </label>
                 <input
@@ -191,7 +175,8 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                   className="w-full p-2 rounded-md bg-background border"
                   value={formData.blockfrostApiKey}
                   onChange={(e) => setFormData({ ...formData, blockfrostApiKey: e.target.value })}
-                  placeholder="Enter Blockfrost API key"
+                  placeholder="Using default Blockfrost API key"
+                  disabled
                 />
               </div>
 
@@ -328,7 +313,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Selling Wallet</h3>
+            <h3 className="text-lg font-semibold">Selling Wallets</h3>
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Wallet Mnemonic <span className="text-destructive">*</span>
@@ -336,20 +321,26 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
               <input
                 type="text"
                 className="w-full p-2 rounded-md bg-background border"
-                value={formData.sellingWallet.walletMnemonic}
+                value={formData.sellingWallets[0]?.walletMnemonic || ''}
                 onChange={(e) => setFormData({
                   ...formData,
-                  sellingWallet: { ...formData.sellingWallet, walletMnemonic: e.target.value }
+                  sellingWallets: [{ 
+                    ...formData.sellingWallets[0],
+                    walletMnemonic: e.target.value 
+                  }]
                 })}
                 placeholder="Enter selling wallet mnemonic"
               />
               <input
                 type="text"
                 className="w-full p-2 rounded-md bg-background border"
-                value={formData.sellingWallet.note || ''}
+                value={formData.sellingWallets[0]?.note || ''}
                 onChange={(e) => setFormData({
                   ...formData,
-                  sellingWallet: { ...formData.sellingWallet, note: e.target.value }
+                  sellingWallets: [{ 
+                    ...formData.sellingWallets[0],
+                    note: e.target.value 
+                  }]
                 })}
                 placeholder="Note (optional)"
               />

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import Head from "next/head";
 import { LuFileText } from "react-icons/lu";
 import { useAppContext } from "@/lib/contexts/AppContext";
+import { ToastContainer } from "react-toastify";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -234,6 +235,18 @@ export function MainLayout({ children }: MainLayoutProps) {
           </main>
         </div>
       </div>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
     </>
   );
 } 
