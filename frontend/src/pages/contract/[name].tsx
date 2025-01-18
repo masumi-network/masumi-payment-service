@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { CreateWalletModal } from "@/components/wallet/CreateWalletModal";
 import { ImportWalletModal } from "@/components/wallet/ImportWalletModal";
 import { Input } from "@/components/ui/input";
-
+import { toast } from 'react-toastify';
+import BlinkingUnderscore from '@/components/BlinkingUnderscore';
 export default function ContractPage() {
   const router = useRouter();
   const { name } = router.query;
@@ -20,16 +21,17 @@ export default function ContractPage() {
   
   const contract = state.paymentSources?.find((c: any) => c.name === name || c.id === name);
 
-  if (!contract) return null;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedWalletType, setSelectedWalletType] = useState<string>('');
   const [showSetCollectionWalletModal, setShowSetCollectionWalletModal] = useState(false);
-  const [collectionWalletAddress, setCollectionWalletAddress] = useState(contract.CollectionWallet?.walletAddress || '');
+  const [collectionWalletAddress, setCollectionWalletAddress] = useState(contract?.CollectionWallet?.walletAddress || '');
+  const [collectionWalletNote, setCollectionWalletNote] = useState(contract?.CollectionWallet?.note || '');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const handleCreate = (type: string) => {
     setSelectedWalletType(type);
@@ -43,14 +45,19 @@ export default function ContractPage() {
 
   const handleSaveCollectionWallet = async () => {
     try {
-      const response = await fetch('/api/update-collection-wallet', {
-        method: 'POST',
+      setIsUpdating(true);
+      const response = await fetch('/api/update-payment-source', {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contractId: contract.id,
-          walletAddress: collectionWalletAddress,
+          id: contract.id,
+          blockfrostApiKey: contract.blockfrostApiKey,
+          CollectionWallet: {
+            walletAddress: collectionWalletAddress,
+            note: collectionWalletNote || undefined
+          }
         }),
       });
 
@@ -58,17 +65,35 @@ export default function ContractPage() {
         throw new Error('Failed to update collection wallet');
       }
 
-      const updatedContract = await response.json();
+      const { data } = await response.json();
       dispatch({
         type: 'SET_PAYMENT_SOURCES',
         payload: state.paymentSources.map((c: any) => 
-          c.id === contract.id ? updatedContract : c
+          c.id === contract.id ? data : c
         ),
       });
 
       setShowSetCollectionWalletModal(false);
+      toast.success('Collection wallet updated successfully', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
     } catch (error) {
       console.error('Failed to update collection wallet:', error);
+      toast.error('Failed to update collection wallet', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -100,12 +125,90 @@ export default function ContractPage() {
     }
   };
 
-  if (!contract) return null;
-  console.log('contract', contract)
+  const handleAddWallet = async (type: 'purchasing' | 'selling', walletData: any) => {
+    try {
+      setIsUpdating(true);
+      const response = await fetch('/api/update-payment-source', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: contract.id,
+          blockfrostApiKey: contract.blockfrostApiKey,
+          [`${type === 'purchasing' ? 'PurchasingWallets' : 'SellingWallets'}`]: [
+            ...(contract[`${type === 'purchasing' ? 'PurchasingWallets' : 'SellingWallets'}`] || []),
+            walletData
+          ]
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to add ${type} wallet`);
+      }
+
+      const { data } = await response.json();
+      dispatch({
+        type: 'SET_PAYMENT_SOURCES',
+        payload: state.paymentSources.map((c: any) => 
+          c.id === contract.id ? data : c
+        ),
+      });
+
+      toast.success(`${type} wallet added successfully`);
+    } catch (error) {
+      console.error(`Failed to add ${type} wallet:`, error);
+      toast.error(`Failed to add ${type} wallet`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRemoveWallet = async (type: 'purchasing' | 'selling', walletId: string) => {
+    try {
+      setIsUpdating(true);
+      const response = await fetch('/api/update-payment-source', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: contract.id,
+          blockfrostApiKey: contract.blockfrostApiKey,
+          [`${type === 'purchasing' ? 'PurchasingWallets' : 'SellingWallets'}`]: 
+            contract[`${type === 'purchasing' ? 'PurchasingWallets' : 'SellingWallets'}`]
+              .filter((w: any) => w.id !== walletId)
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to remove ${type} wallet`);
+      }
+
+      const { data } = await response.json();
+      dispatch({
+        type: 'SET_PAYMENT_SOURCES',
+        payload: state.paymentSources.map((c: any) => 
+          c.id === contract.id ? data : c
+        ),
+      });
+
+      toast.success(`${type} wallet removed successfully`);
+    } catch (error) {
+      console.error(`Failed to remove ${type} wallet:`, error);
+      toast.error(`Failed to remove ${type} wallet`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  if (contract) {
+    console.log('contract', contract)
+  }
 
   return (
     <MainLayout>
-      <div className="space-y-6">
+      {contract ? <div className="space-y-6">
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -197,6 +300,8 @@ export default function ContractPage() {
                     type="purchasing"
                     address={wallet.walletVkey}
                     contractName={name as string}
+                    walletId={wallet.id}
+                    onRemove={() => handleRemoveWallet('purchasing', wallet.id)}
                   />
                 ))}
               </div>
@@ -230,6 +335,8 @@ export default function ContractPage() {
                     type="selling"
                     address={wallet.walletVkey}
                     contractName={name as string}
+                    walletId={wallet.id}
+                    onRemove={() => handleRemoveWallet('selling', wallet.id)}
                   />
                 ))}
               </div>
@@ -245,7 +352,7 @@ export default function ContractPage() {
           contract={contract}
           paymentType={contract.paymentType || "WEB3_CARDANO_V1"}
         />
-      </div>
+      </div> : <BlinkingUnderscore />}
 
       {showCreateModal && (
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
@@ -268,26 +375,49 @@ export default function ContractPage() {
                 Enter the wallet address that will receive the payments after they are processed by the Hot Wallet.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <Input
-                placeholder="Enter wallet address"
-                value={collectionWalletAddress}
-                onChange={(e) => setCollectionWalletAddress(e.target.value)}
-              />
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveCollectionWallet();
+            }} className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Input
+                  placeholder="Enter wallet address"
+                  value={collectionWalletAddress}
+                  onChange={(e) => setCollectionWalletAddress(e.target.value)}
+                  required
+                  pattern="^addr(_test)?1[a-zA-Z0-9]+$"
+                  title="Please enter a valid Cardano address starting with 'addr1' or 'addr_test1'"
+                  disabled={isUpdating}
+                />
+                {!collectionWalletAddress && (
+                  <p className="text-sm text-destructive">Collection wallet address is required</p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <Input
+                  placeholder="Enter note (optional)"
+                  value={collectionWalletNote}
+                  onChange={(e) => setCollectionWalletNote(e.target.value)}
+                  disabled={isUpdating}
+                />
+              </div>
               <div className="flex justify-end gap-2">
                 <Button
+                  type="button"
                   variant="outline"
                   onClick={() => setShowSetCollectionWalletModal(false)}
+                  disabled={isUpdating}
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleSaveCollectionWallet}
+                  type="submit"
+                  disabled={!collectionWalletAddress || isUpdating}
                 >
-                  Save Address
+                  {isUpdating ? "Updating..." : "Save Address"}
                 </Button>
               </div>
-            </div>
+            </form>
           </DialogContent>
         </Dialog>
       )}

@@ -1,3 +1,4 @@
+import BlinkingUnderscore from "@/components/BlinkingUnderscore";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
@@ -10,7 +11,7 @@ export default function Settings() {
         </CardHeader>
         <CardContent>
           <div className="text-sm text-muted-foreground">
-            Isaac is a good boy.
+            <BlinkingUnderscore />
           </div>
         </CardContent>
       </Card>

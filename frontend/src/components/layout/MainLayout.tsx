@@ -139,7 +139,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     <LuFileText className="h-4 w-4" />
                     {!isCollapsed && <span>Contracts</span>}
                   </div>
-                  {!isCollapsed && (
+                  {(!isCollapsed) && (
                     <div className="opacity-50 group-hover:opacity-100">
                       {isContractsOpen ? (
                         <IoChevronUpOutline className="h-4 w-4" />
@@ -155,38 +155,40 @@ export function MainLayout({ children }: MainLayoutProps) {
                     "flex flex-col gap-1 mt-1 items-center w-full",
                     !isCollapsed && "ml-4"
                   )}>
-                    {state.paymentSources?.map((contract, index) => (
-                      <Button
-                        key={contract.id}
-                        asChild
-                        variant={isContractActive(contract.id) ? "secondary" : "ghost"}
-                        className={cn(
-                          "w-full justify-start hover:bg-[#fff1]",
-                          isCollapsed && "w-9 h-9 justify-center ml-0"
-                        )}
-                      >
-                        <Link 
-                          href={`/contract/${contract.name || contract.id}`} 
-                          className="flex items-center gap-2"
-                        >
-                          <div 
-                            className={cn(
-                              "min-w-[16px] h-4 flex items-center justify-center text-xs rounded",
-                              isContractActive(contract.id) 
-                                ? "bg-[#fff] text-[#000]" 
-                                : "bg-[#fff2]"
-                            )}
-                          >
-                            {index + 1}
-                          </div>
-                          {!isCollapsed && (
-                            <span className="truncate">
-                              {contract.name || contract.addressToCheck?.slice(0, 8) + '...' + contract.addressToCheck?.slice(-4) || `Contract ${contract.id.slice(0, 8)}...`}
-                            </span>
+                    {state.paymentSources?.length > 0 ? <>
+                      {state.paymentSources?.map((contract, index) => (
+                        <Button
+                          key={contract.id}
+                          asChild
+                          variant={isContractActive(contract.id) ? "secondary" : "ghost"}
+                          className={cn(
+                            "w-full justify-start hover:bg-[#fff1]",
+                            isCollapsed && "w-9 h-9 justify-center ml-0"
                           )}
-                        </Link>
-                      </Button>
-                    ))}
+                        >
+                          <Link 
+                            href={`/contract/${contract.name || contract.id}`} 
+                            className="flex items-center gap-2"
+                          >
+                            <div 
+                              className={cn(
+                                "min-w-[16px] h-4 flex items-center justify-center text-xs rounded",
+                                isContractActive(contract.id) 
+                                  ? "bg-[#fff] text-[#000]" 
+                                  : "bg-[#fff2]"
+                              )}
+                            >
+                              {index + 1}
+                            </div>
+                            {!isCollapsed && (
+                              <span className="truncate">
+                                {contract.name || contract.addressToCheck?.slice(0, 8) + '...' + contract.addressToCheck?.slice(-4) || `Contract ${contract.id.slice(0, 8)}...`}
+                              </span>
+                            )}
+                          </Link>
+                        </Button>
+                      ))}
+                    </> : <div className="text-sm text-muted-foreground">No contracts found.</div>}
                   </div>
                 )}
               </div>

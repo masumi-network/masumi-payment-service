@@ -176,7 +176,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                   value={formData.blockfrostApiKey}
                   onChange={(e) => setFormData({ ...formData, blockfrostApiKey: e.target.value })}
                   placeholder="Using default Blockfrost API key"
-                  disabled
+                  disabled={state.paymentSources?.[0]?.blockfrostApiKey}
                 />
               </div>
 

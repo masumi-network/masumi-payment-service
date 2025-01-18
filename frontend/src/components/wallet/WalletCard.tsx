@@ -7,23 +7,30 @@ import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import Transak from '@transak/transak-sdk';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export function WalletCard({ 
   type,
   address,
-  contractName
+  contractName,
+  walletId,
+  onRemove
 }: {
   type: string;
   address: string;
   contractName: string;
+  walletId?: string;
+  onRemove?: () => void;
 }) {
   const [adaBalance, setAdaBalance] = useState<number | null>(null);
   const [usdmBalance, setUsdmBalance] = useState<number | null>(null);
   const [fetchingBalance, setFetchingBalance] = useState<boolean>(true)
   const [isRegistered, setIsRegistered] = useState<boolean>(false);
   const [balanceError, setBalanceError] = useState<any>(null)
+  const [isUpdating, setIsUpdating] = useState(false);
   const { state } = useAppContext();
   const router = useRouter();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const fetchBalancePreprod = async (address: string) => {
     const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
@@ -234,10 +241,56 @@ export function WalletCard({
   };
 
   return (
-    <Card className="bg-[#ffffff03] hover:bg-[#ffffff06]">
-      <CardContent className="space-y-1 py-4 px-3 flex flex-col gap-3">
-        {getDisplayContent()}
-      </CardContent>
-    </Card>
+    <>
+      <Card className="bg-[#ffffff03] hover:bg-[#ffffff06]">
+        <CardContent className="space-y-1 py-4 px-3 flex flex-col gap-3">
+          {getDisplayContent()}
+          {(type === 'purchasing' || type === 'selling') && walletId && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDeleteDialog(true);
+              }}
+              disabled={isUpdating}
+            >
+              Remove Wallet
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Wallet</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove this wallet? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={isUpdating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove?.();
+                setShowDeleteDialog(false);
+              }}
+              disabled={isUpdating}
+            >
+              Remove Wallet
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
