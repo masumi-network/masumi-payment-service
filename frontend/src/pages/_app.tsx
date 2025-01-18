@@ -4,6 +4,8 @@ import "@/styles/globals.css";
 import "@/styles/styles.scss"
 import type { AppProps } from "next/app";
 import { useAppContext } from "@/lib/contexts/AppContext";
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function InitializeApp() {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
@@ -24,11 +26,26 @@ function InitializeApp() {
         if (health) {
           try {
             const sourceResponse = await fetch('/api/payment-source');
+            if (!sourceResponse.ok) {
+              throw new Error('Failed to fetch payment sources');
+            }
+            
             const sourceData = await sourceResponse.json();
             const sources = sourceData?.data?.paymentSources || [];
-            dispatch({ type: 'SET_PAYMENT_SOURCES', payload: sources });
+            const sortedByCreatedAt = sources.sort((a: any, b: any) => 
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            const reversed = [...sortedByCreatedAt]?.reverse();
+            const sourcesMapped = reversed?.map((source: any, index: number) => ({ 
+              ...source, 
+              index: index + 1 
+            }));
+            const reversedBack = [...sourcesMapped]?.reverse();
+            
+            dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
           } catch (error) {
             console.error('Failed to fetch payment sources:', error);
+            toast.error('Error fetching payment sources. Please try again later.');
           }
         }
       } catch (error) {

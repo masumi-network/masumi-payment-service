@@ -101,6 +101,7 @@ export default function ContractPage() {
   };
 
   if (!contract) return null;
+  console.log('contract', contract)
 
   return (
     <MainLayout>
@@ -108,9 +109,9 @@ export default function ContractPage() {
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
-              <CardTitle>
-                {name === 'default' ? 'Default Contract' : (contract.name)}
-              </CardTitle>
+              {contract.index && <CardTitle>
+                Payment Source #{contract.index}
+              </CardTitle>}
               <Button 
                 variant="destructive" 
                 size="sm"
@@ -124,7 +125,7 @@ export default function ContractPage() {
             <div className="space-y-4">
               <div>Address: {contract.addressToCheck || contract.address}</div>
               <div>Network: {contract.network}</div>
-              <div>Type: {name === 'default' ? 'Default Contract' : contract.type}</div>
+              {/* <div>Type: {name === 'default' ? 'Default Contract' : contract.type}</div> */}
               <div>Status: {contract.isSyncing ? 'Syncing' : 'Active'}</div>
               <div>Date Created: {new Date(contract.createdAt).toLocaleString()}</div>
             </div>
