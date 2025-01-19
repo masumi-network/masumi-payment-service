@@ -206,7 +206,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Admin Wallets</h3>
+              <h3 className="text-lg font-semibold">Admin Wallets <span className="text-muted-foreground">(*3 expected)</span></h3>
               <Button type="button" variant="secondary" onClick={addAdminWallet}>
                 Add Admin Wallet
               </Button>

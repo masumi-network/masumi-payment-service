@@ -60,7 +60,7 @@ export function MonitoredContracts({ paymentSourceData }: any) {
         ) : (
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Contract Address</TableHead>
                 <TableHead>Network</TableHead>
                 <TableHead>Type</TableHead>
