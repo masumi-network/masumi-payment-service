@@ -371,8 +371,10 @@ export function WalletCard({
               <p className="text-sm break-all font-mono">{walletSecret}</p>
             </div>
             
+          </div>
+
+          <div className="flex justify-end space-x-2">
             <Button 
-              className="w-full"
               onClick={() => {
                 navigator.clipboard.writeText(walletSecret || '');
                 toast.success('Secret copied to clipboard!');
@@ -380,9 +382,6 @@ export function WalletCard({
             >
               Copy to Clipboard
             </Button>
-          </div>
-
-          <div className="flex justify-end">
             <Button
               variant="outline"
               onClick={() => {
