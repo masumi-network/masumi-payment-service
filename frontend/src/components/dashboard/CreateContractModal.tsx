@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useAppContext } from "@/lib/contexts/AppContext";
+import { X } from "lucide-react";
 
 type CreateContractModalProps = {
   onClose: () => void;
@@ -86,7 +87,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         FeePermille: formData.feePermille,
         CollectionWallet: formData.collectionWallet,
         PurchasingWallets: formData.purchasingWallets.filter(w => w.walletMnemonic.trim()),
-        SellingWallets: [formData.sellingWallets[0]]
+        SellingWallets: formData.sellingWallets.filter(w => w.walletMnemonic.trim())
       };
 
       const response = await fetch('/api/create-payment-source', {
@@ -131,6 +132,13 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
     setFormData({
       ...formData,
       purchasingWallets: [...formData.purchasingWallets, { walletMnemonic: '' }]
+    });
+  };
+
+  const addSellingWallet = () => {
+    setFormData({
+      ...formData,
+      sellingWallets: [...formData.sellingWallets, { walletMnemonic: '', note: '' }]
     });
   };
 
@@ -282,21 +290,38 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
             </div>
             
             {formData.purchasingWallets.map((wallet, index) => (
-              <div key={index} className="space-y-2">
-                <label className="text-sm font-medium">
-                  Purchasing Wallet {index + 1}
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 rounded-md bg-background border"
-                  value={wallet.walletMnemonic}
-                  onChange={(e) => {
-                    const newWallets = [...formData.purchasingWallets];
-                    newWallets[index].walletMnemonic = e.target.value;
-                    setFormData({ ...formData, purchasingWallets: newWallets });
-                  }}
-                  placeholder="Enter wallet mnemonic"
-                />
+              <div key={index} className="space-y-2 relative">
+                <div className="text-sm font-medium flex items-center justify-start space-x-2">
+                  <span>Purchasing Wallet {index + 1}</span>
+                  {index > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => {
+                        const newWallets = formData.purchasingWallets.filter((_, i) => i !== index);
+                        setFormData({ ...formData, purchasingWallets: newWallets });
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full p-2 rounded-md bg-background border"
+                    value={wallet.walletMnemonic}
+                    onChange={(e) => {
+                      const newWallets = [...formData.purchasingWallets];
+                      newWallets[index].walletMnemonic = e.target.value;
+                      setFormData({ ...formData, purchasingWallets: newWallets });
+                    }}
+                    placeholder="Enter wallet mnemonic"
+                  />
+                  
+                </div>
                 <input
                   type="text"
                   className="w-full p-2 rounded-md bg-background border"
@@ -313,38 +338,59 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Selling Wallets</h3>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Wallet Mnemonic <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                value={formData.sellingWallets[0]?.walletMnemonic || ''}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  sellingWallets: [{ 
-                    ...formData.sellingWallets[0],
-                    walletMnemonic: e.target.value 
-                  }]
-                })}
-                placeholder="Enter selling wallet mnemonic"
-              />
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                value={formData.sellingWallets[0]?.note || ''}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  sellingWallets: [{ 
-                    ...formData.sellingWallets[0],
-                    note: e.target.value 
-                  }]
-                })}
-                placeholder="Note (optional)"
-              />
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold">Selling Wallets</h3>
+              <Button type="button" variant="secondary" onClick={addSellingWallet}>
+                Add Selling Wallet
+              </Button>
             </div>
+            
+            {formData.sellingWallets.map((wallet, index) => (
+              <div key={index} className="space-y-2 relative">
+                <div className="text-sm font-medium flex items-center justify-start space-x-2">
+                  <span>Selling Wallet {index + 1}</span>
+                  {index > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => {
+                        const newWallets = formData.sellingWallets.filter((_, i) => i !== index);
+                        setFormData({ ...formData, sellingWallets: newWallets });
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full p-2 rounded-md bg-background border"
+                    value={wallet.walletMnemonic}
+                    onChange={(e) => {
+                      const newWallets = [...formData.sellingWallets];
+                      newWallets[index].walletMnemonic = e.target.value;
+                      setFormData({ ...formData, sellingWallets: newWallets });
+                    }}
+                    placeholder="Enter wallet mnemonic"
+                  />
+                  
+                </div>
+                <input
+                  type="text"
+                  className="w-full p-2 rounded-md bg-background border"
+                  value={wallet.note || ''}
+                  onChange={(e) => {
+                    const newWallets = [...formData.sellingWallets];
+                    newWallets[index].note = e.target.value;
+                    setFormData({ ...formData, sellingWallets: newWallets });
+                  }}
+                  placeholder="Note (optional)"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
