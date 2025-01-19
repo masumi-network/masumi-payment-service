@@ -8,32 +8,73 @@ import Transak from '@transak/transak-sdk';
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import BlinkingUnderscore from "../BlinkingUnderscore";
 
 export function WalletCard({ 
   type,
   address,
   contractName,
   walletId,
-  onRemove
+  onRemove,
+  contract
 }: {
   type: string;
   address: string;
   contractName: string;
   walletId?: string;
   onRemove?: () => void;
+  contract: any;
 }) {
   const [adaBalance, setAdaBalance] = useState<number | null>(null);
   const [usdmBalance, setUsdmBalance] = useState<number | null>(null);
-  const [fetchingBalance, setFetchingBalance] = useState<boolean>(true)
+  const [fetchingBalance, setFetchingBalance] = useState<boolean>(true);
   const [isRegistered, setIsRegistered] = useState<boolean>(false);
-  const [balanceError, setBalanceError] = useState<any>(null)
+  const [balanceError, setBalanceError] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [localAddress, setLocalAddress] = useState<string | null>(address || null);
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const { state } = useAppContext();
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [walletSecret, setWalletSecret] = useState<string | null>(null);
+
+  const walletType = type === 'selling' ? 'Selling' : 'Purchasing';
+
+  const fetchWalletAddress = async () => {
+    try {
+      setIsFetchingAddress(true);
+      const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}`, {
+        headers: {
+          'accept': 'application/json',
+          'token': process.env.NEXT_PUBLIC_API_KEY as string
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch wallet address');
+      }
+
+      const data = await response.json();
+      return data.data.address;
+    } catch (error) {
+      console.error('Error fetching wallet address:', error);
+      return null;
+    } finally {
+      setIsFetchingAddress(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!localAddress && walletId) {
+      fetchWalletAddress().then(fetchedAddress => {
+        if (fetchedAddress) {
+          setLocalAddress(fetchedAddress);
+        }
+      });
+    }
+  }, [localAddress, walletId]);
 
   const fetchBalancePreprod = async (address: string) => {
     const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
@@ -88,29 +129,29 @@ export function WalletCard({
       }
 
       try {
-        setFetchingBalance(true)
-        setBalanceError(null)
-        const data: any = await fetchBalancePreprod(address);
+        setFetchingBalance(true);
+        setBalanceError(null);
+        const data: any = await fetchBalancePreprod(localAddress || '');
         setAdaBalance(data?.ada || "0");
         setUsdmBalance(data?.usdm || "0");
-        setFetchingBalance(false)
+        setFetchingBalance(false);
       } catch (error) {
         console.error('Error fetching wallet balances:', error);
-        setFetchingBalance(false)
-        setBalanceError(error)
+        setFetchingBalance(false);
+        setBalanceError(error);
       }
     };
     
-    if (address) {
+    if (localAddress) {
       fetchBalances();
     }
-  }, [address, state.paymentSources]);
+  }, [localAddress, state.paymentSources]);
   
   const refreshBalance = async()=>{
     try{
       setBalanceError(null)
       setFetchingBalance(true)
-      const data:any = await fetchBalancePreprod(address)
+      const data:any = await fetchBalancePreprod(localAddress || '')
       setAdaBalance(data?.ada || "0")
       setUsdmBalance(data?.usdm || "0")
       setFetchingBalance(false)
@@ -123,12 +164,18 @@ export function WalletCard({
 
   const handleTopUp = (e: any) => {
     e.stopPropagation();
+    const network = contract.network?.toLowerCase();
     
+    if(network === 'preprod'){
+      window.open('https://docs.cardano.org/cardano-testnets/tools/faucet', '_blank');
+      return;
+    }
+
     const transak = new (Transak as any)({
       apiKey: process.env.NEXT_PUBLIC_TRANSAK_API_KEY,
       environment: process.env.NODE_ENV === 'production' ? 'PRODUCTION' : 'STAGING',
       defaultCryptoCurrency: 'ADA',
-      walletAddress: address,
+      walletAddress: localAddress || '',
       defaultNetwork: type === 'mainnet' ? 'cardano' : 'cardano_preprod',
       cryptoCurrencyList: 'ADA',
       defaultPaymentMethod: 'credit_debit_card',
@@ -151,8 +198,6 @@ export function WalletCard({
       transak.close();
     });
   };
-
-  const walletType = type === 'selling' ? 'Selling' : 'Purchasing';
 
   const handleExport = async (e: any) => {
     e.stopPropagation();
@@ -183,7 +228,7 @@ export function WalletCard({
 
   const handleViewExplorer = (e:any) => {
     e.stopPropagation();
-    window.open(`https://masumi.network/explorer/?address=${address}`, '_blank');
+    window.open(`https://masumi.network/explorer/?address=${localAddress}`, '_blank');
   };
 
   const handleDeregister = (e:any) => {
@@ -201,32 +246,36 @@ export function WalletCard({
   };
 
   const getDisplayContent = () => {
-    if (!address) {
-      switch (type) {
-        case 'receiver':
-          return "No receiver address added";
-        case 'payment':
-          return "No payment address added";
-        case 'collection':
-          return "No collection address added";
-        default:
-          return "No address added";
-      }
-    }
+    // if (isFetchingAddress) {
+    //   return <div className="text-sm">Fetching wallet address...</div>;
+    // }
+
+    // if (!localAddress) {
+    //   switch (type) {
+    //     case 'receiver':
+    //       return "No receiver address added";
+    //     case 'payment':
+    //       return "No payment address added";
+    //     case 'collection':
+    //       return "No collection address added";
+    //     default:
+    //       return "No address added";
+    //   }
+    // }
 
     return (
       <>
         <div className="flex justify-between items-center">
           <div className="text-sm truncate flex-1">
-            Address: {shortenAddress(address)}
-            <Button
+            Address: {localAddress ? shortenAddress(localAddress) : <BlinkingUnderscore />}
+            {localAddress && <Button
               variant="ghost"
               size="icon"
               className="h-4 w-4 ml-2"
-              onClick={(e) => handleCopyAddress(e, address)}
+              onClick={(e) => handleCopyAddress(e, localAddress || '')}
             >
               <Copy className="h-3 w-3" />
-            </Button>
+            </Button>}
           </div>
         </div>
 
