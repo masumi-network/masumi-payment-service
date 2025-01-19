@@ -31,6 +31,9 @@ export function WalletCard({
   const { state } = useAppContext();
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [walletSecret, setWalletSecret] = useState<string | null>(null);
 
   const fetchBalancePreprod = async (address: string) => {
     const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
@@ -149,8 +152,33 @@ export function WalletCard({
     });
   };
 
-  const handleExport = (e:any) => {
+  const walletType = type === 'selling' ? 'Selling' : 'Purchasing';
+
+  const handleExport = async (e: any) => {
     e.stopPropagation();
+    setIsExporting(true);
+
+    try {
+      const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}&includeSecret=true`, {
+        headers: {
+          'accept': 'application/json',
+          'token': process.env.NEXT_PUBLIC_API_KEY as string
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export wallet');
+      }
+
+      const data = await response.json();
+      setWalletSecret(data.data.walletSecret.secret);
+      setShowExportDialog(true);
+    } catch (error) {
+      console.error('Error exporting wallet:', error);
+      toast.error('Failed to export wallet');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleViewExplorer = (e:any) => {
@@ -208,30 +236,17 @@ export function WalletCard({
             <div className="text-sm">USDM Balance: {usdmBalance?.toLocaleString() || "..."} USDM</div>
           </> : <div className="text-sm">
             fetching balance...
-          </div> }
-          {type === 'hot' && (
-            <div className="text-sm">Status: {isRegistered ? 'Registered' : 'Not registered'}</div>
-          )}
+          </div>}
         </div>
 
         <div className="flex gap-1 justify-start mt-1">
-          {type === 'admin' && (
+          {(type === 'purchasing' || type === 'selling') && (
             <>
-              <Button variant="secondary" size="sm" onClick={handleTopUp}>
+              <Button variant="secondary" size="sm" onClick={handleTopUp} disabled={isExporting}>
                 Top up
               </Button>
-              <Button variant="secondary" size="sm" onClick={handleExport}>
-                Export
-              </Button>
-            </>
-          )}
-          {type === 'hot' && isRegistered && (
-            <>
-              <Button variant="secondary" size="sm" onClick={handleViewExplorer}>
-                View Explorer
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleDeregister}>
-                De-register
+              <Button variant="secondary" size="sm" onClick={handleExport} disabled={isExporting}>
+                {isExporting ? 'Exporting...' : 'Export'}
               </Button>
             </>
           )}
@@ -288,6 +303,45 @@ export function WalletCard({
               disabled={isUpdating}
             >
               Remove Wallet
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wallet Secret</DialogTitle>
+            <DialogDescription>
+              Please store this secret phrase securely. Anyone with access to this phrase can control the wallet.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-4 bg-muted rounded-md">
+              <p className="text-sm break-all font-mono">{walletSecret}</p>
+            </div>
+            
+            <Button 
+              className="w-full"
+              onClick={() => {
+                navigator.clipboard.writeText(walletSecret || '');
+                toast.success('Secret copied to clipboard!');
+              }}
+            >
+              Copy to Clipboard
+            </Button>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowExportDialog(false);
+                setWalletSecret(null);
+              }}
+            >
+              Close
             </Button>
           </div>
         </DialogContent>
