@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useRouter } from "next/router";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 // import { WalletSection } from '@/components/wallet/WalletSection';
-import { AdminWalletSection } from '@/components/wallet/AdminWalletSection';
 import { ContractTransactionList } from "@/components/dashboard/ContractTransactionList";
 import { Button } from "@/components/ui/button";
 import { WalletCard } from "@/components/wallet/WalletCard";
@@ -13,11 +13,13 @@ import { AddWalletModal } from "@/components/wallet/AddWalletModal";
 import { Input } from "@/components/ui/input";
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '@/components/BlinkingUnderscore';
+import { updatePaymentSource } from '@/lib/query/api/update-payment-source';
+import { getPaymentSources } from '@/lib/query/api/payment-source';
 export default function ContractPage() {
   const router = useRouter();
   const { name } = router.query;
   const { state, dispatch } = useAppContext();
-  
+
   const contract = state.paymentSources?.find((c: any) => c.name === name || c.id === name);
 
 
@@ -39,45 +41,25 @@ export default function ContractPage() {
   const handleSaveCollectionWallet = async () => {
     try {
       setIsUpdating(true);
-      const response = await fetch('/api/update-payment-source', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.apiKey}`
-        },
-        body: JSON.stringify({
-          id: contract.id,
-          CollectionWallet: {
-            walletAddress: collectionWalletAddress,
-            note: collectionWalletNote || undefined
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update collection wallet');
-      }
-
-      const sourcesResponse = await fetch('/api/payment-source', {
-        headers: {
-          'Authorization': `Bearer ${state.apiKey}`
+      await updatePaymentSource({
+        id: contract.id,
+        CollectionWallet: {
+          walletAddress: collectionWalletAddress,
+          note: collectionWalletNote || undefined
         }
-      });
-      if (!sourcesResponse.ok) {
-        throw new Error('Failed to fetch payment sources');
-      }
-      
-      const sourcesData = await sourcesResponse.json();
-      const sources = sourcesData?.data?.paymentSources || [];
-      
-      const updatedContract = sources.find((c: any) => c.id === contract.id);
+      }, state.apiKey!,);
+
+      const sources = await getPaymentSources(state.apiKey!);
+
+      const updatedContract = sources.data?.paymentSources.find((c: any) => c.id === contract.id);
+
       if (!updatedContract) {
         throw new Error('Updated contract not found in response');
       }
-      
+
       dispatch({
         type: 'SET_PAYMENT_SOURCES',
-        payload: state.paymentSources.map((c: any) => 
+        payload: state.paymentSources.map((c: any) =>
           c.id === contract.id ? updatedContract : c
         )
       });
@@ -139,45 +121,26 @@ export default function ContractPage() {
 
   const handleRemoveWallet = async (type: 'purchasing' | 'selling', walletId: string) => {
     try {
-      const response = await fetch('/api/update-payment-source', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.apiKey}`
-        },
-        body: JSON.stringify({
-          id: contract.id,
-          [`${type === 'purchasing' ? 'RemovePurchasingWallets' : 'RemoveSellingWallets'}`]: [{id: walletId}]
-        }),
-      });
+      await updatePaymentSource({
+        id: contract.id,
+        [`${type === 'purchasing' ? 'RemovePurchasingWallets' : 'RemoveSellingWallets'}`]: [{ id: walletId }]
+      }, state.apiKey!);
 
-      if (!response.ok) throw new Error('Failed to remove wallet');
+      const sources = await getPaymentSources(state.apiKey!);
+      const updatedContract = sources.data?.paymentSources.find((c: any) => c.id === contract.id);
 
-      const sourcesResponse = await fetch('/api/payment-source', {
-        headers: {
-          'Authorization': `Bearer ${state.apiKey}`
-        }
-      });
-      if (!sourcesResponse.ok) {
-        throw new Error('Failed to fetch payment sources');
-      }
-      
-      const sourcesData = await sourcesResponse.json();
-      const sources = sourcesData?.data?.paymentSources || [];
-      
-      const updatedContract = sources.find((c: any) => c.id === contract.id);
       if (!updatedContract) {
         throw new Error('Updated contract not found in response');
       }
-      
+
       dispatch({
         type: 'SET_PAYMENT_SOURCES',
-        payload: state.paymentSources.map((c: any) => 
+        payload: state.paymentSources.map((c: any) =>
           c.id === contract.id ? updatedContract : c
         )
       });
-    } catch (error) {
-      toast.error('Failed to remove wallet');
+    } catch (error: any) {
+      toast.error('Failed to remove wallet ' + error.message);
     }
   };
 
@@ -186,7 +149,7 @@ export default function ContractPage() {
   }
 
   const getIndex = (contract: any) => {
-    const sortedPaymentSources = state.paymentSources.sort((a: any, b: any) => 
+    const sortedPaymentSources = state.paymentSources.sort((a: any, b: any) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     return sortedPaymentSources.map((c: any) => c).indexOf(contract) + 1;
@@ -203,8 +166,8 @@ export default function ContractPage() {
               {contractIndex && <CardTitle>
                 Payment Source #{contractIndex}
               </CardTitle>}
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={() => setShowDeleteModal(true)}
               >
@@ -228,8 +191,8 @@ export default function ContractPage() {
             <CardTitle>Smart Contract Wallets</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-3 gap-4">
-            {contract.AdminWallets?.map((wallet: any, index: number) => (
-              <WalletCard 
+            {contract.AdminWallets?.map((wallet: any) => (
+              <WalletCard
                 key={wallet.walletAddress}
                 type="admin"
                 address={wallet.walletAddress}
@@ -244,8 +207,8 @@ export default function ContractPage() {
           <CardHeader>
             <div className="flex flex-row items-center justify-between">
               <CardTitle>Collection Wallet</CardTitle>
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 onClick={() => setShowSetCollectionWalletModal(true)}
               >
                 {contract.CollectionWallet ? 'Update' : 'Set'} Collection Wallet
@@ -254,7 +217,7 @@ export default function ContractPage() {
           </CardHeader>
           <CardContent>
             {contract.CollectionWallet ? (
-              <WalletCard 
+              <WalletCard
                 type="collection"
                 address={contract.CollectionWallet.walletAddress}
                 contractName={name as string}
@@ -265,7 +228,7 @@ export default function ContractPage() {
             )}
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Purchasing Wallets</CardTitle>
@@ -280,7 +243,7 @@ export default function ContractPage() {
             {contract.PurchasingWallets?.length > 0 ? (
               <div className="grid grid-cols-1 gap-4">
                 {contract.PurchasingWallets.map((wallet: any) => (
-                  <WalletCard 
+                  <WalletCard
                     key={wallet.id}
                     contract={contract}
                     type="purchasing"
@@ -311,7 +274,7 @@ export default function ContractPage() {
             {contract.SellingWallets?.length > 0 ? (
               <div className="grid grid-cols-1 gap-4">
                 {contract.SellingWallets.map((wallet: any) => (
-                  <WalletCard 
+                  <WalletCard
                     key={wallet.id}
                     contract={contract}
                     type="selling"
@@ -327,8 +290,8 @@ export default function ContractPage() {
             )}
           </CardContent>
         </Card>
-        
-        <ContractTransactionList 
+
+        <ContractTransactionList
           contractAddress={contract.addressToCheck || contract.paymentContractAddress}
           network={contract.network}
           contract={contract}
@@ -338,7 +301,7 @@ export default function ContractPage() {
 
       {showAddWalletModal && (
         <Dialog open={showAddWalletModal} onOpenChange={setShowAddWalletModal}>
-          <AddWalletModal 
+          <AddWalletModal
             type={selectedWalletType}
             onClose={() => setShowAddWalletModal(false)}
             contractId={contract.id}

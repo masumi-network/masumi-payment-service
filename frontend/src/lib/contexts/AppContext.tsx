@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { createContext, useContext, useReducer } from 'react';
 
 interface AppState {
@@ -7,7 +8,7 @@ interface AppState {
   apiKey: string | null;
 }
 
-type AppAction = 
+type AppAction =
   | { type: 'SET_PAYMENT_SOURCES'; payload: any[] }
   | { type: 'SET_CONTRACTS'; payload: any[] }
   | { type: 'SET_WALLETS'; payload: any[] }

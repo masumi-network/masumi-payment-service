@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useAppContext } from "@/lib/contexts/AppContext";
 import { X } from "lucide-react";
+import { createPaymentSource } from "@/lib/query/api/create-payment-source";
+import { getPaymentSources } from "@/lib/query/api/payment-source";
 
 type CreateContractModalProps = {
   onClose: () => void;
@@ -44,7 +46,7 @@ const initialFormData: FormData = {
 export function CreateContractModal({ onClose }: CreateContractModalProps) {
   const { state } = useAppContext();
   const defaultBlockfrostApiKey = state.paymentSources?.[0]?.blockfrostApiKey || '';
-  
+
   const [formData, setFormData] = useState<FormData>({
     ...initialFormData,
     blockfrostApiKey: defaultBlockfrostApiKey
@@ -90,37 +92,23 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         SellingWallets: formData.sellingWallets.filter(w => w.walletMnemonic.trim())
       };
 
-      const response = await fetch('/api/create-payment-source', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.apiKey}`
-        },
-        body: JSON.stringify(payload),
-      });
 
-      const data = await response.json();
+      await createPaymentSource(payload, state.apiKey!);
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to create payment source');
-      }
 
-      const sourcesResponse = await fetch('/api/payment-source', {
-        headers: {
-          'Authorization': `Bearer ${state.apiKey}`
-        }
-      });
-      const sourcesData = await sourcesResponse.json();
-      
-      dispatch({ 
-        type: 'SET_PAYMENT_SOURCES', 
-        payload: sourcesData?.data?.paymentSources || [] 
+
+      const sourcesData = await getPaymentSources(state.apiKey!);
+
+
+      dispatch({
+        type: 'SET_PAYMENT_SOURCES',
+        payload: sourcesData?.data?.paymentSources || []
       });
 
       onClose();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to create payment source:', error);
-      setError(error.message || 'Failed to create payment source. Please try again.');
+      setError(error instanceof Error ? error.message : 'Failed to create payment source. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -153,7 +141,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         <DialogHeader>
           <DialogTitle>Add New Payment Source</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-6 py-4">
           {error && (
             <div className="text-sm text-destructive">
@@ -163,7 +151,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
 
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Basic Configuration</h3>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium">
@@ -216,7 +204,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                 Add Admin Wallet
               </Button>
             </div>
-            
+
             {formData.adminWallets.map((wallet, index) => (
               <div key={index} className="space-y-2">
                 <label className="text-sm font-medium">
@@ -293,7 +281,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                 Add Purchasing Wallet
               </Button>
             </div>
-            
+
             {formData.purchasingWallets.map((wallet, index) => (
               <div key={index} className="space-y-2 relative">
                 <div className="text-sm font-medium flex items-center justify-start space-x-2">
@@ -325,7 +313,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                     }}
                     placeholder="Enter wallet mnemonic"
                   />
-                  
+
                 </div>
                 <input
                   type="text"
@@ -349,7 +337,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                 Add Selling Wallet
               </Button>
             </div>
-            
+
             {formData.sellingWallets.map((wallet, index) => (
               <div key={index} className="space-y-2 relative">
                 <div className="text-sm font-medium flex items-center justify-start space-x-2">
@@ -381,7 +369,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
                     }}
                     placeholder="Enter wallet mnemonic"
                   />
-                  
+
                 </div>
                 <input
                   type="text"

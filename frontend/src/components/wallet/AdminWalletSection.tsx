@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { useRouter } from 'next/router';
@@ -21,7 +22,7 @@ export function AdminWalletSection({ contractId }: { contractId: string }) {
         </CardHeader>
         <CardContent className="grid gap-4">
           {contract.AdminWallets.map((wallet: any, index: any) => (
-            <Card 
+            <Card
               key={wallet.walletAddress}
               className="bg-[#fff1] hover:bg-[#fff2] cursor-pointer transition-colors"
               onClick={() => handleWalletClick(wallet.walletAddress)}
@@ -40,7 +41,7 @@ export function AdminWalletSection({ contractId }: { contractId: string }) {
           <CardTitle>Collection Wallet</CardTitle>
         </CardHeader>
         <CardContent>
-          <Card 
+          <Card
             className="bg-[#fff1] hover:bg-[#fff2] cursor-pointer transition-colors"
             onClick={() => handleWalletClick(contract.CollectionWallet.walletAddress)}
           >

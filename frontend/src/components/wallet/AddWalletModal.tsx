@@ -1,8 +1,11 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
 import { useAppContext } from "@/lib/contexts/AppContext";
+import { updatePaymentSource } from "@/lib/query/api/update-payment-source";
+import { getPaymentSources } from "@/lib/query/api/payment-source";
 
 type AddWalletModalProps = {
   type: 'purchasing' | 'selling';
@@ -23,47 +26,28 @@ export function AddWalletModal({ type, onClose, contractId }: AddWalletModalProp
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/update-payment-source', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${state.apiKey}`
-        },
-        body: JSON.stringify({
-          id: contractId,
-          [`${type === 'purchasing' ? 'AddPurchasingWallets' : 'AddSellingWallets'}`]: [
-            {
-              walletMnemonic: mnemonic,
-              note: note || undefined
-            }
-            ]
-        }),
-      });
+      await updatePaymentSource({
+        id: contractId,
+        [`${type === 'purchasing' ? 'AddPurchasingWallets' : 'AddSellingWallets'}`]: [
+          {
+            walletMnemonic: mnemonic,
+            note: note || undefined
+          }
+        ]
+      }, state.apiKey!);
 
-      if (!response.ok) {
-        throw new Error('Failed to add wallet');
-      }
+      const sourcesResponse = await getPaymentSources(state.apiKey!);
 
-      const sourcesResponse = await fetch('/api/payment-source', {
-        headers: {
-          'Authorization': `Bearer ${state.apiKey}`
-        }
-      });
-      if (!sourcesResponse.ok) {
-        throw new Error('Failed to fetch payment sources');
-      }
-      
-      const sourcesData = await sourcesResponse.json();
-      const sources = sourcesData?.data?.paymentSources || [];
-      
+      const sources = sourcesResponse?.data?.paymentSources || [];
+
       const updatedContract = sources.find((c: any) => c.id === contractId);
       if (!updatedContract) {
         throw new Error('Updated contract not found in response');
       }
-      
+
       dispatch({
         type: 'SET_PAYMENT_SOURCES',
-        payload: state.paymentSources.map((c: any) => 
+        payload: state.paymentSources.map((c: any) =>
           c.id === contractId ? updatedContract : c
         )
       });

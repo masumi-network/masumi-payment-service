@@ -4,6 +4,7 @@ import { Input } from "./ui/input";
 import { useState } from "react";
 import { useAppContext } from "@/lib/contexts/AppContext";
 import { toast } from 'react-toastify';
+import { getPaymentSources } from "@/lib/query/api/payment-source";
 
 export function ApiKeyDialog() {
   const [apiKey, setApiKey] = useState("");
@@ -16,23 +17,16 @@ export function ApiKeyDialog() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/payment-source', {
-        headers: {
-          'Authorization': `Bearer ${key}`,
-        }
-      });
 
-      if (!response.ok) {
-        throw new Error('Invalid API key');
-      }
+      await getPaymentSources(key);
 
       const hexKey = Buffer.from(key).toString('hex');
       localStorage.setItem("payment_api_key", hexKey);
       dispatch({ type: 'SET_API_KEY', payload: key });
       toast.success('API key validated successfully');
-      
-    } catch (error: any) {
-      setError(error.message || 'Failed to validate API key');
+
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to validate API key');
       localStorage.removeItem("payment_api_key");
       toast.error('Failed to validate API key');
     } finally {
@@ -53,8 +47,8 @@ export function ApiKeyDialog() {
         <form onSubmit={(e) => {
           e.preventDefault();
           handleApiKeySubmit(apiKey);
-        }} 
-        className="space-y-4">
+        }}
+          className="space-y-4">
           {error && (
             <div className="text-sm text-destructive">
               {error}
