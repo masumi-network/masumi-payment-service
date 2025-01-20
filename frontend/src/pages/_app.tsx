@@ -80,10 +80,14 @@ function InitializeApp() {
   }, [dispatch]);
 
   useEffect(() => {
-    if (isHealthy && router.pathname === '/') {
+    if (isHealthy && state.apiKey && router.pathname === '/') {
       fetchPaymentSources();
+    } else{
+      if(isHealthy && state.apiKey && state.paymentSources.length === 0){
+        fetchPaymentSources();
+      }
     }
-  }, [router.pathname, isHealthy]);
+  }, [router.pathname, isHealthy, state.apiKey]);
 
   if (isHealthy === null) {
     return <div className="flex h-screen items-center justify-center bg-[#000] fixed top-0 left-0 w-full h-full z-50">
@@ -109,7 +113,7 @@ function InitializeApp() {
 }
 
 function ComponentHolder({ Component, pageProps, router }: AppProps) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
   return <div className="dark">
    {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
   </div>;
