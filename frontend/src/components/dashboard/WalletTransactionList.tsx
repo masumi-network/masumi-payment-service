@@ -7,7 +7,7 @@ type WalletTransactionListProps = {
   walletAddress: string;
 }
 
-export function WalletTransactionList({ walletAddress }: WalletTransactionListProps) {
+export function WalletTransactionList({ }: WalletTransactionListProps) {
   const [isLoading] = useState(true);
 
   return (

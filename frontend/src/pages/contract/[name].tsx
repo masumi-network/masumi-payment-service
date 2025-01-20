@@ -4,7 +4,6 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useRouter } from "next/router";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-// import { WalletSection } from '@/components/wallet/WalletSection';
 import { ContractTransactionList } from "@/components/dashboard/ContractTransactionList";
 import { Button } from "@/components/ui/button";
 import { WalletCard } from "@/components/wallet/WalletCard";
@@ -15,13 +14,47 @@ import { toast } from 'react-toastify';
 import BlinkingUnderscore from '@/components/BlinkingUnderscore';
 import { updatePaymentSource } from '@/lib/query/api/update-payment-source';
 import { getPaymentSources } from '@/lib/query/api/payment-source';
-export default function ContractPage() {
+import { GetStaticProps, GetStaticPaths } from 'next';
+
+interface ContractPageProps {
+  initialContract: any | null;
+}
+
+export const getStaticPaths: GetStaticPaths = async () => {
+  return {
+    paths: [], // No pre-rendered paths
+    fallback: 'blocking' // Generate pages on-demand
+  };
+};
+
+export const getStaticProps: GetStaticProps<ContractPageProps> = async ({ params }) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const name = params?.name as string;
+
+  try {
+    return {
+      props: {
+        initialContract: null // Initial data will be loaded client-side
+      },
+      revalidate: 10 // Revalidate every 10 seconds
+    };
+  } catch (error) {
+    console.error('Error fetching contract:', error);
+    return {
+      props: {
+        initialContract: null
+      },
+      revalidate: 10
+    };
+  }
+};
+
+export default function ContractPage({ initialContract }: ContractPageProps) {
   const router = useRouter();
   const { name } = router.query;
   const { state, dispatch } = useAppContext();
 
-  const contract = state.paymentSources?.find((c: any) => c.name === name || c.id === name);
-
+  const contract = state.paymentSources?.find((c: any) => c.name === name || c.id === name) || initialContract;
 
   const [showAddWalletModal, setShowAddWalletModal] = useState(false);
   const [selectedWalletType, setSelectedWalletType] = useState<'purchasing' | 'selling'>('purchasing');
@@ -179,7 +212,6 @@ export default function ContractPage() {
             <div className="space-y-4">
               <div>Address: {contract.addressToCheck || contract.paymentContractAddress}</div>
               <div>Network: {contract.network}</div>
-              {/* <div>Type: {name === 'default' ? 'Default Contract' : contract.type}</div> */}
               <div>Status: {contract.isSyncing ? 'Syncing' : 'Active'}</div>
               <div>Date Created: {new Date(contract.createdAt).toLocaleString()}</div>
             </div>

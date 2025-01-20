@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,7 +71,7 @@ export function MonitoredContracts({ paymentSourceData }: any) {
             </TableHeader>
             <TableBody>
               {contracts.map((contract) => (
-                <TableRow 
+                <TableRow
                   key={contract.id}
                   onClick={() => handleRowClick(contract.name || contract.id)}
                   className="cursor-pointer"

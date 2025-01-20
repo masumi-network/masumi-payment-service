@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +54,7 @@ const formatStatus = (status: string) => {
   return status;
 };
 
-export function ContractTransactionList({ contractAddress, contract, network, paymentType, walletAddress }: TransactionListProps) {
+export function ContractTransactionList({ contractAddress, network, paymentType }: TransactionListProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<TransactionType>('all');
@@ -80,7 +81,7 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }
-        
+
         const data = await response.json();
         setTransactions(data?.data?.transactions || []);
       } catch (error) {
@@ -93,16 +94,16 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
     if (contractAddress || network || paymentType) {
       fetchTransactions();
     }
-  }, [contractAddress, network, paymentType]);
+  }, [contractAddress, network, paymentType, state.apiKey]);
   const filteredTransactions = transactions.filter((tx: Transaction) => {
-    const matchesFilter = 
-      filter === 'all' || 
+    const matchesFilter =
+      filter === 'all' ||
       (filter === 'payments' && tx.type === 'payment') ||
       (filter === 'purchases' && tx.type === 'purchase') ||
       (filter === 'errors' && tx.errorType);
 
     const searchTerm = searchQuery.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       !searchQuery ||
       tx.identifier.toLowerCase().includes(searchTerm) ||
       tx.status.toLowerCase().includes(searchTerm) ||
@@ -134,25 +135,25 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
         <div className="flex flex-row items-center justify-between">
           <CardTitle>Transactions</CardTitle>
           <div className="flex gap-2">
-            <Button 
+            <Button
               variant={filter === 'all' ? "default" : "secondary"}
               onClick={() => setFilter('all')}
             >
               All
             </Button>
-            <Button 
+            <Button
               variant={filter === 'payments' ? "default" : "secondary"}
               onClick={() => setFilter('payments')}
             >
               Payments
             </Button>
-            <Button 
+            <Button
               variant={filter === 'purchases' ? "default" : "secondary"}
               onClick={() => setFilter('purchases')}
             >
               Purchases
             </Button>
-            <Button 
+            <Button
               variant={filter === 'errors' ? "default" : "secondary"}
               onClick={() => setFilter('errors')}
             >
@@ -195,13 +196,12 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((tx: any) => (
-                    <TableRow 
-                      key={tx.identifier} 
-                      className={`cursor-pointer ${
-                        tx.errorType 
-                          ? 'bg-destructive/10 hover:bg-destructive/20' 
-                          : 'hover:bg-muted/50'
-                      }`}
+                    <TableRow
+                      key={tx.identifier}
+                      className={`cursor-pointer ${tx.errorType
+                        ? 'bg-destructive/10 hover:bg-destructive/20'
+                        : 'hover:bg-muted/50'
+                        }`}
                       onClick={() => setSelectedTransaction(tx)}
                     >
                       <TableCell className="font-medium">
@@ -212,7 +212,7 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
                         {formatStatus(tx.status)}
                       </TableCell>
                       <TableCell>
-                        {tx.amounts?.[0]?.amount 
+                        {tx.amounts?.[0]?.amount
                           ? `${(tx.amounts[0].amount / 1000000).toFixed(2)} ₳`
                           : '-'}
                       </TableCell>
@@ -288,7 +288,7 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
                   <div>
                     <h5 className="text-sm font-medium mb-1">Amount</h5>
                     <p className="text-sm">
-                      {selectedTransaction.amounts?.[0]?.amount 
+                      {selectedTransaction.amounts?.[0]?.amount
                         ? `${(selectedTransaction.amounts[0].amount / 1000000).toFixed(2)} ₳`
                         : '-'}
                     </p>

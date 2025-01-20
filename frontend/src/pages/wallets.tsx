@@ -1,5 +1,17 @@
 import { MainLayout } from "@/components/layout/MainLayout";
-// import { WalletSection } from "@/components/wallet/WalletSection";
+import { GetStaticProps } from 'next';
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+interface WalletsProps {
+  // Add props if needed in the future
+}
+
+export const getStaticProps: GetStaticProps<WalletsProps> = async () => {
+  return {
+    props: {},
+    revalidate: 10
+  };
+};
 
 export default function Wallets() {
   return (
@@ -7,7 +19,6 @@ export default function Wallets() {
       <div>
         <h1>Wallets</h1>
       </div>
-      {/* <WalletSection /> */}
     </MainLayout>
   );
 } 

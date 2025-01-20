@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -63,7 +64,7 @@ export function ImportWalletModal({ type, onClose }: ImportWalletModalProps) {
         <DialogHeader>
           <DialogTitle>Import {type.charAt(0).toUpperCase() + type.slice(1)} Wallet</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-4 py-4">
           {error && (
             <div className="text-sm text-destructive">

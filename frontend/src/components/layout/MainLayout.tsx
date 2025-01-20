@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import { IoHomeOutline, IoSettingsOutline, IoChevronDownOutline, IoChevronUpOutline } from "react-icons/io5";
 import { RiRobot2Line } from "react-icons/ri";
 import { TbLayoutSidebarLeftCollapse, TbLayoutSidebarLeftExpand } from "react-icons/tb";
-import logo from "@/assets/long-logo.avif";
+import logo from "@/assets/long-logo.png";
 import { cn } from "@/lib/utils";
 import Head from "next/head";
 import { LuFileText } from "react-icons/lu";
@@ -17,10 +17,6 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
-interface Contract {
-  id: string;
-  name?: string;
-}
 
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
@@ -48,7 +44,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     if (path === '/wallets') return 'Wallets';
     if (path === '/contract/[name]') return `Contract ID: ${contractName}`;
     if (path.includes('/wallet/')) return 'Wallet Details';
-    
+
     return 'Overview';
   };
 
@@ -66,32 +62,32 @@ export function MainLayout({ children }: MainLayoutProps) {
         <title>{pageTitle}</title>
       </Head>
       <div className="flex min-h-screen bg-background">
-        <aside 
+        <aside
           className="fixed left-0 top-0 h-screen bg-card border-r border-border transition-all duration-300 ease-in-out z-30"
           style={{ width: isCollapsed ? "100px" : "300px" }}
         >
           <div className="p-4">
             <div className="mb-8 flex justify-between items-center gap-1">
-              <Link 
-                href="https://masumi.network" 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <Link
+                href="https://masumi.network"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="cursor-pointer"
               >
                 {isCollapsed ? (
-                  <Image 
-                    src="/logo.ico" 
-                    alt="NMKR Icon" 
-                    width={40} 
+                  <Image
+                    src="/logo.ico"
+                    alt="NMKR Icon"
+                    width={40}
                     height={40}
                     className="rounded-[10px]"
                     priority
                   />
                 ) : (
-                  <Image 
-                    src={logo} 
-                    alt="NMKR Logo" 
-                    width={150} 
+                  <Image
+                    src={logo}
+                    alt="NMKR Logo"
+                    width={150}
                     height={40}
                     priority
                   />
@@ -147,7 +143,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     </div>
                   )}
                 </Button>
-                
+
                 {(isContractsOpen && !isCollapsed) && (
                   <div className={cn(
                     "flex flex-col gap-1 mt-1 items-center w-full",
@@ -164,15 +160,15 @@ export function MainLayout({ children }: MainLayoutProps) {
                             isCollapsed && "w-9 h-9 justify-center ml-0"
                           )}
                         >
-                          <Link 
-                            href={`/contract/${contract.name || contract.id}`} 
+                          <Link
+                            href={`/contract/${contract.name || contract.id}`}
                             className="flex items-center gap-2"
                           >
-                            <div 
+                            <div
                               className={cn(
                                 "min-w-[16px] h-4 flex items-center justify-center text-xs rounded",
-                                isContractActive(contract.id) 
-                                  ? "bg-[#fff] text-[#000]" 
+                                isContractActive(contract.id)
+                                  ? "bg-[#fff] text-[#000]"
                                   : "bg-[#fff2]"
                               )}
                             >
@@ -207,11 +203,11 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
         </aside>
 
-        <div 
+        <div
           className="flex flex-col min-h-screen transition-all duration-300 ease-in-out w-full"
           style={{ marginLeft: isCollapsed ? "100px" : "300px" }}
         >
-          <header 
+          <header
             className="fixed top-0 right-0 h-16 border-b border-border backdrop-blur-[10px] bg-[#0008] z-20 transition-all duration-300 ease-in-out"
             style={{ width: `calc(100% - ${isCollapsed ? "100px" : "300px"})` }}
           >

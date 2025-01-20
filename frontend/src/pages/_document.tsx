@@ -5,7 +5,6 @@ export default function Document() {
     <Html lang="en" className="dark">
       <Head>
         <link rel="icon" href="/logo.ico" />
-        <title>Masumi | Admin Interface</title>
       </Head>
       <body className="antialiased">
         <Main />
