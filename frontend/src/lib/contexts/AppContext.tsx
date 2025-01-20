@@ -4,18 +4,21 @@ interface AppState {
   paymentSources: any[];
   contracts: any[];
   wallets: any[];
+  apiKey: string | null;
 }
 
 type AppAction = 
   | { type: 'SET_PAYMENT_SOURCES'; payload: any[] }
   | { type: 'SET_CONTRACTS'; payload: any[] }
   | { type: 'SET_WALLETS'; payload: any[] }
+  | { type: 'SET_API_KEY'; payload: string }
 
 
 const initialAppState: AppState = {
   paymentSources: [],
   contracts: [],
   wallets: [],
+  apiKey: null,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -34,6 +37,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         wallets: action.payload
+      };
+    case 'SET_API_KEY':
+      return {
+        ...state,
+        apiKey: action.payload
       };
     default:
       return state;

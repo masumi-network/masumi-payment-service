@@ -7,15 +7,21 @@ import { useAppContext } from "@/lib/contexts/AppContext";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useRouter } from 'next/router';
+import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 
 function InitializeApp() {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const { dispatch } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const router = useRouter();
-  
+  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+
   const fetchPaymentSources = async () => {
     try {
-      const sourceResponse = await fetch('/api/payment-source');
+      const sourceResponse = await fetch('/api/payment-source', {
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
+      });
       if (!sourceResponse.ok) {
         throw new Error('Failed to fetch payment sources');
       }
@@ -49,10 +55,20 @@ function InitializeApp() {
           console.error('Health check failed:', await response.text());
         }
         
-        setIsHealthy(health);
-
+        
         if (health) {
-          await fetchPaymentSources();
+          const hexedKey = localStorage.getItem("payment_api_key");
+          if (!hexedKey) {
+            setShowApiKeyDialog(true);
+            setIsHealthy(health);
+            return;
+          }
+          
+          const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
+          dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
+          setIsHealthy(health);
+        } else {
+          setShowApiKeyDialog(true);
         }
       } catch (error) {
         console.error('Health check failed:', error);
@@ -92,13 +108,18 @@ function InitializeApp() {
   return null;
 }
 
-function AppContent({ Component, pageProps }: AppProps) {
+function ComponentHolder({ Component, pageProps, router }: AppProps) {
+  const { state } = useAppContext();
+  return <div className="dark">
+   {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
+  </div>;
+}
+
+function AppContent({ Component, pageProps, router }: AppProps) {
   return (
     <AppProvider initialState={initialAppState}>
       <InitializeApp />
-      {<div className="dark">
-        <Component {...pageProps} />
-      </div>}
+      <ComponentHolder Component={Component} pageProps={pageProps} router={router} />
     </AppProvider>
   );
 }

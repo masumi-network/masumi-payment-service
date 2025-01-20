@@ -94,6 +94,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.apiKey}`
         },
         body: JSON.stringify(payload),
       });
@@ -104,7 +105,11 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         throw new Error(data.message || 'Failed to create payment source');
       }
 
-      const sourcesResponse = await fetch('/api/payment-source');
+      const sourcesResponse = await fetch('/api/payment-source', {
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
+      });
       const sourcesData = await sourcesResponse.json();
       
       dispatch({ 

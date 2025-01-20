@@ -43,6 +43,7 @@ export default function ContractPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.apiKey}`
         },
         body: JSON.stringify({
           id: contract.id,
@@ -57,7 +58,11 @@ export default function ContractPage() {
         throw new Error('Failed to update collection wallet');
       }
 
-      const sourcesResponse = await fetch('/api/payment-source');
+      const sourcesResponse = await fetch('/api/payment-source', {
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
+      });
       if (!sourcesResponse.ok) {
         throw new Error('Failed to fetch payment sources');
       }
@@ -108,6 +113,9 @@ export default function ContractPage() {
       console.log('delete-contract id', contract.id)
       const response = await fetch(`/api/delete-payment-source?id=${contract.id}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
       });
 
       if (!response.ok) {
@@ -135,6 +143,7 @@ export default function ContractPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.apiKey}`
         },
         body: JSON.stringify({
           id: contract.id,
@@ -201,7 +210,7 @@ export default function ContractPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div>Address: {contract.addressToCheck || contract.address}</div>
+              <div>Address: {contract.addressToCheck || contract.paymentContractAddress}</div>
               <div>Network: {contract.network}</div>
               {/* <div>Type: {name === 'default' ? 'Default Contract' : contract.type}</div> */}
               <div>Status: {contract.isSyncing ? 'Syncing' : 'Active'}</div>
@@ -316,7 +325,7 @@ export default function ContractPage() {
         </Card>
         
         <ContractTransactionList 
-          contractAddress={contract.addressToCheck || contract.address}
+          contractAddress={contract.addressToCheck || contract.paymentContractAddress}
           network={contract.network}
           contract={contract}
           paymentType={contract.paymentType || "WEB3_CARDANO_V1"}

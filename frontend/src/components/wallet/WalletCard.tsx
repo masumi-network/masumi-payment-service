@@ -47,8 +47,7 @@ export function WalletCard({
       setIsFetchingAddress(true);
       const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}`, {
         headers: {
-          'accept': 'application/json',
-          'token': process.env.NEXT_PUBLIC_API_KEY as string
+          'Authorization': `Bearer ${state.apiKey}`
         }
       });
 
@@ -121,7 +120,7 @@ export function WalletCard({
   useEffect(() => {
     const fetchBalances = async () => {
       const defaultContract = state.paymentSources?.[0];
-      const apiKey = defaultContract?.blockfrostApiKey;
+      const apiKey = defaultContract?.rpcProviderApiKey;
 
       if (!apiKey) {
         console.error('No Blockfrost API key found');
@@ -207,7 +206,7 @@ export function WalletCard({
       const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}&includeSecret=true`, {
         headers: {
           'accept': 'application/json',
-          'token': process.env.NEXT_PUBLIC_API_KEY as string
+          'Authorization': `Bearer ${state.apiKey}`
         }
       });
 
@@ -216,7 +215,7 @@ export function WalletCard({
       }
 
       const data = await response.json();
-      setWalletSecret(data.data.walletSecret.secret);
+      setWalletSecret(data.data.WalletSecret.secret);
       setShowExportDialog(true);
     } catch (error) {
       console.error('Error exporting wallet:', error);

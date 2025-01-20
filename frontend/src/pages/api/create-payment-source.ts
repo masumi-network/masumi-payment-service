@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import 'dotenv/config'
 
 export default async function handler(
   req: NextApiRequest,
@@ -7,6 +6,15 @@ export default async function handler(
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' })
+  }
+
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  
+  if (!token){
+    return res.status(401).json({ 
+      status: 'error',
+      message: 'Unauthorized' 
+    })
   }
 
   try {
@@ -24,7 +32,7 @@ export default async function handler(
       headers: {
         'accept': 'application/json',
         'Content-Type': 'application/json',
-        'token': process.env.PAYMENT_API_KEY as string
+        'token': token as string
       },
       body: JSON.stringify({
         network: payload.network,

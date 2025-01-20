@@ -10,6 +10,15 @@ export default async function handler(
     return res.status(405).json({ message: 'Method not allowed' })
   }
 
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  
+  if (!token){
+    return res.status(401).json({ 
+      status: 'error',
+      message: 'Unauthorized' 
+    })
+  }
+
   try {
     const { 
       limit = 10,
@@ -38,14 +47,14 @@ export default async function handler(
         method: 'GET',
         headers: {
           'accept': 'application/json',
-          'token': process.env.PAYMENT_API_KEY as string
+          'token': token as string
         }
       }),
       fetch(`${process.env.PAYMENT_API_BASE_URL}/api/v1/purchase?${new URLSearchParams(purchaseParams).toString()}`, {
         method: 'GET',
         headers: {
           'accept': 'application/json',
-          'token': process.env.PAYMENT_API_KEY as string
+          'token': token as string
         }
       })
     ])

@@ -76,7 +76,7 @@ export function MonitoredContracts({ paymentSourceData }: any) {
                   className="cursor-pointer"
                 >
                   <TableCell className="font-mono">
-                    {shortenAddress(contract.addressToCheck)}
+                    {shortenAddress(contract.paymentContractAddress)}
                   </TableCell>
                   <TableCell>{contract.network}</TableCell>
                   <TableCell>Payment Contract</TableCell>

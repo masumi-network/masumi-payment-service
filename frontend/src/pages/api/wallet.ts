@@ -8,6 +8,15 @@ export default async function handler(
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  
+  if (!token){
+    return res.status(401).json({ 
+      status: 'error',
+      message: 'Unauthorized' 
+    })
+  }
+
   const { walletType, id, includeSecret } = req.query;
 
   try {
@@ -16,7 +25,7 @@ export default async function handler(
       {
         headers: {
           'accept': 'application/json',
-          'token': process.env.PAYMENT_API_KEY as string
+          'token': token as string
         }
       }
     );

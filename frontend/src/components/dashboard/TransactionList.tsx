@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAppContext } from "@/lib/contexts/AppContext";
 
 type TransactionType = string;
 
@@ -51,12 +52,13 @@ const formatStatus = (status: string) => {
 };
 
 export function TransactionList({ contractAddress, contract, network, paymentType, walletAddress }: TransactionListProps) {
+  const { state } = useAppContext();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<TransactionType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-
+  
   useEffect(() => {
     const fetchTransactions = async () => {
       setIsLoading(true);
@@ -67,7 +69,11 @@ export function TransactionList({ contractAddress, contract, network, paymentTyp
           ...(paymentType && { paymentType })
         }).toString();
 
-        const response = await fetch(`/api/transactions?${queryParams}`);
+        const response = await fetch(`/api/transactions?${queryParams}`, {
+          headers: {
+            'Authorization': `Bearer ${state.apiKey}`
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }

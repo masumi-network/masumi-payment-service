@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { useAppContext } from "@/lib/contexts/AppContext";
 
 type TransactionType = string;
 
@@ -58,6 +59,7 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
   const [filter, setFilter] = useState<TransactionType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const { state } = useAppContext();
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -70,7 +72,11 @@ export function ContractTransactionList({ contractAddress, contract, network, pa
           ...(paymentType && { paymentType })
         }).toString();
 
-        const response = await fetch(`/api/transactions?${queryParams}`);
+        const response = await fetch(`/api/transactions?${queryParams}`, {
+          headers: {
+            'Authorization': `Bearer ${state.apiKey}`
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch transactions');
         }

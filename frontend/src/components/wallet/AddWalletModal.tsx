@@ -27,6 +27,7 @@ export function AddWalletModal({ type, onClose, contractId }: AddWalletModalProp
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.apiKey}`
         },
         body: JSON.stringify({
           id: contractId,
@@ -43,7 +44,11 @@ export function AddWalletModal({ type, onClose, contractId }: AddWalletModalProp
         throw new Error('Failed to add wallet');
       }
 
-      const sourcesResponse = await fetch('/api/payment-source');
+      const sourcesResponse = await fetch('/api/payment-source', {
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
+      });
       if (!sourcesResponse.ok) {
         throw new Error('Failed to fetch payment sources');
       }

@@ -26,7 +26,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
   const { state } = useAppContext();
   const [isCollapsed, setIsCollapsed] = useState(() => {
-    // Try to get the stored value, default to false if not found
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('sidebarCollapsed');
       return stored ? JSON.parse(stored) : false;
@@ -34,7 +33,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     return false;
   });
 
-  // Update localStorage when state changes
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(isCollapsed));
   }, [isCollapsed]);
@@ -182,7 +180,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                             </div>
                             {!isCollapsed && (
                               <span className="truncate">
-                                {contract.name || contract.addressToCheck?.slice(0, 8) + '...' + contract.addressToCheck?.slice(-4) || `Contract ${contract.id.slice(0, 8)}...`}
+                                {contract.name || contract.paymentContractAddress?.slice(0, 8) + '...' + contract.paymentContractAddress?.slice(-4) || `Contract ${contract.id.slice(0, 8)}...`}
                               </span>
                             )}
                           </Link>

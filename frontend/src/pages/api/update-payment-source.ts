@@ -9,6 +9,15 @@ export default async function handler(
     return res.status(405).json({ message: 'Method not allowed' })
   }
 
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  
+  if (!token){
+    return res.status(401).json({ 
+      status: 'error',
+      message: 'Unauthorized' 
+    })
+  }
+
   try {
     const payload = req.body
 
@@ -38,7 +47,7 @@ export default async function handler(
       headers: {
         'accept': 'application/json',
         'Content-Type': 'application/json',
-        'token': process.env.PAYMENT_API_KEY as string
+        'token': token as string
       },
       body: details
     })
