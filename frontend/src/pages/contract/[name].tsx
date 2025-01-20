@@ -153,7 +153,11 @@ export default function ContractPage() {
 
       if (!response.ok) throw new Error('Failed to remove wallet');
 
-      const sourcesResponse = await fetch('/api/payment-source');
+      const sourcesResponse = await fetch('/api/payment-source', {
+        headers: {
+          'Authorization': `Bearer ${state.apiKey}`
+        }
+      });
       if (!sourcesResponse.ok) {
         throw new Error('Failed to fetch payment sources');
       }
