@@ -23,7 +23,7 @@ interface ContractPageProps {
 export const getStaticPaths: GetStaticPaths = async () => {
   return {
     paths: [], // No pre-rendered paths
-    fallback: 'blocking' // Generate pages on-demand
+    fallback: true // Generate pages on-demand
   };
 };
 
@@ -35,16 +35,14 @@ export const getStaticProps: GetStaticProps<ContractPageProps> = async ({ params
     return {
       props: {
         initialContract: null // Initial data will be loaded client-side
-      },
-      revalidate: 10 // Revalidate every 10 seconds
+      }
     };
   } catch (error) {
     console.error('Error fetching contract:', error);
     return {
       props: {
         initialContract: null
-      },
-      revalidate: 10
+      }
     };
   }
 };
@@ -129,7 +127,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
       const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/payment-source?id=${contract.id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${state.apiKey}`
+          "token": state.apiKey!
         }
       });
 

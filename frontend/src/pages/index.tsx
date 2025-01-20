@@ -15,17 +15,14 @@ export const getStaticProps: GetStaticProps<OverviewProps> = async () => {
     return {
       props: {
         initialPaymentSources: []
-      },
-      // Revalidate every 10 seconds
-      revalidate: 10
+      }
     };
   } catch (error) {
     console.error('Error fetching payment sources:', error);
     return {
       props: {
         initialPaymentSources: []
-      },
-      revalidate: 10
+      }
     };
   }
 };

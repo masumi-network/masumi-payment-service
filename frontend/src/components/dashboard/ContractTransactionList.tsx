@@ -54,7 +54,7 @@ const formatStatus = (status: string) => {
   return status;
 };
 
-export function ContractTransactionList({ contractAddress, network, paymentType }: TransactionListProps) {
+export function ContractTransactionList({ contractAddress: paymentContractAddress, network, paymentType }: TransactionListProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<TransactionType>('all');
@@ -66,24 +66,34 @@ export function ContractTransactionList({ contractAddress, network, paymentType 
     const fetchTransactions = async () => {
       setIsLoading(true);
       try {
-        console.log("contractAddress", contractAddress)
+        console.log("contractAddress", paymentContractAddress)
         const queryParams = new URLSearchParams({
-          ...(contractAddress && { contractAddress }),
+          ...(paymentContractAddress && { paymentContractAddress: paymentContractAddress }),
           ...(network && { network }),
-          ...(paymentType && { paymentType })
+          limit: '100'
         }).toString();
 
-        const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/transactions?${queryParams}`, {
+        const responsePayment = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/payment?${queryParams}`, {
           headers: {
-            'Authorization': `Bearer ${state.apiKey}`
+            'token': state.apiKey!
           }
         });
-        if (!response.ok) {
+        if (!responsePayment.ok) {
+          throw new Error('Failed to fetch transactions');
+        }
+        const responsePurchase = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/purchase?${queryParams}`, {
+          headers: {
+            'token': state.apiKey!
+          }
+        });
+        if (!responsePurchase.ok) {
           throw new Error('Failed to fetch transactions');
         }
 
-        const data = await response.json();
-        setTransactions(data?.data?.transactions || []);
+        const dataPayment = await responsePayment.json();
+        const dataPurchase = await responsePurchase.json();
+        const data = [...dataPayment?.data?.transactions, ...dataPurchase?.data?.transactions];
+        setTransactions(data);
       } catch (error) {
         console.error('Failed to fetch transactions:', error);
       } finally {
@@ -91,10 +101,10 @@ export function ContractTransactionList({ contractAddress, network, paymentType 
       }
     };
 
-    if (contractAddress || network || paymentType) {
+    if (paymentContractAddress || network || paymentType) {
       fetchTransactions();
     }
-  }, [contractAddress, network, paymentType, state.apiKey]);
+  }, [paymentContractAddress, network, paymentType, state.apiKey]);
   const filteredTransactions = transactions.filter((tx: Transaction) => {
     const matchesFilter =
       filter === 'all' ||

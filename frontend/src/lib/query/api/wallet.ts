@@ -61,7 +61,7 @@ export async function createWallet(
     const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/wallet/`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`
+        'token': token
       },
       body: JSON.stringify(params)
     });

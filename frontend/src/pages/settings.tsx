@@ -10,8 +10,7 @@ interface SettingsProps {
 
 export const getStaticProps: GetStaticProps<SettingsProps> = async () => {
   return {
-    props: {},
-    revalidate: 10
+    props: {}
   };
 };
 

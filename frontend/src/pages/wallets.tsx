@@ -8,8 +8,7 @@ interface WalletsProps {
 
 export const getStaticProps: GetStaticProps<WalletsProps> = async () => {
   return {
-    props: {},
-    revalidate: 10
+    props: {}
   };
 };
 

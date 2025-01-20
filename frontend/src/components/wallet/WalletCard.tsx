@@ -205,7 +205,7 @@ export function WalletCard({
       const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/wallet?walletType=${walletType}&id=${walletId}&includeSecret=true`, {
         headers: {
           'accept': 'application/json',
-          'Authorization': `Bearer ${state.apiKey}`
+          'token': state.apiKey!
         }
       });
 
