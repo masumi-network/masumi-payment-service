@@ -74,13 +74,12 @@ export function WalletCard({
 
   const fetchBalancePreprod = useCallback(async (address: string) => {
     const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
-    const BASE_URL = `https://cardano-${type === 'mainnet' ? 'mainnet' : 'preprod'}.blockfrost.io/api/v0`;
 
     try {
       setFetchingBalance(true)
-      const response = await fetch(`${BASE_URL}/addresses/${address}/utxos`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/utxos?address=${address}&limit=100&order=asc&page=1&network=${type === 'mainnet' ? 'mainnet' : 'preprod'}`, {
         headers: {
-          project_id: API_KEY,
+          "Authorization": `Bearer ${API_KEY}`
         },
       });
 
@@ -102,7 +101,6 @@ export function WalletCard({
         return total + (value ? parseInt(value.quantity) : 0);
       }, 0);
 
-      console.log(utxos);
 
       return {
         ada: balanceAda / 1000000,
