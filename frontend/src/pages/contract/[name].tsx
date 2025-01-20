@@ -126,7 +126,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
       setIsDeleting(true);
       setDeleteError(null);
       console.log('delete-contract id', contract.id)
-      const response = await fetch(`/api/delete-payment-source?id=${contract.id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/payment-source?id=${contract.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${state.apiKey}`

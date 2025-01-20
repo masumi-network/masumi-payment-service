@@ -42,7 +42,7 @@ export function WalletCard({
   const fetchWalletAddress = useCallback(async () => {
     try {
       setIsFetchingAddress(true);
-      const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/wallet?walletType=${walletType}&id=${walletId}`, {
         headers: {
           'Authorization': `Bearer ${state.apiKey}`
         }
@@ -201,7 +201,7 @@ export function WalletCard({
     setIsExporting(true);
 
     try {
-      const response = await fetch(`/api/wallet?walletType=${walletType}&id=${walletId}&includeSecret=true`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/wallet?walletType=${walletType}&id=${walletId}&includeSecret=true`, {
         headers: {
           'accept': 'application/json',
           'Authorization': `Bearer ${state.apiKey}`

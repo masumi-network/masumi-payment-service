@@ -70,7 +70,7 @@ export function TransactionList({ contractAddress, network, paymentType }: Trans
           ...(paymentType && { paymentType })
         }).toString();
 
-        const response = await fetch(`/api/transactions?${queryParams}`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/transactions?${queryParams}`, {
           headers: {
             'Authorization': `Bearer ${state.apiKey}`
           }
