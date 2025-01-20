@@ -230,6 +230,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
                 address={wallet.walletAddress}
                 contractName={name as string}
                 contract={contract}
+                network={contract.network}
               />
             ))}
           </CardContent>
@@ -254,6 +255,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
                 address={contract.CollectionWallet.walletAddress}
                 contractName={name as string}
                 contract={contract}
+                network={contract.network}
               />
             ) : (
               <div className="text-sm text-muted-foreground">No collection wallet configured</div>
@@ -282,6 +284,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
                     address={wallet.walletAddress}
                     contractName={name as string}
                     walletId={wallet.id}
+                    network={contract.network}
                     onRemove={() => handleRemoveWallet('purchasing', wallet.id)}
                   />
                 ))}
@@ -313,6 +316,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
                     address={wallet.walletAddress}
                     contractName={name as string}
                     walletId={wallet.id}
+                    network={contract.network}
                     onRemove={() => handleRemoveWallet('selling', wallet.id)}
                   />
                 ))}

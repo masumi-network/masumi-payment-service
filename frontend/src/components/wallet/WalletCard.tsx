@@ -15,7 +15,8 @@ export function WalletCard({
   address,
   walletId,
   onRemove,
-  contract
+  contract,
+  network
 }: {
   type: string;
   address: string;
@@ -23,6 +24,7 @@ export function WalletCard({
   walletId?: string;
   onRemove?: () => void;
   contract: any;
+  network: string;
 }) {
   const [adaBalance, setAdaBalance] = useState<number | null>(null);
   const [usdmBalance, setUsdmBalance] = useState<number | null>(null);
@@ -44,7 +46,8 @@ export function WalletCard({
       setIsFetchingAddress(true);
       const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/wallet?walletType=${walletType}&id=${walletId}`, {
         headers: {
-          'Authorization': `Bearer ${state.apiKey}`
+          'accept': 'application/json',
+          'token': state.apiKey!
         }
       });
 
@@ -73,14 +76,14 @@ export function WalletCard({
   }, [localAddress, walletId, fetchWalletAddress]);
 
   const fetchBalancePreprod = useCallback(async (address: string) => {
-    const API_KEY = state.paymentSources?.[0]?.blockfrostApiKey;
 
     try {
       setFetchingBalance(true)
-      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/utxos?address=${address}&limit=100&order=asc&page=1&network=${type === 'mainnet' ? 'mainnet' : 'preprod'}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL}/api/v1/utxos?address=${address}&count=100&order=asc&page=1&network=${network.toLowerCase() === 'mainnet' ? 'MAINNET' : network.toLowerCase() === 'preprod' ? 'PREPROD' : 'PREVIEW'}`, {
         headers: {
-          "Authorization": `Bearer ${API_KEY}`
-        },
+          'accept': 'application/json',
+          'token': state.apiKey!
+        }
       });
 
       if (!response.ok) {
@@ -88,29 +91,29 @@ export function WalletCard({
       }
 
       const utxos = await response.json();
+      console.log("u", utxos)
       const usdmPolicyId = "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad";
       //const usdmHex = "0014df105553444d"
 
-      const balanceAda = utxos.reduce((total: any, utxo: any) => {
+      const balanceAda = utxos.data.utxos.reduce((total: any, utxo: any) => {
         const value = utxo.amount.find((amt: any) => amt.unit === "lovelace");
-        return total + (value ? parseInt(value.quantity) : 0);
+        return total + (value ? value.quantity : 0);
       }, 0);
 
-      const balanceUsdm = utxos.reduce((total: any, utxo: any) => {
+      const balanceUsdm = utxos.data.utxos.reduce((total: any, utxo: any) => {
         const value = utxo.amount.find((amt: any) => amt.unit?.startsWith(usdmPolicyId));
-        return total + (value ? parseInt(value.quantity) : 0);
+        return total + (value ? value.quantity : 0);
       }, 0);
-
 
       return {
-        ada: balanceAda / 1000000,
-        usdm: balanceUsdm || 0
+        ada: (balanceAda / 1000000).toFixed(1),
+        usdm: (balanceUsdm).toFixed(1)
       };
     } catch (error: any) {
       console.error("Error fetching balance:", error.message);
       return null;
     }
-  }, [state.paymentSources, type]);
+  }, [state.apiKey, network,]);
 
   useEffect(() => {
     const fetchBalances = async () => {
