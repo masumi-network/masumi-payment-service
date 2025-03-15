@@ -39,7 +39,9 @@ export function decodeV1ContractDatum(decodedDatum: any) {
       //invalid transaction
       return null;
     }
-    const resultHash = Buffer.from(fields[3].bytes, 'hex').toString('utf-8');
+
+    // resultHash is stored in contract as a ByteArray
+    const resultHash = Buffer.from(fields[3].bytes, 'binary').toString('utf-8');
 
     if (fields[4] == null || fields[4].int == null) {
       //invalid transaction
