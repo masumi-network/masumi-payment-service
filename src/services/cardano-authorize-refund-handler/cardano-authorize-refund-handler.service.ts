@@ -115,6 +115,7 @@ export async function authorizeRefundV1() {
               buyerVerificationKeyHash,
               sellerVerificationKeyHash,
               blockchainIdentifier: request.blockchainIdentifier,
+              inputHash: decodedContract.inputHash,
               resultHash: '',
               resultTime: decodedContract.resultTime,
               unlockTime: decodedContract.unlockTime,

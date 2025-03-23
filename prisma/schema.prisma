@@ -165,8 +165,7 @@ model RegistryRequest {
   capabilityName    String?
   capabilityVersion String?
 
-  description     String?
-  requestsPerHour Float?
+  description String?
 
   privacyPolicy String?
   terms         String?
@@ -254,6 +253,7 @@ model PaymentRequest {
   submitResultTime          BigInt
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
+  inputHash                 String
   resultHash                String
   onChainState              OnChainState?
 
@@ -309,6 +309,7 @@ model PurchaseRequest {
   submitResultTime          BigInt
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
+  inputHash                 String
   resultHash                String
   onChainState              OnChainState?
 
@@ -334,6 +335,7 @@ model PurchaseActionData {
 
   requestedAction PurchasingAction
 
+  inputHash       String
   submittedTxHash String?
 
   errorType PurchaseErrorType?

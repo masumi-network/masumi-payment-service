@@ -118,6 +118,7 @@ export async function cancelRefundsV1() {
               buyerVerificationKeyHash: request.SmartContractWallet!.walletVkey,
               sellerVerificationKeyHash: request.SellerWallet!.walletVkey,
               blockchainIdentifier: request.blockchainIdentifier,
+              inputHash: decodedContract.inputHash,
               resultHash: decodedContract.resultHash,
               resultTime: decodedContract.resultTime,
               unlockTime: decodedContract.unlockTime,

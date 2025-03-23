@@ -432,6 +432,7 @@ export async function checkLatestTransactions(
                               errorNote:
                                 'No smart contract wallet set for purchase request in db. This is likely an internal error.',
                               errorType: PurchaseErrorType.Unknown,
+                              inputHash: decodedNewContract.inputHash,
                             },
                           },
                         },
@@ -454,6 +455,7 @@ export async function checkLatestTransactions(
                               errorNote:
                                 'No seller wallet set for purchase request in db. This seems like an internal error.',
                               errorType: PurchaseErrorType.Unknown,
+                              inputHash: decodedNewContract.inputHash,
                             },
                           },
                         },
@@ -594,8 +596,10 @@ export async function checkLatestTransactions(
                     await prisma.purchaseRequest.update({
                       where: { id: dbEntry.id },
                       data: {
+                        inputHash: decodedNewContract.inputHash,
                         NextAction: {
                           create: {
+                            inputHash: decodedNewContract.inputHash,
                             requestedAction:
                               PurchasingAction.WaitingForExternalAction,
                           },
@@ -1379,8 +1383,10 @@ async function handlePurchasingTransactionCardanoV1(
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
         data: {
+          inputHash: purchasingRequest.inputHash,
           NextAction: {
             create: {
+              inputHash: purchasingRequest.inputHash,
               requestedAction: newAction.action,
               errorNote: newAction.errorNote,
               errorType: newAction.errorType,

@@ -90,14 +90,15 @@ tx.setMetadata(721, {
       description: 'This is a valid second example NFT for the registry',
       company_name: 'Example Inc.',
       capability: { name: 'HelloAI', version: '1.3.2.1' },
-      requests_per_hour: '15.1',
-      pricing: [
-        {
-          asset_id: 'lovelace',
-          policy_id: '',
-          quantity: '100000000',
-        },
-      ],
+      agentPricing: {
+        pricingType: 'Fixed',
+        fixedPricing: [
+          {
+            amount: 250000,
+            unit: '',
+          },
+        ],
+      },
     },
   },
 });

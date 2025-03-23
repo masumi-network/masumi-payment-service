@@ -108,16 +108,16 @@ if (!utxoDatum) {
 }
 
 const decodedDatum = cbor.decode(Buffer.from(utxoDatum, 'hex'));
-if (typeof decodedDatum.value[4] !== 'number') {
-  throw new Error('Invalid datum at position 4');
-}
 if (typeof decodedDatum.value[5] !== 'number') {
   throw new Error('Invalid datum at position 5');
 }
-const hash = decodedDatum.value[3];
-const submitResultTime = decodedDatum.value[4];
-const unlockTime = decodedDatum.value[5];
-const externalDisputeUnlockTime = decodedDatum.value[6];
+if (typeof decodedDatum.value[6] !== 'number') {
+  throw new Error('Invalid datum at position 6');
+}
+const hash = decodedDatum.value[4];
+const submitResultTime = decodedDatum.value[5];
+const unlockTime = decodedDatum.value[6];
+const externalDisputeUnlockTime = decodedDatum.value[7];
 const sellerCooldownTime = decodedDatum.value[8];
 const buyerCooldownTime = Date.now() + 1000 * 60 * 35;
 
@@ -128,6 +128,7 @@ const datum = {
       buyerVerificationKeyHash,
       sellerVerificationKeyHash,
       'test',
+      '',
       hash.toString('hex'),
       submitResultTime,
       unlockTime,

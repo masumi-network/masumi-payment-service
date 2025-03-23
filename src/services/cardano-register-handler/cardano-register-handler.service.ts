@@ -143,9 +143,6 @@ export async function registerAgentV1() {
                           version: stringToMetadata(request.capabilityVersion),
                         }
                       : undefined,
-                  requests_per_hour: request.requestsPerHour
-                    ? stringToMetadata(request.requestsPerHour.toString())
-                    : undefined,
                   author: {
                     name: stringToMetadata(request.authorName),
                     contact_email: stringToMetadata(request.authorContactEmail),

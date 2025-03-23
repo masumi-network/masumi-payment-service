@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { X } from 'lucide-react';
-import { postPaymentSource, getPaymentSource } from '@/lib/api/generated';
+import {
+  postPaymentSourceExtended,
+  getPaymentSource,
+} from '@/lib/api/generated';
 
 type CreateContractModalProps = {
   onClose: () => void;
@@ -86,7 +89,7 @@ export function CreateContractModal({ onClose }: CreateContractModalProps) {
         return;
       }
 
-      await postPaymentSource({
+      await postPaymentSourceExtended({
         client: apiClient,
         body: {
           AdminWallets: formData.adminWallets

@@ -18,6 +18,7 @@ export default {
         'build', // Build system changes
       ],
     ],
+    'body-max-line-length': [2, 'always', 1000],
     'type-case': [2, 'always', 'lower-case'],
     'type-empty': [2, 'never'],
     'scope-case': [2, 'always', 'lower-case'],

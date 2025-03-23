@@ -112,6 +112,7 @@ const datum = {
       sellerVerificationKeyHash,
       'test',
       '',
+      '',
       submitResultTime,
       //unlock time after specified time
       unlockTime,

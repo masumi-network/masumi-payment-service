@@ -119,6 +119,7 @@ export async function submitResultV1() {
               buyerVerificationKeyHash,
               sellerVerificationKeyHash,
               blockchainIdentifier: request.blockchainIdentifier,
+              inputHash: decodedContract.inputHash,
               resultHash: request.NextAction.resultHash ?? '',
               resultTime: decodedContract.resultTime,
               unlockTime: decodedContract.unlockTime,

@@ -40,7 +40,6 @@ const AGENT_PLACEHOLDERS = {
   authorOrganization: 'Enter organization name',
   capabilityName: 'Enter capability name',
   capabilityVersion: 'e.g., 1.0.0',
-  requests_per_hour: 'e.g., 100',
   pricingUnit: 'e.g., usdm',
   pricingQuantity: 'e.g., 500000000',
   tags: 'tag1, tag2',
@@ -64,7 +63,6 @@ export function RegisterAgentModal({
     authorOrganization: '',
     capabilityName: '',
     capabilityVersion: '',
-    requests_per_hour: '',
     pricingUnit: '',
     pricingQuantity: '',
     tags: [] as string[],
@@ -112,7 +110,6 @@ export function RegisterAgentModal({
           version: formData.capabilityVersion,
         },
         ExampleOutputs: [],
-        requestsPerHour: parseFloat(formData.requests_per_hour),
         AgentPricing: {
           pricingType: 'Fixed',
           Pricing: [
@@ -235,18 +232,6 @@ export function RegisterAgentModal({
               value={formData.capabilityVersion}
               onChange={(e) =>
                 setFormData({ ...formData, capabilityVersion: e.target.value })
-              }
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">*Requests per Hour</label>
-            <Input
-              placeholder={AGENT_PLACEHOLDERS.requests_per_hour}
-              value={formData.requests_per_hour}
-              onChange={(e) =>
-                setFormData({ ...formData, requests_per_hour: e.target.value })
               }
               required
             />

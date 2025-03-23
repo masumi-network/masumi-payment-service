@@ -409,6 +409,7 @@ export type GetPaymentResponses = {
                 externalDisputeUnlockTime: string;
                 requestedById: string;
                 resultHash: string;
+                inputHash: string;
                 cooldownTime: number;
                 cooldownTimeOtherParty: number;
                 onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
@@ -416,6 +417,7 @@ export type GetPaymentResponses = {
                     requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
                     errorType: 'NetworkError' | 'Unknown';
                     errorNote: string | null;
+                    resultHash: string | null;
                 };
                 CurrentTransaction: {
                     id: string;
@@ -461,6 +463,7 @@ export type GetPaymentResponse = GetPaymentResponses[keyof GetPaymentResponses];
 
 export type PostPaymentData = {
     body?: {
+        inputHash: string;
         /**
          * The network the payment will be received on
          */
@@ -540,10 +543,12 @@ export type PostPaymentResponses = {
             externalDisputeUnlockTime: string;
             lastCheckedAt: string | null;
             requestedById: string;
+            inputHash: string;
             resultHash: string;
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             NextAction: {
                 requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+                resultHash: string | null;
                 errorType: 'NetworkError' | 'Unknown';
                 errorNote: string | null;
             };
@@ -632,11 +637,13 @@ export type PostPaymentSubmitResultResponses = {
             lastCheckedAt: string | null;
             requestedById: string;
             resultHash: string;
+            inputHash: string;
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             NextAction: {
                 requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
                 errorType: 'NetworkError' | 'Unknown';
                 errorNote: string | null;
+                resultHash: string | null;
             };
             RequestedFunds: Array<{
                 id: string;
@@ -719,11 +726,13 @@ export type PostPaymentAuthorizeRefundResponses = {
             lastCheckedAt: string | null;
             requestedById: string;
             resultHash: string;
+            inputHash: string;
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             NextAction: {
                 requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
                 errorType: 'NetworkError' | 'Unknown';
                 errorNote: string | null;
+                resultHash: string | null;
             };
             RequestedFunds: Array<{
                 id: string;
@@ -818,8 +827,10 @@ export type GetPurchaseResponses = {
                 onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 cooldownTime: number;
                 cooldownTimeOtherParty: number;
+                inputHash: string;
                 resultHash: string;
                 NextAction: {
+                    inputHash: string;
                     requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
                     errorType: 'NetworkError' | 'InsufficientFunds' | 'Unknown';
                     errorNote: string | null;
@@ -878,6 +889,7 @@ export type PostPurchaseData = {
          * The network the transaction will be made on
          */
         network: 'Preprod' | 'Mainnet';
+        inputHash: string;
         /**
          * The verification key of the seller
          */
@@ -958,6 +970,7 @@ export type PostPurchaseResponses = {
             externalDisputeUnlockTime: string;
             requestedById: string;
             resultHash: string;
+            inputHash: string;
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             NextAction: {
                 requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
@@ -1230,7 +1243,6 @@ export type GetRegistryWalletResponses = {
                         url: string;
                     }>;
                     Tags: Array<string>;
-                    requestsPerHour?: number | null;
                     Capability?: {
                         name?: string | null;
                         version?: string | null;
@@ -1309,7 +1321,6 @@ export type DeleteRegistryResponses = {
                 other: string | null;
             };
             description: string | null;
-            requestsPerHour: number | null;
             Tags: Array<string>;
             SmartContractWallet: {
                 walletVkey: string;
@@ -1370,7 +1381,6 @@ export type GetRegistryResponses = {
                     name: string | null;
                     version: string | null;
                 };
-                requestsPerHour: number | null;
                 Author: {
                     name: string;
                     contactEmail: string | null;
@@ -1457,10 +1467,6 @@ export type PostRegistryData = {
             name: string;
             version: string;
         };
-        /**
-         * The request the agent can handle per hour
-         */
-        requestsPerHour: number | null;
         AgentPricing: {
             pricingType: 'Fixed';
             /**
@@ -1520,7 +1526,6 @@ export type PostRegistryResponses = {
                 organization: string | null;
             };
             description: string | null;
-            requestsPerHour: number | null;
             Tags: Array<string>;
             state: 'RegistrationRequested' | 'RegistrationInitiated' | 'RegistrationConfirmed' | 'RegistrationFailed' | 'DeregistrationRequested' | 'DeregistrationInitiated' | 'DeregistrationConfirmed' | 'DeregistrationFailed';
             SmartContractWallet: {
@@ -1544,32 +1549,6 @@ export type PostRegistryResponses = {
 };
 
 export type PostRegistryResponse = PostRegistryResponses[keyof PostRegistryResponses];
-
-export type DeletePaymentSourceData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * The id of the payment source to be deleted
-         */
-        id: string;
-    };
-    url: '/payment-source/';
-};
-
-export type DeletePaymentSourceResponses = {
-    /**
-     * Payment source deleted
-     */
-    200: {
-        status: string;
-        data: {
-            id: string;
-        };
-    };
-};
-
-export type DeletePaymentSourceResponse = DeletePaymentSourceResponses[keyof DeletePaymentSourceResponses];
 
 export type GetPaymentSourceData = {
     body?: never;
@@ -1632,7 +1611,99 @@ export type GetPaymentSourceResponses = {
 
 export type GetPaymentSourceResponse = GetPaymentSourceResponses[keyof GetPaymentSourceResponses];
 
-export type PatchPaymentSourceData = {
+export type DeletePaymentSourceExtendedData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The id of the payment source to be deleted
+         */
+        id: string;
+    };
+    url: '/payment-source-extended/';
+};
+
+export type DeletePaymentSourceExtendedResponses = {
+    /**
+     * Payment source deleted
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type DeletePaymentSourceExtendedResponse = DeletePaymentSourceExtendedResponses[keyof DeletePaymentSourceExtendedResponses];
+
+export type GetPaymentSourceExtendedData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The number of payment sources to return
+         */
+        take?: number;
+        /**
+         * Used to paginate through the payment sources
+         */
+        cursorId?: string;
+    };
+    url: '/payment-source-extended/';
+};
+
+export type GetPaymentSourceExtendedResponses = {
+    /**
+     * Payment source status
+     */
+    200: {
+        status: string;
+        data: {
+            ExtendedPaymentSources: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                network: 'Preprod' | 'Mainnet';
+                smartContractAddress: string;
+                paymentType: 'Web3CardanoV1';
+                PaymentSourceConfig: {
+                    rpcProviderApiKey: string;
+                    rpcProvider: 'Blockfrost';
+                };
+                lastIdentifierChecked: string | null;
+                syncInProgress: boolean;
+                lastCheckedAt: string | null;
+                AdminWallets: Array<{
+                    walletAddress: string;
+                    order: number;
+                }>;
+                PurchasingWallets: Array<{
+                    id: string;
+                    walletVkey: string;
+                    walletAddress: string;
+                    collectionAddress: string | null;
+                    note: string | null;
+                }>;
+                SellingWallets: Array<{
+                    id: string;
+                    walletVkey: string;
+                    walletAddress: string;
+                    collectionAddress: string | null;
+                    note: string | null;
+                }>;
+                FeeReceiverNetworkWallet: {
+                    walletAddress: string;
+                };
+                feeRatePermille: number;
+            }>;
+        };
+    };
+};
+
+export type GetPaymentSourceExtendedResponse = GetPaymentSourceExtendedResponses[keyof GetPaymentSourceExtendedResponses];
+
+export type PatchPaymentSourceExtendedData = {
     body?: {
         /**
          * The id of the payment source to be updated
@@ -1689,10 +1760,10 @@ export type PatchPaymentSourceData = {
     };
     path?: never;
     query?: never;
-    url: '/payment-source/';
+    url: '/payment-source-extended/';
 };
 
-export type PatchPaymentSourceResponses = {
+export type PatchPaymentSourceExtendedResponses = {
     /**
      * Payment contract updated
      */
@@ -1738,9 +1809,9 @@ export type PatchPaymentSourceResponses = {
     };
 };
 
-export type PatchPaymentSourceResponse = PatchPaymentSourceResponses[keyof PatchPaymentSourceResponses];
+export type PatchPaymentSourceExtendedResponse = PatchPaymentSourceExtendedResponses[keyof PatchPaymentSourceExtendedResponses];
 
-export type PostPaymentSourceData = {
+export type PostPaymentSourceExtendedData = {
     body?: {
         /**
          * The network the payment source will be used on
@@ -1809,10 +1880,10 @@ export type PostPaymentSourceData = {
     };
     path?: never;
     query?: never;
-    url: '/payment-source/';
+    url: '/payment-source-extended/';
 };
 
-export type PostPaymentSourceResponses = {
+export type PostPaymentSourceExtendedResponses = {
     /**
      * Payment source created
      */
@@ -1858,73 +1929,7 @@ export type PostPaymentSourceResponses = {
     };
 };
 
-export type PostPaymentSourceResponse = PostPaymentSourceResponses[keyof PostPaymentSourceResponses];
-
-export type GetPaymentSourceExtendedData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * The number of payment sources to return
-         */
-        take?: number;
-        /**
-         * Used to paginate through the payment sources
-         */
-        cursorId?: string;
-    };
-    url: '/payment-source-extended/';
-};
-
-export type GetPaymentSourceExtendedResponses = {
-    /**
-     * Payment source status
-     */
-    200: {
-        status: string;
-        data: {
-            ExtendedPaymentSources: Array<{
-                id: string;
-                createdAt: string;
-                updatedAt: string;
-                network: 'Preprod' | 'Mainnet';
-                smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
-                PaymentSourceConfig: {
-                    rpcProviderApiKey: string;
-                    rpcProvider: 'Blockfrost';
-                };
-                lastIdentifierChecked: string | null;
-                syncInProgress: boolean;
-                lastCheckedAt: string | null;
-                AdminWallets: Array<{
-                    walletAddress: string;
-                    order: number;
-                }>;
-                PurchasingWallets: Array<{
-                    id: string;
-                    walletVkey: string;
-                    walletAddress: string;
-                    collectionAddress: string | null;
-                    note: string | null;
-                }>;
-                SellingWallets: Array<{
-                    id: string;
-                    walletVkey: string;
-                    walletAddress: string;
-                    collectionAddress: string | null;
-                    note: string | null;
-                }>;
-                FeeReceiverNetworkWallet: {
-                    walletAddress: string;
-                };
-                feeRatePermille: number;
-            }>;
-        };
-    };
-};
-
-export type GetPaymentSourceExtendedResponse = GetPaymentSourceExtendedResponses[keyof GetPaymentSourceExtendedResponses];
+export type PostPaymentSourceExtendedResponse = PostPaymentSourceExtendedResponses[keyof PostPaymentSourceExtendedResponses];
 
 export type GetUtxosData = {
     body?: never;

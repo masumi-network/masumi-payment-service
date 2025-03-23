@@ -20,9 +20,9 @@ import { toast } from 'react-toastify';
 import BlinkingUnderscore from '@/components/BlinkingUnderscore';
 import { GetStaticProps, GetStaticPaths } from 'next';
 import {
-  deletePaymentSource,
+  deletePaymentSourceExtended,
   getPaymentSource,
-  patchPaymentSource,
+  patchPaymentSourceExtended,
 } from '@/lib/api/generated';
 
 interface ContractPageProps {
@@ -96,7 +96,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
       //TODO: this is now per wallet
       alert('not implemented');
       return;
-      await patchPaymentSource({
+      await patchPaymentSourceExtended({
         client: apiClient,
         body: {
           id: contract.id,
@@ -150,7 +150,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
     try {
       setIsDeleting(true);
       setDeleteError(null);
-      await deletePaymentSource({
+      await deletePaymentSourceExtended({
         client: apiClient,
         query: { id: contract.id },
       });
@@ -178,7 +178,7 @@ export default function ContractPage({ initialContract }: ContractPageProps) {
     walletId: string,
   ) => {
     try {
-      await patchPaymentSource({
+      await patchPaymentSourceExtended({
         client: apiClient,
         body: {
           id: contract.id,

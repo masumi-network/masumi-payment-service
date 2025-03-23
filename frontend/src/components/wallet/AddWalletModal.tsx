@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPaymentSource, patchPaymentSource } from '@/lib/api/generated';
+import {
+  getPaymentSource,
+  patchPaymentSourceExtended,
+} from '@/lib/api/generated';
 
 type AddWalletModalProps = {
   type: 'purchasing' | 'selling';
@@ -34,7 +37,7 @@ export function AddWalletModal({
     setIsLoading(true);
 
     try {
-      await patchPaymentSource({
+      await patchPaymentSourceExtended({
         client: apiClient,
         body: {
           id: contractId,

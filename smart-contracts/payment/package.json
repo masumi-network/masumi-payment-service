@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "mint": "node mint-example.mjs",
+    "mint": "node lock-example.mjs",
     "generate-wallet": "node generate-wallet.mjs",
     "defrag": "node cleanup-utxo.mjs"
   },

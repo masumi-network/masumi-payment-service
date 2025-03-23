@@ -10,7 +10,7 @@ export function decodeV1ContractDatum(decodedDatum: any) {
     }
     const fields = decodedDatum.fields;
 
-    if (fields?.length != 10) {
+    if (fields?.length != 11) {
       //invalid transaction
       return null;
     }
@@ -31,20 +31,29 @@ export function decodeV1ContractDatum(decodedDatum: any) {
       //invalid transaction
       return null;
     }
+
     const blockchainIdentifier = Buffer.from(fields[2].bytes, 'hex').toString(
       'utf-8',
     );
-
     if (fields[3] == null || fields[3].bytes == null) {
       //invalid transaction
       return null;
     }
-    const resultHash = Buffer.from(fields[3].bytes, 'hex').toString('utf-8');
-
-    if (fields[4] == null || fields[4].int == null) {
+    //decode as base64
+    const inputHash = Buffer.from(
+      Buffer.from(fields[3].bytes, 'hex').toString('utf-8'),
+      'base64',
+    ).toString('utf-8');
+    if (fields[4] == null || fields[4].bytes == null) {
       //invalid transaction
       return null;
     }
+    //decode as base64
+    const resultHash = Buffer.from(
+      Buffer.from(fields[4].bytes, 'hex').toString('utf-8'),
+      'base64',
+    ).toString('utf-8');
+
     if (fields[5] == null || fields[5].int == null) {
       //invalid transaction
       return null;
@@ -53,23 +62,27 @@ export function decodeV1ContractDatum(decodedDatum: any) {
       //invalid transaction
       return null;
     }
-    const resultTime = parseInt(fields[4].int);
-    const unlockTime = parseInt(fields[5].int);
-    const externalDisputeUnlockTime = parseInt(fields[6].int);
-
     if (fields[7] == null || fields[7].int == null) {
       //invalid transaction
       return null;
     }
-    const buyerCooldownTime = parseInt(fields[7].int);
+    const resultTime = parseInt(fields[5].int);
+    const unlockTime = parseInt(fields[6].int);
+    const externalDisputeUnlockTime = parseInt(fields[7].int);
 
     if (fields[8] == null || fields[8].int == null) {
       //invalid transaction
       return null;
     }
-    const sellerCooldownTime = parseInt(fields[8].int);
+    const buyerCooldownTime = parseInt(fields[8].int);
 
-    const state = valueToStatus(fields[9]);
+    if (fields[9] == null || fields[9].int == null) {
+      //invalid transaction
+      return null;
+    }
+    const sellerCooldownTime = parseInt(fields[9].int);
+
+    const state = valueToStatus(fields[10]);
     if (state == null) {
       //invalid transaction
       return null;
@@ -80,6 +93,7 @@ export function decodeV1ContractDatum(decodedDatum: any) {
       seller,
       state,
       blockchainIdentifier,
+      inputHash,
       resultHash,
       resultTime,
       unlockTime,

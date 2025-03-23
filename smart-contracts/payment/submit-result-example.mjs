@@ -91,7 +91,7 @@ async function fetchUtxo(txHash) {
 }
 
 const utxo = await fetchUtxo(
-  '11b667184d319bd678d752e0bf300cbab3daf9963c27502df7767513541788b2',
+  'bacf4933a077acdd85ac6a70541f0936465991f50a1184032b4dc813e76114fc',
 );
 
 if (!utxo) {
@@ -110,16 +110,16 @@ if (!utxoDatum) {
 }
 
 const decodedDatum = cbor.decode(Buffer.from(utxoDatum, 'hex'));
-if (typeof decodedDatum.value[4] !== 'number') {
+if (typeof decodedDatum.value[5] !== 'number') {
   throw new Error('Invalid datum at position 4');
 }
-if (typeof decodedDatum.value[5] !== 'number') {
+if (typeof decodedDatum.value[6] !== 'number') {
   throw new Error('Invalid datum at position 5');
 }
 const hash = 'abc_hash_of_the_result2';
-const submitResultTime = decodedDatum.value[4];
-const unlockTime = decodedDatum.value[5];
-const externalDisputeUnlockTime = decodedDatum.value[6];
+const submitResultTime = decodedDatum.value[5];
+const unlockTime = decodedDatum.value[6];
+const externalDisputeUnlockTime = decodedDatum.value[7];
 const sellerCooldownTime = Date.now() + 1000 * 60 * 35;
 
 const datum = {
@@ -129,6 +129,7 @@ const datum = {
       buyerVerificationKeyHash,
       sellerVerificationKeyHash,
       'test',
+      '',
       hash,
       submitResultTime,
       unlockTime,
@@ -171,7 +172,7 @@ const unsignedTx = new Transaction({ initiator: wallet, fetcher: koios })
 
 unsignedTx.txBuilder.invalidBefore(invalidBefore);
 unsignedTx.txBuilder.invalidHereafter(invalidAfter);
-
+unsignedTx.isCollateralNeeded=true;
 unsignedTx.setNetwork(network);
 
 const buildTransaction = await unsignedTx.build();

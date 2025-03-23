@@ -67,8 +67,10 @@ export const queryPurchaseRequestSchemaOutput = z.object({
       onChainState: z.nativeEnum(OnChainState).nullable(),
       cooldownTime: z.number(),
       cooldownTimeOtherParty: z.number(),
+      inputHash: z.string(),
       resultHash: z.string(),
       NextAction: z.object({
+        inputHash: z.string(),
         requestedAction: z.nativeEnum(PurchasingAction),
         errorType: z.nativeEnum(PurchaseErrorType).nullable(),
         errorNote: z.string().nullable(),
@@ -218,6 +220,7 @@ export const createPurchaseInitSchemaInput = z.object({
   network: z
     .nativeEnum(Network)
     .describe('The network the transaction will be made on'),
+  inputHash: z.string().max(250),
   sellerVkey: z
     .string()
     .max(250)
@@ -277,6 +280,7 @@ export const createPurchaseInitSchemaOutput = z.object({
   externalDisputeUnlockTime: z.string(),
   requestedById: z.string(),
   resultHash: z.string(),
+  inputHash: z.string(),
   onChainState: z.nativeEnum(OnChainState).nullable(),
   NextAction: z.object({
     requestedAction: z.nativeEnum(PurchasingAction),
@@ -330,6 +334,7 @@ const singedBlockchainIdentifierSchema = z.object({
 });
 
 const blockchainIdentifierDataSchema = z.object({
+  inputHash: z.string().max(250),
   agentIdentifier: z.string().min(15).max(250),
   purchaserIdentifier: z.string().min(15).max(25),
   sellerAddress: z.string().min(15).max(150),
@@ -466,6 +471,12 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       logger.error('Error parsing blockchain identifier', { error });
       throw createHttpError(400, 'Invalid blockchain identifier, data invalid');
     }
+    if (parsedBlockchainIdentifierData.data.inputHash != input.inputHash) {
+      throw createHttpError(
+        400,
+        'Invalid blockchain identifier, input hash invalid',
+      );
+    }
 
     if (
       parsedBlockchainIdentifierData.data.agentIdentifier !=
@@ -566,6 +577,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         submitResultTime: submitResultTime,
         unlockTime: unlockTime,
         externalDisputeUnlockTime: externalDisputeUnlockTime,
+        inputHash: input.inputHash,
       });
 
     return {

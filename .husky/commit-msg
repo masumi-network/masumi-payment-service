@@ -31,7 +31,7 @@ fi
 commit_msg_file="${1}"
 if [ ! -f "$commit_msg_file" ]; then
     echo "${RED}❌ Error: Commit message file not found${NC}"
-    exit 1
+    exit 2
 fi
 
 echo "${BLUE}🔍 Checking commit message format...${NC}"
@@ -42,5 +42,5 @@ npx --no -- commitlint --edit "$commit_msg_file" ||
     echo "${RED}Format: <type>(<scope>): <subject>${NC}"
     echo "${RED}Example: feat(auth): add login functionality${NC}"
     echo "${RED}Types: feat, fix, docs, style, refactor, test, chore, perf, ci, revert, build${NC}"
-    exit 1
+    exit 3
 ) 

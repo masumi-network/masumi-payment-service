@@ -159,6 +159,7 @@ export function getDatum({
   buyerVerificationKeyHash,
   sellerVerificationKeyHash,
   blockchainIdentifier,
+  inputHash,
   resultHash,
   resultTime,
   unlockTime,
@@ -170,6 +171,7 @@ export function getDatum({
   buyerVerificationKeyHash: string;
   sellerVerificationKeyHash: string;
   blockchainIdentifier: string;
+  inputHash: string;
   resultHash: string;
   resultTime: number;
   unlockTime: number;
@@ -185,7 +187,9 @@ export function getDatum({
         buyerVerificationKeyHash,
         sellerVerificationKeyHash,
         blockchainIdentifier, //already is in base64
-        resultHash,
+        //encode as base64
+        Buffer.from(inputHash, 'utf-8').toString('base64'),
+        Buffer.from(resultHash, 'utf-8').toString('base64'),
         resultTime,
         unlockTime,
         externalDisputeUnlockTime,

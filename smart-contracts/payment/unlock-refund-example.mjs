@@ -108,11 +108,11 @@ if (!utxoDatum) {
 }
 
 const decodedDatum = cbor.decode(Buffer.from(utxoDatum, 'hex'));
-if (typeof decodedDatum.value[4] !== 'number') {
-  throw new Error('Invalid datum at position 4');
-}
 if (typeof decodedDatum.value[5] !== 'number') {
   throw new Error('Invalid datum at position 5');
+}
+if (typeof decodedDatum.value[6] !== 'number') {
+  throw new Error('Invalid datum at position 6');
 }
 
 const redeemer = {

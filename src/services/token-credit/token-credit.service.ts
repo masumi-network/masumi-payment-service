@@ -15,6 +15,7 @@ async function handlePurchaseCreditInit({
   submitResultTime,
   externalDisputeUnlockTime,
   unlockTime,
+  inputHash,
 }: {
   id: string;
   cost: { amount: bigint; unit: string }[];
@@ -27,6 +28,7 @@ async function handlePurchaseCreditInit({
   submitResultTime: bigint;
   externalDisputeUnlockTime: bigint;
   unlockTime: bigint;
+  inputHash: string;
 }) {
   try {
     return await creditTokenRepository.handlePurchaseCreditInit({
@@ -41,6 +43,7 @@ async function handlePurchaseCreditInit({
       submitResultTime,
       externalDisputeUnlockTime,
       unlockTime,
+      inputHash,
     });
   } catch (error) {
     if (error instanceof InsufficientFundsError) {

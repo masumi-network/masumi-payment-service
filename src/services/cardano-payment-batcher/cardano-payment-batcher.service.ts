@@ -91,6 +91,7 @@ export async function batchLatestPaymentEntriesV1() {
                 data: {
                   NextAction: {
                     create: {
+                      inputHash: purchaseRequest.inputHash,
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote: 'Transaction timeout before sending',
@@ -262,6 +263,7 @@ export async function batchLatestPaymentEntriesV1() {
                 data: {
                   NextAction: {
                     create: {
+                      inputHash: paymentRequest.inputHash,
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.InsufficientFunds,
                       errorNote: 'Not enough funds in wallets',
@@ -303,6 +305,7 @@ export async function batchLatestPaymentEntriesV1() {
                 buyerVerificationKeyHash,
                 sellerVerificationKeyHash,
                 blockchainIdentifier: paymentRequest.blockchainIdentifier,
+                inputHash: paymentRequest.inputHash,
                 resultHash: '',
                 resultTime: Number(submitResultTime),
                 unlockTime: Number(unlockTime),

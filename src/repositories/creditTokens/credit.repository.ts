@@ -20,6 +20,7 @@ async function handlePurchaseCreditInit({
   submitResultTime,
   unlockTime,
   externalDisputeUnlockTime,
+  inputHash,
 }: {
   id: string;
   cost: { amount: bigint; unit: string }[];
@@ -32,6 +33,7 @@ async function handlePurchaseCreditInit({
   submitResultTime: bigint;
   unlockTime: bigint;
   externalDisputeUnlockTime: bigint;
+  inputHash: string;
 }) {
   return await prisma.$transaction(
     async (transaction) => {
@@ -168,9 +170,11 @@ async function handlePurchaseCreditInit({
             },
           },
           blockchainIdentifier: blockchainIdentifier,
+          inputHash: inputHash,
           NextAction: {
             create: {
               requestedAction: PurchasingAction.FundsLockingRequested,
+              inputHash: inputHash,
             },
           },
           externalDisputeUnlockTime: externalDisputeUnlockTime,

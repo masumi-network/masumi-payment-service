@@ -39,11 +39,13 @@ export const authorizePaymentRefundSchemaOutput = z.object({
   lastCheckedAt: z.date().nullable(),
   requestedById: z.string(),
   resultHash: z.string(),
+  inputHash: z.string(),
   onChainState: z.nativeEnum(OnChainState).nullable(),
   NextAction: z.object({
     requestedAction: z.nativeEnum(PaymentAction),
     errorType: z.nativeEnum(PaymentErrorType).nullable(),
     errorNote: z.string().nullable(),
+    resultHash: z.string().nullable(),
   }),
   RequestedFunds: z.array(
     z.object({

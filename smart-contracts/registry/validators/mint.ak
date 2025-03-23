@@ -15,17 +15,16 @@ validator mintUnique(_paymentContractAddress: ByteArray) {
   // This validator expects a minting transaction
   mint(redeemer: Action, policy_id: PolicyId, self: Transaction) {
     let Transaction { inputs, mint, .. } = self
+    //implicit asset count is 1 (only one asset can be minted)
     expect [Pair(asset_name, quantity)] =
       mint |> assets.tokens(policy_id) |> dict.to_pairs()
-    let asset_mint_count = mint |> assets.tokens(policy_id) |> dict.size()
 
     when redeemer is {
-      MintAction -> {
+      MintAction ->
         // Select the first input and concatenate its output reference and index to
         // generate the expected token name
         // this ensures that the minted asset is unique and we can parallelize it better than with a counter
-
-        expect
+        and {
           list.any(
             inputs,
             fn(input) {
@@ -37,12 +36,12 @@ validator mintUnique(_paymentContractAddress: ByteArray) {
                   |> blake2b_256
               asset_name == expected_asset_name
             },
-          )
-        quantity == 1 && asset_mint_count == 1
-      }
+          ),
+          quantity == 1,
+        }
       BurnAction ->
         //burn action is only valid if there is only one asset in the transaction
-        quantity == -1 && asset_mint_count == 1
+        quantity == -1
     }
   }
 

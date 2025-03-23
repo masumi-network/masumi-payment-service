@@ -66,6 +66,7 @@ export const queryPaymentsSchemaOutput = z.object({
       externalDisputeUnlockTime: z.string(),
       requestedById: z.string(),
       resultHash: z.string(),
+      inputHash: z.string(),
       cooldownTime: z.number(),
       cooldownTimeOtherParty: z.number(),
       onChainState: z.nativeEnum(OnChainState).nullable(),
@@ -73,6 +74,7 @@ export const queryPaymentsSchemaOutput = z.object({
         requestedAction: z.nativeEnum(PaymentAction),
         errorType: z.nativeEnum(PaymentErrorType).nullable(),
         errorNote: z.string().nullable(),
+        resultHash: z.string().nullable(),
       }),
       CurrentTransaction: z
         .object({
@@ -201,6 +203,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 });
 
 export const createPaymentsSchemaInput = z.object({
+  inputHash: z.string().max(250),
   network: z
     .nativeEnum(Network)
     .describe('The network the payment will be received on'),
@@ -260,10 +263,12 @@ export const createPaymentSchemaOutput = z.object({
   externalDisputeUnlockTime: z.string(),
   lastCheckedAt: z.date().nullable(),
   requestedById: z.string(),
+  inputHash: z.string(),
   resultHash: z.string(),
   onChainState: z.nativeEnum(OnChainState).nullable(),
   NextAction: z.object({
     requestedAction: z.nativeEnum(PaymentAction),
+    resultHash: z.string().nullable(),
     errorType: z.nativeEnum(PaymentErrorType).nullable(),
     errorNote: z.string().nullable(),
   }),
@@ -388,6 +393,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     const blockchainIdentifier = {
+      inputHash: input.inputHash,
       agentIdentifier: input.agentIdentifier,
       purchaserIdentifier: input.identifierFromPurchaser,
       sellerAddress: sellingWallet.walletAddress,
@@ -441,6 +447,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
             requestedAction: PaymentAction.WaitingForExternalAction,
           },
         },
+        inputHash: input.inputHash,
         resultHash: '',
         SmartContractWallet: { connect: { id: sellingWallet.id } },
         submitResultTime: input.submitResultTime.getTime(),

@@ -43,7 +43,6 @@ export const queryRegistryRequestSchemaOutput = z.object({
         name: z.string().nullable(),
         version: z.string().nullable(),
       }),
-      requestsPerHour: z.number().min(0).nullable(),
       Author: z.object({
         name: z.string(),
         contactEmail: z.string().nullable(),
@@ -215,10 +214,6 @@ export const registerAgentSchemaInput = z.object({
   Capability: z
     .object({ name: z.string().max(250), version: z.string().max(250) })
     .describe('Provide information about the used AI model and version'),
-  requestsPerHour: z
-    .number({ coerce: true })
-    .min(0)
-    .describe('The request the agent can handle per hour'),
   AgentPricing: z.object({
     pricingType: z.enum([PricingType.Fixed]),
     Pricing: z
@@ -270,7 +265,6 @@ export const registerAgentSchemaOutput = z.object({
     organization: z.string().nullable(),
   }),
   description: z.string().nullable(),
-  requestsPerHour: z.number().min(0).nullable(),
   Tags: z.array(z.string()),
   state: z.nativeEnum(RegistrationState),
   SmartContractWallet: z.object({
@@ -347,7 +341,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         apiBaseUrl: input.apiBaseUrl,
         capabilityName: input.Capability.name,
         capabilityVersion: input.Capability.version,
-        requestsPerHour: input.requestsPerHour,
         authorName: input.Author.name,
         authorContactEmail: input.Author.contactEmail,
         authorContactOther: input.Author.contactOther,
@@ -467,7 +460,6 @@ export const unregisterAgentSchemaOutput = z.object({
     other: z.string().nullable(),
   }),
   description: z.string().nullable(),
-  requestsPerHour: z.number().min(0).nullable(),
   Tags: z.array(z.string()),
   SmartContractWallet: z.object({
     walletVkey: z.string(),
