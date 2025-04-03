@@ -1,0 +1,505 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/rules-of-hooks */
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { MainLayout } from '@/components/layout/MainLayout';
+import { Plus, Search, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { AddAIAgentDialog } from '@/components/ai-agents/AddAIAgentDialog';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { getRegistry, deleteRegistry } from '@/lib/api/generated';
+import { toast } from 'react-toastify';
+import Head from 'next/head';
+import { Spinner } from '@/components/ui/spinner';
+import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { FaRegClock } from 'react-icons/fa';
+import { Tabs } from '@/components/ui/tabs';
+import { Pagination } from '@/components/ui/pagination';
+
+interface AIAgent {
+  id: string;
+  name: string;
+  description: string | null;
+  apiBaseUrl: string;
+  state:
+    | 'RegistrationRequested'
+    | 'RegistrationInitiated'
+    | 'RegistrationConfirmed'
+    | 'RegistrationFailed'
+    | 'DeregistrationRequested'
+    | 'DeregistrationInitiated'
+    | 'DeregistrationConfirmed'
+    | 'DeregistrationFailed';
+  Tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastCheckedAt: string | null;
+  agentIdentifier: string | null;
+  AgentPricing: {
+    pricingType: 'Fixed';
+    Pricing: Array<{
+      amount: string;
+      unit: string;
+    }>;
+  };
+  SmartContractWallet: {
+    walletVkey: string;
+    walletAddress: string;
+  };
+}
+
+const parseAgentStatus = (status: AIAgent['state']): string => {
+  switch (status) {
+    case 'RegistrationRequested':
+      return 'Pending';
+    case 'RegistrationInitiated':
+      return 'Registering';
+    case 'RegistrationConfirmed':
+      return 'Registered';
+    case 'RegistrationFailed':
+      return 'Registration Failed';
+    case 'DeregistrationRequested':
+      return 'Pending';
+    case 'DeregistrationInitiated':
+      return 'Deregistering';
+    case 'DeregistrationConfirmed':
+      return 'Deregistered';
+    case 'DeregistrationFailed':
+      return 'Deregistration Failed';
+    default:
+      return status;
+  }
+};
+
+export default function AIAgentsPage() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
+  const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedAgentToDelete, setSelectedAgentToDelete] =
+    useState<AIAgent | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { apiClient, state } = useAppContext();
+  const [activeTab, setActiveTab] = useState('All');
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const tabs = [
+    { name: 'All', count: null },
+    { name: 'Registered', count: null },
+    { name: 'Deregistered', count: null },
+    { name: 'Pending', count: null },
+  ];
+
+  const filterAgents = useCallback(() => {
+    let filtered = [...allAgents];
+
+    if (activeTab === 'Registered') {
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Registered',
+      );
+    } else if (activeTab === 'Deregistered') {
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Deregistered',
+      );
+    } else if (activeTab === 'Pending') {
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Pending',
+      );
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((agent) => {
+        const matchName = agent.name?.toLowerCase().includes(query) || false;
+        const matchDescription =
+          agent.description?.toLowerCase().includes(query) || false;
+        const matchTags =
+          agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
+        const matchWallet =
+          agent.SmartContractWallet?.walletAddress
+            ?.toLowerCase()
+            .includes(query) || false;
+        const matchState = agent.state?.toLowerCase().includes(query) || false;
+        const matchPrice = agent.AgentPricing?.Pricing?.[0]?.amount
+          ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
+              .toFixed(2)
+              .includes(query)
+          : false;
+
+        return (
+          matchName ||
+          matchDescription ||
+          matchTags ||
+          matchWallet ||
+          matchState ||
+          matchPrice
+        );
+      });
+    }
+
+    setFilteredAgents(filtered);
+  }, [allAgents, searchQuery, activeTab]);
+
+  const fetchAgents = async (cursor?: string | null) => {
+    try {
+      if (!cursor) {
+        setIsLoading(true);
+        setAllAgents([]);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const response = await getRegistry({
+        client: apiClient,
+        query: {
+          network: state.network,
+          cursorId: cursor || undefined,
+        },
+      });
+
+      if (response.data?.data?.Assets) {
+        const newAgents = response.data.data.Assets;
+        if (cursor) {
+          setAllAgents((prev) => [...prev, ...newAgents]);
+        } else {
+          setAllAgents(newAgents);
+        }
+
+        setHasMore(newAgents.length === 10);
+      } else {
+        if (!cursor) {
+          setAllAgents([]);
+        }
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      toast.error('Failed to load AI agents');
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (!isLoadingMore && hasMore && allAgents.length > 0) {
+      const lastAgent = allAgents[allAgents.length - 1];
+      fetchAgents(lastAgent.id);
+    }
+  };
+
+  useEffect(() => {
+    fetchAgents();
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!isLoadingMore) {
+        fetchAgents();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isLoadingMore]);
+
+  useEffect(() => {
+    filterAgents();
+  }, [filterAgents, searchQuery, activeTab]);
+
+  const handleSelectAgent = (id: string) => {
+    setSelectedAgents((prev) =>
+      prev.includes(id)
+        ? prev.filter((agentId) => agentId !== id)
+        : [...prev, id],
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (allAgents.length === 0) {
+      setSelectedAgents([]);
+      return;
+    }
+
+    if (selectedAgents.length === allAgents.length) {
+      setSelectedAgents([]);
+    } else {
+      setSelectedAgents(allAgents.map((agent) => agent.id));
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const getStatusBadgeVariant = (status: AIAgent['state']) => {
+    if (status === 'RegistrationConfirmed') return 'default';
+    if (status.includes('Failed')) return 'destructive';
+    if (status.includes('Initiated')) return 'secondary';
+    if (status.includes('Requested')) return 'secondary';
+    if (status === 'DeregistrationConfirmed') return 'secondary';
+    return 'secondary';
+  };
+
+  const useFormatPrice = (amount: string | undefined) => {
+    if (!amount) return '—';
+    return useFormatBalance((parseInt(amount) / 1000000).toFixed(2));
+  };
+
+  const handleDeleteClick = (agent: AIAgent) => {
+    setSelectedAgentToDelete(agent);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedAgentToDelete?.agentIdentifier) {
+      toast.error('Cannot delete agent: Missing identifier');
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await deleteRegistry({
+        client: apiClient,
+        query: {
+          agentIdentifier: selectedAgentToDelete.agentIdentifier,
+          network: state.network,
+        },
+      });
+
+      toast.success('AI agent deleted successfully');
+      setIsDeleteDialogOpen(false);
+      setSelectedAgentToDelete(null);
+      fetchAgents();
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      toast.error('Failed to delete AI agent');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <MainLayout>
+      <Head>
+        <title>AI Agents | Admin Interface</title>
+      </Head>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold mb-1">AI agents</h1>
+            <p className="text-sm text-muted-foreground">
+              Manage your AI agents and their configurations.{' '}
+              <a
+                href="https://docs.masumi.network/core-concepts/agentic-service"
+                target="_blank"
+                className="text-primary hover:underline"
+              >
+                Learn more
+              </a>
+            </p>
+          </div>
+          <Button
+            className="flex items-center gap-2"
+            onClick={() => setIsAddDialogOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Add AI agent
+          </Button>
+        </div>
+
+        <div className="space-y-6">
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              setAllAgents([]);
+              fetchAgents();
+            }}
+          />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                type="search"
+                placeholder="Search by name, description, tags, or wallet..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-xs pl-10"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg border">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="w-12 p-4">
+                    <Checkbox
+                      checked={
+                        allAgents.length > 0 &&
+                        selectedAgents.length === allAgents.length
+                      }
+                      onCheckedChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">Name</th>
+                  <th className="p-4 text-left text-sm font-medium">Added</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Linked wallet
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Price, ADA
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">Tags</th>
+                  <th className="p-4 text-left text-sm font-medium">Status</th>
+                  <th className="w-20 p-4"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <Spinner size={20} addContainer />
+                    </td>
+                  </tr>
+                ) : filteredAgents.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-8">
+                      {searchQuery
+                        ? 'No AI agents found matching your search'
+                        : 'No AI agents found'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredAgents.map((agent) => (
+                    <tr
+                      key={agent.id}
+                      className="border-b"
+                      style={{
+                        opacity:
+                          agent.state === 'DeregistrationConfirmed'
+                            ? '0.4'
+                            : '1',
+                      }}
+                    >
+                      <td className="p-4">
+                        <Checkbox
+                          checked={selectedAgents.includes(agent.id)}
+                          onCheckedChange={() => handleSelectAgent(agent.id)}
+                        />
+                      </td>
+                      <td className="p-4">
+                        <div className="text-sm font-medium">{agent.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {agent.description}
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm">
+                        {formatDate(agent.createdAt)}
+                      </td>
+                      <td className="p-4">
+                        <div className="text-xs font-medium">
+                          Selling wallet
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
+                          {agent.SmartContractWallet.walletAddress}
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm">
+                        {useFormatPrice(agent.AgentPricing.Pricing[0]?.amount)}
+                      </td>
+                      <td className="p-4">
+                        {agent.Tags.length > 0 && (
+                          <Badge variant="secondary">
+                            {agent.Tags.length} tags
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <Badge
+                          variant={getStatusBadgeVariant(agent.state)}
+                          className={cn(
+                            agent.state === 'RegistrationConfirmed' &&
+                              'bg-green-50 text-green-700 hover:bg-green-50/80',
+                          )}
+                        >
+                          {parseAgentStatus(agent.state)}
+                        </Badge>
+                      </td>
+                      <td className="p-4">
+                        {agent.state !== 'RegistrationConfirmed' ? (
+                          <>
+                            {(agent.state === 'RegistrationInitiated' ||
+                              agent.state === 'DeregistrationInitiated') && (
+                              <div className="flex items-center justify-center w-8 h-8">
+                                <Spinner size={16} />
+                              </div>
+                            )}
+                            {(agent.state === 'RegistrationRequested' ||
+                              agent.state === 'DeregistrationRequested') && (
+                              <div className="flex items-center justify-center w-8 h-8">
+                                <FaRegClock size={12} />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteClick(agent)}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-col gap-4 items-center">
+            {!isLoading && (
+              <Pagination
+                hasMore={hasMore}
+                isLoading={isLoadingMore}
+                onLoadMore={handleLoadMore}
+              />
+            )}
+          </div>
+        </div>
+
+        <AddAIAgentDialog
+          open={isAddDialogOpen}
+          onClose={() => setIsAddDialogOpen(false)}
+          onSuccess={fetchAgents}
+        />
+
+        <ConfirmDialog
+          open={isDeleteDialogOpen}
+          onClose={() => {
+            setIsDeleteDialogOpen(false);
+            setSelectedAgentToDelete(null);
+          }}
+          title="Delete AI Agent"
+          description={`Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`}
+          onConfirm={handleDeleteConfirm}
+          isLoading={isDeleting}
+        />
+      </div>
+    </MainLayout>
+  );
+}

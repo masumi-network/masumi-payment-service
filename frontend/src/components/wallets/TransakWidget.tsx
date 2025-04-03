@@ -7,7 +7,6 @@ interface TransakWidgetProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
-  network: string;
   onSuccess?: () => void;
 }
 
@@ -15,7 +14,6 @@ export function TransakWidget({
   isOpen,
   onClose,
   walletAddress,
-  network,
   onSuccess,
 }: TransakWidgetProps) {
   useEffect(() => {
@@ -27,7 +25,7 @@ export function TransakWidget({
         console.error('Order failed:', event.data);
         onClose();
       } else if (
-        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ||
+        event.data.type?.includes('TRANSAK_WIDGET_CLOSE') ??
         event.data.type?.includes('TRANSAK_EXIT')
       ) {
         onClose();
@@ -57,10 +55,6 @@ export function TransakWidget({
   transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');
   transakUrl.searchParams.set('defaultCryptoCurrency', 'ADA');
   transakUrl.searchParams.set('walletAddress', walletAddress);
-  transakUrl.searchParams.set(
-    'network',
-    network.toLowerCase() === 'preprod' ? 'cardano-preprod' : 'cardano',
-  );
   transakUrl.searchParams.set('themeColor', '#000000');
   transakUrl.searchParams.set('hideMenu', 'true');
   transakUrl.searchParams.set(

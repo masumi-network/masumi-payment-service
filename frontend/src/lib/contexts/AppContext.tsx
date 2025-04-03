@@ -3,6 +3,7 @@ import { createContext, useContext, useReducer, useState, useCallback } from 're
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
 
+type NetworkType = 'Preprod' | 'Mainnet';
 
 interface AppState {
   paymentSources: {
@@ -41,6 +42,7 @@ interface AppState {
     note?: string;
   }[];
   apiKey: string | null;
+  network: NetworkType;
   rpcProviderApiKeys: {
     id: string;
     rpcProviderApiKey: string;
@@ -56,6 +58,7 @@ type AppAction =
   | { type: 'SET_CONTRACTS'; payload: any[] }
   | { type: 'SET_WALLETS'; payload: any[] }
   | { type: 'SET_API_KEY'; payload: string }
+  | { type: 'SET_NETWORK'; payload: NetworkType }
   | { type: 'SET_RPC_API_KEYS'; payload: any[] }
 
 const initialAppState: AppState = {
@@ -64,6 +67,7 @@ const initialAppState: AppState = {
   wallets: [],
   rpcProviderApiKeys: [],
   apiKey: null,
+  network: 'Preprod',
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -87,6 +91,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         apiKey: action.payload
+      };
+    case 'SET_NETWORK':
+      return {
+        ...state,
+        network: action.payload
       };
     case 'SET_RPC_API_KEYS':
       return {

@@ -1,20 +1,37 @@
+import { PiSpinnerGap } from "react-icons/pi";
+import { cn } from "@/lib/utils";
+
 interface SpinnerProps {
-  size?: 'sm' | 'md' | 'lg'
-  className?: string
+  /** Size of the spinner in pixels */
+  size?: number;
+  /** Add a container div with centered alignment */
+  addContainer?: boolean;
+  /** Additional classes for the spinner */
+  className?: string;
+  /** Additional classes for the container */
+  containerClassName?: string;
 }
 
-export function Spinner({ size = 'md', className = '' }: SpinnerProps) {
-  const sizeClasses = {
-    sm: 'h-4 w-4',
-    md: 'h-6 w-6',
-    lg: 'h-8 w-8',
+export function Spinner({ 
+  size = 16, 
+  addContainer = false, 
+  className,
+  containerClassName 
+}: SpinnerProps) {
+  const spinner = (
+    <PiSpinnerGap 
+      className={cn("animate-spin", className)} 
+      style={{ width: size, height: size }}
+    />
+  );
+
+  if (addContainer) {
+    return (
+      <div className={cn("w-full p-5 flex justify-center items-center", containerClassName)}>
+        {spinner}
+      </div>
+    );
   }
 
-  return (
-    <div
-      className={`animate-spin rounded-full border-2 border-current border-t-transparent ${sizeClasses[size]} ${className}`}
-      role="status"
-      aria-label="Loading"
-    />
-  )
+  return spinner;
 }

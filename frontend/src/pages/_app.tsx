@@ -7,19 +7,52 @@ import type { AppProps } from 'next/app';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { useRouter } from 'next/router';
 import { ApiKeyDialog } from '@/components/ApiKeyDialog';
 import {
   getHealth,
   getPaymentSource,
   getRpcApiKeys,
+  getApiKeyStatus,
 } from '@/lib/api/generated';
+import { ThemeProvider } from '@/lib/contexts/ThemeContext';
+import { Spinner } from '@/components/ui/spinner';
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
-function InitializeApp() {
+function App({ Component, pageProps, router }: AppProps) {
+  return (
+    <ThemeProvider>
+      <AppProvider initialState={initialAppState}>
+        <ThemedApp
+          Component={Component}
+          pageProps={pageProps}
+          router={router}
+        />
+      </AppProvider>
+    </ThemeProvider>
+  );
+}
+
+function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
+  const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { state, dispatch } = useAppContext();
-  const router = useRouter();
   const { apiClient } = useAppContext();
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   const fetchPaymentSources = useCallback(async () => {
     try {
       const sourceResponse = await getPaymentSource({
@@ -27,7 +60,7 @@ function InitializeApp() {
       });
       const { data } = sourceResponse;
 
-      const sources = data?.data?.PaymentSources || [];
+      const sources = data?.data?.PaymentSources ?? [];
       const sortedByCreatedAt = sources.sort(
         (a: any, b: any) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -52,7 +85,7 @@ function InitializeApp() {
         client: apiClient,
       });
 
-      const rpcKeys = response.data?.RpcProviderKeys || [];
+      const rpcKeys = response.data?.RpcProviderKeys ?? [];
       dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
     } catch (error) {
       console.error('Failed to fetch RPC API keys:', error);
@@ -60,10 +93,25 @@ function InitializeApp() {
     }
   }, [apiClient, dispatch]);
 
+  const signOut = () => {
+    localStorage.removeItem('payment_api_key');
+
+    dispatch({ type: 'SET_API_KEY', payload: '' });
+
+    router.push('/');
+  };
+
   useEffect(() => {
     const init = async () => {
       try {
-        await getHealth({ client: apiClient });
+        setIsUnauthorized(false);
+        const response = await getHealth({ client: apiClient });
+
+        if (response.status !== 200) {
+          console.log(response);
+          setIsHealthy(false);
+          return;
+        }
 
         const hexedKey = localStorage.getItem('payment_api_key');
         if (!hexedKey) {
@@ -77,6 +125,12 @@ function InitializeApp() {
             token: storedApiKey,
           },
         });
+        const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
+        if (apiKeyStatus.status !== 200) {
+          setIsHealthy(true);
+          setIsUnauthorized(true);
+          return;
+        }
         dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
         setIsHealthy(true);
       } catch (error) {
@@ -115,10 +169,31 @@ function InitializeApp() {
 
   if (isHealthy === null) {
     return (
-      <div className="flex items-center justify-center bg-[#000] fixed top-0 left-0 w-full h-full z-50">
+      <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">
-          <div className="text-lg">Checking system status...</div>
-          <div className="text-sm text-muted-foreground">Please wait...</div>
+          <Spinner size={20} addContainer />
+        </div>
+      </div>
+    );
+  }
+
+  if (isUnauthorized) {
+    return (
+      <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
+        <div className="text-center space-y-4">
+          <div className="text-lg text-destructive">Unauthorized</div>
+          <div className="text-sm text-muted-foreground">
+            Your API key is invalid. Please sign out and sign in again.
+          </div>
+          <Button
+            variant="destructive"
+            className="text-sm"
+            onClick={() => {
+              signOut();
+            }}
+          >
+            Sign out
+          </Button>
         </div>
       </div>
     );
@@ -126,7 +201,7 @@ function InitializeApp() {
 
   if (isHealthy === false) {
     return (
-      <div className="flex items-center justify-center bg-[#000] fixed top-0 left-0 w-full h-full z-50">
+      <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">System Unavailable</div>
           <div className="text-sm text-muted-foreground">
@@ -137,27 +212,31 @@ function InitializeApp() {
     );
   }
 
-  return null;
-}
+  if (isMobile) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <div className="flex-1 flex items-center justify-center bg-background text-foreground">
+          <div className="text-center space-y-4 p-4">
+            <div className="text-lg text-muted-foreground">
+              Please use a desktop device to <br /> access the Masumi Admin
+              Interface
+            </div>
+            <Button variant="muted">
+              <Link href="https://docs.masumi.io" target="_blank">
+                Learn more
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
-function ComponentHolder({ Component, pageProps }: AppProps) {
-  const { state } = useAppContext();
   return (
-    <div className="dark">
+    <>
       {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-    </div>
-  );
-}
-
-function AppContent({ Component, pageProps, router }: AppProps) {
-  return (
-    <AppProvider initialState={initialAppState}>
-      <InitializeApp />
-      <ComponentHolder
-        Component={Component}
-        pageProps={pageProps}
-        router={router}
-      />
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -170,8 +249,8 @@ function AppContent({ Component, pageProps, router }: AppProps) {
         pauseOnHover
         theme="dark"
       />
-    </AppProvider>
+    </>
   );
 }
 
-export default AppContent;
+export default App;

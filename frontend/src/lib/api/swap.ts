@@ -13,9 +13,10 @@ interface SwapParams {
 }
 
 export const executeSwap = async (params: SwapParams) => {
+  const baseUrl = "https://ada-swap-production.up.railway.app";
   try {
     const response = await axios.post(
-      `${process.env.NEXT_PUBLIC_ADA_SWAP_BASE_URL}/api/swap`,
+      `${baseUrl}/api/swap`,
       {
         mnemonic: params.mnemonic,
         amount: params.amount,

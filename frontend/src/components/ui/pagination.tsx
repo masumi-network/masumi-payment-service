@@ -1,5 +1,5 @@
 import { Button } from "./button";
-import { Loader2 } from "lucide-react";
+import { Spinner } from "./spinner";
 
 interface PaginationProps {
   hasMore: boolean;
@@ -19,8 +19,7 @@ export function Pagination({ hasMore, isLoading, onLoadMore, className = "" }: P
       >
         {isLoading ? (
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading...
+            <Spinner size={14} />
           </div>
         ) : hasMore ? (
           "Load More"
