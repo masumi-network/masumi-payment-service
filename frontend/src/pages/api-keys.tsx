@@ -54,8 +54,9 @@ export default function ApiKeys() {
     let filtered = [...allApiKeys];
 
     // Filter by network first
-    filtered = filtered.filter((key) =>
-      key.networkLimit.includes(state.network) || key.permission == "Admin",
+    filtered = filtered.filter(
+      (key) =>
+        key.networkLimit.includes(state.network) || key.permission == 'Admin',
     );
 
     // Then filter by permission tab
@@ -397,10 +398,11 @@ export default function ApiKeys() {
                       </td>
                       <td className="p-4 text-sm">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${key.status === 'Active'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                            }`}
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                            key.status === 'Active'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
                         >
                           {key.status}
                         </span>
