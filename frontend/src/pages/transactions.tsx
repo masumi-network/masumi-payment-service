@@ -85,7 +85,14 @@ export default function Transactions() {
   ];
 
   const filterTransactions = useCallback(() => {
-    let filtered = [...allTransactions];
+    const seenHashes = new Set();
+    let filtered = [...allTransactions].filter((tx) => {
+      const hash = tx.CurrentTransaction?.txHash;
+      if (!hash) return true;
+      if (seenHashes.has(hash)) return false;
+      seenHashes.add(hash);
+      return true;
+    });
 
     if (activeTab === 'Payments') {
       filtered = filtered.filter((t) => t.type === 'payment');
@@ -195,7 +202,16 @@ export default function Transactions() {
         });
       }
 
-      const newTransactions = combined.sort(
+      const seenHashes = new Set();
+      const deduped = combined.filter((tx) => {
+        const hash = tx.CurrentTransaction?.txHash;
+        if (!hash) return true;
+        if (seenHashes.has(hash)) return false;
+        seenHashes.add(hash);
+        return true;
+      });
+
+      const newTransactions = deduped.sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );

@@ -41,6 +41,7 @@ interface AIAgent {
   Tags: string[];
   SmartContractWallet: {
     walletAddress: string;
+    walletVkey: string;
   };
   AgentPricing?: {
     Pricing?: Array<{

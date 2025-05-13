@@ -21,6 +21,7 @@ type AIAgent = {
   Tags: string[];
   SmartContractWallet: {
     walletAddress: string;
+    walletVkey: string;
   };
   AgentPricing?: {
     Pricing?: Array<{
@@ -164,6 +165,21 @@ export function AIAgentDetailsDialog({
                       </span>
                       <CopyButton
                         value={agent.SmartContractWallet?.walletAddress || ''}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b">
+                    <span className="text-sm text-muted-foreground">
+                      Selling Wallet Vkey
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">
+                        {shortenAddress(
+                          agent.SmartContractWallet?.walletVkey || '',
+                        )}
+                      </span>
+                      <CopyButton
+                        value={agent.SmartContractWallet?.walletVkey || ''}
                       />
                     </div>
                   </div>

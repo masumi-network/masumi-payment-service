@@ -54,8 +54,9 @@ export default function ApiKeys() {
     let filtered = [...allApiKeys];
 
     // Filter by network first
-    filtered = filtered.filter((key) =>
-      key.networkLimit.includes(state.network),
+    filtered = filtered.filter(
+      (key) =>
+        key.networkLimit.includes(state.network) || key.permission == 'Admin',
     );
 
     // Then filter by permission tab
