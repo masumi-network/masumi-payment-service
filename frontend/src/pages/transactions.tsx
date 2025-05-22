@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
+import { cn, shortenAddress } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -28,6 +28,7 @@ import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
+import { parseError } from '@/lib/utils';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -85,7 +86,14 @@ export default function Transactions() {
   ];
 
   const filterTransactions = useCallback(() => {
-    let filtered = [...allTransactions];
+    const seenHashes = new Set();
+    let filtered = [...allTransactions].filter((tx) => {
+      const hash = tx.CurrentTransaction?.txHash;
+      if (!hash) return true;
+      if (seenHashes.has(hash)) return false;
+      seenHashes.add(hash);
+      return true;
+    });
 
     if (activeTab === 'Payments') {
       filtered = filtered.filter((t) => t.type === 'payment');
@@ -195,7 +203,16 @@ export default function Transactions() {
         });
       }
 
-      const newTransactions = combined.sort(
+      const seenHashes = new Set();
+      const deduped = combined.filter((tx) => {
+        const hash = tx.CurrentTransaction?.txHash;
+        if (!hash) return true;
+        if (seenHashes.has(hash)) return false;
+        seenHashes.add(hash);
+        return true;
+      });
+
+      const newTransactions = deduped.sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
@@ -326,64 +343,108 @@ export default function Transactions() {
 
   const handleRefundRequest = async (transaction: Transaction) => {
     try {
-      await postPurchaseRequestRefund({
+      const body = {
+        blockchainIdentifier: transaction.blockchainIdentifier,
+        network: state.network,
+        smartContractAddress: transaction.PaymentSource.smartContractAddress,
+      };
+      console.log('Refund request body:', body);
+      const response = await postPurchaseRequestRefund({
         client: apiClient,
-        data: {
-          body: {
-            blockchainIdentifier: transaction.blockchainIdentifier,
-            network: transaction.PaymentSource.network,
-            smartContractAddress:
-              transaction.PaymentSource.smartContractAddress,
-          },
-        },
+        data: { body },
       });
-      toast.success('Refund request submitted successfully');
-      fetchTransactions();
-      setSelectedTransaction(null);
+      console.log('Refund response:', response);
+      if (
+        response?.status &&
+        response.status >= 200 &&
+        response.status < 300 &&
+        response.data?.data
+      ) {
+        toast.success('Refund request submitted successfully');
+        fetchTransactions();
+        setSelectedTransaction(null);
+      } else {
+        throw new Error('Refund request failed');
+      }
     } catch (error) {
-      handleError(error as ApiError);
+      console.error('Refund error:', error);
+      toast.error(parseError(error));
     }
   };
 
   const handleAllowRefund = async (transaction: Transaction) => {
     try {
-      await postPaymentAuthorizeRefund({
+      const body = {
+        blockchainIdentifier: transaction.blockchainIdentifier,
+        network: state.network,
+        paymentContractAddress: transaction.PaymentSource.smartContractAddress,
+      };
+      console.log('Allow refund body:', body);
+      const response = await postPaymentAuthorizeRefund({
         client: apiClient,
-        data: {
-          body: {
-            blockchainIdentifier: transaction.blockchainIdentifier,
-            network: transaction.PaymentSource.network,
-            paymentContractAddress:
-              transaction.PaymentSource.smartContractAddress,
-          },
-        },
+        data: { body },
       });
-      toast.success('Refund authorized successfully');
-      fetchTransactions();
-      setSelectedTransaction(null);
+      if (
+        response?.data &&
+        typeof response.data === 'object' &&
+        'error' in response.data &&
+        response.data.error &&
+        typeof response.data.error === 'object' &&
+        'message' in response.data.error &&
+        typeof response.data.error.message === 'string'
+      ) {
+        throw {
+          message: response.data.error.message,
+          error: response.data.error,
+        };
+      }
+      if (
+        response?.status &&
+        response.status >= 200 &&
+        response.status < 300 &&
+        response.data?.data
+      ) {
+        console.log('Allow refund response:', response);
+        toast.success('Refund authorized successfully');
+        fetchTransactions();
+        setSelectedTransaction(null);
+      } else {
+        throw new Error('Refund authorization failed');
+      }
     } catch (error) {
-      handleError(error as ApiError);
+      console.error('Allow refund error:', error);
+      toast.error(parseError(error));
     }
   };
 
   const handleCancelRefund = async (transaction: Transaction) => {
     try {
-      await postPurchaseCancelRefundRequest({
+      const body = {
+        blockchainIdentifier: transaction.blockchainIdentifier,
+        network: state.network,
+        smartContractAddress: transaction.PaymentSource.smartContractAddress,
+      };
+      console.log('Cancel refund body:', body);
+      const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
-        data: {
-          body: {
-            blockchainIdentifier: transaction.blockchainIdentifier,
-            network: transaction.PaymentSource.network,
-            smartContractAddress:
-              transaction.PaymentSource.smartContractAddress,
-          },
-        },
+        data: { body },
       });
-      toast.success('Refund request cancelled successfully');
-      fetchTransactions();
-      setSelectedTransaction(null);
+      console.log('Cancel refund response:', response);
+      if (
+        response?.status &&
+        response.status >= 200 &&
+        response.status < 300 &&
+        response.data?.data
+      ) {
+        toast.success('Refund request cancelled successfully');
+        fetchTransactions();
+        setSelectedTransaction(null);
+      } else {
+        throw new Error('Refund cancel failed');
+      }
     } catch (error) {
-      handleError(error as ApiError);
+      console.error('Cancel refund error:', error);
+      toast.error(parseError(error));
     }
   };
 
@@ -579,6 +640,23 @@ export default function Transactions() {
                   </div>
                 </div>
 
+                <div className="col-span-2 my-4">
+                  <h4 className="font-semibold mb-1">Network</h4>
+                  <p className="text-sm capitalize">
+                    {selectedTransaction.PaymentSource.network}
+                  </p>
+                </div>
+
+                <div className="col-span-2 w-full mb-4">
+                  <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
+                  <p className="text-sm font-mono break-all flex gap-2 items-center">
+                    {shortenAddress(selectedTransaction.blockchainIdentifier)}
+                    <CopyButton
+                      value={selectedTransaction.blockchainIdentifier}
+                    />
+                  </p>
+                </div>
+
                 <div>
                   <h4 className="font-semibold mb-1">Type</h4>
                   <p className="text-sm capitalize">
@@ -590,6 +668,73 @@ export default function Transactions() {
                   <p className="text-sm">
                     {new Date(selectedTransaction.createdAt).toLocaleString()}
                   </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-semibold">Onchain state</h4>
+                <div className="rounded-md border p-4 bg-muted/10">
+                  <p className="text-sm font-medium">
+                    {(() => {
+                      const state =
+                        selectedTransaction.onChainState?.toLowerCase();
+                      switch (state) {
+                        case 'fundslocked':
+                          return 'Funds Locked';
+                        case 'resultsubmitted':
+                          return 'Result Submitted';
+                        case 'refundrequested':
+                          return 'Refund Requested (waiting for approval)';
+                        case 'refundwithdrawn':
+                          return 'Refund Withdrawn';
+                        case 'disputed':
+                          return 'Disputed';
+                        case 'disputedwithdrawn':
+                          return 'Disputed Withdrawn';
+                        default:
+                          return state
+                            ? state.charAt(0).toUpperCase() + state.slice(1)
+                            : '—';
+                      }
+                    })()}
+                  </p>
+                  {selectedTransaction.NextAction?.requestedAction && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Next action:{' '}
+                      {(() => {
+                        const action =
+                          selectedTransaction.NextAction.requestedAction;
+                        switch (action) {
+                          case 'None':
+                            return 'None';
+                          case 'Ignore':
+                            return 'Ignore';
+                          case 'WaitingForManualAction':
+                            return 'Waiting for manual action';
+                          case 'WaitingForExternalAction':
+                            return 'Waiting for external action';
+                          case 'FundsLockingRequested':
+                            return 'Funds locking requested';
+                          case 'FundsLockingInitiated':
+                            return 'Funds locking initiated';
+                          case 'SetRefundRequestedRequested':
+                            return 'Refund request initiated';
+                          case 'SetRefundRequestedInitiated':
+                            return 'Refund request in progress';
+                          case 'WithdrawRequested':
+                            return 'Withdraw requested';
+                          case 'WithdrawInitiated':
+                            return 'Withdraw initiated';
+                          case 'WithdrawRefundRequested':
+                            return 'Refund withdraw requested';
+                          case 'WithdrawRefundInitiated':
+                            return 'Refund withdraw initiated';
+                          default:
+                            return action;
+                        }
+                      })()}
+                    </p>
+                  )}
                 </div>
               </div>
 

@@ -21,6 +21,9 @@ import {
 } from '@/components/ui/select';
 import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
 import { parseError } from '@/lib/utils';
+import { useForm, Controller } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -36,6 +39,52 @@ interface UpdateApiKeyDialogProps {
   };
 }
 
+const updateApiKeySchema = z
+  .object({
+    newToken: z
+      .string()
+      .min(15, 'Token must be at least 15 characters')
+      .optional()
+      .or(z.literal('')),
+    status: z.enum(['Active', 'Revoked']),
+    credits: z.object({
+      lovelace: z.string().optional(),
+      usdm: z.string().optional(),
+    }),
+  })
+  .superRefine((val, ctx) => {
+    // At least one field must be changed
+    const { newToken, status, credits } = val;
+    const { apiKey } = (ctx as any)?.context?.apiKeyContext || {};
+    const changed =
+      (newToken && newToken.length >= 15) ||
+      (status && apiKey && status !== apiKey.status) ||
+      (credits && (credits.lovelace || credits.usdm));
+    if (!changed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Please make at least one change to update',
+        path: [],
+      });
+    }
+    if (credits?.lovelace && isNaN(parseFloat(credits.lovelace))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid ADA amount',
+        path: ['credits', 'lovelace'],
+      });
+    }
+    if (credits?.usdm && isNaN(parseFloat(credits.usdm))) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Invalid USDM amount',
+        path: ['credits', 'usdm'],
+      });
+    }
+  });
+
+type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
+
 export function UpdateApiKeyDialog({
   open,
   onClose,
@@ -43,82 +92,60 @@ export function UpdateApiKeyDialog({
   apiKey,
 }: UpdateApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [newToken, setNewToken] = useState('');
-  const [status, setStatus] = useState<'Active' | 'Revoked'>(apiKey.status);
-  const [credits, setCredits] = useState({
-    lovelace: '',
-    usdm: '',
-  });
   const { apiClient } = useAppContext();
 
-  const validateForm = () => {
-    if (newToken && newToken.length < 15) {
-      toast.error('Token must be at least 15 characters long');
-      return false;
-    }
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<
+    UpdateApiKeyFormValues,
+    { apiKeyContext: { apiKey: typeof apiKey } }
+  >({
+    resolver: zodResolver(updateApiKeySchema),
+    defaultValues: {
+      newToken: '',
+      status: apiKey.status,
+      credits: { lovelace: '', usdm: '' },
+    },
+    context: { apiKeyContext: { apiKey } },
+  });
 
-    if (credits.lovelace && isNaN(parseFloat(credits.lovelace))) {
-      toast.error('Invalid ADA amount');
-      return false;
-    }
-
-    if (credits.usdm && isNaN(parseFloat(credits.usdm))) {
-      toast.error('Invalid USDM amount');
-      return false;
-    }
-
-    if (
-      !newToken &&
-      status === apiKey.status &&
-      !credits.lovelace &&
-      !credits.usdm
-    ) {
-      toast.error('Please make at least one change to update');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
-
+  const onSubmit = async (data: UpdateApiKeyFormValues) => {
     try {
       setIsLoading(true);
-
       const usageCredits = [];
-      if (credits.lovelace) {
+      if (data.credits.lovelace) {
         usageCredits.push({
           unit: 'lovelace',
-          amount: (parseFloat(credits.lovelace) * 1000000).toString(),
+          amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
         });
       }
-      if (credits.usdm) {
+      if (data.credits.usdm) {
         usageCredits.push({
           unit: 'usdm',
-          amount: credits.usdm,
+          amount: data.credits.usdm,
         });
       }
-
       const response = await patchApiKey({
         client: apiClient,
         body: {
           id: apiKey.id,
-          ...(newToken && { token: newToken }),
-          ...(status !== apiKey.status && { status }),
+          ...(data.newToken && { token: data.newToken }),
+          ...(data.status !== apiKey.status && { status: data.status }),
           ...(usageCredits.length > 0 && {
             UsageCreditsToAddOrRemove: usageCredits,
           }),
         },
       });
-
       const responseData = response?.data as PatchApiKeyResponse;
       if (!responseData?.data?.id) {
         throw new Error(
           'Failed to update API key: Invalid response from server',
         );
       }
-
       toast.success('API key updated successfully');
       onSuccess();
       handleClose();
@@ -131,9 +158,7 @@ export function UpdateApiKeyDialog({
   };
 
   const handleClose = () => {
-    setNewToken('');
-    setStatus(apiKey.status);
-    setCredits({ lovelace: '', usdm: '' });
+    reset();
     onClose();
   };
 
@@ -150,9 +175,13 @@ export function UpdateApiKeyDialog({
             <Input
               type="text"
               placeholder="Leave empty to keep current token"
-              value={newToken}
-              onChange={(e) => setNewToken(e.target.value)}
+              {...register('newToken')}
             />
+            {errors.newToken && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.newToken.message}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Must be at least 15 characters if provided
             </p>
@@ -160,18 +189,26 @@ export function UpdateApiKeyDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Status</label>
-            <Select
-              value={status}
-              onValueChange={(value: 'Active' | 'Revoked') => setStatus(value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Revoked">Revoked</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              control={control}
+              name="status"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Revoked">Revoked</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.status && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.status.message}
+              </p>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -182,11 +219,15 @@ export function UpdateApiKeyDialog({
               <Input
                 type="number"
                 placeholder="Enter amount (positive to add, negative to remove)"
-                value={credits.lovelace}
-                onChange={(e) =>
-                  setCredits((prev) => ({ ...prev, lovelace: e.target.value }))
-                }
+                {...register('credits.lovelace')}
               />
+              {errors.credits &&
+                'lovelace' in errors.credits &&
+                errors.credits.lovelace && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.lovelace as any).message}
+                  </p>
+                )}
               <p className="text-xs text-muted-foreground">
                 Amount in ADA (will be converted to lovelace)
               </p>
@@ -199,11 +240,15 @@ export function UpdateApiKeyDialog({
               <Input
                 type="number"
                 placeholder="Enter amount (positive to add, negative to remove)"
-                value={credits.usdm}
-                onChange={(e) =>
-                  setCredits((prev) => ({ ...prev, usdm: e.target.value }))
-                }
+                {...register('credits.usdm')}
               />
+              {errors.credits &&
+                'usdm' in errors.credits &&
+                errors.credits.usdm && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.usdm as any).message}
+                  </p>
+                )}
             </div>
           </div>
         </div>
@@ -212,7 +257,11 @@ export function UpdateApiKeyDialog({
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isLoading}>
+          <Button
+            type="submit"
+            disabled={isLoading}
+            onClick={handleSubmit(onSubmit)}
+          >
             {isLoading ? 'Updating...' : 'Update'}
           </Button>
         </div>

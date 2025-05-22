@@ -54,6 +54,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const fetchPaymentSources = useCallback(async () => {
+    console.log('fetching payment sources');
     try {
       const sourceResponse = await getPaymentSource({
         client: apiClient,
@@ -61,7 +62,11 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const { data } = sourceResponse;
 
       const sources = data?.data?.PaymentSources ?? [];
-      const sortedByCreatedAt = sources.sort(
+      // Filter by network
+      const filteredSources = sources.filter(
+        (source: any) => source.network === state.network,
+      );
+      const sortedByCreatedAt = filteredSources.sort(
         (a: any, b: any) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
@@ -73,11 +78,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const reversedBack = [...sourcesMapped]?.reverse();
 
       dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
+
+      // If no payment sources, redirect to setup
+      if (reversedBack.length === 0 && isHealthy && state.apiKey) {
+        if (router.pathname !== '/setup') {
+          router.push(`/setup?network=${encodeURIComponent(state.network)}`);
+        }
+      }
     } catch (error) {
       console.error('Failed to fetch payment sources:', error);
       toast.error('Error fetching payment sources. Please try again later.');
     }
-  }, [apiClient, dispatch]);
+  }, [apiClient, dispatch, isHealthy, state.apiKey, router, state.network]);
 
   const fetchRpcApiKeys = useCallback(async () => {
     try {
@@ -143,23 +155,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, [apiClient, dispatch]);
 
   useEffect(() => {
-    if (isHealthy && router.pathname === '/' && state.apiKey) {
-      fetchPaymentSources();
-    } else if (
-      isHealthy &&
-      state.apiKey &&
-      router.pathname?.includes('/contract/') &&
-      !state.paymentSources?.length
-    ) {
+    if (isHealthy && state.apiKey) {
       fetchPaymentSources();
     }
-  }, [
-    router.pathname,
-    isHealthy,
-    fetchPaymentSources,
-    state.apiKey,
-    state.paymentSources?.length,
-  ]);
+  }, [isHealthy, state.apiKey, fetchPaymentSources, state.network]);
 
   useEffect(() => {
     if (isHealthy && state.apiKey) {

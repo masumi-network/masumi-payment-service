@@ -58,3 +58,20 @@ export const DEFAULT_FEE_CONFIG = {
     feePermille: 50, // 5% fee
   },
 };
+
+// Token configurations
+export const USDM_CONFIG = {
+  policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+  assetName: '0014df105553444d', // hex encoded "USDM"
+  assetFingerprint: 'asset12ffdj8kk2w485sr7a5ekmjjdyecz8ps2cm5zed',
+  // Full asset ID (policy ID + asset name) used for transactions
+  fullAssetId:
+    'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d',
+};
+
+// TESTUSDM (tUSDM) token configuration
+export const TESTUSDM_CONFIG = {
+  unit: '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d',
+  symbol: 'tUSDM',
+  name: 'TestUSDM',
+};
