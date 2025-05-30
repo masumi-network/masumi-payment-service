@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 export default function SetupPage() {
   const { state } = useAppContext();
   const router = useRouter();
-  const { type = 'preprod' } = router.query;
+  const { network = 'preprod' } = router.query;
 
   useEffect(() => {
     if (!state.apiKey) {
@@ -23,15 +23,15 @@ export default function SetupPage() {
     <>
       <Head>
         <title>
-          {type
-            ? type === 'preprod'
+          {network
+            ? network === 'preprod'
               ? 'Preprod Setup'
               : 'Mainnet Setup'
             : 'Setup'}{' '}
           | Admin Interface
         </title>
       </Head>
-      <SetupWelcome networkType={type as string} />
+      <SetupWelcome networkType={network as string} />
     </>
   );
 }

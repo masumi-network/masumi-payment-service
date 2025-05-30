@@ -35,7 +35,7 @@ export interface WalletWithBalance {
   walletAddress: string;
   collectionAddress: string | null;
   note: string | null;
-  type: 'Purchasing' | 'Selling';
+  type: 'Purchasing' | 'Selling' | 'Collection';
   balance: string;
   usdmBalance: string;
 }
@@ -232,6 +232,21 @@ export function WalletDetailsDialog({
               </div>
             </div>
 
+            {/* Linked Collection Wallet Section */}
+            {wallet.collectionAddress && wallet.type !== 'Collection' && (
+              <div className="flex flex-col gap-1 mt-2 border-t pt-4">
+                <div className="text-xs text-muted-foreground">
+                  Linked Collection Wallet
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-sm">
+                    {shortenAddress(wallet.collectionAddress)}
+                  </span>
+                  <CopyButton value={wallet.collectionAddress} />
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <div className="text-sm font-medium">Token Balances</div>
               {isLoading ? (
@@ -242,6 +257,11 @@ export function WalletDetailsDialog({
                 <div className="text-sm text-destructive">{error}</div>
               ) : (
                 <div className="space-y-2">
+                  {tokenBalances.length === 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      No tokens found
+                    </div>
+                  )}
                   {tokenBalances.map((token) => {
                     const { amount, usdValue } = formatTokenBalance(token);
                     return (

@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function shortenAddress(address: string) {
   if (!address) return '';
-  return address.slice(0, 10) + '...' + address.slice(-10);
+  return address.slice(0, 7) + '...' + address.slice(-5);
 }
 
 export async function copyToClipboard(text: string) {

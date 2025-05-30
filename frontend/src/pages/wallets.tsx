@@ -529,7 +529,7 @@ export default function WalletsPage() {
                             className="h-8 w-8"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedWalletForSwap(wallet);
+                              setSelectedWalletForSwap(wallet as Wallet);
                             }}
                           >
                             <FaExchangeAlt className="h-4 w-4" />
@@ -539,7 +539,7 @@ export default function WalletsPage() {
                             className="h-8"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedWalletForTopup(wallet);
+                              setSelectedWalletForTopup(wallet as Wallet);
                             }}
                           >
                             Top Up

@@ -31,6 +31,7 @@ import {
   WalletWithBalance,
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
+import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -81,6 +82,7 @@ export default function AIAgentsPage() {
     { name: 'Registered', count: null },
     { name: 'Deregistered', count: null },
     { name: 'Pending', count: null },
+    { name: 'Failed', count: null },
   ];
 
   const filterAgents = useCallback(() => {
@@ -97,6 +99,10 @@ export default function AIAgentsPage() {
     } else if (activeTab === 'Pending') {
       filtered = filtered.filter(
         (agent) => parseAgentStatus(agent.state) === 'Pending',
+      );
+    } else if (activeTab === 'Failed') {
+      filtered = filtered.filter(
+        (agent) => agent.state && agent.state.includes('Failed'),
       );
     }
 
@@ -142,10 +148,19 @@ export default function AIAgentsPage() {
         setIsLoadingMore(true);
       }
 
+      const smartContractAddress =
+        state.paymentSources?.[0]?.smartContractAddress || '';
+
+      if (!smartContractAddress) {
+        toast.error('No smart contract address found');
+        return;
+      }
+
       const response = await getRegistry({
         client: apiClient,
         query: {
           network: state.network,
+          smartContractAddress,
           cursorId: cursor || undefined,
         },
       });
@@ -182,8 +197,10 @@ export default function AIAgentsPage() {
   };
 
   useEffect(() => {
-    fetchAgents();
-  }, []);
+    if (state.paymentSources && state.paymentSources.length > 0) {
+      fetchAgents();
+    }
+  }, [state.network, state.paymentSources]);
 
   useEffect(() => {
     filterAgents();
@@ -474,12 +491,12 @@ export default function AIAgentsPage() {
                           />
                         </div>
                       </td>
-                      <td className="p-4 text-sm">
+                      <td className="p-4 text-sm truncate max-w-[100px]">
                         {agent.AgentPricing?.Pricing?.map((price, index) => (
                           <div key={index} className="whitespace-nowrap">
-                            {price.unit === 'lovelace'
+                            {price.unit === 'lovelace' || !price.unit
                               ? `${useFormatPrice(price.amount)} ADA`
-                              : `${useFormatPrice(price.amount)} ${price.unit}`}
+                              : `${useFormatPrice(price.amount)} ${price.unit === USDM_CONFIG.fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                           </div>
                         ))}
                       </td>

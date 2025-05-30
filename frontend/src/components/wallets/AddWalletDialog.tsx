@@ -28,6 +28,9 @@ import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { parseError } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -35,28 +38,46 @@ interface AddWalletDialogProps {
   onSuccess?: () => void;
 }
 
+const walletSchema = z.object({
+  mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
+  note: z.string().min(1, 'Note is required'),
+  collectionAddress: z.string().min(1, 'Collection address is required'),
+});
+
+type WalletFormValues = z.infer<typeof walletSchema>;
+
 export function AddWalletDialog({
   open,
   onClose,
   onSuccess,
 }: AddWalletDialogProps) {
   const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
-  const [mnemonic, setMnemonic] = useState('');
-  const [note, setNote] = useState<string>('');
-  const [collectionAddress, setCollectionAddress] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>('');
   const [paymentSourceId, setPaymentSourceId] = useState<string | null>(null);
   const { apiClient, state } = useAppContext();
 
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    reset,
+    formState: { errors },
+  } = useForm<WalletFormValues>({
+    resolver: zodResolver(walletSchema),
+    defaultValues: {
+      mnemonic: '',
+      note: '',
+      collectionAddress: '',
+    },
+  });
+
   useEffect(() => {
     if (open) {
       fetchPaymentSource();
     } else {
-      setMnemonic('');
-      setNote('');
-      setCollectionAddress('');
+      reset();
       setError('');
     }
   }, [open]);
@@ -93,7 +114,7 @@ export function AddWalletDialog({
       });
 
       if (response.status === 200 && response.data?.data?.walletMnemonic) {
-        setMnemonic(response.data.data.walletMnemonic);
+        setValue('mnemonic', response.data.data.walletMnemonic);
       } else {
         throw new Error('Failed to generate mnemonic phrase');
       }
@@ -110,29 +131,11 @@ export function AddWalletDialog({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: WalletFormValues) => {
     setError('');
 
     if (!paymentSourceId) {
       setError('No payment source available');
-      return;
-    }
-
-    if (!mnemonic.trim()) {
-      setError('Mnemonic phrase is required');
-      return;
-    }
-
-    if (!note.trim()) {
-      setError('Note is required');
-      return;
-    }
-
-    if (!collectionAddress.trim()) {
-      setError(
-        `${type === 'Purchasing' ? 'Refund' : 'Revenue'} collection address is required`,
-      );
       return;
     }
 
@@ -147,9 +150,9 @@ export function AddWalletDialog({
             ? 'AddPurchasingWallets'
             : 'AddSellingWallets']: [
             {
-              walletMnemonic: mnemonic.trim(),
-              note: note.trim(),
-              collectionAddress: collectionAddress.trim(),
+              walletMnemonic: data.mnemonic.trim(),
+              note: data.note.trim(),
+              collectionAddress: data.collectionAddress.trim(),
             },
           ],
         },
@@ -184,7 +187,7 @@ export function AddWalletDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {error && (
             <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
               {error}
@@ -231,12 +234,16 @@ export function AddWalletDialog({
               </Button>
             </div>
             <Textarea
-              value={mnemonic}
-              onChange={(e) => setMnemonic(e.target.value)}
+              {...register('mnemonic')}
               placeholder="Enter your mnemonic phrase"
               required
               className="min-h-[100px] font-mono"
             />
+            {errors.mnemonic && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.mnemonic.message}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -244,11 +251,15 @@ export function AddWalletDialog({
               Note <span className="text-destructive">*</span>
             </label>
             <Input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+              {...register('note')}
               placeholder="Enter a note to identify this wallet"
               required
             />
+            {errors.note && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.note.message}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -257,11 +268,15 @@ export function AddWalletDialog({
               <span className="text-destructive">*</span>
             </label>
             <Input
-              value={collectionAddress}
-              onChange={(e) => setCollectionAddress(e.target.value)}
+              {...register('collectionAddress')}
               placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
               required
             />
+            {errors.collectionAddress && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.collectionAddress.message}
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">
@@ -273,15 +288,7 @@ export function AddWalletDialog({
             >
               Cancel
             </Button>
-            <Button
-              type="submit"
-              disabled={
-                !mnemonic.trim() ||
-                !note.trim() ||
-                !collectionAddress.trim() ||
-                isLoading
-              }
-            >
+            <Button type="submit" disabled={isLoading}>
               {isLoading ? 'Adding...' : 'Add Wallet'}
             </Button>
           </div>

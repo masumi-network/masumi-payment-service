@@ -27,6 +27,9 @@ import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
 } from '@/lib/constants/defaultWallets';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 function WelcomeScreen({
   onStart,
@@ -35,7 +38,8 @@ function WelcomeScreen({
   onStart: () => void;
   networkType: string;
 }) {
-  const networkDisplay = networkType === 'mainnet' ? 'Mainnet' : 'Preprod';
+  const networkDisplay =
+    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -339,6 +343,16 @@ function SeedPhrasesScreen({
   );
 }
 
+const paymentSourceSchema = z.object({
+  blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
+  feeReceiverWallet: z.object({
+    walletAddress: z.string().min(1, 'Fee receiver wallet is required'),
+  }),
+  feePermille: z.number().min(0).max(1000),
+});
+
+type PaymentSourceFormValues = z.infer<typeof paymentSourceSchema>;
+
 function PaymentSourceSetupScreen({
   onNext,
   buyingWallet,
@@ -353,23 +367,29 @@ function PaymentSourceSetupScreen({
   const [error, setError] = useState<string>('');
 
   const networkType = state.network === 'Mainnet' ? 'Mainnet' : 'Preprod';
-
-  const [formData, setFormData] = useState({
-    blockfrostApiKey: '',
-    feeReceiverWallet: {
-      walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
-    },
-    feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
-  });
-
   const adminWallets = DEFAULT_ADMIN_WALLETS[networkType];
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<PaymentSourceFormValues>({
+    resolver: zodResolver(paymentSourceSchema),
+    defaultValues: {
+      blockfrostApiKey: '',
+      feeReceiverWallet: {
+        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
+      },
+      feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
+    },
+  });
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
   };
 
-  const handleSubmit = async () => {
+  const onSubmit = async (data: PaymentSourceFormValues) => {
     if (!buyingWallet || !sellingWallet) {
       setError('Buying and selling wallets are required');
       return;
@@ -379,21 +399,16 @@ function PaymentSourceSetupScreen({
       setIsLoading(true);
       setError('');
 
-      if (!formData.blockfrostApiKey.trim()) {
-        setError('Blockfrost API key is required');
-        return;
-      }
-
       const response = await postPaymentSourceExtended({
         client: apiClient,
         body: {
           network: state.network,
           paymentType: 'Web3CardanoV1',
           PaymentSourceConfig: {
-            rpcProviderApiKey: formData.blockfrostApiKey,
+            rpcProviderApiKey: data.blockfrostApiKey,
             rpcProvider: 'Blockfrost',
           },
-          feeRatePermille: formData.feePermille,
+          feeRatePermille: data.feePermille,
           AdminWallets: adminWallets.map((w) => ({
             walletAddress: w.walletAddress,
           })) as [
@@ -401,7 +416,7 @@ function PaymentSourceSetupScreen({
             { walletAddress: string },
             { walletAddress: string },
           ],
-          FeeReceiverNetworkWallet: formData.feeReceiverWallet,
+          FeeReceiverNetworkWallet: data.feeReceiverWallet,
           PurchasingWallets: [
             {
               walletMnemonic: buyingWallet.mnemonic,
@@ -487,7 +502,7 @@ function PaymentSourceSetupScreen({
         {/* Configuration Section */}
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Configuration</h3>
-          <div className="grid gap-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Blockfrost API Key <span className="text-destructive">*</span>
@@ -495,12 +510,14 @@ function PaymentSourceSetupScreen({
               <input
                 type="text"
                 className="w-full p-2 rounded-md bg-background border"
-                value={formData.blockfrostApiKey}
-                onChange={(e) =>
-                  setFormData({ ...formData, blockfrostApiKey: e.target.value })
-                }
+                {...register('blockfrostApiKey')}
                 placeholder="Enter your Blockfrost API key"
               />
+              {errors.blockfrostApiKey && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.blockfrostApiKey.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -511,15 +528,14 @@ function PaymentSourceSetupScreen({
               <input
                 type="text"
                 className="w-full p-2 rounded-md bg-background border"
-                value={formData.feeReceiverWallet.walletAddress}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    feeReceiverWallet: { walletAddress: e.target.value },
-                  })
-                }
+                {...register('feeReceiverWallet.walletAddress')}
                 placeholder="Enter fee receiver wallet address"
               />
+              {errors.feeReceiverWallet?.walletAddress && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.feeReceiverWallet.walletAddress.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -529,33 +545,28 @@ function PaymentSourceSetupScreen({
               <input
                 type="number"
                 className="w-full p-2 rounded-md bg-background border"
-                value={formData.feePermille}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    feePermille: parseInt(e.target.value) || 50,
-                  })
-                }
+                {...register('feePermille', { valueAsNumber: true })}
                 min="0"
                 max="1000"
               />
+              {errors.feePermille && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.feePermille.message}
+                </p>
+              )}
             </div>
-          </div>
-        </div>
 
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm">
-            <Link href={'/settings'} replace>
-              Skip for now
-            </Link>
-          </Button>
-          <Button
-            className="text-sm"
-            disabled={isLoading}
-            onClick={handleSubmit}
-          >
-            {isLoading ? 'Creating...' : 'Create Payment Source'}
-          </Button>
+            <div className="flex items-center justify-center gap-4 pt-4">
+              <Button variant="secondary" className="text-sm" type="button">
+                <Link href={'/settings'} replace>
+                  Skip for now
+                </Link>
+              </Button>
+              <Button className="text-sm" disabled={isLoading} type="submit">
+                {isLoading ? 'Creating...' : 'Create Payment Source'}
+              </Button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
