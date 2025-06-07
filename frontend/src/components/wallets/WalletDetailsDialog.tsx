@@ -193,42 +193,23 @@ export function WalletDetailsDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">Wallet Address</div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {shortenAddress(wallet.walletAddress)}
-                  </span>
-                  <CopyButton value={wallet.walletAddress} />
-                </div>
+          <div className="space-y-4 mt-4">
+            <div className="bg-muted rounded-lg p-4">
+              <div className="text-sm font-medium">Wallet Address</div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="font-mono text-sm">
+                  {shortenAddress(wallet.walletAddress)}
+                </span>
+                <CopyButton value={wallet.walletAddress} />
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchTokenBalances}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-                {/* <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setSelectedWalletForSwap(wallet)}
-                >
-                  <FaExchangeAlt className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="muted"
-                  className="h-8"
-                  onClick={() => setSelectedWalletForTopup(wallet)}
-                >
-                  Top Up
-                </Button> */}
+            </div>
+            <div className="bg-muted rounded-lg p-4">
+              <div className="text-sm font-medium">vKey</div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="font-mono text-sm break-all">
+                  {shortenAddress(wallet.walletVkey)}
+                </span>
+                <CopyButton value={wallet.walletVkey} />
               </div>
             </div>
 
@@ -247,8 +228,19 @@ export function WalletDetailsDialog({
               </div>
             )}
 
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Token Balances</div>
+            <div className="bg-muted rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Token Balances</div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={fetchTokenBalances}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
               {isLoading ? (
                 <div className="flex justify-center py-4">
                   <Spinner size={20} />
