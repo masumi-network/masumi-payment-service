@@ -36,7 +36,7 @@ export function ApiKeyDialog() {
       });
 
       if (statusResponse.data?.data.status !== 'Active') {
-        throw new Error('Invalid Key: API key is not active');
+        throw new Error('Invalid Key: Admin key is not active');
       }
 
       const hexKey = Buffer.from(key).toString('hex');
