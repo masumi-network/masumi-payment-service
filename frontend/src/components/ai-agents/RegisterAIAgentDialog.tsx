@@ -28,8 +28,9 @@ import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { Separator } from '@/components/ui/separator';
 
-interface AddAIAgentDialogProps {
+interface RegisterAIAgentDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
@@ -47,6 +48,12 @@ const priceSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
 });
 
+const exampleOutputSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  url: z.string().url('URL must be a valid URL').min(1, 'URL is required'),
+  mimeType: z.string().min(1, 'MIME type is required'),
+});
+
 const agentSchema = z.object({
   apiUrl: z
     .string()
@@ -60,15 +67,50 @@ const agentSchema = z.object({
   selectedWallet: z.string().min(1, 'Wallet is required'),
   prices: z.array(priceSchema).min(1, 'At least one price is required'),
   tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+
+  // Additional Fields
+  authorName: z.string().optional().or(z.literal('')),
+  authorEmail: z
+    .string()
+    .email('Author email must be a valid email')
+    .optional()
+    .or(z.literal('')),
+  organization: z.string().optional().or(z.literal('')),
+  websiteUrl: z
+    .string()
+    .url('Website URL must be a valid URL')
+    .optional()
+    .or(z.literal('')),
+
+  termsOfUseUrl: z
+    .string()
+    .url('Terms of use URL must be a valid URL')
+    .optional()
+    .or(z.literal('')),
+  privacyPolicyUrl: z
+    .string()
+    .url('Privacy policy URL must be a valid URL')
+    .optional()
+    .or(z.literal('')),
+  supportUrl: z
+    .string()
+    .url('Support URL must be a valid URL')
+    .optional()
+    .or(z.literal('')),
+
+  capabilityName: z.string().optional().or(z.literal('')),
+  capabilityVersion: z.string().optional().or(z.literal('')),
+
+  exampleOutputs: z.array(exampleOutputSchema).optional(),
 });
 
 type AgentFormValues = z.infer<typeof agentSchema>;
 
-export function AddAIAgentDialog({
+export function RegisterAIAgentDialog({
   open,
   onClose,
   onSuccess,
-}: AddAIAgentDialogProps) {
+}: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
   const { apiClient, state } = useAppContext();
@@ -90,6 +132,16 @@ export function AddAIAgentDialog({
       selectedWallet: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
+      authorName: '',
+      authorEmail: '',
+      organization: '',
+      websiteUrl: '',
+      termsOfUseUrl: '',
+      privacyPolicyUrl: '',
+      supportUrl: '',
+      capabilityName: '',
+      capabilityVersion: '',
+      exampleOutputs: [],
     },
   });
 
@@ -102,6 +154,15 @@ export function AddAIAgentDialog({
     name: 'prices',
   });
 
+  const {
+    fields: exampleOutputFields,
+    append: appendExampleOutput,
+    remove: removeExampleOutput,
+  } = useFieldArray({
+    control,
+    name: 'exampleOutputs',
+  });
+
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
 
@@ -110,7 +171,7 @@ export function AddAIAgentDialog({
       fetchSellingWallets();
       reset();
     }
-  }, [open]);
+  }, [open, reset]);
 
   const fetchSellingWallets = async () => {
     try {
@@ -141,23 +202,44 @@ export function AddAIAgentDialog({
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
-        console.log(data, state);
         setIsLoading(true);
         const selectedWallet = data.selectedWallet;
-        const paymentSource = state.paymentSources?.find((ps) => {
-          console.log(ps);
-          return (
-            ps.SellingWallets?.find((s) => {
-              return s.walletVkey == selectedWallet;
-            }) != null
-          );
-        });
+        const paymentSource = state.paymentSources?.find((ps) =>
+          ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
+        );
         if (!paymentSource) {
-          console.error(
-            'Smart contract wallet not found in payment sources',
-            selectedWallet,
-          );
+          throw new Error('Smart contract wallet not found in payment sources');
         }
+
+        const legal: {
+          privacyPolicy?: string;
+          terms?: string;
+          other?: string;
+        } = {};
+        if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
+        if (data.termsOfUseUrl) legal.terms = data.termsOfUseUrl;
+        if (data.supportUrl) legal.other = data.supportUrl;
+
+        const author: {
+          name: string;
+          contactEmail?: string;
+          contactOther?: string;
+          organization?: string;
+        } = {
+          name: data.authorName || 'Default Author', // Default in case it's empty
+        };
+        if (data.authorEmail) author.contactEmail = data.authorEmail;
+        if (data.websiteUrl) author.contactOther = data.websiteUrl;
+        if (data.organization) author.organization = data.organization;
+
+        const capability =
+          data.capabilityName && data.capabilityVersion
+            ? {
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
+            : { name: 'Custom Agent', version: '1.0.0' };
+
         const response = await postRegistry({
           client: apiClient,
           body: {
@@ -167,10 +249,7 @@ export function AddAIAgentDialog({
             description: data.description,
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
-            Capability: {
-              name: 'Custom Agent',
-              version: '1.0.0',
-            },
+            Capability: capability,
             AgentPricing: {
               pricingType: 'Fixed',
               Pricing: data.prices.map((price) => {
@@ -182,31 +261,35 @@ export function AddAIAgentDialog({
                 };
               }),
             },
-            Author: {
-              name: 'Admin',
-            },
-            ExampleOutputs: [],
+            Author: author,
+            Legal: Object.keys(legal).length > 0 ? legal : undefined,
+            ExampleOutputs:
+              data.exampleOutputs?.map((e) => ({
+                name: e.name,
+                url: e.url,
+                mimeType: e.mimeType,
+              })) || [],
           },
         });
 
         if (!response.data?.data?.id) {
           throw new Error(
-            'Failed to create AI agent: Invalid response from server',
+            'Failed to register AI agent: Invalid response from server',
           );
         }
 
-        toast.success('AI agent created successfully');
+        toast.success('AI agent registered successfully');
         onSuccess();
         onClose();
         reset();
       } catch (error: any) {
-        console.error('Error creating AI agent:', error);
-        toast.error(error?.message ?? 'Failed to create AI agent');
+        console.error('Error registering AI agent:', error);
+        toast.error(error?.message ?? 'Failed to register AI agent');
       } finally {
         setIsLoading(false);
       }
     },
-    [state, state.network, state.paymentSources],
+    [apiClient, state.network, state.paymentSources, onSuccess, onClose, reset],
   );
 
   // Tag management
@@ -227,9 +310,13 @@ export function AddAIAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[700px] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add AI agent</DialogTitle>
+          <DialogTitle>Register AI Agent</DialogTitle>
+          <p className="text-sm text-muted-foreground mt-2">
+            This registers your agent on the Masumi Network, making it visible
+            to everyone.
+          </p>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-2">
@@ -421,12 +508,196 @@ export function AddAIAgentDialog({
             </div>
           </div>
 
+          <div className="flex items-center gap-4 pt-2">
+            <Separator className="flex-1" />
+            <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+              Additional Fields
+            </h3>
+            <Separator className="flex-1" />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Author Name</label>
+            <Input
+              {...register('authorName')}
+              placeholder="Enter the author's name"
+              className={errors.authorName ? 'border-red-500' : ''}
+            />
+            {errors.authorName && (
+              <p className="text-sm text-red-500">
+                {errors.authorName.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Author Email</label>
+            <Input
+              {...register('authorEmail')}
+              type="email"
+              placeholder="Enter the author's email address"
+              className={errors.authorEmail ? 'border-red-500' : ''}
+            />
+            {errors.authorEmail && (
+              <p className="text-sm text-red-500">
+                {errors.authorEmail.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Organization</label>
+            <Input
+              {...register('organization')}
+              placeholder="Enter the organization name"
+              className={errors.organization ? 'border-red-500' : ''}
+            />
+            {errors.organization && (
+              <p className="text-sm text-red-500">
+                {errors.organization.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Website URL</label>
+            <Input
+              {...register('websiteUrl')}
+              placeholder="Enter the website URL"
+              className={errors.websiteUrl ? 'border-red-500' : ''}
+            />
+            {errors.websiteUrl && (
+              <p className="text-sm text-red-500">
+                {errors.websiteUrl.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Terms of Use URL</label>
+            <Input
+              {...register('termsOfUseUrl')}
+              placeholder="Enter the terms of use URL"
+              className={errors.termsOfUseUrl ? 'border-red-500' : ''}
+            />
+            {errors.termsOfUseUrl && (
+              <p className="text-sm text-red-500">
+                {errors.termsOfUseUrl.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Privacy Policy URL</label>
+            <Input
+              {...register('privacyPolicyUrl')}
+              placeholder="Enter the privacy policy URL"
+              className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
+            />
+            {errors.privacyPolicyUrl && (
+              <p className="text-sm text-red-500">
+                {errors.privacyPolicyUrl.message}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Support URL</label>
+            <Input
+              {...register('supportUrl')}
+              placeholder="Enter the support URL"
+              className={errors.supportUrl ? 'border-red-500' : ''}
+            />
+            {errors.supportUrl && (
+              <p className="text-sm text-red-500">
+                {errors.supportUrl.message}
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Capability Name</label>
+              <Input
+                {...register('capabilityName')}
+                placeholder="e.g., Text Generation"
+                className={errors.capabilityName ? 'border-red-500' : ''}
+              />
+              {errors.capabilityName && (
+                <p className="text-sm text-red-500">
+                  {errors.capabilityName.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Capability Version</label>
+              <Input
+                {...register('capabilityVersion')}
+                placeholder="e.g., 1.0.0"
+                className={errors.capabilityVersion ? 'border-red-500' : ''}
+              />
+              {errors.capabilityVersion && (
+                <p className="text-sm text-red-500">
+                  {errors.capabilityVersion.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 border rounded-md p-4 bg-muted/40">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Example Outputs</label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  appendExampleOutput({ name: '', url: '', mimeType: '' })
+                }
+              >
+                Add Example
+              </Button>
+            </div>
+            {exampleOutputFields.map((field, index) => (
+              <div
+                key={field.id}
+                className="p-4 border rounded-md space-y-2 relative"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Input
+                    placeholder="Name"
+                    {...register(`exampleOutputs.${index}.name` as const)}
+                  />
+                  <Input
+                    placeholder="URL"
+                    {...register(`exampleOutputs.${index}.url` as const)}
+                  />
+                  <Input
+                    placeholder="MIME Type"
+                    {...register(`exampleOutputs.${index}.mimeType` as const)}
+                  />
+                </div>
+                {index >= 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeExampleOutput(index)}
+                    className="absolute top-2 right-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+
           <div className="flex justify-end gap-4">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Creating...' : 'Create'}
+              {isLoading ? 'Registering...' : 'Register'}
             </Button>
           </div>
         </form>

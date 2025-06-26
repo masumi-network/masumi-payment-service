@@ -6,19 +6,20 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ChevronRight, Plus } from 'lucide-react';
+import { cn, shortenAddress } from '@/lib/utils';
 import { useEffect, useState, useCallback } from 'react';
 import {
   getPaymentSource,
   GetPaymentSourceResponses,
   getRegistry,
   getUtxos,
+  GetRegistryResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
-import { AddAIAgentDialog } from '@/components/ai-agents/AddAIAgentDialog';
+import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
@@ -31,26 +32,7 @@ import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 
-interface AIAgent {
-  id: string;
-  name: string;
-  description: string | null;
-  state: string;
-  createdAt: string;
-  updatedAt: string;
-  agentIdentifier: string | null;
-  Tags: string[];
-  SmartContractWallet: {
-    walletAddress: string;
-    walletVkey: string;
-  };
-  AgentPricing?: {
-    Pricing?: Array<{
-      amount: string;
-      unit: string;
-    }>;
-  };
-}
+type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
@@ -82,8 +64,9 @@ export default function Overview() {
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
   const [totalBalance, setTotalBalance] = useState('0');
   const [totalUsdmBalance, setTotalUsdmBalance] = useState('0');
-  const [isAddWalletDialogOpen, setIsAddWalletDialogOpen] = useState(false);
-  const [isAddAgentDialogOpen, setIsAddAgentDialogOpen] = useState(false);
+  const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
+  const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] =
+    useState(false);
   const [selectedWalletForSwap, setSelectedWalletForSwap] =
     useState<WalletWithBalance | null>(null);
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
@@ -496,18 +479,12 @@ export default function Overview() {
 
               <div className="flex items-center justify-between">
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-3 text-sm font-normal"
-                  onClick={() => setIsAddAgentDialogOpen(true)}
+                  className="flex items-center gap-2"
+                  onClick={() => setRegisterAgentDialogOpen(true)}
                 >
-                  + Add AI agent
+                  <Plus className="h-4 w-4" />
+                  Register agent
                 </Button>
-                {/* <div className="flex items-center gap-4 text-sm">
-                  <span className="text-muted-foreground">
-                    Total: {agents.length}
-                  </span>
-                </div> */}
               </div>
             </div>
           </div>
@@ -528,17 +505,17 @@ export default function Overview() {
 
               <div className="mb-4">
                 <div className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 text-sm text-muted-foreground mb-2">
-                  <div className="truncate">Type</div>
-                  <div className="truncate">Name</div>
-                  <div className="truncate">Address</div>
+                  <div>Type</div>
+                  <div className="min-w-[50px]">Name</div>
+                  <div className="min-w-[120px]">Address</div>
                   <div className="text-left truncate">Balance</div>
                 </div>
 
                 {isLoadingWallets ? (
                   <Spinner size={20} addContainer />
                 ) : (
-                  <div className="mb-4 max-h-[500px] overflow-y-auto">
-                    {wallets.slice(0, 4).map((wallet) => (
+                  <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
+                    {wallets.map((wallet) => (
                       <div
                         key={wallet.id}
                         className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 items-center py-3 border-b last:border-0 cursor-pointer hover:bg-muted/10"
@@ -558,7 +535,7 @@ export default function Overview() {
                               : 'Selling'}
                           </span>
                         </div>
-                        <div className="truncate">
+                        <div className="truncate min-w-[50px]">
                           <div className="text-sm font-medium truncate">
                             {wallet.type === 'Purchasing'
                               ? 'Buying wallet'
@@ -570,7 +547,7 @@ export default function Overview() {
                         </div>
                         <div className="flex items-center gap-2 truncate">
                           <span className="font-mono text-xs text-muted-foreground">
-                            {wallet.walletAddress.slice(0, 12)}...
+                            {shortenAddress(wallet.walletAddress)}
                           </span>
                           <CopyButton value={wallet.walletAddress} />
                         </div>
@@ -630,7 +607,7 @@ export default function Overview() {
                       return (
                         <div
                           key={`collection-${wallet.id}`}
-                          className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 items-center py-3 border-b last:border-0 cursor-pointer hover:bg-muted/10"
+                          className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 items-center py-3 border-b last:border-0 cursor-pointer hover:bg-muted/10 w-full"
                           onClick={() =>
                             setSelectedWalletForDetails({
                               ...wallet,
@@ -647,7 +624,7 @@ export default function Overview() {
                               Collection
                             </span>
                           </div>
-                          <div className="truncate">
+                          <div className="truncate min-w-[50px]">
                             <div className="text-xs font-medium truncate">
                               Collection wallet
                             </div>
@@ -657,7 +634,7 @@ export default function Overview() {
                           </div>
                           <div className="flex items-center gap-2 truncate">
                             <span className="font-mono text-xs text-muted-foreground">
-                              {wallet.collectionAddress.slice(0, 12)}...
+                              {shortenAddress(wallet.collectionAddress!)}
                             </span>
                             <CopyButton value={wallet.collectionAddress!} />
                           </div>
@@ -708,7 +685,7 @@ export default function Overview() {
                           <Button
                             variant="outline"
                             className="border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/10"
-                            onClick={() => setIsAddWalletDialogOpen(true)}
+                            onClick={() => setAddWalletDialogOpen(true)}
                           >
                             Add collection wallet
                           </Button>
@@ -724,7 +701,7 @@ export default function Overview() {
                   variant="outline"
                   size="sm"
                   className="h-8 px-3 text-sm font-normal"
-                  onClick={() => setIsAddWalletDialogOpen(true)}
+                  onClick={() => setAddWalletDialogOpen(true)}
                 >
                   + Add wallet
                 </Button>
@@ -743,14 +720,15 @@ export default function Overview() {
 
       <AddWalletDialog
         open={isAddWalletDialogOpen}
-        onClose={() => setIsAddWalletDialogOpen(false)}
-        onSuccess={fetchWallets}
+        onClose={() => setAddWalletDialogOpen(false)}
       />
 
-      <AddAIAgentDialog
-        open={isAddAgentDialogOpen}
-        onClose={() => setIsAddAgentDialogOpen(false)}
-        onSuccess={fetchAgents}
+      <RegisterAIAgentDialog
+        open={isRegisterAgentDialogOpen}
+        onClose={() => setRegisterAgentDialogOpen(false)}
+        onSuccess={() => {
+          // TODO: we can refresh data here
+        }}
       />
 
       <AIAgentDetailsDialog

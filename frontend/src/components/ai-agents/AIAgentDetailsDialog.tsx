@@ -6,38 +6,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+import { cn, shortenAddress } from '@/lib/utils';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
-import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
-import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteRegistry } from '@/lib/api/generated';
-import { toast } from 'react-toastify';
+import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
+import { Separator } from '@/components/ui/separator';
+import { Link2, Trash2 } from 'lucide-react';
+import { Button } from '../ui/button';
 import { useState } from 'react';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ConfirmDialog } from '../ui/confirm-dialog';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { toast } from 'react-toastify';
 
-type AIAgent = {
-  id: string;
-  name: string;
-  description: string | null;
-  state: string;
-  createdAt: string;
-  updatedAt: string;
-  agentIdentifier: string | null;
-  Tags: string[];
-  SmartContractWallet: {
-    walletAddress: string;
-    walletVkey: string;
-  };
-  AgentPricing?: {
-    Pricing?: Array<{
-      amount: string;
-      unit: string;
-    }>;
-  };
-};
+type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -87,15 +69,11 @@ export function AIAgentDetailsDialog({
 }: AIAgentDetailsDialogProps) {
   const { apiClient, state } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
-  };
-
-  const shortenAddress = (address: string) => {
-    if (!address) return '';
-    return `${address.slice(0, 8)}...${address.slice(-8)}`;
   };
 
   const handleDelete = async () => {
@@ -103,7 +81,9 @@ export function AIAgentDetailsDialog({
       toast.error('Cannot delete agent: Missing identifier');
       return;
     }
+
     try {
+      setIsDeleting(true);
       await deleteRegistry({
         client: apiClient,
         body: {
@@ -112,212 +92,355 @@ export function AIAgentDetailsDialog({
           smartContractAddress: state.paymentSources?.[0]?.smartContractAddress,
         },
       });
-      toast.success('AI agent deleted successfully');
+      toast.success('AI agent deregistration initiated successfully');
       onClose();
     } catch (error) {
       console.error('Error deleting agent:', error);
-      toast.error('Failed to delete AI agent');
+      toast.error('Failed to deregister AI agent');
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteDialogOpen(false);
     }
   };
 
   return (
-    <Dialog open={!!agent} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        {agent && (
-          <>
-            <DialogHeader
-              onClick={() => {
-                console.log(agent);
-              }}
-            >
-              <DialogTitle>{agent.name}</DialogTitle>
-            </DialogHeader>
+    <>
+      <Dialog
+        open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen}
+        onOpenChange={onClose}
+      >
+        <DialogContent className="max-w-2xl px-0">
+          {agent && (
+            <>
+              <DialogHeader className="px-6">
+                <DialogTitle>{agent.name}</DialogTitle>
+              </DialogHeader>
 
-            <div className="space-y-6 py-4 max-h-[70vh] overflow-auto pb-20">
-              {/* Description */}
-              <div>
-                <h3 className="font-medium mb-2">Description</h3>
-                <p className="text-sm text-muted-foreground">
-                  {agent.description || 'No description provided'}
-                </p>
-              </div>
-
-              {/* Tags */}
-              <div>
-                <h3 className="font-medium mb-2">Tags</h3>
-                <div className="flex flex-wrap gap-2">
-                  {agent.Tags && agent.Tags.length > 0 ? (
-                    agent.Tags.map((tag, index) => (
-                      <Badge key={index} variant="secondary">
-                        {tag}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-sm text-muted-foreground">
-                      No tags
-                    </span>
-                  )}
+              <div className="space-y-6 py-4 px-6 max-h-[600px] overflow-y-auto pb-20">
+                {/* Status and Description */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-medium mb-2">Description</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {agent.description || 'No description provided'}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={getStatusBadgeVariant(agent.state)}
+                    className={cn(
+                      agent.state === 'RegistrationConfirmed' &&
+                        'bg-green-50 text-green-700 hover:bg-green-50/80',
+                    )}
+                  >
+                    {parseAgentStatus(agent.state)}
+                  </Badge>
                 </div>
-              </div>
 
-              {/* Pricing */}
-              <div>
-                <h3 className="font-medium mb-2">Pricing Details</h3>
-                <div className="space-y-2">
-                  {agent.AgentPricing?.Pricing?.map((price, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between py-2 border-b"
-                    >
+                {/* Tags */}
+                <div>
+                  <h3 className="font-medium mb-2">Tags</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {agent.Tags && agent.Tags.length > 0 ? (
+                      agent.Tags.map((tag, index) => (
+                        <Badge key={index} variant="secondary">
+                          {tag}
+                        </Badge>
+                      ))
+                    ) : (
                       <span className="text-sm text-muted-foreground">
-                        Price (
-                        {price.unit === 'lovelace' || !price.unit
-                          ? 'ADA'
-                          : price.unit === USDM_CONFIG.fullAssetId
-                            ? 'USDM'
-                            : price.unit === TESTUSDM_CONFIG.unit
-                              ? 'tUSDM'
-                              : price.unit}
-                        )
+                        No tags
                       </span>
-                      <span className="font-medium">
-                        {price.unit === 'lovelace' || !price.unit
-                          ? `${useFormatPrice(price.amount)} ADA`
-                          : `${useFormatPrice(price.amount)} ${price.unit === USDM_CONFIG.fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pricing */}
+                <div>
+                  <h3 className="font-medium mb-2">Pricing Details</h3>
+                  <div className="space-y-2 p-2 bg-muted/40 rounded-md">
+                    {agent.AgentPricing?.Pricing?.map((price, index, arr) => (
+                      <div
+                        key={index}
+                        className={cn(
+                          'flex items-center justify-between py-2',
+                          index < arr.length - 1 && 'border-b',
+                        )}
+                      >
+                        <span className="text-sm text-muted-foreground">
+                          Price (
+                          {price.unit === 'lovelace' || !price.unit
+                            ? 'ADA'
+                            : price.unit === USDM_CONFIG.fullAssetId
+                              ? 'USDM'
+                              : price.unit === TESTUSDM_CONFIG.unit
+                                ? 'tUSDM'
+                                : price.unit}
+                          )
+                        </span>
+                        <span className="font-medium">
+                          {price.unit === 'lovelace' || !price.unit
+                            ? `${useFormatPrice(price.amount)} ADA`
+                            : `${useFormatPrice(price.amount)} ${price.unit === USDM_CONFIG.fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                        </span>
+                      </div>
+                    ))}
+                    {(!agent.AgentPricing?.Pricing ||
+                      agent.AgentPricing.Pricing.length === 0) && (
+                      <div className="text-sm text-muted-foreground">
+                        No pricing information available
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 pt-2">
+                  <Separator className="flex-1" />
+                  <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                    Additional Details
+                  </h3>
+                  <Separator className="flex-1" />
+                </div>
+
+                {/* Author and Legal */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <h3 className="font-medium mb-4">Author</h3>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Name:</span>
+                        <span>{agent.Author.name}</span>
+                      </div>
+                      {agent.Author.contactEmail && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Email:</span>
+                          <a
+                            href={`mailto:${agent.Author.contactEmail}`}
+                            className="text-primary hover:underline"
+                          >
+                            {agent.Author.contactEmail}
+                          </a>
+                        </div>
+                      )}
+                      {agent.Author.organization && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Organization:
+                          </span>
+                          <span>{agent.Author.organization}</span>
+                        </div>
+                      )}
+                      {agent.Author.contactOther && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Website:
+                          </span>
+                          <a
+                            href={agent.Author.contactOther}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1"
+                          >
+                            {agent.Author.contactOther}{' '}
+                            <Link2 className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  {(!agent.AgentPricing?.Pricing ||
-                    agent.AgentPricing.Pricing.length === 0) && (
-                    <div className="text-sm text-muted-foreground">
-                      No pricing information available
+                  </div>
+                  <div>
+                    <h3 className="font-medium mb-4">Legal</h3>
+                    <div className="space-y-3 text-sm">
+                      {agent.Legal?.terms && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Terms of Use:
+                          </span>
+                          <a
+                            href={agent.Legal.terms}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1"
+                          >
+                            View Link <Link2 className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                      {agent.Legal?.privacyPolicy && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Privacy Policy:
+                          </span>
+                          <a
+                            href={agent.Legal.privacyPolicy}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1"
+                          >
+                            View Link <Link2 className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                      {agent.Legal?.other && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Support:
+                          </span>
+                          <a
+                            href={agent.Legal.other}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-1"
+                          >
+                            View Link <Link2 className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                      {(!agent.Legal ||
+                        Object.values(agent.Legal).every((v) => !v)) && (
+                        <span className="text-muted-foreground">
+                          No legal information provided.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Capability */}
+                {agent.Capability &&
+                  (agent.Capability.name || agent.Capability.version) && (
+                    <div>
+                      <h3 className="font-medium mb-2">Capability</h3>
+                      <div className="flex justify-between text-sm p-3 bg-muted/40 rounded-md">
+                        <span className="text-muted-foreground">Model:</span>
+                        <span>
+                          {agent.Capability.name} (v{agent.Capability.version})
+                        </span>
+                      </div>
                     </div>
                   )}
-                </div>
-              </div>
 
-              {/* Wallet Information */}
-              <div>
-                <h3 className="font-medium mb-2">Wallet Information</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <span className="text-sm text-muted-foreground">
-                      Selling Wallet Address
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">
-                        {shortenAddress(
-                          agent.SmartContractWallet?.walletAddress || '',
-                        )}
-                      </span>
-                      <CopyButton
-                        value={agent.SmartContractWallet?.walletAddress || ''}
-                      />
+                {/* Example Outputs */}
+                {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
+                  <div>
+                    <h3 className="font-medium mb-2">Example Outputs</h3>
+                    <div className="space-y-2">
+                      {agent.ExampleOutputs.map((output, index) => (
+                        <div
+                          key={index}
+                          className="text-sm p-3 bg-muted/40 rounded-md"
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-semibold">{output.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {output.mimeType}
+                              </p>
+                            </div>
+                            <a
+                              href={output.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:underline flex items-center gap-1"
+                            >
+                              View <Link2 className="h-3 w-3" />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <span className="text-sm text-muted-foreground">
-                      Selling Wallet Vkey
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">
-                        {shortenAddress(
-                          agent.SmartContractWallet?.walletVkey || '',
-                        )}
-                      </span>
-                      <CopyButton
-                        value={agent.SmartContractWallet?.walletVkey || ''}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
+                )}
 
-              {/* Metadata */}
-              <div>
-                <h3 className="font-medium mb-2">Additional Information</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <span className="text-sm text-muted-foreground">
-                      Created
-                    </span>
-                    <span>{formatDate(agent.createdAt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <span className="text-sm text-muted-foreground">
-                      Last Updated
-                    </span>
-                    <span>{formatDate(agent.updatedAt)}</span>
-                  </div>
-                  <div className="flex items-center justify-between py-2 border-b">
-                    <span className="text-sm text-muted-foreground">
-                      Agent ID
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">
+                {/* Wallet Information */}
+                <div>
+                  <h3 className="font-medium mb-2">Wallet Information</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between py-2 border-b">
+                      <span className="text-sm text-muted-foreground">
+                        Agent Identifier
+                      </span>
+                      <div className="font-mono text-sm flex items-center gap-2">
                         {shortenAddress(agent.agentIdentifier || '')}
+                        <CopyButton value={agent.agentIdentifier || ''} />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm text-muted-foreground">
+                        Linked Wallet Address
                       </span>
-                      <CopyButton value={agent.agentIdentifier || ''} />
+                      <div className="font-mono text-sm flex items-center gap-2">
+                        {shortenAddress(
+                          agent.SmartContractWallet.walletAddress,
+                        )}
+                        <CopyButton
+                          value={agent.SmartContractWallet.walletAddress}
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between py-2">
-                    <span className="text-sm text-muted-foreground">
-                      Status
-                    </span>
-                    <Badge
-                      variant={getStatusBadgeVariant(agent.state)}
-                      className={cn(
-                        agent.state === 'RegistrationConfirmed' &&
-                          'bg-green-50 text-green-700 hover:bg-green-50/80',
-                      )}
-                    >
-                      {parseAgentStatus(agent.state)}
-                    </Badge>
+                </div>
+
+                {/* Timestamps */}
+                <div>
+                  <h3 className="font-medium mb-2">Timestamps</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between py-2 border-b">
+                      <span className="text-sm text-muted-foreground">
+                        Registered On
+                      </span>
+                      <span className="font-mono text-sm">
+                        {formatDate(agent.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm text-muted-foreground">
+                        Last Updated
+                      </span>
+                      <span className="font-mono text-sm">
+                        {formatDate(agent.updatedAt)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            {/* Actions Section */}
-            <div className="pt-4 border-t flex justify-end gap-2 bg-background absolute bottom-0 left-0 w-full p-4 z-10">
-              <Button
-                onClick={() => setIsPurchaseDialogOpen(true)}
-                disabled
-                className="font-semibold"
-              >
-                Trigger Purchase
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => setIsDeleteDialogOpen(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <ConfirmDialog
-              open={isDeleteDialogOpen}
-              onClose={() => setIsDeleteDialogOpen(false)}
-              title="Delete AI Agent"
-              description={`Are you sure you want to delete "${agent?.name}"? This action cannot be undone.`}
-              onConfirm={async () => {
-                await handleDelete();
-                setIsDeleteDialogOpen(false);
-              }}
-              isLoading={false}
-            />
-            <ConfirmDialog
-              open={isPurchaseDialogOpen}
-              onClose={() => setIsPurchaseDialogOpen(false)}
-              title="Trigger Purchase"
-              description={`Are you sure you want to trigger a purchase for "${agent?.name}"?`}
-              onConfirm={async () => {
-                // TODO: call postPurchase here
-                setIsPurchaseDialogOpen(false);
-              }}
-              isLoading={false}
-            />
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+              <div className="pt-4 border-t flex justify-end gap-2 bg-background absolute bottom-0 left-0 w-full p-4 z-10">
+                <Button
+                  onClick={() => setIsPurchaseDialogOpen(true)}
+                  disabled
+                  className="font-semibold"
+                >
+                  Trigger Purchase
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        title="Deregister AI Agent"
+        description={`Are you sure you want to deregister "${agent?.name}"? This action cannot be undone.`}
+        onConfirm={handleDelete}
+        isLoading={isDeleting}
+      />
+      <ConfirmDialog
+        open={isPurchaseDialogOpen}
+        onClose={() => setIsPurchaseDialogOpen(false)}
+        title="Trigger Purchase"
+        description={`Are you sure you want to trigger a purchase for "${agent?.name}"?`}
+        onConfirm={async () => {
+          toast.info('Purchase functionality is not yet implemented.');
+          setIsPurchaseDialogOpen(false);
+        }}
+        isLoading={false}
+      />
+    </>
   );
 }

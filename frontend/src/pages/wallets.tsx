@@ -380,7 +380,7 @@ export default function WalletsPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border">
+        <div className="rounded-lg border overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b">
