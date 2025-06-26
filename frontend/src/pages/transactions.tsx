@@ -525,7 +525,7 @@ export default function Transactions() {
             </div>
           </div>
 
-          <div className="border rounded-lg">
+          <div className="border rounded-lg overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
