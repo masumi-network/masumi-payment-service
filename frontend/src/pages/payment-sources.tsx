@@ -30,6 +30,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { CopyButton } from '@/components/ui/copy-button';
+import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
+import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -315,7 +317,15 @@ export default function PaymentSourcesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Payment Sources</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold">Payment Sources</h1>
+              <BadgeWithTooltip
+                text="?"
+                tooltipText={TOOLTIP_TEXTS.PAYMENT_SOURCES}
+                variant="outline"
+                className="text-xs w-5 h-5 rounded-full p-0 flex items-center justify-center cursor-help"
+              />
+            </div>
             <p className="text-sm text-muted-foreground">
               Manage your payment sources.{' '}
               <Link

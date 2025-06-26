@@ -20,6 +20,14 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '../ui/spinner';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { HelpCircle } from 'lucide-react';
 
 interface AddPaymentSourceDialogProps {
   open: boolean;
@@ -309,9 +317,21 @@ export function AddPaymentSourceDialog({
             <h3 className="text-lg font-semibold">Basic Configuration</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Network <span className="text-destructive">*</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">
+                    Network <span className="text-destructive">*</span>
+                  </label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{TOOLTIP_TEXTS.NETWORK}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <select
                   className="w-full p-2 rounded-md bg-background border"
                   {...register('network')}
@@ -326,9 +346,21 @@ export function AddPaymentSourceDialog({
                 )}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Blockfrost API Key <span className="text-destructive">*</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">
+                    Blockfrost API Key <span className="text-destructive">*</span>
+                  </label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{TOOLTIP_TEXTS.BLOCKFROST_API_KEY}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <input
                   type="text"
                   className="w-full p-2 rounded-md bg-background border"
@@ -342,9 +374,21 @@ export function AddPaymentSourceDialog({
                 )}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Fee Permille <span className="text-destructive">*</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">
+                    Fee Permille <span className="text-destructive">*</span>
+                  </label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <input
                   type="number"
                   className="w-full p-2 rounded-md bg-background border"
@@ -362,7 +406,19 @@ export function AddPaymentSourceDialog({
           </div>
 
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Wallet Address <span className="text-destructive">*</span>
@@ -383,7 +439,19 @@ export function AddPaymentSourceDialog({
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Admin Wallets</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Admin Wallets</h3>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.ADMIN_WALLETS}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm">Use Custom Admin Wallets</label>
                 <input type="checkbox" {...register('useCustomAdminWallets')} />
@@ -452,7 +520,19 @@ export function AddPaymentSourceDialog({
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Purchasing Wallets</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Purchasing Wallets</h3>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.PURCHASING_WALLETS}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
@@ -529,7 +609,19 @@ export function AddPaymentSourceDialog({
 
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Selling Wallets</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Selling Wallets</h3>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.SELLING_WALLETS}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Button
                 type="button"
                 variant="secondary"
