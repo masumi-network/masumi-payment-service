@@ -527,178 +527,195 @@ export default function Overview() {
               </p>
 
               <div className="mb-4">
-                <div className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 text-sm text-muted-foreground mb-2">
-                  <div className="truncate">Type</div>
-                  <div className="truncate">Name</div>
-                  <div className="truncate">Address</div>
-                  <div className="text-left truncate">Balance</div>
-                </div>
-
                 {isLoadingWallets ? (
                   <Spinner size={20} addContainer />
                 ) : (
-                  <div className="mb-4 max-h-[500px] overflow-y-auto">
-                    {wallets.slice(0, 4).map((wallet) => (
-                      <div
-                        key={wallet.id}
-                        className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 items-center py-3 border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                        onClick={() => setSelectedWalletForDetails(wallet)}
-                      >
-                        <div className="truncate">
-                          <span
-                            className={cn(
-                              'text-xs font-medium px-2 py-0.5 rounded-full',
-                              wallet.type === 'Purchasing'
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                            )}
+                  <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
+                    <table className="w-full">
+                      <thead className="sticky top-0 bg-background z-10">
+                        <tr className="text-sm text-muted-foreground border-b">
+                          <th className="text-left py-2 px-2 w-20">Type</th>
+                          <th className="text-left py-2 px-2">Name</th>
+                          <th className="text-left py-2 px-2">Address</th>
+                          <th className="text-left py-2 px-2">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wallets.map((wallet) => (
+                          <tr
+                            key={wallet.id}
+                            className="border-b last:border-0 cursor-pointer hover:bg-muted/10"
+                            onClick={() => setSelectedWalletForDetails(wallet)}
                           >
-                            {wallet.type === 'Purchasing'
-                              ? 'Buying'
-                              : 'Selling'}
-                          </span>
-                        </div>
-                        <div className="truncate">
-                          <div className="text-sm font-medium truncate">
-                            {wallet.type === 'Purchasing'
-                              ? 'Buying wallet'
-                              : 'Selling wallet'}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {wallet.note || 'Created by seeding'}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 truncate">
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {wallet.walletAddress.slice(0, 12)}...
-                          </span>
-                          <CopyButton value={wallet.walletAddress} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex flex-col items-start">
-                            <span className="text-sm flex items-center gap-1">
-                              {useFormatBalance(
-                                (parseInt(wallet.balance || '0') / 1000000)
-                                  .toFixed(2)
-                                  ?.toString(),
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                ADA
+                            <td className="py-3 px-2">
+                              <span
+                                className={cn(
+                                  'text-xs font-medium px-2 py-0.5 rounded-full',
+                                  wallet.type === 'Purchasing'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
+                                )}
+                              >
+                                {wallet.type === 'Purchasing'
+                                  ? 'Buying'
+                                  : 'Selling'}
                               </span>
-                            </span>
-                            <span className="text-sm flex items-center gap-1">
-                              {useFormatBalance(
-                                (parseInt(wallet.usdmBalance || '0') / 1000000)
-                                  .toFixed(2)
-                                  ?.toString(),
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                USDM
-                              </span>
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedWalletForSwap(wallet);
-                              }}
-                            >
-                              <FaExchangeAlt className="h-2 w-2" />
-                            </Button>
-                            <Button
-                              variant="muted"
-                              className="h-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedWalletForTopup(wallet);
-                              }}
-                            >
-                              Top Up
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                            </td>
+                            <td className="py-3 px-2 max-w-[100px]">
+                              <div className="text-sm font-medium truncate">
+                                {wallet.type === 'Purchasing'
+                                  ? 'Buying wallet'
+                                  : 'Selling wallet'}
+                              </div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {wallet.note || 'Created by seeding'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 max-w-[100px]">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs text-muted-foreground truncate">
+                                  {wallet.walletAddress}
+                                </span>
+                                <CopyButton value={wallet.walletAddress} />
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 w-32">
+                              <div className="text-xs flex items-center gap-1">
+                                {useFormatBalance(
+                                  (parseInt(wallet.balance || '0') / 1000000)
+                                    .toFixed(2)
+                                    ?.toString(),
+                                )}{' '}
+                                <span className="text-xs text-muted-foreground">
+                                  ADA
+                                </span>
+                              </div>
+                              <div className="text-xs flex items-center gap-1">
+                                {useFormatBalance(
+                                  (
+                                    parseInt(wallet.usdmBalance || '0') /
+                                    1000000
+                                  )
+                                    .toFixed(2)
+                                    ?.toString(),
+                                )}{' '}
+                                <span className="text-xs text-muted-foreground">
+                                  USDM
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-2 w-32">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedWalletForSwap(wallet);
+                                  }}
+                                >
+                                  <FaExchangeAlt className="h-2 w-2" />
+                                </Button>
+                                <Button
+                                  variant="muted"
+                                  className="h-8"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedWalletForTopup(wallet);
+                                  }}
+                                >
+                                  Top Up
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
 
-                    {/* Collection Wallet Section */}
-                    {wallets.map((wallet) => {
-                      if (!wallet.collectionAddress) return null;
-                      return (
-                        <div
-                          key={`collection-${wallet.id}`}
-                          className="grid grid-cols-[80px_1fr_1.5fr_230px] gap-4 items-center py-3 border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                          onClick={() =>
-                            setSelectedWalletForDetails({
-                              ...wallet,
-                              walletAddress: wallet.collectionAddress!,
-                              type: 'Collection' as any,
-                              balance: wallet.collectionBalance?.ada || '0',
-                              usdmBalance:
-                                wallet.collectionBalance?.usdm || '0',
-                            })
-                          }
-                        >
-                          <div className="truncate">
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
-                              Collection
-                            </span>
-                          </div>
-                          <div className="truncate">
-                            <div className="text-xs font-medium truncate">
-                              Collection wallet
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate">
-                              {wallet.note && `${wallet.note}`}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {wallet.collectionAddress.slice(0, 12)}...
-                            </span>
-                            <CopyButton value={wallet.collectionAddress!} />
-                          </div>
-                          <div className="flex flex-col items-start truncate">
-                            <span className="text-sm flex items-center gap-1">
-                              {useFormatBalance(
-                                (
-                                  parseInt(
-                                    wallet.collectionBalance?.ada || '0',
-                                  ) / 1000000
-                                )
-                                  .toFixed(2)
-                                  ?.toString(),
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                ADA
-                              </span>
-                            </span>
-                            <span className="text-sm flex items-center gap-1">
-                              {useFormatBalance(
-                                (
-                                  parseInt(
+                        {/* Collection Wallet Rows */}
+                        {wallets.map((wallet) => {
+                          if (!wallet.collectionAddress) return null;
+                          return (
+                            <tr
+                              key={`collection-${wallet.id}`}
+                              className="border-b last:border-0 cursor-pointer hover:bg-muted/10"
+                              onClick={() =>
+                                setSelectedWalletForDetails({
+                                  ...wallet,
+                                  walletAddress: wallet.collectionAddress!,
+                                  type: 'Collection' as any,
+                                  balance: wallet.collectionBalance?.ada || '0',
+                                  usdmBalance:
                                     wallet.collectionBalance?.usdm || '0',
-                                  ) / 1000000
-                                )
-                                  .toFixed(2)
-                                  ?.toString(),
-                              )}
-                              <span className="text-xs text-muted-foreground">
-                                USDM
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                                })
+                              }
+                            >
+                              <td className="py-3 px-2">
+                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
+                                  Collection
+                                </span>
+                              </td>
+                              <td className="py-3 px-2">
+                                <div className="text-sm font-medium truncate max-w-[100px]">
+                                  Collection wallet
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {wallet.note && `${wallet.note}`}
+                                </div>
+                              </td>
+                              <td className="py-3 px-2">
+                                <div className="flex items-center gap-2 max-w-[100px]">
+                                  <span className="font-mono text-xs text-muted-foreground truncate">
+                                    {wallet.collectionAddress!}
+                                  </span>
+                                  <CopyButton
+                                    value={wallet.collectionAddress!}
+                                  />
+                                </div>
+                              </td>
+                              <td className="py-3 px-2">
+                                <div className="text-xs flex items-center gap-1">
+                                  {useFormatBalance(
+                                    (
+                                      parseInt(
+                                        wallet.collectionBalance?.ada || '0',
+                                      ) / 1000000
+                                    )
+                                      .toFixed(2)
+                                      ?.toString(),
+                                  )}
+                                  <span className="text-xs text-muted-foreground">
+                                    ADA
+                                  </span>
+                                </div>
+                                <div className="text-xs flex items-center gap-1">
+                                  {useFormatBalance(
+                                    (
+                                      parseInt(
+                                        wallet.collectionBalance?.usdm || '0',
+                                      ) / 1000000
+                                    )
+                                      .toFixed(2)
+                                      ?.toString(),
+                                  )}
+                                  <span className="text-xs text-muted-foreground">
+                                    USDM
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-2 w-32">
+                                {/* No actions for collection wallets */}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
 
                     {/* Show add collection wallet message if no collection addresses exist */}
                     {!wallets.some((w) => w.collectionAddress) && (
                       <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-[#0002] dark:border-blue-500/20 p-4 my-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
                             <div className="text-sm">
                               Add a collection wallet to manage your funds more

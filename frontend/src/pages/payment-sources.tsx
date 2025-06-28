@@ -350,7 +350,7 @@ export default function PaymentSourcesPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border">
+          <div className="rounded-lg border overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
@@ -363,7 +363,7 @@ export default function PaymentSourcesPage() {
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">
+                  <th className="p-4 text-left text-sm font-medium truncate">
                     Contract address
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
@@ -371,10 +371,10 @@ export default function PaymentSourcesPage() {
                   <th className="p-4 text-left text-sm font-medium">
                     Payment type
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">
+                  <th className="p-4 text-left text-sm font-medium truncate">
                     Fee rate
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">
+                  <th className="p-4 text-left text-sm font-medium truncate">
                     Created at
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
@@ -410,7 +410,10 @@ export default function PaymentSourcesPage() {
                         </div>
                       </td>
                       <td className="p-4">
-                        <div className="text-sm">{source.id}</div>
+                        <div className="text-sm flex items-center gap-2">
+                          {shortenAddress(source.id)}
+                          <CopyButton value={source.id} />
+                        </div>
                       </td>
                       <td className="p-4">
                         <div className="text-sm">{source.network}</div>
@@ -430,8 +433,12 @@ export default function PaymentSourcesPage() {
                       </td>
                       <td className="p-4">
                         <div className="text-xs text-muted-foreground">
-                          {source.PurchasingWallets.length} Buying,
-                          <br /> {source.SellingWallets.length} Selling
+                          <span className="block truncate">
+                            {source.PurchasingWallets.length} Buying,
+                          </span>
+                          <span className="block truncate">
+                            {source.SellingWallets.length} Selling
+                          </span>
                         </div>
                       </td>
                       <td className="p-4">

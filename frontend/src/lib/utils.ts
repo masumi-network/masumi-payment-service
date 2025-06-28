@@ -7,9 +7,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function shortenAddress(address: string) {
+export function shortenAddress(address: string, length: number = 4) {
   if (!address) return '';
-  return address.slice(0, 7) + '...' + address.slice(-5);
+  return address.slice(0, length) + '...' + address.slice(-length);
 }
 
 export async function copyToClipboard(text: string) {
