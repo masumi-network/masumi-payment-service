@@ -870,14 +870,14 @@ export type GetPurchaseResponses = {
                     createdAt: string;
                     updatedAt: string;
                     txHash: string;
-                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
                     createdAt: string;
                     updatedAt: string;
                     txHash: string;
-                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
                 }>;
                 PaidFunds: Array<{
                     amount: string;
@@ -1022,7 +1022,7 @@ export type PostPurchaseResponses = {
                 createdAt: string;
                 updatedAt: string;
                 txHash: string;
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
                 amount: string;
@@ -1119,7 +1119,7 @@ export type PostPurchaseRequestRefundResponses = {
                 createdAt: string;
                 updatedAt: string;
                 txHash: string;
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
                 amount: string;
@@ -1216,7 +1216,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 createdAt: string;
                 updatedAt: string;
                 txHash: string;
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
                 amount: string;
@@ -1469,7 +1469,7 @@ export type GetRegistryResponses = {
                 };
                 CurrentTransaction: {
                     txHash: string;
-                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout';
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
                 } | null;
             }>;
         };

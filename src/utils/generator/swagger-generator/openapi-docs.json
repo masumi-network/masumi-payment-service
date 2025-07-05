@@ -3012,7 +3012,8 @@
                                                                         "enum": [
                                                                             "Pending",
                                                                             "Confirmed",
-                                                                            "FailedViaTimeout"
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
                                                                         ]
                                                                     }
                                                                 },
@@ -3046,7 +3047,8 @@
                                                                             "enum": [
                                                                                 "Pending",
                                                                                 "Confirmed",
-                                                                                "FailedViaTimeout"
+                                                                                "FailedViaTimeout",
+                                                                                "RolledBack"
                                                                             ]
                                                                         }
                                                                     },
@@ -3547,7 +3549,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -3946,7 +3949,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -4343,7 +4347,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -5168,7 +5173,8 @@
                                                                         "enum": [
                                                                             "Pending",
                                                                             "Confirmed",
-                                                                            "FailedViaTimeout"
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
                                                                         ]
                                                                     }
                                                                 },

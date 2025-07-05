@@ -88,10 +88,9 @@ model HotWallet {
 
   lockedAt DateTime?
 
-  note              String?
-  RegistryRequest   RegistryRequest[]
-  deletedAt         DateTime?
-  CollateralRequest CollateralRequest[]
+  note            String?
+  RegistryRequest RegistryRequest[]
+  deletedAt       DateTime?
 }
 
 model Transaction {
@@ -113,8 +112,7 @@ model Transaction {
   PurchaseRequestHistory   PurchaseRequest? @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
   purchaseRequestHistoryId String?
 
-  RegistryRequest   RegistryRequest[]
-  CollateralRequest CollateralRequest[]
+  RegistryRequest RegistryRequest[]
 }
 
 model WalletSecret {
@@ -158,31 +156,6 @@ enum RegistrationState {
   DeregistrationInitiated
   DeregistrationConfirmed
   DeregistrationFailed
-}
-
-model CollateralRequest {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastCheckedAt DateTime?
-
-  paymentSourceId String
-  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id])
-
-  HotWallet   HotWallet @relation(fields: [hotWalletId], references: [id])
-  hotWalletId String
-
-  agentIdentifier String?                @unique
-  state           CollateralRequestState
-  Transaction     Transaction?           @relation(fields: [transactionId], references: [id])
-  transactionId   String?
-  error           String?
-}
-
-enum CollateralRequestState {
-  Pending
-  Confirmed
-  Failed
 }
 
 model RegistryRequest {
@@ -407,6 +380,7 @@ enum TransactionStatus {
   Pending
   Confirmed
   FailedViaTimeout
+  RolledBack
 }
 
 enum OnChainState {
@@ -455,6 +429,17 @@ enum PurchasingAction {
   WithdrawRefundInitiated
 }
 
+model PaymentSourceIdentifiers {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  txHash String @unique
+
+  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id])
+  paymentSourceId String
+}
+
 model PaymentSource {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -482,13 +467,14 @@ model PaymentSource {
 
   paymentType PaymentType
 
-  HotWallets        HotWallet[]
-  WalletBases       WalletBase[]
-  RegistryRequest   RegistryRequest[]
-  deletedAt         DateTime?
-  disablePaymentAt  DateTime?
-  disableSyncAt     DateTime?
-  CollateralRequest CollateralRequest[]
+  HotWallets       HotWallet[]
+  WalletBases      WalletBase[]
+  RegistryRequest  RegistryRequest[]
+  deletedAt        DateTime?
+  disablePaymentAt DateTime?
+  disableSyncAt    DateTime?
+
+  PaymentSourceIdentifiers PaymentSourceIdentifiers[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
