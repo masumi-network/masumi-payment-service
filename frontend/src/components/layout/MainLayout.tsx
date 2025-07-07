@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   Bell,
   Search,
+  NotebookPen,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -131,6 +132,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       badge: null,
     },
     { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
+    {
+      href: '/input-schema-validator',
+      name: 'Input Schema Validator',
+      icon: NotebookPen,
+      badge: null,
+    },
     { href: '/settings', name: 'Settings', icon: Settings, badge: null },
   ];
 
