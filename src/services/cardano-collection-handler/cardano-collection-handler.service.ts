@@ -156,8 +156,8 @@ export async function collectOutstandingPaymentsV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                  BigInt(request.collateralReturnLovelace) &&
+                BigInt(decodedContract.payByTime) == BigInt(request.payByTime)
               );
             });
 
