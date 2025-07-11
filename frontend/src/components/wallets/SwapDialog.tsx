@@ -26,6 +26,9 @@ import { Token } from '@/types/token';
 import { Spinner } from '../ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import Image from 'next/image';
+import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
+
 interface SwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -138,13 +141,9 @@ export function SwapDialog({
         },
         query: {
           address: effectiveWalletAddress,
-          network: 'Preprod',
+          network: state.network,
         },
       });
-      const usdmPolicyId =
-        'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad';
-      const usdmHex = '0014df105553444d';
-
       const lovelace =
         result?.data?.data?.Utxos?.reduce((acc, utxo) => {
           return (
@@ -162,22 +161,19 @@ export function SwapDialog({
           return (
             acc +
             utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === usdmPolicyId + usdmHex) {
+              if (asset.unit === USDM_CONFIG.fullAssetId) {
                 return acc + (asset.quantity ?? 0);
               }
               return acc;
             }, 0)
           );
         }, 0) ?? 0;
-      const nmkrPolicyId =
-        '5dac8536653edc12f6f5e1045d8164b9f59998d3bdc300fc92843489';
-      const nmkrHex = '4e4d4b52';
       const nmkr =
         result?.data?.data?.Utxos?.reduce((acc, utxo) => {
           return (
             acc +
             utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === nmkrPolicyId + nmkrHex) {
+              if (asset.unit === NMKR_CONFIG?.fullAssetId) {
                 return acc + (asset.quantity ?? 0);
               }
               return acc;
@@ -186,7 +182,7 @@ export function SwapDialog({
         }, 0) ?? 0;
 
       setAdaBalance(lovelace / 1000000);
-      setUsdmBalance(usdm / 10000000);
+      setUsdmBalance(usdm / 1000000);
       setNmkrBalance(nmkr / 1000000);
       setBalanceError(null);
     } catch (error) {
@@ -408,241 +404,250 @@ export function SwapDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="overflow-y-hidden max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Swap Tokens</DialogTitle>
-          <DialogDescription>
-            {isDev ? (
-              <>
-                <b>DEV WALLET</b>
-                <br />
-                <i>{shortenAddress(effectiveWalletAddress)}</i>
-              </>
-            ) : (
-              <>
-                {network?.toLowerCase() === 'preprod' ? 'PREPROD' : 'MAINNET'}{' '}
-                Network
-                <br />
-                <i>{shortenAddress(effectiveWalletAddress)}</i>
-              </>
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        {isFetchingDetails ? (
-          <div className="text-center text-gray-500 mb-4">
-            <BlinkingUnderscore />
-          </div>
-        ) : (
-          <>
-            {!isDev ? (
-              <>
-                {adaBalance === 0 && (
-                  <div className="text-red-500 mb-4">
-                    Cannot swap zero balance
-                  </div>
-                )}
-                {network?.toLowerCase() === 'preprod' && (
-                  <div className="text-red-500 mb-4">
-                    Can't perform swap on <b>{network?.toUpperCase()}</b>{' '}
-                    network
-                  </div>
-                )}
-              </>
-            ) : (
-              <></>
-            )}
-            <div
-              style={{
-                opacity: canSwap && !isSwapping ? 1 : 0.4,
-                pointerEvents: canSwap && !isSwapping ? 'auto' : 'none',
-              }}
-            >
-              <div className="flex flex-col space-y-4">
-                <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
-                  <div className="flex flex-col space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <select
-                        value={swappableTokens.indexOf(selectedFromToken)}
-                        onChange={(e) =>
-                          handleTokenChange('from', parseInt(e.target.value))
-                        }
-                        className="bg-transparent text-foreground"
-                      >
-                        {swappableTokens.map((token, index) => (
-                          <option key={token.symbol} value={index}>
-                            {token.symbol}
-                          </option>
-                        ))}
-                      </select>
-                      <Image
-                        src={selectedFromToken.icon}
-                        alt="Token"
-                        className="w-6 h-6 rounded-full"
-                        width={24}
-                        height={24}
-                      />
+    <>
+      <Dialog
+        open={isOpen && !showConfirmation}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowConfirmation(false);
+            onClose();
+          }
+        }}
+      >
+        <DialogContent className="overflow-y-hidden">
+          <DialogHeader>
+            <DialogTitle>Swap Tokens</DialogTitle>
+            <DialogDescription>
+              {isDev ? (
+                <>
+                  <b>DEV WALLET</b>
+                  <br />
+                  <i>{shortenAddress(effectiveWalletAddress)}</i>
+                </>
+              ) : (
+                <>
+                  {network?.toLowerCase() === 'preprod' ? 'PREPROD' : 'MAINNET'}{' '}
+                  Network
+                  <br />
+                  <i>{shortenAddress(effectiveWalletAddress)}</i>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {isFetchingDetails ? (
+            <div className="text-center text-gray-500 mb-4">
+              <BlinkingUnderscore />
+            </div>
+          ) : (
+            <>
+              {!isDev ? (
+                <>
+                  {adaBalance === 0 && (
+                    <div className="text-red-500 mb-4">
+                      Cannot swap zero balance
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Balance:{' '}
-                      {useFormatBalance(
-                        getBalanceForToken(selectedFromToken.symbol).toFixed(6),
-                      ) ?? ''}
+                  )}
+                  {network?.toLowerCase() === 'preprod' && (
+                    <div className="text-red-500 mb-4">
+                      Can't perform swap on <b>{network?.toUpperCase()}</b>{' '}
+                      network
                     </div>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <div className="relative w-full">
-                      <input
-                        type="number"
-                        className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
-                          fromAmount > getMaxAmount(selectedFromToken.symbol)
-                            ? 'text-red-500'
-                            : ''
-                        }`}
-                        placeholder="0"
-                        value={fromAmount || ''}
-                        onChange={handleFromAmountChange}
-                        step="0.2"
-                        style={{ MozAppearance: 'textfield' }}
-                      />
-                      <span
-                        className="absolute right-0 -top-3 text-xs text-muted-foreground cursor-pointer hover:text-foreground"
-                        onClick={handleMaxClick}
-                      >
-                        Max:{' '}
+                  )}
+                </>
+              ) : (
+                <></>
+              )}
+              <div
+                style={{
+                  opacity: canSwap && !isSwapping ? 1 : 0.4,
+                  pointerEvents: canSwap && !isSwapping ? 'auto' : 'none',
+                }}
+              >
+                <div className="flex flex-col space-y-4">
+                  <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
+                    <div className="flex flex-col space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={swappableTokens.indexOf(selectedFromToken)}
+                          onChange={(e) =>
+                            handleTokenChange('from', parseInt(e.target.value))
+                          }
+                          className="bg-transparent text-foreground"
+                        >
+                          {swappableTokens.map((token, index) => (
+                            <option key={token.symbol} value={index}>
+                              {token.symbol}
+                            </option>
+                          ))}
+                        </select>
+                        <Image
+                          src={selectedFromToken.icon}
+                          alt="Token"
+                          className="w-6 h-6 rounded-full"
+                          width={24}
+                          height={24}
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Balance:{' '}
                         {useFormatBalance(
-                          getMaxAmount(selectedFromToken.symbol).toFixed(2),
-                        ) || ''}
+                          getBalanceForToken(selectedFromToken.symbol).toFixed(
+                            6,
+                          ),
+                        ) ?? ''}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <div className="relative w-full">
+                        <input
+                          type="number"
+                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
+                            fromAmount > getMaxAmount(selectedFromToken.symbol)
+                              ? 'text-red-500'
+                              : ''
+                          }`}
+                          placeholder="0"
+                          value={fromAmount || ''}
+                          onChange={handleFromAmountChange}
+                          step="0.2"
+                          style={{ MozAppearance: 'textfield' }}
+                        />
+                        <span
+                          className="absolute right-0 -top-3 text-xs text-muted-foreground cursor-pointer hover:text-foreground"
+                          onClick={handleMaxClick}
+                        >
+                          Max:{' '}
+                          {useFormatBalance(
+                            getMaxAmount(selectedFromToken.symbol).toFixed(2),
+                          ) || ''}
+                        </span>
+                      </div>
+                      <span className="block text-xs text-muted-foreground">
+                        {formattedDollarValue}
                       </span>
                     </div>
-                    <span className="block text-xs text-muted-foreground">
-                      {formattedDollarValue}
-                    </span>
                   </div>
-                </div>
-                <div className="relative flex items-center">
-                  <div className="flex-grow border-t border-border"></div>
-                  <Button
-                    onClick={handleSwitch}
-                    className="mx-4 p-2 w-10 h-10 flex items-center justify-center transform rotate-90"
-                  >
-                    <FaExchangeAlt className="w-5 h-5" />
-                  </Button>
-                  <div className="flex-grow border-t border-border"></div>
-                </div>
-                <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
-                  <div className="flex flex-col space-y-1">
-                    <div className="flex items-center space-x-2">
-                      <select
-                        value={swappableTokens.indexOf(selectedToToken)}
-                        onChange={(e) =>
-                          handleTokenChange('to', parseInt(e.target.value))
-                        }
-                        className="bg-transparent text-foreground"
-                      >
-                        {swappableTokens.map((token, index) => (
-                          <option key={token.symbol} value={index}>
-                            {token.symbol}
-                          </option>
-                        ))}
-                      </select>
-                      <Image
-                        src={selectedToToken.icon}
-                        alt="Token"
-                        className="w-6 h-6 rounded-full"
-                        width={24}
-                        height={24}
+                  <div className="relative flex items-center">
+                    <div className="flex-grow border-t border-border"></div>
+                    <Button
+                      onClick={handleSwitch}
+                      className="mx-4 p-2 w-10 h-10 flex items-center justify-center transform rotate-90"
+                    >
+                      <FaExchangeAlt className="w-5 h-5" />
+                    </Button>
+                    <div className="flex-grow border-t border-border"></div>
+                  </div>
+                  <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
+                    <div className="flex flex-col space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <select
+                          value={swappableTokens.indexOf(selectedToToken)}
+                          onChange={(e) =>
+                            handleTokenChange('to', parseInt(e.target.value))
+                          }
+                          className="bg-transparent text-foreground"
+                        >
+                          {swappableTokens.map((token, index) => (
+                            <option key={token.symbol} value={index}>
+                              {token.symbol}
+                            </option>
+                          ))}
+                        </select>
+                        <Image
+                          src={selectedToToken.icon}
+                          alt="Token"
+                          className="w-6 h-6 rounded-full"
+                          width={24}
+                          height={24}
+                        />
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Balance:{' '}
+                        {useFormatBalance(
+                          getBalanceForToken(selectedToToken.symbol).toFixed(6),
+                        ) ?? ''}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <input
+                        type="text"
+                        className="w-24 text-right bg-transparent focus:outline-none appearance-none text-foreground"
+                        placeholder="0"
+                        value={toAmount.toFixed(6)}
+                        readOnly
                       />
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Balance:{' '}
-                      {useFormatBalance(
-                        getBalanceForToken(selectedToToken.symbol).toFixed(6),
-                      ) ?? ''}
-                    </div>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <input
-                      type="text"
-                      className="w-24 text-right bg-transparent focus:outline-none appearance-none text-foreground"
-                      placeholder="0"
-                      value={toAmount.toFixed(6)}
-                      readOnly
-                    />
+                  <div className="text-center text-sm text-muted-foreground">
+                    1 {selectedFromToken.symbol} ≈ {conversionRate.toFixed(5)}{' '}
+                    {selectedToToken.symbol}
                   </div>
-                </div>
-                <div className="text-center text-sm text-muted-foreground">
-                  1 {selectedFromToken.symbol} ≈ {conversionRate.toFixed(5)}{' '}
-                  {selectedToToken.symbol}
-                </div>
-                <Button
-                  variant="default"
-                  className="w-full"
-                  onClick={handleSwapClick}
-                  disabled={
-                    !canSwap ||
-                    isSwapping ||
-                    fromAmount <= 0 ||
-                    fromAmount > getMaxAmount(selectedFromToken.symbol)
-                  }
-                >
-                  {isSwapping ? 'Swap in Progress...' : 'Swap'}{' '}
-                  {isSwapping && <Spinner size={16} className="ml-1" />}
-                </Button>
-                {error && <div className="text-red-500 mt-2">{error}</div>}
-
-                {showConfirmation && (
-                  <Dialog
-                    open={showConfirmation}
-                    onOpenChange={() => setShowConfirmation(false)}
+                  <Button
+                    variant="default"
+                    className="w-full"
+                    onClick={handleSwapClick}
+                    disabled={
+                      !canSwap ||
+                      isSwapping ||
+                      fromAmount <= 0 ||
+                      fromAmount > getMaxAmount(selectedFromToken.symbol)
+                    }
                   >
-                    <DialogContent className="sm:max-w-[425px]">
-                      <DialogHeader>
-                        <DialogTitle>Confirm Swap</DialogTitle>
-                        <DialogDescription>
-                          Are you sure you want to swap:
-                        </DialogDescription>
-                        <div className="mt-2 font-medium">
-                          {fromAmount} {selectedFromToken.symbol} →{' '}
-                          {toAmount.toFixed(6)} {selectedToToken.symbol}
-                        </div>
-                      </DialogHeader>
-                      <div className="flex justify-end space-x-2 mt-4">
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowConfirmation(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button onClick={handleConfirmSwap}>
-                          Confirm Swap
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                )}
+                    {isSwapping ? 'Swap in Progress...' : 'Swap'}{' '}
+                    {isSwapping && <Spinner size={16} className="ml-1" />}
+                  </Button>
+                  {error && <div className="text-red-500 mt-2">{error}</div>}
+                </div>
               </div>
+              {isSwapping && (
+                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-bounce-bottom">
+                  <div
+                    className={`h-full transition-all duration-1000 ease-in-out ${getProgressBarColor()}`}
+                    style={{
+                      width:
+                        swapStatus === 'processing'
+                          ? '20%'
+                          : swapStatus === 'submitted'
+                            ? '66%'
+                            : swapStatus === 'confirmed'
+                              ? '100%'
+                              : '0%',
+                    }}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+      {showConfirmation && (
+        <Dialog
+          open={showConfirmation}
+          onOpenChange={() => setShowConfirmation(false)}
+        >
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Confirm Swap</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to swap:
+              </DialogDescription>
+              <div className="mt-2 font-medium">
+                {fromAmount} {selectedFromToken.symbol} → {toAmount.toFixed(6)}{' '}
+                {selectedToToken.symbol}
+              </div>
+            </DialogHeader>
+            <div className="flex justify-end space-x-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowConfirmation(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmSwap}>Confirm Swap</Button>
             </div>
-            {isSwapping && (
-              <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-bounce-bottom">
-                <div
-                  className={`h-full transition-all duration-1000 ease-in-out ${getProgressBarColor()}`}
-                  style={{
-                    width:
-                      swapStatus === 'processing'
-                        ? '20%'
-                        : swapStatus === 'submitted'
-                          ? '66%'
-                          : swapStatus === 'confirmed'
-                            ? '100%'
-                            : '0%',
-                  }}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }

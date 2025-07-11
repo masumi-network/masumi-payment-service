@@ -75,3 +75,11 @@ export const TESTUSDM_CONFIG = {
   symbol: 'tUSDM',
   name: 'TestUSDM',
 };
+
+// NMKR token configuration
+export const NMKR_CONFIG = {
+  policyId: '5dac8536653edc12f6f5e1045d8164b9f59998d3bdc300fc92843489',
+  assetName: '4e4d4b52', // hex encoded "NMKR"
+  fullAssetId:
+    '5dac8536653edc12f6f5e1045d8164b9f59998d3bdc300fc928434894e4d4b52',
+};

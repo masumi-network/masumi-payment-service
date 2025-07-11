@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
 
 interface TokenBalance {
   unit: string;
@@ -161,9 +162,12 @@ export function WalletDetailsDialog({
       };
     }
 
-    // For USDM, divide by 10^7
-    if (token.displayName === 'USDM') {
-      const usdm = token.quantity / 10000000;
+    // For USDM, match by policyId and assetName (hex)
+    const isUSDM =
+      token.policyId === USDM_CONFIG.policyId &&
+      token.assetName === hexToAscii(USDM_CONFIG.assetName);
+    if (isUSDM) {
+      const usdm = token.quantity / 1000000;
       const formattedAmount =
         usdm === 0 ? 'zero' : useFormatBalance(usdm.toFixed(6));
       return {
@@ -232,47 +236,77 @@ export function WalletDetailsDialog({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog
+        open={isOpen && !selectedWalletForSwap && !selectedWalletForTopup}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedWalletForSwap(null);
+            setSelectedWalletForTopup(null);
+            onClose();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Wallet Details</DialogTitle>
-            <DialogDescription>
-              {wallet.type} Wallet
-              {wallet.note && ` - ${wallet.note}`}
-            </DialogDescription>
+            <DialogDescription>{wallet.type} Wallet</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 mt-4">
+            {/* Wallet Address Section */}
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-sm">
-                  {shortenAddress(wallet.walletAddress)}
+                <span className="font-mono text-sm break-all">
+                  {wallet.walletAddress}
                 </span>
                 <CopyButton value={wallet.walletAddress} />
               </div>
             </div>
 
+            {/* Wallet Note Section */}
+            {wallet.note && (
+              <div className="bg-muted rounded-lg p-4">
+                <div className="text-sm font-medium">Note</div>
+                <div className="text-sm mt-1 break-words">{wallet.note}</div>
+              </div>
+            )}
+
+            {/* vKey Section */}
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">vKey</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-sm break-all">
-                  {shortenAddress(wallet.walletVkey)}
+                <span className="font-mono text-xs break-all">
+                  {wallet.walletVkey}
                 </span>
                 <CopyButton value={wallet.walletVkey} />
               </div>
             </div>
 
             {wallet.type !== 'Collection' && (
-              <div className="flex items-center">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   onClick={handleExport}
                   disabled={isExporting}
                   title="Export Wallet"
                 >
-                  <span className="">Export Wallet</span>
+                  <span>Export Wallet</span>
                   <Share className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedWalletForTopup(wallet)}
+                  title="Top Up"
+                >
+                  <span>Top Up</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setSelectedWalletForSwap(wallet)}
+                  title="Swap Assets"
+                >
+                  <span>Swap Assets</span>
                 </Button>
               </div>
             )}
@@ -317,7 +351,7 @@ export function WalletDetailsDialog({
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-sm">
-                    {shortenAddress(wallet.collectionAddress)}
+                    {shortenAddress(wallet.collectionAddress, 15)}
                   </span>
                   <CopyButton value={wallet.collectionAddress} />
                 </div>
@@ -350,32 +384,65 @@ export function WalletDetailsDialog({
                       No tokens found
                     </div>
                   )}
-                  {tokenBalances.map((token) => {
-                    const { amount, usdValue } = formatTokenBalance(token);
-                    return (
-                      <div
-                        key={token.unit}
-                        className="flex items-center justify-between rounded-md border p-3"
-                      >
-                        <div>
-                          <div className="font-medium">{token.displayName}</div>
-                          {token.policyId && (
-                            <div className="text-xs text-muted-foreground">
-                              Policy ID: {shortenAddress(token.policyId)}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <div>{amount}</div>
-                          {usdValue && (
-                            <div className="text-xs text-muted-foreground">
-                              {usdValue}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                  {/* Sort tokens: ADA first, then USDM, then others */}
+                  {(() => {
+                    const adaToken = tokenBalances.find(
+                      (t) => t.unit === 'lovelace',
                     );
-                  })}
+                    const usdmToken = tokenBalances.find(
+                      (t) =>
+                        t.policyId === USDM_CONFIG.policyId &&
+                        t.assetName === hexToAscii(USDM_CONFIG.assetName),
+                    );
+                    const otherTokens = tokenBalances.filter(
+                      (t) =>
+                        t.unit !== 'lovelace' &&
+                        !(
+                          t.policyId === USDM_CONFIG.policyId &&
+                          t.assetName === hexToAscii(USDM_CONFIG.assetName)
+                        ),
+                    );
+                    // Filter out undefined tokens before mapping
+                    const sortedTokens = [
+                      adaToken,
+                      usdmToken,
+                      ...otherTokens,
+                    ].filter((t): t is TokenBalance => Boolean(t));
+                    return sortedTokens.map((token) => {
+                      const { amount, usdValue } = formatTokenBalance(token);
+                      const isUSDM =
+                        token.policyId === USDM_CONFIG.policyId &&
+                        token.assetName === hexToAscii(USDM_CONFIG.assetName);
+                      const displayName =
+                        isUSDM && token.policyId
+                          ? `USDM (${shortenAddress(token.policyId)})`
+                          : token.displayName;
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
+                        >
+                          <div>
+                            <div className="font-medium">{displayName}</div>
+                            {!isUSDM && token.policyId && (
+                              <div className="text-xs text-muted-foreground">
+                                Policy ID: {shortenAddress(token.policyId)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div>{amount}</div>
+                            {/* Only show USD value for non-USDM tokens */}
+                            {usdValue && !isUSDM && (
+                              <div className="text-xs text-muted-foreground">
+                                {usdValue}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
