@@ -391,7 +391,7 @@ export default function AIAgentsPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border">
+          <div className="rounded-lg border overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
