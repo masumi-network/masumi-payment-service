@@ -9,7 +9,7 @@ import {
 import { cn, shortenAddress } from '@/lib/utils';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
@@ -170,7 +170,8 @@ export function AIAgentDetailsDialog({
                           Price (
                           {price.unit === 'lovelace' || !price.unit
                             ? 'ADA'
-                            : price.unit === USDM_CONFIG.fullAssetId
+                            : price.unit ===
+                                getUsdmConfig(state.network).fullAssetId
                               ? 'USDM'
                               : price.unit === TESTUSDM_CONFIG.unit
                                 ? 'tUSDM'
@@ -180,7 +181,7 @@ export function AIAgentDetailsDialog({
                         <span className="font-medium">
                           {price.unit === 'lovelace' || !price.unit
                             ? `${useFormatPrice(price.amount)} ADA`
-                            : `${useFormatPrice(price.amount)} ${price.unit === USDM_CONFIG.fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                            : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                         </span>
                       </div>
                     ))}
