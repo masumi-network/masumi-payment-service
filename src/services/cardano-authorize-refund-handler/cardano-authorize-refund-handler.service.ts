@@ -141,8 +141,8 @@ export async function authorizeRefundV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime)
+                  BigInt(request.collateralReturnLovelace!) &&
+                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
               );
             });
 
@@ -244,7 +244,7 @@ export async function authorizeRefundV1() {
                 address,
                 utxo,
                 sortedUtxosByLovelaceDesc[0],
-                sortedUtxosByLovelaceDesc,
+                limitedUtxos,
                 datum.value,
                 invalidBefore,
                 invalidAfter,
