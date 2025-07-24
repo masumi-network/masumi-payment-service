@@ -1698,7 +1698,7 @@
                                         "type": "string",
                                         "minLength": 14,
                                         "maxLength": 26,
-                                        "description": "The a unique nounce from the purchaser. Required to be in hex format"
+                                        "description": "The a unique nonce from the purchaser. Required to be in hex format"
                                     }
                                 },
                                 "required": [
@@ -3012,7 +3012,8 @@
                                                                         "enum": [
                                                                             "Pending",
                                                                             "Confirmed",
-                                                                            "FailedViaTimeout"
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
                                                                         ]
                                                                     }
                                                                 },
@@ -3046,7 +3047,8 @@
                                                                             "enum": [
                                                                                 "Pending",
                                                                                 "Confirmed",
-                                                                                "FailedViaTimeout"
+                                                                                "FailedViaTimeout",
+                                                                                "RolledBack"
                                                                             ]
                                                                         }
                                                                     },
@@ -3390,7 +3392,7 @@
                                         "type": "string",
                                         "minLength": 14,
                                         "maxLength": 26,
-                                        "description": "The nounce of the purchaser of the purchase, needs to be in hex format"
+                                        "description": "The nonce of the purchaser of the purchase, needs to be in hex format"
                                     }
                                 },
                                 "required": [
@@ -3547,7 +3549,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -3774,6 +3777,371 @@
                     "401": {
                         "description": "Unauthorized"
                     },
+                    "409": {
+                        "description": "Conflict (purchase request already exists)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        },
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "object": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string"
+                                                },
+                                                "blockchainIdentifier": {
+                                                    "type": "string"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "payByTime": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "submitResultTime": {
+                                                    "type": "string"
+                                                },
+                                                "unlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "externalDisputeUnlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "requestedById": {
+                                                    "type": "string"
+                                                },
+                                                "resultHash": {
+                                                    "type": "string"
+                                                },
+                                                "inputHash": {
+                                                    "type": "string"
+                                                },
+                                                "onChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn"
+                                                    ]
+                                                },
+                                                "NextAction": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "requestedAction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "None",
+                                                                "Ignore",
+                                                                "WaitingForManualAction",
+                                                                "WaitingForExternalAction",
+                                                                "FundsLockingRequested",
+                                                                "FundsLockingInitiated",
+                                                                "SetRefundRequestedRequested",
+                                                                "SetRefundRequestedInitiated",
+                                                                "UnSetRefundRequestedRequested",
+                                                                "UnSetRefundRequestedInitiated",
+                                                                "WithdrawRefundRequested",
+                                                                "WithdrawRefundInitiated"
+                                                            ]
+                                                        },
+                                                        "errorType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "NetworkError",
+                                                                "InsufficientFunds",
+                                                                "Unknown"
+                                                            ]
+                                                        },
+                                                        "errorNote": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "requestedAction",
+                                                        "errorType",
+                                                        "errorNote"
+                                                    ]
+                                                },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status"
+                                                    ]
+                                                },
+                                                "PaidFunds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForSeller": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForBuyer": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "PaymentSource": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ]
+                                                        },
+                                                        "policyId": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "smartContractAddress": {
+                                                            "type": "string"
+                                                        },
+                                                        "paymentType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "network",
+                                                        "policyId",
+                                                        "smartContractAddress",
+                                                        "paymentType"
+                                                    ]
+                                                },
+                                                "SellerWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey"
+                                                    ]
+                                                },
+                                                "SmartContractWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletAddress": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey",
+                                                        "walletAddress"
+                                                    ]
+                                                },
+                                                "metadata": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "blockchainIdentifier",
+                                                "lastCheckedAt",
+                                                "payByTime",
+                                                "submitResultTime",
+                                                "unlockTime",
+                                                "externalDisputeUnlockTime",
+                                                "requestedById",
+                                                "resultHash",
+                                                "inputHash",
+                                                "onChainState",
+                                                "NextAction",
+                                                "CurrentTransaction",
+                                                "PaidFunds",
+                                                "WithdrawnForSeller",
+                                                "WithdrawnForBuyer",
+                                                "PaymentSource",
+                                                "SellerWallet",
+                                                "SmartContractWallet",
+                                                "metadata"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "error",
+                                        "id",
+                                        "object"
+                                    ]
+                                },
+                                "example": {
+                                    "status": "error",
+                                    "error": {
+                                        "message": "Purchase request already exists"
+                                    },
+                                    "id": "cuid_v2_auto_generated",
+                                    "object": {
+                                        "id": "cuid_v2_auto_generated",
+                                        "createdAt": "1970-01-20T20:00:36.260Z",
+                                        "updatedAt": "1970-01-20T20:00:36.260Z",
+                                        "blockchainIdentifier": "blockchain_identifier",
+                                        "lastCheckedAt": null,
+                                        "submitResultTime": "0",
+                                        "unlockTime": "0",
+                                        "externalDisputeUnlockTime": "0",
+                                        "payByTime": null,
+                                        "requestedById": "requester_id",
+                                        "resultHash": "",
+                                        "onChainState": null,
+                                        "inputHash": "input_hash",
+                                        "NextAction": {
+                                            "requestedAction": "FundsLockingRequested",
+                                            "errorType": null,
+                                            "errorNote": null
+                                        },
+                                        "CurrentTransaction": null,
+                                        "PaidFunds": [
+                                            {
+                                                "amount": "10000000",
+                                                "unit": ""
+                                            }
+                                        ],
+                                        "PaymentSource": {
+                                            "id": "payment_source_id",
+                                            "policyId": "policy_id",
+                                            "network": "Preprod",
+                                            "smartContractAddress": "address",
+                                            "paymentType": "Web3CardanoV1"
+                                        },
+                                        "SellerWallet": null,
+                                        "SmartContractWallet": null,
+                                        "metadata": null,
+                                        "WithdrawnForSeller": [],
+                                        "WithdrawnForBuyer": []
+                                    }
+                                }
+                            }
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error"
                     }
@@ -3946,7 +4314,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -4343,7 +4712,8 @@
                                                             "enum": [
                                                                 "Pending",
                                                                 "Confirmed",
-                                                                "FailedViaTimeout"
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
                                                             ]
                                                         }
                                                     },
@@ -4567,6 +4937,937 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/resolve-blockchain-identifier": {
+            "post": {
+                "description": "Resolves a payment request by its blockchain identifier.",
+                "summary": "Resolve a payment request by its blockchain identifier. (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "description": "The blockchain identifier to resolve"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the purchases were made on"
+                                    },
+                                    "filterSmartContractAddress": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "The smart contract address of the payment source"
+                                    },
+                                    "includeHistory": {
+                                        "type": "string",
+                                        "default": "false",
+                                        "description": "Whether to include the full transaction and status history of the purchases"
+                                    }
+                                },
+                                "required": [
+                                    "blockchainIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "network": "Preprod",
+                                    "includeHistory": "false"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Payment request resolved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string"
+                                                },
+                                                "blockchainIdentifier": {
+                                                    "type": "string"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "payByTime": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "submitResultTime": {
+                                                    "type": "string"
+                                                },
+                                                "unlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "collateralReturnLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "externalDisputeUnlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "requestedById": {
+                                                    "type": "string"
+                                                },
+                                                "resultHash": {
+                                                    "type": "string"
+                                                },
+                                                "inputHash": {
+                                                    "type": "string"
+                                                },
+                                                "cooldownTime": {
+                                                    "type": "number"
+                                                },
+                                                "cooldownTimeOtherParty": {
+                                                    "type": "number"
+                                                },
+                                                "onChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn"
+                                                    ]
+                                                },
+                                                "NextAction": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "requestedAction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "None",
+                                                                "Ignore",
+                                                                "WaitingForManualAction",
+                                                                "WaitingForExternalAction",
+                                                                "SubmitResultRequested",
+                                                                "SubmitResultInitiated",
+                                                                "WithdrawRequested",
+                                                                "WithdrawInitiated",
+                                                                "AuthorizeRefundRequested",
+                                                                "AuthorizeRefundInitiated"
+                                                            ]
+                                                        },
+                                                        "errorType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "NetworkError",
+                                                                "Unknown"
+                                                            ]
+                                                        },
+                                                        "errorNote": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "resultHash": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "requestedAction",
+                                                        "errorType",
+                                                        "errorNote",
+                                                        "resultHash"
+                                                    ]
+                                                },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash"
+                                                        ]
+                                                    }
+                                                },
+                                                "RequestedFunds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForSeller": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForBuyer": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "PaymentSource": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ]
+                                                        },
+                                                        "smartContractAddress": {
+                                                            "type": "string"
+                                                        },
+                                                        "policyId": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "paymentType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "network",
+                                                        "smartContractAddress",
+                                                        "policyId",
+                                                        "paymentType"
+                                                    ]
+                                                },
+                                                "BuyerWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey"
+                                                    ]
+                                                },
+                                                "SmartContractWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletAddress": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey",
+                                                        "walletAddress"
+                                                    ]
+                                                },
+                                                "metadata": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "blockchainIdentifier",
+                                                "lastCheckedAt",
+                                                "payByTime",
+                                                "submitResultTime",
+                                                "unlockTime",
+                                                "collateralReturnLovelace",
+                                                "externalDisputeUnlockTime",
+                                                "requestedById",
+                                                "resultHash",
+                                                "inputHash",
+                                                "cooldownTime",
+                                                "cooldownTimeOtherParty",
+                                                "onChainState",
+                                                "NextAction",
+                                                "CurrentTransaction",
+                                                "TransactionHistory",
+                                                "RequestedFunds",
+                                                "WithdrawnForSeller",
+                                                "WithdrawnForBuyer",
+                                                "PaymentSource",
+                                                "BuyerWallet",
+                                                "SmartContractWallet",
+                                                "metadata"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "blockchainIdentifier": "blockchain_identifier",
+                                            "lastCheckedAt": null,
+                                            "payByTime": null,
+                                            "submitResultTime": "0",
+                                            "unlockTime": "0",
+                                            "externalDisputeUnlockTime": "0",
+                                            "requestedById": "requester_id",
+                                            "resultHash": "result_hash",
+                                            "inputHash": "input_hash",
+                                            "cooldownTime": 0,
+                                            "cooldownTimeOtherParty": 0,
+                                            "collateralReturnLovelace": null,
+                                            "onChainState": null,
+                                            "NextAction": {
+                                                "requestedAction": "WaitingForExternalAction",
+                                                "errorType": null,
+                                                "errorNote": null,
+                                                "resultHash": null
+                                            },
+                                            "CurrentTransaction": null,
+                                            "TransactionHistory": [],
+                                            "RequestedFunds": [
+                                                {
+                                                    "amount": "10000000",
+                                                    "unit": ""
+                                                }
+                                            ],
+                                            "PaymentSource": {
+                                                "id": "payment_source_id",
+                                                "network": "Preprod",
+                                                "smartContractAddress": "address",
+                                                "policyId": "policy_id",
+                                                "paymentType": "Web3CardanoV1"
+                                            },
+                                            "BuyerWallet": null,
+                                            "SmartContractWallet": null,
+                                            "metadata": null,
+                                            "WithdrawnForSeller": [],
+                                            "WithdrawnForBuyer": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment request not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/resolve-blockchain-identifier": {
+            "post": {
+                "description": "Resolves a purchase request by its blockchain identifier.",
+                "summary": "Resolve a purchase request by its blockchain identifier. (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "description": "The blockchain identifier to resolve"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the purchases were made on"
+                                    },
+                                    "filterSmartContractAddress": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "The smart contract address of the payment source"
+                                    },
+                                    "includeHistory": {
+                                        "type": "string",
+                                        "default": "false",
+                                        "description": "Whether to include the full transaction and status history of the purchases"
+                                    }
+                                },
+                                "required": [
+                                    "blockchainIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "network": "Preprod",
+                                    "includeHistory": "false"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Purchase request resolved",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "updatedAt": {
+                                                    "type": "string"
+                                                },
+                                                "blockchainIdentifier": {
+                                                    "type": "string"
+                                                },
+                                                "lastCheckedAt": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "payByTime": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "submitResultTime": {
+                                                    "type": "string"
+                                                },
+                                                "unlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "externalDisputeUnlockTime": {
+                                                    "type": "string"
+                                                },
+                                                "requestedById": {
+                                                    "type": "string"
+                                                },
+                                                "onChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn"
+                                                    ]
+                                                },
+                                                "collateralReturnLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "cooldownTime": {
+                                                    "type": "number"
+                                                },
+                                                "cooldownTimeOtherParty": {
+                                                    "type": "number"
+                                                },
+                                                "inputHash": {
+                                                    "type": "string"
+                                                },
+                                                "resultHash": {
+                                                    "type": "string"
+                                                },
+                                                "NextAction": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "inputHash": {
+                                                            "type": "string"
+                                                        },
+                                                        "requestedAction": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "None",
+                                                                "Ignore",
+                                                                "WaitingForManualAction",
+                                                                "WaitingForExternalAction",
+                                                                "FundsLockingRequested",
+                                                                "FundsLockingInitiated",
+                                                                "SetRefundRequestedRequested",
+                                                                "SetRefundRequestedInitiated",
+                                                                "UnSetRefundRequestedRequested",
+                                                                "UnSetRefundRequestedInitiated",
+                                                                "WithdrawRefundRequested",
+                                                                "WithdrawRefundInitiated"
+                                                            ]
+                                                        },
+                                                        "errorType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "NetworkError",
+                                                                "InsufficientFunds",
+                                                                "Unknown"
+                                                            ]
+                                                        },
+                                                        "errorNote": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "inputHash",
+                                                        "requestedAction",
+                                                        "errorType",
+                                                        "errorNote"
+                                                    ]
+                                                },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status"
+                                                        ]
+                                                    }
+                                                },
+                                                "PaidFunds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForSeller": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "WithdrawnForBuyer": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "amount": {
+                                                                "type": "string"
+                                                            },
+                                                            "unit": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "amount",
+                                                            "unit"
+                                                        ]
+                                                    }
+                                                },
+                                                "PaymentSource": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Preprod",
+                                                                "Mainnet"
+                                                            ]
+                                                        },
+                                                        "smartContractAddress": {
+                                                            "type": "string"
+                                                        },
+                                                        "policyId": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "paymentType": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Web3CardanoV1"
+                                                            ]
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "network",
+                                                        "smartContractAddress",
+                                                        "policyId",
+                                                        "paymentType"
+                                                    ]
+                                                },
+                                                "SellerWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey"
+                                                    ]
+                                                },
+                                                "SmartContractWallet": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletVkey": {
+                                                            "type": "string"
+                                                        },
+                                                        "walletAddress": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "walletVkey",
+                                                        "walletAddress"
+                                                    ]
+                                                },
+                                                "metadata": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "createdAt",
+                                                "updatedAt",
+                                                "blockchainIdentifier",
+                                                "lastCheckedAt",
+                                                "payByTime",
+                                                "submitResultTime",
+                                                "unlockTime",
+                                                "externalDisputeUnlockTime",
+                                                "requestedById",
+                                                "onChainState",
+                                                "collateralReturnLovelace",
+                                                "cooldownTime",
+                                                "cooldownTimeOtherParty",
+                                                "inputHash",
+                                                "resultHash",
+                                                "NextAction",
+                                                "CurrentTransaction",
+                                                "TransactionHistory",
+                                                "PaidFunds",
+                                                "WithdrawnForSeller",
+                                                "WithdrawnForBuyer",
+                                                "PaymentSource",
+                                                "SellerWallet",
+                                                "SmartContractWallet",
+                                                "metadata"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "blockchainIdentifier": "blockchain_identifier",
+                                            "lastCheckedAt": null,
+                                            "payByTime": null,
+                                            "submitResultTime": "0",
+                                            "unlockTime": "0",
+                                            "externalDisputeUnlockTime": "0",
+                                            "requestedById": "requester_id",
+                                            "onChainState": null,
+                                            "collateralReturnLovelace": null,
+                                            "cooldownTime": 0,
+                                            "cooldownTimeOtherParty": 0,
+                                            "inputHash": "input_hash",
+                                            "resultHash": "",
+                                            "NextAction": {
+                                                "inputHash": "input_hash",
+                                                "requestedAction": "FundsLockingRequested",
+                                                "errorType": null,
+                                                "errorNote": null
+                                            },
+                                            "CurrentTransaction": null,
+                                            "TransactionHistory": [],
+                                            "PaidFunds": [
+                                                {
+                                                    "amount": "10000000",
+                                                    "unit": ""
+                                                }
+                                            ],
+                                            "PaymentSource": {
+                                                "id": "payment_source_id",
+                                                "network": "Preprod",
+                                                "smartContractAddress": "address",
+                                                "policyId": "policy_id",
+                                                "paymentType": "Web3CardanoV1"
+                                            },
+                                            "SellerWallet": null,
+                                            "SmartContractWallet": null,
+                                            "metadata": null,
+                                            "WithdrawnForSeller": [],
+                                            "WithdrawnForBuyer": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Purchase request not found"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -5168,7 +6469,8 @@
                                                                         "enum": [
                                                                             "Pending",
                                                                             "Confirmed",
-                                                                            "FailedViaTimeout"
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
                                                                         ]
                                                                     }
                                                                 },
@@ -6375,7 +7677,7 @@
         "/payment-source-extended/": {
             "get": {
                 "description": "Gets the payment contracts including the status.",
-                "summary": "List payment sources with their public details augmented with internal configuration and sync status infromation. (admin access required)",
+                "summary": "List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)",
                 "tags": [
                     "payment-source"
                 ],

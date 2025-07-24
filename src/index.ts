@@ -7,8 +7,9 @@ import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
-import { cleanupDB, initDB } from '@/utils/db';
+import { cleanupDB, initDB, prisma } from '@/utils/db';
 import path from 'path';
+import { DEFAULTS } from './../src/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import fs from 'fs';
 
@@ -16,6 +17,30 @@ const __dirname = path.resolve();
 
 async function initialize() {
   await initDB();
+  const defaultKey = await prisma.apiKey.findUnique({
+    where: {
+      token: DEFAULTS.DEFAULT_ADMIN_KEY,
+    },
+  });
+  if (defaultKey) {
+    logger.warn(
+      '*****************************************************************',
+    );
+    logger.warn(
+      '*  WARNING: The default insecure ADMIN_KEY "' +
+        DEFAULTS.DEFAULT_ADMIN_KEY +
+        '" is in use.           *',
+    );
+    logger.warn(
+      '*  This is a security risk. For production environments, please *',
+    );
+    logger.warn(
+      '*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *',
+    );
+    logger.warn(
+      '*****************************************************************',
+    );
+  }
   await initJobs();
   logger.info('Initialized all services');
 }

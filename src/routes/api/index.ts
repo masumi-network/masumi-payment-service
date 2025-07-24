@@ -29,6 +29,8 @@ import { authorizePaymentRefundEndpointPost } from './payments/authorize-refund'
 import { requestPurchaseRefundPost } from './purchases/request-refund';
 import { cancelPurchaseRefundRequestPost } from './purchases/cancel-refund-request';
 import { queryAgentFromWalletGet } from './registry/wallet';
+import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
+import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 
 export const apiRouter: Routing = {
   v1: {
@@ -43,6 +45,9 @@ export const apiRouter: Routing = {
       'cancel-refund-request': new DependsOnMethod({
         post: cancelPurchaseRefundRequestPost,
       }),
+      'resolve-blockchain-identifier': new DependsOnMethod({
+        post: resolvePurchaseRequestPost,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -53,6 +58,9 @@ export const apiRouter: Routing = {
       }),
       'submit-result': new DependsOnMethod({
         post: submitPaymentResultEndpointPost,
+      }),
+      'resolve-blockchain-identifier': new DependsOnMethod({
+        post: resolvePaymentRequestPost,
       }),
     }),
     registry: new DependsOnMethod({

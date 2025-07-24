@@ -56,19 +56,27 @@ export async function checkLatestTransactions(
             projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
             network: convertNetwork(paymentContract.network),
           });
-          const latestIdentifier = paymentContract.lastIdentifierChecked;
+          let latestIdentifier = paymentContract.lastIdentifierChecked;
 
-          const latestTx = await getTxsFromCardanoAfterSpecificTx(
-            blockfrost,
-            paymentContract,
-            latestIdentifier,
-          );
+          const { latestTx, rolledBackTx } =
+            await getTxsFromCardanoAfterSpecificTx(
+              blockfrost,
+              paymentContract,
+              latestIdentifier,
+            );
 
           if (latestTx.length == 0) {
             logger.info('No new transactions found for payment contract', {
               paymentContractAddress: paymentContract.smartContractAddress,
             });
             return;
+          }
+
+          if (rolledBackTx.length > 0) {
+            logger.info('Rolled back transactions found for payment contract', {
+              paymentContractAddress: paymentContract.smartContractAddress,
+            });
+            await updateRolledBackTransaction(rolledBackTx);
           }
 
           const txData = await getExtendedTxInformation(
@@ -1242,8 +1250,27 @@ export async function checkLatestTransactions(
             } finally {
               await prisma.paymentSource.update({
                 where: { id: paymentContract.id, deletedAt: null },
-                data: { lastIdentifierChecked: tx.tx.tx_hash },
+                data: {
+                  lastIdentifierChecked: tx.tx.tx_hash,
+                  PaymentSourceIdentifiers: {
+                    upsert:
+                      latestIdentifier != null
+                        ? {
+                            where: {
+                              txHash: latestIdentifier,
+                            },
+                            update: {
+                              txHash: latestIdentifier,
+                            },
+                            create: {
+                              txHash: latestIdentifier,
+                            },
+                          }
+                        : undefined,
+                  },
+                },
               });
+              latestIdentifier = tx.tx.tx_hash;
             }
           }
         }),
@@ -1265,6 +1292,107 @@ export async function checkLatestTransactions(
     logger.error('Error checking latest transactions', { error: error });
   } finally {
     release();
+  }
+}
+
+async function updateRolledBackTransaction(
+  rolledBackTx: Array<{ tx_hash: string }>,
+) {
+  for (const tx of rolledBackTx) {
+    const foundTransaction = await prisma.transaction.findMany({
+      where: {
+        txHash: tx.tx_hash,
+      },
+      include: {
+        PaymentRequestCurrent: true,
+        PaymentRequestHistory: true,
+        PurchaseRequestCurrent: true,
+        PurchaseRequestHistory: true,
+        BlocksWallet: true,
+      },
+    });
+    for (const transaction of foundTransaction) {
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          status: TransactionStatus.RolledBack,
+          BlocksWallet: transaction.BlocksWallet
+            ? { disconnect: true }
+            : undefined,
+        },
+      });
+      if (transaction.BlocksWallet != null) {
+        await prisma.hotWallet.update({
+          where: { id: transaction.BlocksWallet.id },
+          data: {
+            lockedAt: null,
+          },
+        });
+      }
+      if (
+        transaction.PaymentRequestCurrent ||
+        transaction.PaymentRequestHistory
+      ) {
+        await prisma.paymentRequest.update({
+          where: {
+            id:
+              transaction.PaymentRequestCurrent?.id ??
+              transaction.PaymentRequestHistory!.id,
+          },
+          data: {
+            NextAction: {
+              upsert: {
+                update: {
+                  requestedAction: PaymentAction.WaitingForManualAction,
+                  errorNote:
+                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+                  errorType: PaymentErrorType.Unknown,
+                },
+                create: {
+                  requestedAction: PaymentAction.WaitingForManualAction,
+                  errorNote:
+                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+                  errorType: PaymentErrorType.Unknown,
+                },
+              },
+            },
+          },
+        });
+      }
+      if (
+        transaction.PurchaseRequestCurrent ||
+        transaction.PurchaseRequestHistory
+      ) {
+        await prisma.purchaseRequest.update({
+          where: {
+            id:
+              transaction.PurchaseRequestCurrent?.id ??
+              transaction.PurchaseRequestHistory!.id,
+          },
+          data: {
+            NextAction: {
+              upsert: {
+                update: {
+                  requestedAction: PurchasingAction.WaitingForManualAction,
+                  errorNote:
+                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+                  errorType: PurchaseErrorType.Unknown,
+                },
+                create: {
+                  requestedAction: PurchasingAction.WaitingForManualAction,
+                  errorNote:
+                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+                  errorType: PurchaseErrorType.Unknown,
+                  inputHash:
+                    transaction.PurchaseRequestCurrent?.inputHash ??
+                    transaction.PurchaseRequestHistory!.inputHash,
+                },
+              },
+            },
+          },
+        });
+      }
+    }
   }
 }
 
@@ -1376,6 +1504,7 @@ async function getTxsFromCardanoAfterSpecificTx(
   let latestTx: Array<{ tx_hash: string; block_time: number }> = [];
   let foundTx = -1;
   let index = 0;
+  let rolledBackTx: Array<{ tx_hash: string }> = [];
   do {
     index++;
     const txs = await blockfrost.addressesTransactions(
@@ -1398,12 +1527,59 @@ async function getTxsFromCardanoAfterSpecificTx(
         (tx) => tx.tx_hash == latestIdentifier,
       );
       latestTx = latestTx.slice(0, latestTxIndex);
+    } else if (latestIdentifier != null) {
+      //if not found we assume a rollback happened and need to check all previous txs
+      for (let i = 0; i < txs.length; i++) {
+        const exists = await prisma.paymentSourceIdentifiers.findUnique({
+          where: {
+            txHash: txs[i].tx_hash,
+            PaymentSource: {
+              smartContractAddress: paymentContract.smartContractAddress,
+            },
+          },
+        });
+        if (exists != null) {
+          //get newer txs from db
+          const newerThanRollbackTxs =
+            await prisma.paymentSourceIdentifiers.findMany({
+              where: {
+                createdAt: {
+                  gte: exists.createdAt,
+                },
+                PaymentSource: {
+                  smartContractAddress: paymentContract.smartContractAddress,
+                },
+              },
+              select: {
+                txHash: true,
+              },
+            });
+          rolledBackTx = [
+            ...newerThanRollbackTxs.map((x) => {
+              return {
+                tx_hash: x.txHash,
+              };
+            }),
+            { tx_hash: latestIdentifier },
+          ].filter(
+            (x) => latestTx.findIndex((y) => y.tx_hash == x.tx_hash) == -1,
+          );
+          rolledBackTx = rolledBackTx.reverse();
+
+          const foundTxIndex = latestTx.findIndex(
+            (x) => x.tx_hash == txs[i].tx_hash,
+          );
+          foundTx = foundTxIndex;
+          latestTx = latestTx.slice(0, foundTxIndex);
+          break;
+        }
+      }
     }
   } while (foundTx == -1);
 
   //invert to get oldest first
   latestTx = latestTx.reverse();
-  return latestTx;
+  return { latestTx, rolledBackTx };
 }
 
 async function unlockPaymentSources(paymentContractIds: string[]) {

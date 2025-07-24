@@ -1,3 +1,3 @@
-import { defaultEndpointsFactory } from 'express-zod-api';
+import endpointFactory from '@/utils/generator/endpoint-factory';
 
-export const unauthenticatedEndpointFactory = defaultEndpointsFactory;
+export const unauthenticatedEndpointFactory = endpointFactory;
