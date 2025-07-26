@@ -39,8 +39,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { state, dispatch } = useAppContext();
-  const { apiClient } = useAppContext();
+  const { state, dispatch, setSelectedPaymentSourceId, apiClient } =
+    useAppContext();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -78,6 +78,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const reversedBack = [...sourcesMapped]?.reverse();
 
       dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
+
+      if (
+        reversedBack.length === 1 &&
+        typeof setSelectedPaymentSourceId === 'function'
+      ) {
+        setSelectedPaymentSourceId(reversedBack[0].id);
+      }
 
       // If no payment sources, redirect to setup
       if (reversedBack.length === 0 && isHealthy && state.apiKey) {

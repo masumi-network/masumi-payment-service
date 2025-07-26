@@ -27,7 +27,7 @@ import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 
 interface RegisterAIAgentDialogProps {
@@ -283,7 +283,9 @@ export function RegisterAIAgentDialog({
               pricingType: 'Fixed',
               Pricing: data.prices.map((price) => {
                 const unit =
-                  price.unit === 'USDM' ? USDM_CONFIG.fullAssetId : price.unit;
+                  price.unit === 'USDM'
+                    ? getUsdmConfig(state.network).fullAssetId
+                    : price.unit;
                 return {
                   unit,
                   amount: (parseFloat(price.amount) * 1_000_000).toString(),

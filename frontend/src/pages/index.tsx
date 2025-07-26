@@ -30,7 +30,7 @@ import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
@@ -463,7 +463,10 @@ export default function Overview() {
                                 ).toFixed(2);
                                 if (unit === 'lovelace' || !unit)
                                   return `${formatted} ADA`;
-                                if (unit === USDM_CONFIG.fullAssetId)
+                                if (
+                                  unit ===
+                                  getUsdmConfig(state.network).fullAssetId
+                                )
                                   return `${formatted} USDM`;
                                 if (unit === TESTUSDM_CONFIG.unit)
                                   return `${formatted} tUSDM`;
