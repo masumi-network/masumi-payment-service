@@ -1,0 +1,1029 @@
+{
+  "description": "Comprehensive monitoring dashboard for Masumi Payment Service with custom business metrics",
+  "image": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHZpZXdCb3g9IjAgMCAxOCAxOCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE0Ljk0OTQgMTMuOTQyQzE2LjIzMTggMTIuNDI1OCAxNy4zMjY4IDkuNzAyMiAxNi4xOTU2IDYuNTc0ODdDMTUuNjQ0MyA1LjA1MjQ1IDE1LjAyMTkgNC4yMDI0OSAxNC4yOTY5IDMuNjYyNTJDMTMuODU1NyAzLjMzMzc5IDEyLjA5MzMgMi41MDYzMyA5Ljc1OTY1IDIuODY3NTZDOC4wNTM0OSAzLjEzMjU1IDUuNzc0ODcgNC4yMDg3NCA0LjI5MzY5IDUuOTU5OUMyLjg1NzUyIDcuNjYxMDYgMS43NDg4MyA5LjAwNDc0IDEuNjk3NTggMTAuMzA5N0MxLjYzMTMzIDExLjk4ODMgMi44OTYyNyAxMy40MzA4IDMuMDUwMDEgMTMuNjY0NUMzLjMyMzc0IDE0LjA3OTUgNS4xOTExNSAxNi40NTE4IDguNjk5NzEgMTYuNTczMUMxMS43OTcgMTYuNjc5MyAxMy44MTQ0IDE1LjI4NDQgMTQuOTQ5NCAxMy45NDJaIiBmaWxsPSIjNDAzRDNFIi8+CjxwYXRoIGQ9Ik00LjU1MzYzIDIuNzM3NDdDMi45Mzc0NiAzLjg5MTE2IDEuMTIxMzEgNi4yNTEwMyAxLjQ0NzU0IDkuNTYwODZDMS42MDYyOCAxMS4xNzIgMi4wMDI1MSAxMi4xNDk1IDIuNTcxMjMgMTIuODUwN0MyLjkxNzQ2IDEzLjI3ODIgNC40MTk4OCAxNC41NDkzIDYuNzczNTEgMTQuNzM2OEM5LjE0NTg4IDE0LjkyNTYgMTAuOTQ5NSAxNC4zOTQ0IDEyLjgzMzIgMTMuMDg0NEMxNi42NjE3IDEwLjQyMDggMTYuMDk4IDYuMzkzNTMgMTUuOTM0MyA1LjkyNDhDMTUuNzcwNSA1LjQ1NjA3IDE0LjU0NDQgMi42OTYyMiAxMS4xNzMzIDEuNzE1MDJDOC4xOTg0NCAwLjg1MDA2OCA1Ljk4MzU1IDEuNzE1MDIgNC41NTM2MyAyLjczNzQ3WiIgZmlsbD0iIzVFNjM2NyIvPgo8cGF0aCBkPSJNNy4zOTM1MyAyLjk2MTA5QzUuNjE3MzcgMi44OTczNCAzLjkxOTk2IDQuMjg4NTIgMy43NTYyMiA2LjAwNTkzQzMuNTkyNDggNy43MjIwOSA0LjY1NDkyIDkuMDI5NTIgNi4zMDk4MyA5LjI5NTc2QzcuOTY0NzUgOS41NjA3NCA5Ljg3ODM5IDguNTU1OCAxMC4yNjM0IDYuNDUwOTFDMTAuNjYwOSA0LjI4MjI3IDkuMDg5NjkgMy4wMjIzNCA3LjM5MzUzIDIuOTYxMDlaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNNy45NDIxNyA1LjkwMTE1QzcuOTQyMTcgNS45MDExNSA4LjM2OTY1IDUuODEyNCA4LjQ1NDY1IDUuMTgyNDRDOC41MzgzOSA0LjU2MjQ3IDguMjMwOTEgNC4wMzM3NSA3LjUxMzQ1IDMuODQzNzZDNi43MzM0OSAzLjYzNzUyIDYuMjA0NzcgNC4wNjYyNSA2LjA2NzI3IDQuNTE3NDdDNS44NzYwMyA1LjE0NDk0IDYuMTU4NTIgNS40NDM2NyA2LjE1ODUyIDUuNDQzNjdDNi4xNTg1MiA1LjQ0MzY3IDUuMzkzNTYgNS42Mjc0MSA1LjMzMjMxIDYuNTI5ODdDNS4yNzQ4MSA3LjM4MTA3IDUuODU2MDMgNy44Mzg1NSA2LjQzOTc1IDcuOTc4NTRDNy4xNjA5NiA4LjE1MjI4IDcuOTc4NDIgNy45NTQ3OSA4LjE3ODQxIDcuMDM0ODRDOC4zNDQ2NSA2LjI3NzM4IDcuOTQyMTcgNS45MDExNSA3Ljk0MjE3IDUuOTAxMTVaIiBmaWxsPSIjMzAzMDMwIi8+CjxwYXRoIGQ9Ik02LjczOTgzIDQuNzUzNjJDNi42NzEwOSA1LjAxMjM1IDYuODA4NTggNS4yNjIzNCA3LjA3ODU3IDUuMzMxMDlDNy4zNjk4IDUuNDA0ODMgNy42MzQ3OSA1LjMwODU5IDcuNzA2MDMgNS4wMTExQzcuNzY4NTMgNC43NDczNyA3LjY0MzU0IDQuNTE0ODggNy4zMzYwNSA0LjQzOTg4QzcuMDgzNTcgNC4zNzczOSA2LjgxNDgzIDQuNDcxMTMgNi43Mzk4MyA0Ljc1MzYyWiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZD0iTTYuOTU5NzggNi4wMzk3NEM2LjYzMjMgNS45Mzg0OSA2LjE5OTgyIDYuMDY0NzMgNi4xMzEwNyA2LjUwNDcxQzYuMDYyMzMgNi45NDQ2OSA2LjMyNjA2IDcuMTY5NjggNi42NzEwNCA3LjIzMjE3QzcuMDE2MDMgNy4yOTQ2NyA3LjM0MjI2IDcuMTEzNDMgNy40MDYwMSA2Ljc2MDk1QzcuNDY4NSA2LjQwOTcyIDcuMjg2MDEgNi4xMzk3MyA2Ljk1OTc4IDYuMDM5NzRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4K",
+  "layout": [
+    {
+      "h": 6,
+      "i": "payment-requests-total",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "h": 6,
+      "i": "payment-success-rate",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 6,
+      "y": 0
+    },
+    {
+      "h": 6,
+      "i": "payment-failures",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 0,
+      "y": 6
+    },
+    {
+      "h": 6,
+      "i": "active-payments",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 6,
+      "y": 6
+    },
+    {
+      "h": 6,
+      "i": "payment-processing-duration",
+      "moved": false,
+      "static": false,
+      "w": 12,
+      "x": 0,
+      "y": 12
+    },
+    {
+      "h": 6,
+      "i": "database-query-duration",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 0,
+      "y": 18
+    },
+    {
+      "h": 6,
+      "i": "cardano-tx-duration",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 6,
+      "y": 18
+    },
+    {
+      "h": 6,
+      "i": "wallet-operations",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 0,
+      "y": 24
+    },
+    {
+      "h": 6,
+      "i": "wallet-balance",
+      "moved": false,
+      "static": false,
+      "w": 6,
+      "x": 6,
+      "y": 24
+    }
+  ],
+  "panelMap": {},
+  "tags": ["payment", "masumi", "cardano", "wallet", "business-metrics"],
+  "title": "Masumi Payment Service Dashboard",
+  "uploadedGrafana": false,
+  "variables": {
+    "service-name": {
+      "allSelected": false,
+      "customValue": "",
+      "description": "The service name for filtering metrics",
+      "id": "service-name",
+      "key": "service-name",
+      "modificationUUID": "payment-service-uuid",
+      "multiSelect": false,
+      "name": "service.name",
+      "order": 0,
+      "queryValue": "SELECT JSONExtractString(labels, 'service.name') AS `service.name` FROM signoz_metrics.time_series_v4_1day WHERE (metric_name IN ('payment_requests_total', 'payment_success_total', 'payment_failures_total')) AND (unix_milli >= (toUnixTimestamp(now() - toIntervalDay(1)) * 1000)) GROUP BY `service.name`",
+      "selectedValue": "masumi-payment-service",
+      "showALLOption": true,
+      "sort": "DISABLED",
+      "textboxValue": "",
+      "type": "QUERY"
+    }
+  },
+  "version": "v4",
+  "widgets": [
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Total number of payment requests received by the service",
+      "fillSpans": false,
+      "id": "payment-requests-total",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_requests_total--float64--Sum--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_requests_total",
+                "type": "Sum"
+              },
+              "aggregateOperator": "rate",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "payment_type--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "payment_type",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{payment_type}}",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate"
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "payment-requests-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Payment Requests Rate",
+      "yAxisUnit": "reqps"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Success rate of payments (successful / total)",
+      "fillSpans": false,
+      "id": "payment-success-rate",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_success_total--float64--Sum--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_success_total",
+                "type": "Sum"
+              },
+              "aggregateOperator": "rate",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-success",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [],
+              "having": [],
+              "legend": "Success Rate",
+              "limit": null,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate"
+            },
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_requests_total--float64--Sum--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_requests_total",
+                "type": "Sum"
+              },
+              "aggregateOperator": "rate",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "B",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-total",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [],
+              "having": [],
+              "legend": "Total Payments",
+              "limit": null,
+              "orderBy": [],
+              "queryName": "B",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate"
+            }
+          ],
+          "queryFormulas": [
+            {
+              "disabled": false,
+              "expression": "(A/B)*100",
+              "legend": "Success Rate %",
+              "queryName": "F1"
+            }
+          ]
+        },
+        "clickhouse_sql": [],
+        "id": "payment-success-rate-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 100,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [
+        {
+          "thresholdFormat": "percent",
+          "thresholdOperator": "below",
+          "thresholdValue": 95,
+          "thresholdColor": "Red"
+        }
+      ],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Payment Success Rate",
+      "yAxisUnit": "percent"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Payment failures by reason",
+      "fillSpans": false,
+      "id": "payment-failures",
+      "isStacked": true,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_failures_total--float64--Sum--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_failures_total",
+                "type": "Sum"
+              },
+              "aggregateOperator": "rate",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-failures",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "failure_reason--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "failure_reason",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{failure_reason}}",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate"
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "payment-failures-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": true,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Payment Failures by Reason",
+      "yAxisUnit": "failps"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Number of currently active payments being processed",
+      "fillSpans": false,
+      "id": "active-payments",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "active_payments--float64--Gauge--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "active_payments",
+                "type": "Gauge"
+              },
+              "aggregateOperator": "last",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-active",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "payment_type--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "payment_type",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{payment_type}}",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "active-payments-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Active Payments",
+      "yAxisUnit": "short"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Payment processing duration distribution (P50, P90, P99)",
+      "fillSpans": false,
+      "id": "payment-processing-duration",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_processing_duration_ms--float64--Histogram--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_processing_duration_ms",
+                "type": "Histogram"
+              },
+              "aggregateOperator": "histogram_quantile",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-duration",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [],
+              "having": [],
+              "legend": "P99",
+              "limit": null,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "p99",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            },
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_processing_duration_ms--float64--Histogram--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_processing_duration_ms",
+                "type": "Histogram"
+              },
+              "aggregateOperator": "histogram_quantile",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "B",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-duration-b",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [],
+              "having": [],
+              "legend": "P90",
+              "limit": null,
+              "orderBy": [],
+              "queryName": "B",
+              "reduceTo": "avg",
+              "spaceAggregation": "p90",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            },
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "payment_processing_duration_ms--float64--Histogram--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "payment_processing_duration_ms",
+                "type": "Histogram"
+              },
+              "aggregateOperator": "histogram_quantile",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "C",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-duration-c",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [],
+              "having": [],
+              "legend": "P50",
+              "limit": null,
+              "orderBy": [],
+              "queryName": "C",
+              "reduceTo": "avg",
+              "spaceAggregation": "p50",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "payment-processing-duration-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [
+        {
+          "thresholdFormat": "time",
+          "thresholdOperator": "above",
+          "thresholdValue": 5000,
+          "thresholdColor": "Red"
+        },
+        {
+          "thresholdFormat": "time",
+          "thresholdOperator": "above",
+          "thresholdValue": 2000,
+          "thresholdColor": "Yellow"
+        }
+      ],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Payment Processing Duration",
+      "yAxisUnit": "ms"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Database query duration by query type",
+      "fillSpans": false,
+      "id": "database-query-duration",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "database_query_duration_ms--float64--Histogram--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "database_query_duration_ms",
+                "type": "Histogram"
+              },
+              "aggregateOperator": "histogram_quantile",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-db",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "query_type--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "query_type",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{query_type}} P95",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "p95",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "database-query-duration-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Database Query Duration (P95)",
+      "yAxisUnit": "ms"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Cardano transaction duration by transaction type",
+      "fillSpans": false,
+      "id": "cardano-tx-duration",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "cardano_tx_duration_ms--float64--Histogram--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "cardano_tx_duration_ms",
+                "type": "Histogram"
+              },
+              "aggregateOperator": "histogram_quantile",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-cardano",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "tx_type--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "tx_type",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{tx_type}} P95",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "p95",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "cardano-tx-duration-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Cardano Transaction Duration (P95)",
+      "yAxisUnit": "ms"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Wallet operations by operation type",
+      "fillSpans": false,
+      "id": "wallet-operations",
+      "isStacked": true,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "wallet_operations_total--float64--Sum--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "wallet_operations_total",
+                "type": "Sum"
+              },
+              "aggregateOperator": "rate",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-wallet",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "operation--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "operation",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "{{operation}}",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": "rate"
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "wallet-operations-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": true,
+      "thresholds": [],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Wallet Operations Rate",
+      "yAxisUnit": "ops"
+    },
+    {
+      "bucketCount": 30,
+      "bucketWidth": 0,
+      "columnUnits": {},
+      "description": "Current wallet balance in ADA",
+      "fillSpans": false,
+      "id": "wallet-balance",
+      "isStacked": false,
+      "mergeAllActiveQueries": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "panelTypes": "graph",
+      "query": {
+        "builder": {
+          "queryData": [
+            {
+              "aggregateAttribute": {
+                "dataType": "float64",
+                "id": "wallet_balance_ada--float64--Gauge--true",
+                "isColumn": true,
+                "isJSON": false,
+                "key": "wallet_balance_ada",
+                "type": "Gauge"
+              },
+              "aggregateOperator": "last",
+              "dataSource": "metrics",
+              "disabled": false,
+              "expression": "A",
+              "filters": {
+                "items": [
+                  {
+                    "id": "service-filter-balance",
+                    "key": {
+                      "dataType": "string",
+                      "id": "service.name--string--tag--false",
+                      "isColumn": false,
+                      "isJSON": false,
+                      "key": "service.name",
+                      "type": "tag"
+                    },
+                    "op": "=",
+                    "value": "{{.service.name}}"
+                  }
+                ],
+                "op": "AND"
+              },
+              "functions": [],
+              "groupBy": [
+                {
+                  "dataType": "string",
+                  "id": "wallet_id--string--tag--false",
+                  "isColumn": false,
+                  "isJSON": false,
+                  "key": "wallet_id",
+                  "type": "tag"
+                }
+              ],
+              "having": [],
+              "legend": "Wallet {{wallet_id}}",
+              "limit": 10,
+              "orderBy": [],
+              "queryName": "A",
+              "reduceTo": "avg",
+              "spaceAggregation": "sum",
+              "stepInterval": 60,
+              "timeAggregation": ""
+            }
+          ],
+          "queryFormulas": []
+        },
+        "clickhouse_sql": [],
+        "id": "wallet-balance-query",
+        "promql": [],
+        "queryType": "builder"
+      },
+      "selectedLogFields": [],
+      "selectedTracesFields": [],
+      "softMax": 0,
+      "softMin": 0,
+      "stackedBarChart": false,
+      "thresholds": [
+        {
+          "thresholdFormat": "currency",
+          "thresholdOperator": "below",
+          "thresholdValue": 100,
+          "thresholdColor": "Red"
+        },
+        {
+          "thresholdFormat": "currency",
+          "thresholdOperator": "below",
+          "thresholdValue": 500,
+          "thresholdColor": "Yellow"
+        }
+      ],
+      "timePreferance": "GLOBAL_TIME",
+      "title": "Wallet Balance (ADA)",
+      "yAxisUnit": "currency"
+    }
+  ]
+}

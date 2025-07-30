@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import { CONFIG } from '@/utils/config/';
 import { logger } from '@/utils/logger/';
