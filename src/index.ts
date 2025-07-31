@@ -1,6 +1,7 @@
 import express from 'express';
 import { CONFIG } from '@/utils/config/';
 import { logger } from '@/utils/logger/';
+import { logInfo, logError } from '@/utils/logs';
 import { initJobs } from '@/services/schedules';
 import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
@@ -14,14 +15,34 @@ import fs from 'fs';
 const __dirname = path.resolve();
 
 async function initialize() {
-  await initDB();
-  await initJobs();
-  logger.info('Initialized all services');
+  logInfo('Starting application initialization', { component: 'main' });
+
+  try {
+    await initDB();
+    logInfo('Database initialized successfully', { component: 'database' });
+
+    await initJobs();
+    logInfo('Background jobs initialized successfully', {
+      component: 'scheduler',
+    });
+
+    logger.info('Initialized all services');
+    logInfo('All services initialized successfully', { component: 'main' });
+  } catch (error) {
+    logError(
+      'Failed to initialize services',
+      { component: 'main' },
+      undefined,
+      error as Error,
+    );
+    throw error;
+  }
 }
 logger.info('Initializing services');
 initialize()
   .then(async () => {
     const PORT = CONFIG.PORT;
+    logInfo('Starting web server', { component: 'server' }, { port: PORT });
     const serverConfig = createConfig({
       inputSources: {
         //read from body on get requests
@@ -112,8 +133,19 @@ initialize()
     });
 
     void createServer(serverConfig, router);
+    logInfo(
+      'Web server started successfully',
+      { component: 'server' },
+      { port: PORT },
+    );
   })
   .catch((e) => {
+    logError(
+      'Application startup failed',
+      { component: 'main' },
+      undefined,
+      e as Error,
+    );
     throw e;
   })
   .finally(() => {
