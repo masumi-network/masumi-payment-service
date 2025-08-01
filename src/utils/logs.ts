@@ -71,12 +71,19 @@ const emitLog = (
     timestamp: Date.now(),
   });
 
-  // Also log to console for development
-  if (process.env.NODE_ENV !== 'production') {
-    const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
-    const errorStr = error ? ` ERROR: ${error.message}` : '';
-    console.log(`[${level.toUpperCase()}]${contextStr} ${message}${errorStr}`);
-  }
+  // Also log to console in Winston format
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const separator = '│';
+  const paddedLevel = level.padEnd(5);
+
+  // Format context info similar to Winston format
+  const contextStr = context ? ` [${JSON.stringify(context)}]` : '';
+  const errorStr = error ? ` ERROR: ${error.message}` : '';
+  const fullMessage = `${message}${contextStr}${errorStr}`;
+
+  console.log(
+    `${timestamp} ${separator} [${paddedLevel}] ${separator} ${fullMessage}`,
+  );
 };
 
 export const logDebug = (
