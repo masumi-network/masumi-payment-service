@@ -15,6 +15,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
@@ -294,152 +295,193 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       usageLimited: boolean;
     };
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
-      input.network,
-      options.permission,
-    );
+    const startTime = Date.now();
+    try {
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        options.networkLimit,
+        input.network,
+        options.permission,
+      );
 
-    const sellingWallet = await prisma.hotWallet.findUnique({
-      where: {
-        walletVkey: input.sellingWalletVkey,
-        type: HotWalletType.Selling,
+      const sellingWallet = await prisma.hotWallet.findUnique({
+        where: {
+          walletVkey: input.sellingWalletVkey,
+          type: HotWalletType.Selling,
 
-        deletedAt: null,
-      },
-      include: {
-        PaymentSource: {
-          include: {
-            AdminWallets: true,
-            HotWallets: {
-              include: { Secret: true },
-              where: { deletedAt: null },
+          deletedAt: null,
+        },
+        include: {
+          PaymentSource: {
+            include: {
+              AdminWallets: true,
+              HotWallets: {
+                include: { Secret: true },
+                where: { deletedAt: null },
+              },
+              PaymentSourceConfig: true,
             },
-            PaymentSourceConfig: true,
           },
         },
-      },
-    });
-    if (sellingWallet == null) {
-      throw createHttpError(
-        404,
-        'Network and Address combination not supported',
+      });
+      if (sellingWallet == null) {
+        recordBusinessEndpointError(
+          '/api/v1/registry',
+          'POST',
+          404,
+          'Network and Address combination not supported',
+          {
+            network: input.network,
+            operation: 'register_agent',
+            step: 'wallet_lookup',
+            wallet_vkey: input.sellingWalletVkey,
+          },
+        );
+        throw createHttpError(
+          404,
+          'Network and Address combination not supported',
+        );
+      }
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        options.networkLimit,
+        input.network,
+        options.permission,
       );
-    }
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
-      input.network,
-      options.permission,
-    );
 
-    if (sellingWallet == null) {
-      throw createHttpError(404, 'Selling wallet not found');
-    }
-    const paymentSource = sellingWallet.PaymentSource;
-    if (paymentSource == null) {
-      throw createHttpError(404, 'Selling wallet has no payment source');
-    }
-    if (paymentSource.network != input.network) {
-      throw createHttpError(
-        400,
-        'Selling wallet is not on the requested network',
-      );
-    }
-    if (paymentSource.deletedAt != null) {
-      throw createHttpError(400, 'Payment source is deleted');
-    }
-    const result = await prisma.registryRequest.create({
-      data: {
-        name: input.name,
-        description: input.description,
-        apiBaseUrl: input.apiBaseUrl,
-        capabilityName: input.Capability.name,
-        capabilityVersion: input.Capability.version,
-        other: input.Legal?.other,
-        terms: input.Legal?.terms,
-        privacyPolicy: input.Legal?.privacyPolicy,
-        authorName: input.Author.name,
-        authorContactEmail: input.Author.contactEmail,
-        authorContactOther: input.Author.contactOther,
-        authorOrganization: input.Author.organization,
-        state: RegistrationState.RegistrationRequested,
-        agentIdentifier: null,
-        metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
-        ExampleOutputs: {
-          createMany: {
-            data: input.ExampleOutputs.map((exampleOutput) => ({
-              name: exampleOutput.name,
-              url: exampleOutput.url,
-              mimeType: exampleOutput.mimeType,
-            })),
+      if (sellingWallet == null) {
+        throw createHttpError(404, 'Selling wallet not found');
+      }
+      const paymentSource = sellingWallet.PaymentSource;
+      if (paymentSource == null) {
+        throw createHttpError(404, 'Selling wallet has no payment source');
+      }
+      if (paymentSource.network != input.network) {
+        throw createHttpError(
+          400,
+          'Selling wallet is not on the requested network',
+        );
+      }
+      if (paymentSource.deletedAt != null) {
+        throw createHttpError(400, 'Payment source is deleted');
+      }
+      const result = await prisma.registryRequest.create({
+        data: {
+          name: input.name,
+          description: input.description,
+          apiBaseUrl: input.apiBaseUrl,
+          capabilityName: input.Capability.name,
+          capabilityVersion: input.Capability.version,
+          other: input.Legal?.other,
+          terms: input.Legal?.terms,
+          privacyPolicy: input.Legal?.privacyPolicy,
+          authorName: input.Author.name,
+          authorContactEmail: input.Author.contactEmail,
+          authorContactOther: input.Author.contactOther,
+          authorOrganization: input.Author.organization,
+          state: RegistrationState.RegistrationRequested,
+          agentIdentifier: null,
+          metadataVersion: DEFAULTS.DEFAULT_METADATA_VERSION,
+          ExampleOutputs: {
+            createMany: {
+              data: input.ExampleOutputs.map((exampleOutput) => ({
+                name: exampleOutput.name,
+                url: exampleOutput.url,
+                mimeType: exampleOutput.mimeType,
+              })),
+            },
           },
-        },
-        SmartContractWallet: {
-          connect: {
-            id: sellingWallet.id,
+          SmartContractWallet: {
+            connect: {
+              id: sellingWallet.id,
+            },
           },
-        },
-        PaymentSource: {
-          connect: {
-            id: paymentSource.id,
+          PaymentSource: {
+            connect: {
+              id: paymentSource.id,
+            },
           },
-        },
-        tags: input.Tags,
-        Pricing: {
-          create: {
-            pricingType: input.AgentPricing.pricingType,
-            FixedPricing: {
-              create: {
-                Amounts: {
-                  createMany: {
-                    data: input.AgentPricing.Pricing.map((price) => ({
-                      unit:
-                        price.unit.toLowerCase() == 'lovelace'
-                          ? ''
-                          : price.unit,
-                      amount: BigInt(price.amount),
-                    })),
+          tags: input.Tags,
+          Pricing: {
+            create: {
+              pricingType: input.AgentPricing.pricingType,
+              FixedPricing: {
+                create: {
+                  Amounts: {
+                    createMany: {
+                      data: input.AgentPricing.Pricing.map((price) => ({
+                        unit:
+                          price.unit.toLowerCase() == 'lovelace'
+                            ? ''
+                            : price.unit,
+                        amount: BigInt(price.amount),
+                      })),
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      include: {
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        SmartContractWallet: true,
-        ExampleOutputs: true,
-      },
-    });
+        include: {
+          Pricing: {
+            include: { FixedPricing: { include: { Amounts: true } } },
+          },
+          SmartContractWallet: true,
+          ExampleOutputs: true,
+        },
+      });
 
-    return {
-      ...result,
-      Capability: {
-        name: result.capabilityName,
-        version: result.capabilityVersion,
-      },
-      Legal: {
-        privacyPolicy: result.privacyPolicy,
-        terms: result.terms,
-        other: result.other,
-      },
-      Author: {
-        name: result.authorName,
-        contactEmail: result.authorContactEmail,
-        contactOther: result.authorContactOther,
-        organization: result.authorOrganization,
-      },
-      AgentPricing: {
-        pricingType: PricingType.Fixed,
-        Pricing:
-          result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-            unit: pricing.unit,
-            amount: pricing.amount.toString(),
-          })) ?? [],
-      },
-      Tags: result.tags,
-    };
+      // Success is automatically recorded by middleware
+
+      return {
+        ...result,
+        Capability: {
+          name: result.capabilityName,
+          version: result.capabilityVersion,
+        },
+        Legal: {
+          privacyPolicy: result.privacyPolicy,
+          terms: result.terms,
+          other: result.other,
+        },
+        Author: {
+          name: result.authorName,
+          contactEmail: result.authorContactEmail,
+          contactOther: result.authorContactOther,
+          organization: result.authorOrganization,
+        },
+        AgentPricing: {
+          pricingType: PricingType.Fixed,
+          Pricing:
+            result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+              unit: pricing.unit,
+              amount: pricing.amount.toString(),
+            })) ?? [],
+        },
+        Tags: result.tags,
+      };
+    } catch (error) {
+      const errorInstance =
+        error instanceof Error ? error : new Error(String(error));
+      const statusCode =
+        (errorInstance as { statusCode?: number; status?: number })
+          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).status ||
+        500;
+      recordBusinessEndpointError(
+        '/api/v1/registry',
+        'POST',
+        statusCode,
+        errorInstance,
+        {
+          network: input.network,
+          user_id: options.id,
+          agent_name: input.name,
+          operation: 'register_agent',
+          duration: Date.now() - startTime,
+        },
+      );
+      throw error;
+    }
   },
 });
 
@@ -523,114 +565,143 @@ export const unregisterAgentDelete = payAuthenticatedEndpointFactory.build({
       usageLimited: boolean;
     };
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
-      input.network,
-      options.permission,
-    );
-    const smartContractAddress =
-      input.smartContractAddress ??
-      (input.network == Network.Mainnet
-        ? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
-        : DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD);
-    const paymentSource = await prisma.paymentSource.findUnique({
-      where: {
-        network_smartContractAddress: {
-          network: input.network,
-          smartContractAddress: smartContractAddress,
-        },
-        deletedAt: null,
-      },
-      include: {
-        PaymentSourceConfig: true,
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
-      },
-    });
-    if (paymentSource == null) {
-      throw createHttpError(
-        404,
-        'Network and Address combination not supported',
+    const startTime = Date.now();
+    try {
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        options.networkLimit,
+        input.network,
+        options.permission,
       );
-    }
-
-    const blockfrost = new BlockFrostAPI({
-      projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-    });
-
-    const { policyId } =
-      await getRegistryScriptFromNetworkHandlerV1(paymentSource);
-
-    let assetName = input.agentIdentifier;
-    if (assetName.startsWith(policyId)) {
-      assetName = assetName.slice(policyId.length);
-    }
-    const holderWallet = await blockfrost.assetsAddresses(
-      policyId + assetName,
-      { order: 'desc', count: 1 },
-    );
-    if (holderWallet.length == 0) {
-      throw createHttpError(404, 'Asset not found');
-    }
-    const vkey = resolvePaymentKeyHash(holderWallet[0].address);
-
-    const sellingWallet = paymentSource.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == vkey && wallet.type == HotWalletType.Selling,
-    );
-    if (sellingWallet == null) {
-      throw createHttpError(404, 'Registered Wallet not found');
-    }
-    const registryRequest = await prisma.registryRequest.findUnique({
-      where: {
-        agentIdentifier: policyId + assetName,
-      },
-    });
-    if (registryRequest == null) {
-      throw createHttpError(404, 'Registration not found');
-    }
-    const result = await prisma.registryRequest.update({
-      where: {
-        id: registryRequest.id,
-        SmartContractWallet: {
+      const smartContractAddress =
+        input.smartContractAddress ??
+        (input.network == Network.Mainnet
+          ? DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
+          : DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD);
+      const paymentSource = await prisma.paymentSource.findUnique({
+        where: {
+          network_smartContractAddress: {
+            network: input.network,
+            smartContractAddress: smartContractAddress,
+          },
           deletedAt: null,
         },
-      },
-      data: {
-        state: RegistrationState.DeregistrationRequested,
-      },
-      include: {
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        SmartContractWallet: true,
-        ExampleOutputs: true,
-      },
-    });
+        include: {
+          PaymentSourceConfig: true,
+          HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
+        },
+      });
+      if (paymentSource == null) {
+        throw createHttpError(
+          404,
+          'Network and Address combination not supported',
+        );
+      }
 
-    return {
-      ...result,
-      Capability: {
-        name: result.capabilityName,
-        version: result.capabilityVersion,
-      },
-      Author: {
-        name: result.authorName,
-        contactEmail: result.authorContactEmail,
-        contactOther: result.authorContactOther,
-        organization: result.authorOrganization,
-      },
-      Legal: {
-        privacyPolicy: result.privacyPolicy,
-        terms: result.terms,
-        other: result.other,
-      },
-      Tags: result.tags,
-      AgentPricing: {
-        pricingType: PricingType.Fixed,
-        Pricing:
-          result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-            unit: pricing.unit,
-            amount: pricing.amount.toString(),
-          })) ?? [],
-      },
-    };
+      const blockfrost = new BlockFrostAPI({
+        projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+      });
+
+      const { policyId } =
+        await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+
+      let assetName = input.agentIdentifier;
+      if (assetName.startsWith(policyId)) {
+        assetName = assetName.slice(policyId.length);
+      }
+      const holderWallet = await blockfrost.assetsAddresses(
+        policyId + assetName,
+        { order: 'desc', count: 1 },
+      );
+      if (holderWallet.length == 0) {
+        throw createHttpError(404, 'Asset not found');
+      }
+      const vkey = resolvePaymentKeyHash(holderWallet[0].address);
+
+      const sellingWallet = paymentSource.HotWallets.find(
+        (wallet) =>
+          wallet.walletVkey == vkey && wallet.type == HotWalletType.Selling,
+      );
+      if (sellingWallet == null) {
+        throw createHttpError(404, 'Registered Wallet not found');
+      }
+      const registryRequest = await prisma.registryRequest.findUnique({
+        where: {
+          agentIdentifier: policyId + assetName,
+        },
+      });
+      if (registryRequest == null) {
+        throw createHttpError(404, 'Registration not found');
+      }
+      const result = await prisma.registryRequest.update({
+        where: {
+          id: registryRequest.id,
+          SmartContractWallet: {
+            deletedAt: null,
+          },
+        },
+        data: {
+          state: RegistrationState.DeregistrationRequested,
+        },
+        include: {
+          Pricing: {
+            include: { FixedPricing: { include: { Amounts: true } } },
+          },
+          SmartContractWallet: true,
+          ExampleOutputs: true,
+        },
+      });
+
+      // Success is automatically recorded by middleware
+
+      return {
+        ...result,
+        Capability: {
+          name: result.capabilityName,
+          version: result.capabilityVersion,
+        },
+        Author: {
+          name: result.authorName,
+          contactEmail: result.authorContactEmail,
+          contactOther: result.authorContactOther,
+          organization: result.authorOrganization,
+        },
+        Legal: {
+          privacyPolicy: result.privacyPolicy,
+          terms: result.terms,
+          other: result.other,
+        },
+        Tags: result.tags,
+        AgentPricing: {
+          pricingType: PricingType.Fixed,
+          Pricing:
+            result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+              unit: pricing.unit,
+              amount: pricing.amount.toString(),
+            })) ?? [],
+        },
+      };
+    } catch (error) {
+      const errorInstance =
+        error instanceof Error ? error : new Error(String(error));
+      const statusCode =
+        (errorInstance as { statusCode?: number; status?: number })
+          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).status ||
+        500;
+      recordBusinessEndpointError(
+        '/api/v1/registry',
+        'DELETE',
+        statusCode,
+        errorInstance,
+        {
+          network: input.network,
+          user_id: options.id,
+          agent_identifier: input.agentIdentifier,
+          operation: 'unregister_agent',
+          duration: Date.now() - startTime,
+        },
+      );
+      throw error;
+    }
   },
 });

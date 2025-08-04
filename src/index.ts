@@ -9,6 +9,7 @@ import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB } from '@/utils/db';
 import path from 'path';
+import { requestTiming } from '@/utils/middleware/request-timing';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import fs from 'fs';
 
@@ -55,6 +56,7 @@ initialize()
       startupLogo: false,
       beforeRouting: ({ app }) => {
         // Add request logger middleware
+        app.use(requestTiming);
         app.use(requestLogger);
 
         const replacer = (key: string, value: unknown): unknown => {
