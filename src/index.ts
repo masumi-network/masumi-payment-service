@@ -1,7 +1,7 @@
 import express from 'express';
 import { CONFIG } from '@/utils/config/';
 import { logger } from '@/utils/logger/';
-import { logInfo, logError } from '@/utils/logs';
+// import { logger.info, logError } from '@/utils/logs';
 import { initJobs } from '@/services/schedules';
 import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
@@ -11,26 +11,34 @@ import { cleanupDB, initDB } from '@/utils/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { requestLogger } from '@/utils/middleware/request-logger';
+import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
 
 const __dirname = path.resolve();
 
 async function initialize() {
-  logInfo('Starting application initialization', { component: 'main' });
+  logger.info('Starting application initialization', { component: 'main' });
 
   try {
     await initDB();
-    logInfo('Database initialized successfully', { component: 'database' });
+    logger.info('Database initialized successfully', { component: 'database' });
 
     await initJobs();
-    logInfo('Background jobs initialized successfully', {
+    logger.info('Background jobs initialized successfully', {
       component: 'scheduler',
     });
 
+    // Start blockchain state monitoring
+    await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
+    logger.info('Blockchain state monitoring service started', {
+      component: 'monitoring',
+      intervalSeconds: 30,
+    });
+
     logger.info('Initialized all services');
-    logInfo('All services initialized successfully', { component: 'main' });
+    logger.info('All services initialized successfully', { component: 'main' });
   } catch (error) {
-    logError(
+    logger.error(
       'Failed to initialize services',
       { component: 'main' },
       undefined,
@@ -43,7 +51,7 @@ logger.info('Initializing services');
 initialize()
   .then(async () => {
     const PORT = CONFIG.PORT;
-    logInfo('Starting web server', { component: 'server' }, { port: PORT });
+    logger.info('Starting web server', { component: 'server' }, { port: PORT });
     const serverConfig = createConfig({
       inputSources: {
         //read from body on get requests
@@ -135,14 +143,14 @@ initialize()
     });
 
     void createServer(serverConfig, router);
-    logInfo(
+    logger.info(
       'Web server started successfully',
       { component: 'server' },
       { port: PORT },
     );
   })
   .catch((e) => {
-    logError(
+    logger.error(
       'Application startup failed',
       { component: 'main' },
       undefined,
@@ -153,3 +161,16 @@ initialize()
   .finally(() => {
     void cleanupDB();
   });
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, shutting down gracefully');
+  blockchainStateMonitorService.stopMonitoring();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM, shutting down gracefully');
+  blockchainStateMonitorService.stopMonitoring();
+  process.exit(0);
+});

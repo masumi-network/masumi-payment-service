@@ -43,6 +43,31 @@ export const businessEndpointSuccessCounter = meter.createCounter(
   },
 );
 
+// Blockchain State Transition Metrics
+export const blockchainStateTransitionDuration = meter.createHistogram(
+  'blockchain_state_transition_duration_ms',
+  {
+    description: 'Time between blockchain state transitions',
+    unit: 'ms',
+  },
+);
+
+export const blockchainJourneyDuration = meter.createHistogram(
+  'blockchain_journey_duration_ms',
+  {
+    description:
+      'Complete blockchain operation duration from request to confirmation',
+    unit: 'ms',
+  },
+);
+
+export const blockchainStateTransitionCounter = meter.createCounter(
+  'blockchain_state_transitions_total',
+  {
+    description: 'Total count of blockchain state transitions',
+  },
+);
+
 // Gauges for current state (keeping useful ones)
 export const activePaymentGauge = meter.createUpDownCounter('active_payments', {
   description: 'Number of currently active payments',
@@ -334,6 +359,52 @@ export const isBusinessEndpoint = (endpoint: string): boolean => {
 
 // Export the endpoint classifier for use in middleware
 export { getBusinessEndpoint };
+
+// Blockchain State Transition Recording Functions
+export const recordStateTransition = (
+  entityType: 'registration' | 'purchase' | 'payment',
+  fromState: string,
+  toState: string,
+  duration: number,
+  entityId: string,
+  attributes: Record<string, string | number> = {},
+) => {
+  blockchainStateTransitionDuration.record(duration, {
+    ...attributes,
+    entity_type: entityType,
+    entity_id: entityId,
+    from_state: fromState,
+    to_state: toState,
+    transition: `${fromState}_to_${toState}`,
+  });
+
+  blockchainStateTransitionCounter.add(1, {
+    ...attributes,
+    entity_type: entityType,
+    from_state: fromState,
+    to_state: toState,
+    transition: `${fromState}_to_${toState}`,
+  });
+};
+
+export const recordBlockchainJourney = (
+  entityType: 'registration' | 'purchase' | 'payment',
+  totalDuration: number,
+  finalState: string,
+  entityId: string,
+  attributes: Record<string, string | number> = {},
+) => {
+  blockchainJourneyDuration.record(totalDuration, {
+    ...attributes,
+    entity_type: entityType,
+    entity_id: entityId,
+    final_state: finalState,
+    status:
+      finalState.includes('Confirmed') || finalState.includes('Completed')
+        ? 'success'
+        : 'failed',
+  });
+};
 
 // Custom span creation for detailed tracing (keeping for advanced usage)
 export const createCustomSpan = (
