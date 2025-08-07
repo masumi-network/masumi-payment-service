@@ -23,7 +23,6 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  */
 export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetHealthResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         url: '/health/',
         ...options
     });
@@ -35,7 +34,6 @@ export const getHealth = <ThrowOnError extends boolean = false>(options?: Option
  */
 export const getApiKeyStatus = <ThrowOnError extends boolean = false>(options?: Options<GetApiKeyStatusData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetApiKeyStatusResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -53,7 +51,6 @@ export const getApiKeyStatus = <ThrowOnError extends boolean = false>(options?: 
  */
 export const getWallet = <ThrowOnError extends boolean = false>(options: Options<GetWalletData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetWalletResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -71,7 +68,6 @@ export const getWallet = <ThrowOnError extends boolean = false>(options: Options
  */
 export const postWallet = <ThrowOnError extends boolean = false>(options?: Options<PostWalletData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostWalletResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -93,7 +89,6 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
  */
 export const deleteApiKey = <ThrowOnError extends boolean = false>(options?: Options<DeleteApiKeyData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).delete<DeleteApiKeyResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -115,7 +110,6 @@ export const deleteApiKey = <ThrowOnError extends boolean = false>(options?: Opt
  */
 export const getApiKey = <ThrowOnError extends boolean = false>(options?: Options<GetApiKeyData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetApiKeyResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -133,7 +127,6 @@ export const getApiKey = <ThrowOnError extends boolean = false>(options?: Option
  */
 export const patchApiKey = <ThrowOnError extends boolean = false>(options?: Options<PatchApiKeyData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).patch<PatchApiKeyResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -155,7 +148,6 @@ export const patchApiKey = <ThrowOnError extends boolean = false>(options?: Opti
  */
 export const postApiKey = <ThrowOnError extends boolean = false>(options?: Options<PostApiKeyData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostApiKeyResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -177,7 +169,6 @@ export const postApiKey = <ThrowOnError extends boolean = false>(options?: Optio
  */
 export const getPayment = <ThrowOnError extends boolean = false>(options: Options<GetPaymentData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetPaymentResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -195,7 +186,6 @@ export const getPayment = <ThrowOnError extends boolean = false>(options: Option
  */
 export const postPayment = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -217,7 +207,6 @@ export const postPayment = <ThrowOnError extends boolean = false>(options?: Opti
  */
 export const postPaymentSubmitResult = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentSubmitResultData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentSubmitResultResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -239,7 +228,6 @@ export const postPaymentSubmitResult = <ThrowOnError extends boolean = false>(op
  */
 export const postPaymentAuthorizeRefund = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentAuthorizeRefundData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentAuthorizeRefundResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -261,7 +249,6 @@ export const postPaymentAuthorizeRefund = <ThrowOnError extends boolean = false>
  */
 export const getPurchase = <ThrowOnError extends boolean = false>(options: Options<GetPurchaseData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetPurchaseResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -279,7 +266,6 @@ export const getPurchase = <ThrowOnError extends boolean = false>(options: Optio
  */
 export const postPurchase = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPurchaseResponse, PostPurchaseError, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -301,7 +287,6 @@ export const postPurchase = <ThrowOnError extends boolean = false>(options?: Opt
  */
 export const postPurchaseRequestRefund = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseRequestRefundData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPurchaseRequestRefundResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -323,7 +308,6 @@ export const postPurchaseRequestRefund = <ThrowOnError extends boolean = false>(
  */
 export const postPurchaseCancelRefundRequest = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseCancelRefundRequestData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPurchaseCancelRefundRequestResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -345,7 +329,6 @@ export const postPurchaseCancelRefundRequest = <ThrowOnError extends boolean = f
  */
 export const postPaymentResolveBlockchainIdentifier = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentResolveBlockchainIdentifierData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentResolveBlockchainIdentifierResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -367,7 +350,6 @@ export const postPaymentResolveBlockchainIdentifier = <ThrowOnError extends bool
  */
 export const postPurchaseResolveBlockchainIdentifier = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseResolveBlockchainIdentifierData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPurchaseResolveBlockchainIdentifierResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -389,7 +371,6 @@ export const postPurchaseResolveBlockchainIdentifier = <ThrowOnError extends boo
  */
 export const getRegistryWallet = <ThrowOnError extends boolean = false>(options: Options<GetRegistryWalletData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetRegistryWalletResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -407,7 +388,6 @@ export const getRegistryWallet = <ThrowOnError extends boolean = false>(options:
  */
 export const deleteRegistry = <ThrowOnError extends boolean = false>(options?: Options<DeleteRegistryData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).delete<DeleteRegistryResponse, DeleteRegistryError, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -429,7 +409,6 @@ export const deleteRegistry = <ThrowOnError extends boolean = false>(options?: O
  */
 export const getRegistry = <ThrowOnError extends boolean = false>(options: Options<GetRegistryData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetRegistryResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -447,7 +426,6 @@ export const getRegistry = <ThrowOnError extends boolean = false>(options: Optio
  */
 export const postRegistry = <ThrowOnError extends boolean = false>(options?: Options<PostRegistryData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostRegistryResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -469,7 +447,6 @@ export const postRegistry = <ThrowOnError extends boolean = false>(options?: Opt
  */
 export const postRegistryDeregister = <ThrowOnError extends boolean = false>(options?: Options<PostRegistryDeregisterData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostRegistryDeregisterResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -491,7 +468,6 @@ export const postRegistryDeregister = <ThrowOnError extends boolean = false>(opt
  */
 export const getPaymentSource = <ThrowOnError extends boolean = false>(options?: Options<GetPaymentSourceData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetPaymentSourceResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -509,7 +485,6 @@ export const getPaymentSource = <ThrowOnError extends boolean = false>(options?:
  */
 export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false>(options?: Options<DeletePaymentSourceExtendedData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).delete<DeletePaymentSourceExtendedResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -531,7 +506,6 @@ export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false
  */
 export const getPaymentSourceExtended = <ThrowOnError extends boolean = false>(options?: Options<GetPaymentSourceExtendedData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetPaymentSourceExtendedResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -549,7 +523,6 @@ export const getPaymentSourceExtended = <ThrowOnError extends boolean = false>(o
  */
 export const patchPaymentSourceExtended = <ThrowOnError extends boolean = false>(options?: Options<PatchPaymentSourceExtendedData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).patch<PatchPaymentSourceExtendedResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -571,7 +544,6 @@ export const patchPaymentSourceExtended = <ThrowOnError extends boolean = false>
  */
 export const postPaymentSourceExtended = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentSourceExtendedData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentSourceExtendedResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -593,7 +565,6 @@ export const postPaymentSourceExtended = <ThrowOnError extends boolean = false>(
  */
 export const getUtxos = <ThrowOnError extends boolean = false>(options: Options<GetUtxosData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<GetUtxosResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
@@ -611,7 +582,6 @@ export const getUtxos = <ThrowOnError extends boolean = false>(options: Options<
  */
 export const getRpcApiKeys = <ThrowOnError extends boolean = false>(options?: Options<GetRpcApiKeysData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<GetRpcApiKeysResponse, unknown, ThrowOnError>({
-        responseType: 'json',
         security: [
             {
                 name: 'token',
