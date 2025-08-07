@@ -560,7 +560,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
     if (!parsedMetadata.success || !parsedMetadata.data) {
       const error = parsedMetadata.error;
       logger.error('Error parsing metadata', { error });
-      throw createHttpError(404, 'Agent identifier metadata invalid');
+      throw createHttpError(
+        404,
+        'Agent identifier metadata invalid or unsupported',
+      );
     }
 
     const pricing = parsedMetadata.data.agentPricing;
