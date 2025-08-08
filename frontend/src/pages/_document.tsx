@@ -24,14 +24,8 @@ export default function Document() {
           property="twitter:description"
           content="Empower AI agents with Masumi, a decentralized protocol enabling seamless collaboration and efficient monetization of AI services."
         />
-        <meta
-          property="og:image"
-          content="https://cdn.prod.website-files.com/67879c5d48bf5ddaad9ec54f/678ed964d8bb6420ea872e44_Open%20Graph%20img.png"
-        />
-        <meta
-          property="twitter:image"
-          content="https://cdn.prod.website-files.com/67879c5d48bf5ddaad9ec54f/678ed964d8bb6420ea872e44_Open%20Graph%20img.png"
-        />
+        <meta property="og:image" content="/Admin-dash-light.png" />
+        <meta property="twitter:image" content="/Admin-dash-light.png" />
         <meta property="og:url" content="https://masumi.network" />
         <meta property="og:type" content="website" />
       </Head>
