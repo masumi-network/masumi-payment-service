@@ -138,10 +138,21 @@ initialize()
     });
 
     void createServer(serverConfig, router);
+    // Graceful shutdown
+    const shutdown = async (signal: string) => {
+      try {
+        logger.info(`Received ${signal}. Shutting down gracefully...`);
+        await cleanupDB();
+      } catch (e) {
+        logger.error('Error during shutdown', e);
+      } finally {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGINT', () => void shutdown('SIGINT'));
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
   })
   .catch((e) => {
     throw e;
-  })
-  .finally(() => {
-    void cleanupDB();
   });
