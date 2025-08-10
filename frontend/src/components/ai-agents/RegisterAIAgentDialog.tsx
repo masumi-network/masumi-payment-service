@@ -27,7 +27,7 @@ import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
 
 interface RegisterAIAgentDialogProps {
@@ -69,7 +69,10 @@ const agentSchema = z.object({
       message: 'API URL must start with http:// or https://',
     }),
   name: z.string().min(1, 'Name is required'),
-  description: z.string().min(1, 'Description is required'),
+  description: z
+    .string()
+    .min(1, 'Description is required')
+    .max(250, 'Description must be less than 250 characters'),
   selectedWallet: z.string().min(1, 'Wallet is required'),
   prices: z.array(priceSchema).min(1, 'At least one price is required'),
   tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
@@ -261,9 +264,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-              name: data.capabilityName,
-              version: data.capabilityVersion,
-            }
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -280,7 +283,9 @@ export function RegisterAIAgentDialog({
               pricingType: 'Fixed',
               Pricing: data.prices.map((price) => {
                 const unit =
-                  price.unit === 'USDM' ? USDM_CONFIG.fullAssetId : price.unit;
+                  price.unit === 'USDM'
+                    ? getUsdmConfig(state.network).fullAssetId
+                    : price.unit;
                 return {
                   unit,
                   amount: (parseFloat(price.amount) * 1_000_000).toString(),
@@ -377,12 +382,18 @@ export function RegisterAIAgentDialog({
             <label className="text-sm font-medium">
               Description <span className="text-red-500">*</span>
             </label>
-            <Textarea
-              {...register('description')}
-              placeholder="Describe what your agent does"
-              rows={3}
-              className={errors.description ? 'border-red-500' : ''}
-            />
+            <div className="relative">
+              <Textarea
+                {...register('description')}
+                placeholder="Describe what your agent does"
+                rows={3}
+                className={errors.description ? 'border-red-500' : ''}
+                maxLength={250}
+              />
+              <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                {watch('description')?.length || 0}/250
+              </div>
+            </div>
             {errors.description && (
               <p className="text-sm text-red-500">
                 {errors.description.message}

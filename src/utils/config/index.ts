@@ -111,6 +111,7 @@ export const CONFIG = {
 };
 
 export const DEFAULTS = {
+  DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
   TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
   LOCK_TIMEOUT_INTERVAL: 1000 * 60 * 3, // 3 minutes in seconds
   DEFAULT_METADATA_VERSION: 1,

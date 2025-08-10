@@ -16,6 +16,7 @@ import {
   deleteRegistry,
   GetRegistryResponses,
   getUtxos,
+  postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import Head from 'next/head';
@@ -31,7 +32,7 @@ import {
   WalletWithBalance,
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { USDM_CONFIG, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -258,25 +259,45 @@ export default function AIAgentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!selectedAgentToDelete?.agentIdentifier) {
-      toast.error('Cannot delete agent: Missing identifier');
-      return;
-    }
-
     try {
-      setIsDeleting(true);
-      await deleteRegistry({
-        client: apiClient,
-        body: {
-          agentIdentifier: selectedAgentToDelete.agentIdentifier,
-          network: state.network,
-        },
-      });
+      if (
+        selectedAgentToDelete?.state === 'RegistrationFailed' ||
+        selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+      ) {
+        setIsDeleting(true);
+        await deleteRegistry({
+          client: apiClient,
+          body: {
+            id: selectedAgentToDelete.id,
+          },
+        });
+        toast.success('AI agent deleted successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        fetchAgents();
+      } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
+        if (!selectedAgentToDelete?.agentIdentifier) {
+          toast.error('Cannot delete agent: Missing identifier');
+          return;
+        }
+        setIsDeleting(true);
+        await postRegistryDeregister({
+          client: apiClient,
+          body: {
+            agentIdentifier: selectedAgentToDelete.agentIdentifier,
+            network: state.network,
+          },
+        });
 
-      toast.success('AI agent deleted successfully');
-      setIsDeleteDialogOpen(false);
-      setSelectedAgentToDelete(null);
-      fetchAgents();
+        toast.success('AI agent deleted successfully');
+        setIsDeleteDialogOpen(false);
+        setSelectedAgentToDelete(null);
+        fetchAgents();
+      } else {
+        toast.error(
+          'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
+        );
+      }
     } catch (error) {
       console.error('Error deleting agent:', error);
       toast.error('Failed to delete AI agent');
@@ -391,7 +412,7 @@ export default function AIAgentsPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border">
+          <div className="rounded-lg border overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b">
@@ -503,7 +524,7 @@ export default function AIAgentsPage() {
                           <div key={index} className="whitespace-nowrap">
                             {price.unit === 'lovelace' || !price.unit
                               ? `${useFormatPrice(price.amount)} ADA`
-                              : `${useFormatPrice(price.amount)} ${price.unit === USDM_CONFIG.fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                           </div>
                         ))}
                       </td>
@@ -592,7 +613,12 @@ export default function AIAgentsPage() {
             setSelectedAgentToDelete(null);
           }}
           title="Delete AI Agent"
-          description={`Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`}
+          description={
+            selectedAgentToDelete?.state === 'RegistrationFailed' ||
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              ? `Are you sure you want to delete "${selectedAgentToDelete?.name}"? This action cannot be undone.`
+              : `Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`
+          }
           onConfirm={async () => {
             await handleDeleteConfirm();
             setSelectedAgentForDetails(null);

@@ -288,7 +288,7 @@ export const createPaymentsSchemaInput = z.object({
     .min(14)
     .max(26)
     .describe(
-      'The a unique nounce from the purchaser. Required to be in hex format',
+      'The a unique nonce from the purchaser. Required to be in hex format',
     ),
 });
 
@@ -537,7 +537,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     const sellerCUID = cuid2.createId();
-    const sellerId = generateHash(sellerCUID);
+    const sellerId = generateHash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
       agentIdentifier: input.agentIdentifier,

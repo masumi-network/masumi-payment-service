@@ -9,9 +9,9 @@ import {
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
 import {
+  deleteAgentRegistration,
   queryRegistryRequestGet,
   registerAgentPost,
-  unregisterAgentDelete,
 } from './registry';
 import {
   paymentSourceExtendedEndpointDelete,
@@ -29,6 +29,9 @@ import { authorizePaymentRefundEndpointPost } from './payments/authorize-refund'
 import { requestPurchaseRefundPost } from './purchases/request-refund';
 import { cancelPurchaseRefundRequestPost } from './purchases/cancel-refund-request';
 import { queryAgentFromWalletGet } from './registry/wallet';
+import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
+import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
+import { unregisterAgentPost } from './registry/deregister';
 
 export const apiRouter: Routing = {
   v1: {
@@ -43,6 +46,9 @@ export const apiRouter: Routing = {
       'cancel-refund-request': new DependsOnMethod({
         post: cancelPurchaseRefundRequestPost,
       }),
+      'resolve-blockchain-identifier': new DependsOnMethod({
+        post: resolvePurchaseRequestPost,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -54,14 +60,20 @@ export const apiRouter: Routing = {
       'submit-result': new DependsOnMethod({
         post: submitPaymentResultEndpointPost,
       }),
+      'resolve-blockchain-identifier': new DependsOnMethod({
+        post: resolvePaymentRequestPost,
+      }),
     }),
     registry: new DependsOnMethod({
       get: queryRegistryRequestGet,
       post: registerAgentPost,
-      delete: unregisterAgentDelete,
+      delete: deleteAgentRegistration,
     }).nest({
       wallet: new DependsOnMethod({
         get: queryAgentFromWalletGet,
+      }),
+      deregister: new DependsOnMethod({
+        post: unregisterAgentPost,
       }),
     }),
     'api-key-status': new DependsOnMethod({

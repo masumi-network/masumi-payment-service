@@ -27,6 +27,7 @@ dotenv.config();
 const prisma = new PrismaClient();
 export const seed = async (prisma: PrismaClient) => {
   const seedOnlyIfEmpty = process.env.SEED_ONLY_IF_EMPTY;
+
   if (seedOnlyIfEmpty?.toLowerCase() === 'true') {
     const adminKey = await prisma.apiKey.findFirst({});
     if (adminKey) {
@@ -34,34 +35,44 @@ export const seed = async (prisma: PrismaClient) => {
       return;
     }
   }
-  const adminKey = process.env.ADMIN_KEY;
-  if (adminKey != null) {
-    if (adminKey.length < 15) {
-      console.error(
-        'ADMIN_KEY is insecure, ensure it is at least 15 characters long',
-      );
-      throw Error('API-KEY is insecure');
-    }
+  let adminKey = process.env.ADMIN_KEY;
+  let usedDefaultAdminKey = false;
 
-    await prisma.apiKey.upsert({
-      create: {
-        token: adminKey,
-        tokenHash: generateHash(adminKey),
-        permission: Permission.Admin,
-        status: ApiKeyStatus.Active,
-      },
-      update: {
-        token: adminKey,
-        tokenHash: generateHash(adminKey),
-        permission: Permission.Admin,
-        status: ApiKeyStatus.Active,
-      },
-      where: { token: adminKey },
-    });
+  if (!adminKey) {
+    adminKey = DEFAULTS.DEFAULT_ADMIN_KEY;
+    usedDefaultAdminKey = true;
 
-    console.log('ADMIN_KEY seeded');
+    console.warn('****************************************************');
+    console.warn('**  WARNING: Using DEFAULT ADMIN_KEY for seeding!  **');
+    console.warn('**  This is INSECURE. Set ADMIN_KEY in your .env!  **');
+    console.warn('****************************************************');
+  }
+  if (!adminKey || adminKey.length < 15) {
+    console.error(
+      'ADMIN_KEY is insecure, ensure it is at least 15 characters long',
+    );
+    throw Error('API-KEY is insecure');
+  }
+
+  await prisma.apiKey.upsert({
+    create: {
+      token: adminKey,
+      tokenHash: generateHash(adminKey),
+      permission: Permission.Admin,
+      status: ApiKeyStatus.Active,
+    },
+    update: {
+      token: adminKey,
+      tokenHash: generateHash(adminKey),
+      permission: Permission.Admin,
+      status: ApiKeyStatus.Active,
+    },
+    where: { token: adminKey },
+  });
+  if (usedDefaultAdminKey) {
+    console.log('Seeded with DEFAULT_ADMIN_KEY');
   } else {
-    console.log('ADMIN_KEY is not seeded. Provide ADMIN_KEY in .env');
+    console.log('ADMIN_KEY seeded successfully');
   }
 
   let collectionWalletPreprodAddress: string | null | undefined =

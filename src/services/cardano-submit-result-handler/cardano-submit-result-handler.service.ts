@@ -261,7 +261,7 @@ export async function submitResultV1() {
                 address,
                 utxo,
                 sortedUtxosByLovelaceDesc[0],
-                sortedUtxosByLovelaceDesc,
+                limitedUtxos,
                 datum.value,
                 invalidBefore,
                 invalidAfter,

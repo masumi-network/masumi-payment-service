@@ -1,7 +1,6 @@
 [
   {
     "name": "ADA",
-    "icon": "https://tradingplatforms.com/de/wp-content/uploads/sites/26/2022/02/cardano-2-150x150.png",
     "address": "NATIVE",
     "symbol": "ADA",
     "policyId": "NATIVE",
@@ -10,7 +9,6 @@
   },
   {
     "name": "USDM",
-    "icon": "https://app.wingriders.com/token-metadata/logos/c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d-5783645d.png",
     "address": "usdm-address",
     "symbol": "USDM",
     "poolId": "64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef",
@@ -20,7 +18,6 @@
   },
   {
     "name": "NMKR",
-    "icon": "https://media.licdn.com/dms/image/v2/C4E0BAQFjsRtmjkYLjA/company-logo_200_200/company-logo_200_200/0/1657614839970/nmkrio_logo?e=2147483647&v=beta&t=Bf1jPhulbjVDesD_y2NW3SWuJ-Eb1x732sYLNYLkrqU",
     "address": "nmkr-address",
     "symbol": "NMKR",
     "poolId": "0942fcc29a051e6c2ae052264257001f8cf91e55251f4de6118f4e35",

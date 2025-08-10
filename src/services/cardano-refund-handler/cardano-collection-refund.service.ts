@@ -200,12 +200,6 @@ export async function collectRefundV1() {
               return bLovelace - aLovelace;
             });
 
-            let collectionAddress =
-              request.SmartContractWallet.collectionAddress;
-            if (collectionAddress == null || collectionAddress == '') {
-              collectionAddress = request.SmartContractWallet.walletAddress;
-            }
-
             const collateralUtxo = filteredUtxos[0];
             const limitedFilteredUtxos = filteredUtxos.slice(
               0,
@@ -223,7 +217,7 @@ export async function collectRefundV1() {
                 limitedFilteredUtxos,
                 {
                   collectAssets: utxo.output.amount,
-                  collectionAddress: collectionAddress,
+                  collectionAddress: address,
                 },
                 null,
                 null,
@@ -262,8 +256,7 @@ export async function collectRefundV1() {
               data: {
                 NextAction: {
                   update: {
-                    requestedAction:
-                      PurchasingAction.SetRefundRequestedInitiated,
+                    requestedAction: PurchasingAction.WithdrawRefundInitiated,
                     submittedTxHash: null,
                   },
                 },

@@ -1,6 +1,7 @@
-import { defaultEndpointsFactory } from 'express-zod-api';
 import { authMiddleware } from '@/utils/middleware/auth-middleware';
 import { Permission } from '@prisma/client';
+import endpointFactory from '@/utils/generator/endpoint-factory';
 
-export const readAuthenticatedEndpointFactory =
-  defaultEndpointsFactory.addMiddleware(authMiddleware(Permission.Read));
+export const readAuthenticatedEndpointFactory = endpointFactory.addMiddleware(
+  authMiddleware(Permission.Read),
+);

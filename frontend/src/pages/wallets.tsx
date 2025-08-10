@@ -8,7 +8,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, RefreshCw } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
-import { SwapDialog } from '@/components/wallets/SwapDialog';
+//import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -16,7 +16,7 @@ import {
   GetPaymentSourceResponses,
   getUtxos,
   GetUtxosResponses,
-  getWallet,
+  //getWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -35,7 +35,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
-import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
@@ -147,7 +147,9 @@ export default function WalletsPage() {
             utxo.Amounts.forEach((amount) => {
               if (amount.unit === 'lovelace' || amount.unit == '') {
                 adaBalance += amount.quantity || 0;
-              } else if (amount.unit === USDM_CONFIG.fullAssetId) {
+              } else if (
+                amount.unit === getUsdmConfig(state.network).fullAssetId
+              ) {
                 usdmBalance += amount.quantity || 0;
               }
             });
@@ -702,7 +704,7 @@ export default function WalletsPage() {
         onSuccess={fetchWallets}
       />
 
-      <SwapDialog
+      {/*<SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
@@ -710,7 +712,7 @@ export default function WalletsPage() {
         blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
         walletType={selectedWalletForSwap?.type || ''}
         walletId={selectedWalletForSwap?.id || ''}
-      />
+      />*/}
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

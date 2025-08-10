@@ -7,9 +7,10 @@ import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
 import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
-import { cleanupDB, initDB } from '@/utils/db';
+import { cleanupDB, initDB, prisma } from '@/utils/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
+import { DEFAULTS } from './../src/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
@@ -17,35 +18,41 @@ import fs from 'fs';
 const __dirname = path.resolve();
 
 async function initialize() {
-  logger.info('Starting application initialization', { component: 'main' });
-
-  try {
-    await initDB();
-    logger.info('Database initialized successfully', { component: 'database' });
-
-    await initJobs();
-    logger.info('Background jobs initialized successfully', {
-      component: 'scheduler',
-    });
-
-    // Start blockchain state monitoring
-    await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
-    logger.info('Blockchain state monitoring service started', {
-      component: 'monitoring',
-      intervalSeconds: 30,
-    });
-
-    logger.info('Initialized all services');
-    logger.info('All services initialized successfully', { component: 'main' });
-  } catch (error) {
-    logger.error(
-      'Failed to initialize services',
-      { component: 'main' },
-      undefined,
-      error as Error,
+  await initDB();
+  const defaultKey = await prisma.apiKey.findUnique({
+    where: {
+      token: DEFAULTS.DEFAULT_ADMIN_KEY,
+    },
+  });
+  if (defaultKey) {
+    logger.warn(
+      '*****************************************************************',
     );
-    throw error;
+    logger.warn(
+      '*  WARNING: The default insecure ADMIN_KEY "' +
+        DEFAULTS.DEFAULT_ADMIN_KEY +
+        '" is in use.           *',
+    );
+    logger.warn(
+      '*  This is a security risk. For production environments, please *',
+    );
+    logger.warn(
+      '*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *',
+    );
+    logger.warn(
+      '*****************************************************************',
+    );
   }
+  await initJobs();
+
+  // Start blockchain state monitoring
+  await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
+  logger.info('Blockchain state monitoring service started', {
+    component: 'monitoring',
+    intervalSeconds: 30,
+  });
+
+  logger.info('All services initialized successfully', { component: 'main' });
 }
 logger.info('Initializing services');
 initialize()
@@ -148,6 +155,22 @@ initialize()
       { component: 'server' },
       { port: PORT },
     );
+
+    // Graceful shutdown
+    const shutdown = async (signal: string) => {
+      try {
+        logger.info(`Received ${signal}. Shutting down gracefully...`);
+        blockchainStateMonitorService.stopMonitoring();
+        await cleanupDB();
+      } catch (e) {
+        logger.error('Error during shutdown', e);
+      } finally {
+        process.exit(0);
+      }
+    };
+
+    process.on('SIGINT', () => void shutdown('SIGINT'));
+    process.on('SIGTERM', () => void shutdown('SIGTERM'));
   })
   .catch((e) => {
     logger.error(
@@ -157,20 +180,4 @@ initialize()
       e as Error,
     );
     throw e;
-  })
-  .finally(() => {
-    void cleanupDB();
   });
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT, shutting down gracefully');
-  blockchainStateMonitorService.stopMonitoring();
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM, shutting down gracefully');
-  blockchainStateMonitorService.stopMonitoring();
-  process.exit(0);
-});

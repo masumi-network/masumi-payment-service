@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable react/no-unescaped-entities */
 
 import { useEffect, useState } from 'react';
@@ -21,13 +20,15 @@ import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
 import { MaestroProvider } from '@meshsdk/core';
 import { shortenAddress } from '@/lib/utils';
-import { executeSwap } from '@/lib/api/swap';
 import { Token } from '@/types/token';
 import { Spinner } from '../ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import Image from 'next/image';
-import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
+import adaIcon from '@/assets/ada.png';
+import usdmIcon from '@/assets/usdm.png';
+import nmkrIcon from '@/assets/nmkr.png';
 
 interface SwapDialogProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export function SwapDialog({
   walletType,
   walletId,
 }: SwapDialogProps) {
+  return <div></div>;
   const { state, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
@@ -156,12 +158,13 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
+      const usdmConfig = getUsdmConfig(state.network);
       const usdm =
         result?.data?.data?.Utxos?.reduce((acc, utxo) => {
           return (
             acc +
             utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === USDM_CONFIG.fullAssetId) {
+              if (asset.unit === usdmConfig.fullAssetId) {
                 return acc + (asset.quantity ?? 0);
               }
               return acc;
@@ -357,21 +360,13 @@ export function SwapDialog({
       setTimeout(() => {
         setSwapStatus('processing');
       }, 500);
-
-      const result = await executeSwap({
-        mnemonic,
-        amount: fromAmount,
-        isFromAda: selectedFromToken.symbol === 'ADA',
-        fromToken: selectedFromToken as Token,
-        toToken: selectedToToken as Token,
-        poolId: selectedFromToken.poolId || selectedToToken.poolId || '',
-      });
+      throw new Error('Swap is currently disabled');
 
       setSwapStatus('submitted');
       toast.info('Swap submitted!', { theme: 'dark' });
       await fetchBalance();
 
-      maestroProvider.onTxConfirmed(result.txHash, async () => {
+      maestroProvider.onTxConfirmed('txHash', async () => {
         setSwapStatus('confirmed');
         toast.success('Swap transaction confirmed!', { theme: 'dark' });
         await fetchBalance();
@@ -400,6 +395,19 @@ export function SwapDialog({
         return 'bg-green-500';
       default:
         return 'bg-transparent';
+    }
+  };
+
+  const getTokenIcon = (symbol: string) => {
+    switch (symbol) {
+      case 'ADA':
+        return adaIcon;
+      case 'USDM':
+        return usdmIcon;
+      case 'NMKR':
+        return nmkrIcon;
+      default:
+        return adaIcon;
     }
   };
 
@@ -481,7 +489,7 @@ export function SwapDialog({
                           ))}
                         </select>
                         <Image
-                          src={selectedFromToken.icon}
+                          src={getTokenIcon(selectedFromToken.symbol)}
                           alt="Token"
                           className="w-6 h-6 rounded-full"
                           width={24}
@@ -554,7 +562,7 @@ export function SwapDialog({
                           ))}
                         </select>
                         <Image
-                          src={selectedToToken.icon}
+                          src={getTokenIcon(selectedToToken.symbol)}
                           alt="Token"
                           className="w-6 h-6 rounded-full"
                           width={24}

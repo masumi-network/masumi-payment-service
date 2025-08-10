@@ -54,7 +54,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const fetchPaymentSources = useCallback(async () => {
-    console.log('fetching payment sources');
     try {
       const sourceResponse = await getPaymentSource({
         client: apiClient,
@@ -79,10 +78,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
       dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
 
-      if (
-        reversedBack.length === 1 &&
-        typeof setSelectedPaymentSourceId === 'function'
-      ) {
+      if (reversedBack.length === 1) {
         setSelectedPaymentSourceId(reversedBack[0].id);
       }
 
@@ -96,7 +92,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       console.error('Failed to fetch payment sources:', error);
       toast.error('Error fetching payment sources. Please try again later.');
     }
-  }, [apiClient, dispatch, isHealthy, state.apiKey, router, state.network]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiClient, dispatch, isHealthy, state.apiKey, state.network, router]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
 
   const fetchRpcApiKeys = useCallback(async () => {
     try {

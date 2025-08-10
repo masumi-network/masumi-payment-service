@@ -10,7 +10,7 @@ import { shortenAddress } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { useRate } from '@/lib/hooks/useRate';
-import { SwapDialog } from '@/components/wallets/SwapDialog';
+//import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -20,7 +20,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { USDM_CONFIG } from '@/lib/constants/defaultWallets';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 interface TokenBalance {
   unit: string;
@@ -57,8 +57,8 @@ export function WalletDetailsDialog({
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { rate } = useRate();
-  const [selectedWalletForSwap, setSelectedWalletForSwap] =
-    useState<WalletWithBalance | null>(null);
+  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
+  //  useState<WalletWithBalance | null>(null);
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
@@ -162,10 +162,11 @@ export function WalletDetailsDialog({
       };
     }
 
-    // For USDM, match by policyId and assetName (hex)
+    // For USDM, match by policyId and assetName (hex) - network aware
+    const usdmConfig = getUsdmConfig(state.network);
     const isUSDM =
-      token.policyId === USDM_CONFIG.policyId &&
-      token.assetName === hexToAscii(USDM_CONFIG.assetName);
+      token.policyId === usdmConfig.policyId &&
+      token.assetName === hexToAscii(usdmConfig.assetName);
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
       const formattedAmount =
@@ -237,10 +238,10 @@ export function WalletDetailsDialog({
   return (
     <>
       <Dialog
-        open={isOpen && !selectedWalletForSwap && !selectedWalletForTopup}
+        open={isOpen && !selectedWalletForTopup}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedWalletForSwap(null);
+            //setSelectedWalletForSwap(null);
             setSelectedWalletForTopup(null);
             onClose();
           }
@@ -301,13 +302,13 @@ export function WalletDetailsDialog({
                 >
                   <span>Top Up</span>
                 </Button>
-                <Button
+                {/*<Button
                   variant="outline"
                   onClick={() => setSelectedWalletForSwap(wallet)}
                   title="Swap Assets"
                 >
                   <span>Swap Assets</span>
-                </Button>
+                </Button>*/}
               </div>
             )}
             {exportedMnemonic && (
@@ -389,17 +390,18 @@ export function WalletDetailsDialog({
                     const adaToken = tokenBalances.find(
                       (t) => t.unit === 'lovelace',
                     );
+                    const usdmConfig = getUsdmConfig(state.network);
                     const usdmToken = tokenBalances.find(
                       (t) =>
-                        t.policyId === USDM_CONFIG.policyId &&
-                        t.assetName === hexToAscii(USDM_CONFIG.assetName),
+                        t.policyId === usdmConfig.policyId &&
+                        t.assetName === hexToAscii(usdmConfig.assetName),
                     );
                     const otherTokens = tokenBalances.filter(
                       (t) =>
                         t.unit !== 'lovelace' &&
                         !(
-                          t.policyId === USDM_CONFIG.policyId &&
-                          t.assetName === hexToAscii(USDM_CONFIG.assetName)
+                          t.policyId === usdmConfig.policyId &&
+                          t.assetName === hexToAscii(usdmConfig.assetName)
                         ),
                     );
                     // Filter out undefined tokens before mapping
@@ -411,8 +413,8 @@ export function WalletDetailsDialog({
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
                       const isUSDM =
-                        token.policyId === USDM_CONFIG.policyId &&
-                        token.assetName === hexToAscii(USDM_CONFIG.assetName);
+                        token.policyId === usdmConfig.policyId &&
+                        token.assetName === hexToAscii(usdmConfig.assetName);
                       const displayName =
                         isUSDM && token.policyId
                           ? `USDM (${shortenAddress(token.policyId)})`
@@ -450,7 +452,7 @@ export function WalletDetailsDialog({
         </DialogContent>
       </Dialog>
 
-      <SwapDialog
+      {/*<SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
@@ -458,7 +460,7 @@ export function WalletDetailsDialog({
         blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
         walletType={selectedWalletForSwap?.type || ''}
         walletId={selectedWalletForSwap?.id || ''}
-      />
+      />*/}
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

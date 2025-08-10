@@ -255,7 +255,7 @@ export async function requestRefundsV1() {
                 address,
                 utxo,
                 sortedUtxosByLovelaceDesc[0],
-                sortedUtxosByLovelaceDesc,
+                limitedUtxos,
                 datum.value,
                 invalidBefore,
                 invalidAfter,

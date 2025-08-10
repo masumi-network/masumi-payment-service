@@ -34,6 +34,10 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string) {
   if (validateHexString(sellerId) == false) {
     return null;
   }
+  let agentIdentifier = null;
+  if (sellerId.length > 64) {
+    agentIdentifier = sellerId.slice(64);
+  }
   const purchaserId = blockchainIdentifierSplit[1];
   if (validateHexString(purchaserId) == false) {
     return null;
@@ -45,5 +49,6 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string) {
     purchaserId: purchaserId,
     signature: signature,
     key: key,
+    agentIdentifier: agentIdentifier,
   };
 }

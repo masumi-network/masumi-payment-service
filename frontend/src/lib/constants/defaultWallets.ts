@@ -61,6 +61,7 @@ export const DEFAULT_FEE_CONFIG = {
 
 // Token configurations
 export const USDM_CONFIG = {
+  // Mainnet USDM
   policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
   assetName: '0014df105553444d', // hex encoded "USDM"
   assetFingerprint: 'asset12ffdj8kk2w485sr7a5ekmjjdyecz8ps2cm5zed',
@@ -69,7 +70,15 @@ export const USDM_CONFIG = {
     'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d',
 };
 
-// TESTUSDM (tUSDM) token configuration
+// Preprod USDM (tUSDM) token configuration
+export const PREPROD_USDM_CONFIG = {
+  policyId: '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde',
+  assetName: '0014df10745553444d', // hex encoded "tUSDM"
+  fullAssetId:
+    '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d',
+};
+
+// TESTUSDM (tUSDM) token configuration - keeping for backward compatibility
 export const TESTUSDM_CONFIG = {
   unit: '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d',
   symbol: 'tUSDM',
@@ -82,4 +91,11 @@ export const NMKR_CONFIG = {
   assetName: '4e4d4b52', // hex encoded "NMKR"
   fullAssetId:
     '5dac8536653edc12f6f5e1045d8164b9f59998d3bdc300fc928434894e4d4b52',
+};
+
+// Helper function to get the correct USDM config based on network
+export const getUsdmConfig = (network: string) => {
+  return network?.toLowerCase() === 'preprod'
+    ? PREPROD_USDM_CONFIG
+    : USDM_CONFIG;
 };

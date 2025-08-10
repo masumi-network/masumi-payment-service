@@ -387,13 +387,19 @@ export async function batchLatestPaymentEntriesV1() {
                 index++;
               }
             }
-
-            walletPairings.push({
-              wallet: wallet,
-              scriptAddress: walletData.scriptAddress,
-              walletId: walletData.walletId,
-              batchedRequests: batchedPaymentRequests,
-            });
+            if (batchedPaymentRequests.length > 0) {
+              logger.info('Batching payments, adding wallet pairing', {
+                walletId: walletData.walletId,
+                scriptAddress: walletData.scriptAddress,
+                batchedRequests: batchedPaymentRequests,
+              });
+              walletPairings.push({
+                wallet: wallet,
+                scriptAddress: walletData.scriptAddress,
+                walletId: walletData.walletId,
+                batchedRequests: batchedPaymentRequests,
+              });
+            }
           }
           //only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
           if (
@@ -405,6 +411,9 @@ export async function batchLatestPaymentEntriesV1() {
                 deletedAt: null,
                 type: HotWalletType.Purchasing,
                 PendingTransaction: null,
+                PaymentSource: {
+                  id: paymentContract.id,
+                },
               },
             });
             //only go into error state if all wallets were unlocked, otherwise we might have enough funds in other wallets
@@ -417,233 +426,251 @@ export async function batchLatestPaymentEntriesV1() {
                   ),
                 },
               );
-              await Promise.allSettled(
-                paymentRequestsRemaining.map(async (paymentRequest) => {
-                  await prisma.purchaseRequest.update({
-                    where: { id: paymentRequest.id },
-                    data: {
-                      NextAction: {
-                        create: {
-                          inputHash: paymentRequest.inputHash,
-                          requestedAction:
-                            PurchasingAction.WaitingForManualAction,
-                          errorType: PurchaseErrorType.InsufficientFunds,
-                          errorNote: 'Not enough funds in wallets',
-                        },
+              for (const paymentRequest of paymentRequestsRemaining) {
+                await prisma.purchaseRequest.update({
+                  where: { id: paymentRequest.id },
+                  data: {
+                    NextAction: {
+                      create: {
+                        inputHash: paymentRequest.inputHash,
+                        requestedAction:
+                          PurchasingAction.WaitingForManualAction,
+                        errorType: PurchaseErrorType.InsufficientFunds,
+                        errorNote: 'Not enough funds in wallets',
                       },
                     },
-                  });
-                }),
-              );
+                  },
+                });
+              }
             }
+          }
+
+          if (walletPairings.length == 0) {
+            logger.info('No purchase requests with funds found, skipping');
+            return;
           }
 
           logger.info(
             `Batching ${walletPairings.length} payments for payment source ${paymentContract.id}`,
           );
           //do not retry, we want to fail if anything goes wrong. There should not be a possibility to pay twice
-          const results = await Promise.allSettled(
+          await Promise.allSettled(
             walletPairings.map(async (walletPairing) => {
-              const wallet = walletPairing.wallet;
-              const walletId = walletPairing.walletId;
-              const batchedRequests = walletPairing.batchedRequests;
+              try {
+                const executeBatchedPayment = async () => {
+                  const wallet = walletPairing.wallet;
+                  const walletId = walletPairing.walletId;
+                  const batchedRequests = walletPairing.batchedRequests;
 
-              //batch payments
-              const unsignedTx = new Transaction({
-                initiator: wallet,
-                fetcher: blockchainProvider,
-              }).setMetadata(674, {
-                msg: ['Masumi', 'PaymentBatched'],
-              });
-              for (const data of batchedRequests) {
-                const buyerAddress = wallet.getUsedAddress().toBech32();
-                const sellerAddress =
-                  data.paymentRequest.SellerWallet.walletAddress;
-                const submitResultTime = data.paymentRequest.submitResultTime;
-                const unlockTime = data.paymentRequest.unlockTime;
-                const externalDisputeUnlockTime =
-                  data.paymentRequest.externalDisputeUnlockTime;
+                  //batch payments
+                  const unsignedTx = new Transaction({
+                    initiator: wallet,
+                    fetcher: blockchainProvider,
+                  }).setMetadata(674, {
+                    msg: ['Masumi', 'PaymentBatched'],
+                  });
+                  logger.info('Batching payments, adding metadata');
+                  for (const data of batchedRequests) {
+                    const buyerAddress = wallet.getUsedAddress().toBech32();
+                    const sellerAddress =
+                      data.paymentRequest.SellerWallet.walletAddress;
+                    const submitResultTime =
+                      data.paymentRequest.submitResultTime;
+                    const unlockTime = data.paymentRequest.unlockTime;
+                    const externalDisputeUnlockTime =
+                      data.paymentRequest.externalDisputeUnlockTime;
 
-                if (data.paymentRequest.payByTime == null) {
-                  throw new Error('Pay by time is null, this is deprecated');
-                }
+                    if (data.paymentRequest.payByTime == null) {
+                      throw new Error(
+                        'Pay by time is null, this is deprecated',
+                      );
+                    }
 
-                const datum = getDatumFromBlockchainIdentifier({
-                  buyerAddress: buyerAddress,
-                  sellerAddress: sellerAddress,
-                  blockchainIdentifier:
-                    data.paymentRequest.blockchainIdentifier,
-                  inputHash: data.paymentRequest.inputHash,
-                  payByTime: data.paymentRequest.payByTime,
-                  collateralReturnLovelace: data.overpaidLovelace,
-                  resultHash: '',
-                  resultTime: submitResultTime,
-                  unlockTime: unlockTime,
-                  externalDisputeUnlockTime: externalDisputeUnlockTime,
-                  newCooldownTimeSeller: BigInt(0),
-                  newCooldownTimeBuyer: BigInt(0),
-                  state: SmartContractState.FundsLocked,
+                    const datum = getDatumFromBlockchainIdentifier({
+                      buyerAddress: buyerAddress,
+                      sellerAddress: sellerAddress,
+                      blockchainIdentifier:
+                        data.paymentRequest.blockchainIdentifier,
+                      inputHash: data.paymentRequest.inputHash,
+                      payByTime: data.paymentRequest.payByTime,
+                      collateralReturnLovelace: data.overpaidLovelace,
+                      resultHash: '',
+                      resultTime: submitResultTime,
+                      unlockTime: unlockTime,
+                      externalDisputeUnlockTime: externalDisputeUnlockTime,
+                      newCooldownTimeSeller: BigInt(0),
+                      newCooldownTimeBuyer: BigInt(0),
+                      state: SmartContractState.FundsLocked,
+                    });
+                    logger.info(
+                      'Batching payments, adding datum for payment request',
+                      {
+                        paymentRequestId: data.paymentRequest.id,
+                      },
+                    );
+
+                    unsignedTx.sendAssets(
+                      {
+                        address: walletPairing.scriptAddress,
+                        datum,
+                      },
+                      data.paymentRequest.PaidFunds.map((amount) => ({
+                        unit: amount.unit == '' ? 'lovelace' : amount.unit,
+                        quantity: amount.amount.toString(),
+                      })),
+                    );
+                  }
+
+                  for (const request of batchedRequests) {
+                    logger.info(
+                      'Batching payments, updating purchase request',
+                      {
+                        paymentRequestId: request.paymentRequest.id,
+                      },
+                    );
+                    await prisma.purchaseRequest.update({
+                      where: { id: request.paymentRequest.id },
+                      data: {
+                        NextAction: {
+                          update: {
+                            requestedAction:
+                              PurchasingAction.FundsLockingInitiated,
+                          },
+                        },
+                        collateralReturnLovelace: request.overpaidLovelace,
+                        SmartContractWallet: {
+                          connect: {
+                            id: walletId,
+                          },
+                        },
+                        CurrentTransaction: {
+                          create: {
+                            txHash: '',
+                            status: TransactionStatus.Pending,
+                            BlocksWallet: {
+                              connect: {
+                                id: walletId,
+                              },
+                            },
+                          },
+                        },
+                        TransactionHistory: request.paymentRequest
+                          .CurrentTransaction
+                          ? {
+                              connect: {
+                                id: request.paymentRequest.CurrentTransaction
+                                  .id,
+                              },
+                            }
+                          : undefined,
+                      },
+                    });
+                  }
+
+                  logger.info(
+                    'Batching payments, purchase request initialized',
+                  );
+
+                  const invalidBefore =
+                    unixTimeToEnclosingSlot(
+                      Date.now() - 150000,
+                      SLOT_CONFIG_NETWORK[
+                        convertNetwork(paymentContract.network)
+                      ],
+                    ) - 1;
+
+                  const invalidAfter =
+                    unixTimeToEnclosingSlot(
+                      Date.now() + 150000,
+                      SLOT_CONFIG_NETWORK[
+                        convertNetwork(paymentContract.network)
+                      ],
+                    ) + 5;
+                  unsignedTx.setNetwork(
+                    convertNetwork(paymentContract.network),
+                  );
+                  unsignedTx.txBuilder.invalidBefore(invalidBefore);
+                  unsignedTx.txBuilder.invalidHereafter(invalidAfter);
+
+                  const completeTx = await unsignedTx.build();
+                  logger.info('Batching payments, complete tx built');
+                  const signedTx = await wallet.signTx(completeTx);
+                  logger.info('Batching payments, tx signed');
+                  const txHash = await wallet.submitTx(signedTx);
+
+                  logger.info('Batching payments, tx submitted', {
+                    txHash: txHash,
+                  });
+
+                  //submit the transaction to the blockchain
+
+                  //update purchase requests
+                  for (const request of batchedRequests) {
+                    await prisma.purchaseRequest.update({
+                      where: { id: request.paymentRequest.id },
+                      data: {
+                        CurrentTransaction: {
+                          update: {
+                            txHash: txHash,
+                          },
+                        },
+                      },
+                    });
+                  }
+                  logger.info('Batching payments, purchase request updated');
+
+                  return true;
+                };
+                return await Promise.race([
+                  new Promise<boolean>((_, reject) => {
+                    setTimeout(
+                      () => {
+                        reject(new Error('Timeout batching purchase requests'));
+                      },
+                      //30 seconds timeout
+                      30000,
+                    );
+                  }),
+                  executeBatchedPayment(),
+                ]);
+              } catch (error) {
+                logger.error('Error batching payments', {
+                  error: error,
+                  walletPairing: walletPairing.batchedRequests,
+                  walletId: walletPairing.walletId,
                 });
-
-                unsignedTx.sendAssets(
-                  {
-                    address: walletPairing.scriptAddress,
-                    datum,
-                  },
-                  data.paymentRequest.PaidFunds.map((amount) => ({
-                    unit: amount.unit == '' ? 'lovelace' : amount.unit,
-                    quantity: amount.amount.toString(),
-                  })),
-                );
-              }
-
-              const purchaseRequests = await Promise.allSettled(
-                batchedRequests.map(async (request) => {
+                for (const batchedRequest of walletPairing.batchedRequests) {
                   await prisma.purchaseRequest.update({
-                    where: { id: request.paymentRequest.id },
+                    where: { id: batchedRequest.paymentRequest.id },
                     data: {
                       NextAction: {
                         update: {
                           requestedAction:
-                            PurchasingAction.FundsLockingInitiated,
-                        },
-                      },
-                      collateralReturnLovelace: request.overpaidLovelace,
-                      SmartContractWallet: {
-                        connect: {
-                          id: walletId,
-                        },
-                      },
-                      CurrentTransaction: {
-                        create: {
-                          txHash: '',
-                          status: TransactionStatus.Pending,
-                          BlocksWallet: {
-                            connect: {
-                              id: walletId,
-                            },
-                          },
-                        },
-                      },
-                      TransactionHistory: request.paymentRequest
-                        .CurrentTransaction
-                        ? {
-                            connect: {
-                              id: request.paymentRequest.CurrentTransaction.id,
-                            },
-                          }
-                        : undefined,
-                    },
-                  });
-                }),
-              );
-              const failedPurchaseRequests = purchaseRequests.filter(
-                (x) => x.status != 'fulfilled',
-              );
-              if (failedPurchaseRequests.length > 0) {
-                logger.error(
-                  'Error updating payment status, before submitting tx ',
-                  failedPurchaseRequests,
-                );
-                throw new Error(
-                  'Error updating payment status, before submitting tx ',
-                );
-              }
-              const invalidBefore =
-                unixTimeToEnclosingSlot(
-                  Date.now() - 150000,
-                  SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)],
-                ) - 1;
-
-              const invalidAfter =
-                unixTimeToEnclosingSlot(
-                  Date.now() + 150000,
-                  SLOT_CONFIG_NETWORK[convertNetwork(paymentContract.network)],
-                ) + 5;
-              unsignedTx.setNetwork(convertNetwork(paymentContract.network));
-              unsignedTx.txBuilder.invalidBefore(invalidBefore);
-              unsignedTx.txBuilder.invalidHereafter(invalidAfter);
-
-              const completeTx = await unsignedTx.build();
-              const signedTx = await wallet.signTx(completeTx);
-              const txHash = await wallet.submitTx(signedTx);
-
-              //submit the transaction to the blockchain
-
-              //update purchase requests
-              const purchaseRequestsUpdated = await Promise.allSettled(
-                batchedRequests.map(async (request) => {
-                  await prisma.purchaseRequest.update({
-                    where: { id: request.paymentRequest.id },
-                    data: {
-                      CurrentTransaction: {
-                        update: {
-                          txHash: txHash,
+                            PurchasingAction.WaitingForManualAction,
+                          errorType: PurchaseErrorType.Unknown,
+                          errorNote:
+                            'Batching payments failed: ' +
+                            convertErrorString(error),
                         },
                       },
                     },
                   });
-                }),
-              );
-              const failedPurchaseRequestsUpdated =
-                purchaseRequestsUpdated.filter((x) => x.status != 'fulfilled');
-              if (failedPurchaseRequestsUpdated.length > 0) {
-                throw new Error(
-                  'Error updating payment status ' +
-                    failedPurchaseRequestsUpdated
-                      .map((x) => convertErrorString(x.reason))
-                      .join(', '),
-                );
-              } else {
-                logger.debug('Batching payments successful', {
-                  txHash: txHash,
-                });
-              }
-              return true;
-            }),
-          );
-          let index = 0;
-          for (const result of results) {
-            const request = walletPairings[index];
+                }
 
-            if (result.status == 'rejected' || result.value != true) {
-              const error =
-                result.status == 'rejected'
-                  ? convertErrorString(result.reason)
-                  : 'Transaction did not return true';
-              logger.error(
-                `Error batching payments for wallet ${request.walletId}`,
-                {
-                  error: error,
-                },
-              );
-              for (const batchedRequest of request.batchedRequests) {
-                await prisma.purchaseRequest.update({
-                  where: { id: batchedRequest.paymentRequest.id },
+                await prisma.hotWallet.update({
+                  where: { id: walletPairing.walletId, deletedAt: null },
                   data: {
-                    NextAction: {
-                      update: {
-                        requestedAction:
-                          PurchasingAction.WaitingForManualAction,
-                        errorType: PurchaseErrorType.Unknown,
-                        errorNote: 'Batching payments failed: ' + error,
-                      },
-                    },
+                    lockedAt: null,
+                    PendingTransaction: { disconnect: true },
                   },
                 });
+
+                throw error;
               }
-              await prisma.hotWallet.update({
-                where: { id: request.walletId, deletedAt: null },
-                data: {
-                  lockedAt: null,
-                  PendingTransaction: { disconnect: true },
-                },
-              });
-              index++;
-            }
-          }
+            }),
+          );
         } catch (error) {
-          logger.error('Error batching payments', { error: error });
+          logger.error('Error batching payments outer', { error: error });
 
           const potentiallyFailedPurchaseRequests =
             paymentContract.PurchaseRequests;
@@ -681,7 +708,7 @@ export async function batchLatestPaymentEntriesV1() {
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote:
-                        'Batching payments failed: ' +
+                        'Outer error: Batching payments failed: ' +
                         convertErrorString(error),
                     },
                   },

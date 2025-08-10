@@ -253,7 +253,7 @@ export async function cancelRefundsV1() {
                 address,
                 utxo,
                 sortedUtxosByLovelaceDesc[0],
-                sortedUtxosByLovelaceDesc,
+                limitedUtxos,
                 datum.value,
                 invalidBefore,
                 invalidAfter,

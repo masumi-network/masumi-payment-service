@@ -48,7 +48,6 @@ export function TransakWidget({
 
   if (!isOpen) return null;
 
-  const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
   const isPreprod = state.network === 'Preprod';
 
   if (isPreprod) {
@@ -84,19 +83,13 @@ export function TransakWidget({
     );
   }
 
-  const transakUrl = new URL(
-    isProduction
-      ? 'https://global.transak.com'
-      : 'https://global-stg.transak.com',
-  );
+  const transakUrl = new URL('https://global.transak.com');
   transakUrl.searchParams.set(
     'apiKey',
-    process.env.NEXT_PUBLIC_TRANSAK_API_KEY!,
+    process.env.NEXT_PUBLIC_TRANSAK_API_KEY ||
+      '558f0caf-41d4-40fb-a2a9-808283540e40',
   );
-  transakUrl.searchParams.set(
-    'environment',
-    isProduction ? 'PRODUCTION' : 'STAGING',
-  );
+  transakUrl.searchParams.set('environment', 'PRODUCTION');
   transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');
   transakUrl.searchParams.set('defaultCryptoCurrency', 'ADA');
   transakUrl.searchParams.set('walletAddress', walletAddress);

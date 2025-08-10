@@ -30,7 +30,7 @@ import { shortenAddress } from '@/lib/utils';
 type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
 
 export default function ApiKeys() {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, state } = useAppContext();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [allApiKeys, setAllApiKeys] = useState<ApiKey[]>([]);
   const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
@@ -170,7 +170,7 @@ export default function ApiKeys() {
         setIsLoadingMore(false);
       }
     },
-    [apiClient, state.network, selectedPaymentSourceId],
+    [apiClient, state.network],
   );
 
   // Separate effect for initial load
