@@ -26,11 +26,11 @@ export default function Document() {
         />
         <meta
           property="og:image"
-          content="https://cdn.prod.website-files.com/67879c5d48bf5ddaad9ec54f/678ed964d8bb6420ea872e44_Open%20Graph%20img.png"
+          content="https://c-ipfs-gw.nmkr.io/ipfs/QmfHfmxhm2NEBCVNQcRippzEk6SbnH4Wb64u9mGb8cRkve"
         />
         <meta
           property="twitter:image"
-          content="https://cdn.prod.website-files.com/67879c5d48bf5ddaad9ec54f/678ed964d8bb6420ea872e44_Open%20Graph%20img.png"
+          content="https://c-ipfs-gw.nmkr.io/ipfs/QmdVx6LC1842dKuVCivSRg7ApSnt61rkjCJmhXuKTSbXoF"
         />
         <meta property="og:url" content="https://masumi.network" />
         <meta property="og:type" content="website" />
