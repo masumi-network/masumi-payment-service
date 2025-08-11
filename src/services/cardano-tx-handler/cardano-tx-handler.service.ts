@@ -1252,24 +1252,24 @@ export async function checkLatestTransactions(
                 where: { id: paymentContract.id, deletedAt: null },
                 data: {
                   lastIdentifierChecked: tx.tx.tx_hash,
-                  PaymentSourceIdentifiers: {
-                    upsert:
-                      latestIdentifier != null
-                        ? {
-                            where: {
-                              txHash: latestIdentifier,
-                            },
-                            update: {
-                              txHash: latestIdentifier,
-                            },
-                            create: {
-                              txHash: latestIdentifier,
-                            },
-                          }
-                        : undefined,
-                  },
                 },
               });
+
+              // Separately handle PaymentSourceIdentifiers
+              if (latestIdentifier != null) {
+                await prisma.paymentSourceIdentifiers.upsert({
+                  where: {
+                    txHash: latestIdentifier,
+                  },
+                  update: {
+                    txHash: latestIdentifier,
+                  },
+                  create: {
+                    txHash: latestIdentifier,
+                    paymentSourceId: paymentContract.id,
+                  },
+                });
+              }
               latestIdentifier = tx.tx.tx_hash;
             }
           }
