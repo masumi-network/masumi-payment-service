@@ -271,7 +271,7 @@ export function generateOpenAPI() {
             schema: patchWalletSchemaInput.openapi({
               example: {
                 id: 'unique_cuid_v2_of_entry_to_update',
-                collectionAddress: 'collection_address',
+                newCollectionAddress: 'collection_address',
               },
             }),
           },
