@@ -421,6 +421,9 @@ export default function WalletsPage() {
                 <th className="p-4 text-left text-sm font-medium">Note</th>
                 <th className="p-4 text-left text-sm font-medium">Address</th>
                 <th className="p-4 text-left text-sm font-medium">
+                  Collection Address
+                </th>
+                <th className="p-4 text-left text-sm font-medium">
                   Balance, ADA
                 </th>
                 <th className="p-4 text-left text-sm font-medium">
@@ -432,13 +435,13 @@ export default function WalletsPage() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={9}>
                     <Spinner size={20} addContainer />
                   </td>
                 </tr>
               ) : filteredWallets.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8">
+                  <td colSpan={9} className="text-center py-8">
                     No wallets found
                   </td>
                 </tr>
@@ -488,6 +491,23 @@ export default function WalletsPage() {
                           </span>
                           <CopyButton value={wallet.walletAddress} />
                         </div>
+                      </td>
+                      <td className="p-4">
+                        {wallet.type === 'Selling' && wallet.collectionAddress ? (
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="font-mono text-sm"
+                              title={wallet.collectionAddress}
+                            >
+                              {shortenAddress(wallet.collectionAddress)}
+                            </span>
+                            <CopyButton value={wallet.collectionAddress} />
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {wallet.type === 'Selling' ? 'Not set' : '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="p-4">
                         <div className="flex flex-col gap-1">
@@ -623,6 +643,9 @@ export default function WalletsPage() {
                             </span>
                             <CopyButton value={wallet.collectionAddress!} />
                           </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="text-xs text-muted-foreground">—</span>
                         </td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
