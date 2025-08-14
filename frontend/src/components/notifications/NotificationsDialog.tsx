@@ -23,9 +23,8 @@ export function NotificationsDialog({
 
   const handleViewTransactions = () => {
     onClose();
-    router.push('/transactions').then(() => {
-      markAllAsRead();
-    });
+    markAllAsRead();
+    router.push('/transactions');
   };
 
   const newTransactions = transactions
@@ -42,7 +41,7 @@ export function NotificationsDialog({
           <DialogTitle>Notifications</DialogTitle>
         </DialogHeader>
         {newTransactions.length > 0 ? (
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-96 overflow-y-auto">
             <div className="space-y-2">
               {newTransactions.map((transaction) => (
                 <div

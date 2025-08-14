@@ -31,6 +31,9 @@ interface Transaction {
   } | null;
 }
 
+const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
+const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
+
 export function useTransactions() {
   const { apiClient } = useAppContext();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -38,9 +41,31 @@ export function useTransactions() {
   const [hasMore, setHasMore] = useState(true);
   const [cursorId, setCursorId] = useState<string | null>(null);
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
-  const [lastCheckedTimestamp, setLastCheckedTimestamp] = useState<
-    string | null
-  >(null);
+
+  // Get last visit timestamp from localStorage
+  const getLastVisitTimestamp = (): string | null => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(LAST_VISIT_KEY);
+  };
+
+  // Set last visit timestamp in localStorage
+  const setLastVisitTimestamp = (timestamp: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(LAST_VISIT_KEY, timestamp);
+  };
+
+  // Get new transactions count from localStorage
+  const getNewTransactionsCount = (): number => {
+    if (typeof window === 'undefined') return 0;
+    const count = localStorage.getItem(NEW_TRANSACTIONS_COUNT_KEY);
+    return count ? parseInt(count, 10) : 0;
+  };
+
+  // Set new transactions count in localStorage
+  const setNewTransactionsCountInStorage = (count: number) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(NEW_TRANSACTIONS_COUNT_KEY, count.toString());
+  };
 
   const fetchTransactions = useCallback(
     async (cursor?: string, checkForNew = false) => {
@@ -91,15 +116,21 @@ export function useTransactions() {
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
         );
 
-        if (checkForNew && lastCheckedTimestamp) {
-          const existingIds = new Set(transactions.map((tx) => tx.id));
-          const trulyNewTransactions = newTransactions.filter(
-            (tx) =>
-              !existingIds.has(tx.id) &&
-              new Date(tx.createdAt) > new Date(lastCheckedTimestamp),
-          );
+        if (checkForNew) {
+          const lastVisitTimestamp = getLastVisitTimestamp();
+          if (lastVisitTimestamp) {
+            const existingIds = new Set(transactions.map((tx) => tx.id));
+            const trulyNewTransactions = newTransactions.filter(
+              (tx) =>
+                !existingIds.has(tx.id) &&
+                new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+            );
 
-          setNewTransactionsCount((prev) => prev + trulyNewTransactions.length);
+            const currentCount = getNewTransactionsCount();
+            const newCount = currentCount + trulyNewTransactions.length;
+            setNewTransactionsCount(newCount);
+            setNewTransactionsCountInStorage(newCount);
+          }
         }
 
         if (!checkForNew) {
@@ -125,18 +156,15 @@ export function useTransactions() {
         setIsLoading(false);
       }
     },
-    [apiClient, lastCheckedTimestamp, transactions],
+    [apiClient, transactions],
   );
 
   useEffect(() => {
     fetchTransactions();
+    // Initialize new transactions count from localStorage
+    const storedCount = getNewTransactionsCount();
+    setNewTransactionsCount(storedCount);
   }, [apiClient]);
-
-  useEffect(() => {
-    if (!lastCheckedTimestamp) {
-      setLastCheckedTimestamp(new Date().toISOString());
-    }
-  }, [lastCheckedTimestamp]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -148,7 +176,8 @@ export function useTransactions() {
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
-    setLastCheckedTimestamp(new Date().toISOString());
+    setNewTransactionsCountInStorage(0);
+    setLastVisitTimestamp(new Date().toISOString());
   }, []);
 
   const loadMore = useCallback(() => {
