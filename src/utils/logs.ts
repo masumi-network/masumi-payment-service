@@ -1,5 +1,5 @@
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
-
+import { logger as winstonLogger } from '@/utils/logger/';
 const logger = logs.getLogger('masumi-payment-logger', '1.0.0');
 
 export enum LogLevel {
@@ -81,7 +81,7 @@ const emitLog = (
   const errorStr = error ? ` ERROR: ${error.message}` : '';
   const fullMessage = `${message}${contextStr}${errorStr}`;
 
-  console.log(
+  winstonLogger.info(
     `${timestamp} ${separator} [${paddedLevel}] ${separator} ${fullMessage}`,
   );
 };
