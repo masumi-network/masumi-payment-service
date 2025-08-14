@@ -377,106 +377,18 @@ export async function checkLatestTransactions(
                   //WithdrawRefund
                   newState = OnChainState.RefundWithdrawn;
                 } else if (redeemerVersion == 4) {
-                  const tmpSellerInputs = tx.utxos.inputs
-                    .filter(
-                      (x) =>
-                        resolvePaymentKeyHash(x.address) ==
-                        decodedOldContract.sellerVkey,
-                    )
-                    .map((x) => x.amount);
-                  const tmpSellerOutputs = tx.utxos.outputs
-                    .filter(
-                      (x) =>
-                        resolvePaymentKeyHash(x.address) ==
-                        decodedOldContract.sellerVkey,
-                    )
-                    .map((x) => x.amount);
+                  sellerWithdrawn = calculateValueChange(
+                    tx.utxos.inputs,
+                    tx.utxos.outputs,
+                    decodedOldContract.sellerVkey,
+                  );
 
-                  tmpSellerOutputs.forEach((output) => {
-                    output.forEach((amount) => {
-                      const foundSellerWithdrawn = sellerWithdrawn.find((x) => {
-                        return x.unit == amount.unit;
-                      });
-                      if (foundSellerWithdrawn == null) {
-                        const amountNumber = BigInt(amount.quantity);
-                        sellerWithdrawn.push({
-                          unit: amount.unit,
-                          quantity: amountNumber,
-                        });
-                      } else {
-                        foundSellerWithdrawn.quantity += BigInt(
-                          amount.quantity,
-                        );
-                      }
-                    });
-                  });
-                  tmpSellerInputs.forEach((input) => {
-                    input.forEach((amount) => {
-                      const foundSellerWithdrawn = sellerWithdrawn.find((x) => {
-                        return x.unit == amount.unit;
-                      });
-                      if (foundSellerWithdrawn == null) {
-                        const amountNumber = -BigInt(amount.quantity);
-                        sellerWithdrawn.push({
-                          unit: amount.unit,
-                          quantity: amountNumber,
-                        });
-                      } else {
-                        foundSellerWithdrawn.quantity -= BigInt(
-                          amount.quantity,
-                        );
-                      }
-                    });
-                  });
+                  buyerWithdrawn = calculateValueChange(
+                    tx.utxos.inputs,
+                    tx.utxos.outputs,
+                    decodedOldContract.buyerVkey,
+                  );
 
-                  const tmpBuyerOutputs = tx.utxos.outputs
-                    .filter(
-                      (x) =>
-                        resolvePaymentKeyHash(x.address) ==
-                        decodedOldContract.buyerVkey,
-                    )
-                    .map((x) => x.amount);
-
-                  const tmpBuyerInputs = tx.utxos.inputs
-                    .filter(
-                      (x) =>
-                        resolvePaymentKeyHash(x.address) ==
-                        decodedOldContract.buyerVkey,
-                    )
-                    .map((x) => x.amount);
-                  tmpBuyerInputs.forEach((input) => {
-                    input.forEach((amount) => {
-                      const foundBuyerWithdrawn = buyerWithdrawn.find((x) => {
-                        return x.unit == amount.unit;
-                      });
-                      if (foundBuyerWithdrawn == null) {
-                        const amountNumber = -BigInt(amount.quantity);
-                        buyerWithdrawn.push({
-                          unit: amount.unit,
-                          quantity: amountNumber,
-                        });
-                      } else {
-                        foundBuyerWithdrawn.quantity -= BigInt(amount.quantity);
-                      }
-                    });
-                  });
-
-                  tmpBuyerOutputs.forEach((output) => {
-                    output.forEach((amount) => {
-                      const foundBuyerWithdrawn = buyerWithdrawn.find((x) => {
-                        return x.unit == amount.unit;
-                      });
-                      if (foundBuyerWithdrawn == null) {
-                        const amountNumber = BigInt(amount.quantity);
-                        buyerWithdrawn.push({
-                          unit: amount.unit,
-                          quantity: amountNumber,
-                        });
-                      } else {
-                        foundBuyerWithdrawn.quantity += BigInt(amount.quantity);
-                      }
-                    });
-                  });
                   //WithdrawDisputed
                   newState = OnChainState.DisputedWithdrawn;
                 } else if (redeemerVersion == 5) {
@@ -600,6 +512,73 @@ export async function checkLatestTransactions(
   } finally {
     release();
   }
+}
+
+function calculateValueChange(
+  inputs: Array<{
+    address: string;
+    amount: Array<{ unit: string; quantity: string }>;
+    tx_hash: string;
+    output_index: number;
+    data_hash: string | null;
+    inline_datum: string | null;
+    reference_script_hash: string | null;
+    collateral: boolean;
+    reference?: boolean;
+  }>,
+  outputs: Array<{
+    address: string;
+    amount: Array<{ unit: string; quantity: string }>;
+    output_index: number;
+    data_hash: string | null;
+    inline_datum: string | null;
+    collateral: boolean;
+    reference_script_hash: string | null;
+    consumed_by_tx?: string | null;
+  }>,
+  vkey: string,
+) {
+  const withdrawnAmount: Array<{ unit: string; quantity: bigint }> = [];
+  const inputAmounts = inputs
+    .filter((x) => resolvePaymentKeyHash(x.address) == vkey)
+    .map((x) => x.amount);
+  const outputAmounts = outputs
+    .filter((x) => resolvePaymentKeyHash(x.address) == vkey)
+    .map((x) => x.amount);
+
+  outputAmounts.forEach((output) => {
+    output.forEach((amount) => {
+      const outputAmounts = withdrawnAmount.find((x) => {
+        return x.unit == amount.unit;
+      });
+      if (outputAmounts == null) {
+        const amountNumber = BigInt(amount.quantity);
+        withdrawnAmount.push({
+          unit: amount.unit,
+          quantity: amountNumber,
+        });
+      } else {
+        outputAmounts.quantity += BigInt(amount.quantity);
+      }
+    });
+  });
+  inputAmounts.forEach((input) => {
+    input.forEach((amount) => {
+      const withdrawnAmounts = withdrawnAmount.find((x) => {
+        return x.unit == amount.unit;
+      });
+      if (withdrawnAmounts == null) {
+        const amountNumber = -BigInt(amount.quantity);
+        withdrawnAmount.push({
+          unit: amount.unit,
+          quantity: amountNumber,
+        });
+      } else {
+        withdrawnAmounts.quantity -= BigInt(amount.quantity);
+      }
+    });
+  });
+  return withdrawnAmount;
 }
 
 async function updateInitialTransactions(
@@ -1324,6 +1303,8 @@ async function updateRolledBackTransaction(
           },
         });
       }
+
+      //TODO: automatically resync the transaction
       if (
         transaction.PaymentRequestCurrent ||
         transaction.PaymentRequestHistory
