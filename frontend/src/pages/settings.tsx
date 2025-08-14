@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -9,14 +9,59 @@ import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
 import { CopyButton } from '@/components/ui/copy-button';
+import { getApiKeyStatus } from '@/lib/api/generated';
 
 export default function Settings() {
   const router = useRouter();
-  const { dispatch, state } = useAppContext();
+  const { dispatch, state, apiClient } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
+  const [currentUserPermission, setCurrentUserPermission] = useState<'Read' | 'ReadAndPay' | 'Admin' | null>(null);
 
   const adminApiKey = state.apiKey || '';
+
+  // Fetch current user's permission
+  useEffect(() => {
+    const fetchUserPermission = async () => {
+      if (state.apiKey) {
+        try {
+          const response = await getApiKeyStatus({ client: apiClient });
+          if (response.data?.data?.permission) {
+            setCurrentUserPermission(response.data.data.permission);
+          }
+        } catch (error) {
+          console.error('Failed to fetch user permission:', error);
+        }
+      }
+    };
+    fetchUserPermission();
+  }, [state.apiKey, apiClient]);
+
+  const getPermissionDisplayText = (permission: 'Read' | 'ReadAndPay' | 'Admin' | null) => {
+    switch (permission) {
+      case 'Read':
+        return 'Read API Key';
+      case 'ReadAndPay':
+        return 'Read & Pay API Key';
+      case 'Admin':
+        return 'Admin API Key';
+      default:
+        return 'API Key';
+    }
+  };
+
+  const getPermissionDescription = (permission: 'Read' | 'ReadAndPay' | 'Admin' | null) => {
+    switch (permission) {
+      case 'Read':
+        return 'Your read-only API key for accessing the Masumi Node';
+      case 'ReadAndPay':
+        return 'Your read and payment API key for accessing the Masumi Node';
+      case 'Admin':
+        return 'Your admin API key for accessing the Masumi Node';
+      default:
+        return 'Your API key for accessing the Masumi Node';
+    }
+  };
 
   const signOut = () => {
     localStorage.removeItem('payment_api_key');
@@ -40,12 +85,12 @@ export default function Settings() {
         </div>
 
         <div className="space-y-6">
-          {/* Admin API Key */}
+          {/* API Key */}
           <div className="space-y-4">
             <div>
-              <h2 className="text-sm font-medium">Admin API Key</h2>
+              <h2 className="text-sm font-medium">{getPermissionDisplayText(currentUserPermission)}</h2>
               <p className="text-sm text-muted-foreground">
-                Your admin API key for accessing the Masumi Node
+                {getPermissionDescription(currentUserPermission)}
               </p>
             </div>
             <div className="flex gap-2">
