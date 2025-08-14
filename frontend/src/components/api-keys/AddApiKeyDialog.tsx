@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postApiKey } from '@/lib/api/generated';
+import { postApiKey, getApiKeyStatus } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useForm, Controller } from 'react-hook-form';
@@ -65,6 +65,7 @@ export function AddApiKeyDialog({
   onSuccess,
 }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUserPermission, setCurrentUserPermission] = useState<'Read' | 'ReadAndPay' | 'Admin' | null>(null);
   const { apiClient } = useAppContext();
 
   const {
@@ -88,6 +89,38 @@ export function AddApiKeyDialog({
   const permission = watch('permission');
   const usageLimited = watch('usageLimited');
 
+  // Fetch current user's permission when dialog opens
+  useEffect(() => {
+    if (open) {
+      const fetchUserPermission = async () => {
+        try {
+          const response = await getApiKeyStatus({ client: apiClient });
+          if (response.data?.data?.permission) {
+            setCurrentUserPermission(response.data.data.permission);
+          }
+        } catch (error) {
+          console.error('Failed to fetch user permission:', error);
+          // Default to Read if we can't fetch permission
+          setCurrentUserPermission('Read');
+        }
+      };
+      fetchUserPermission();
+    }
+  }, [open, apiClient]);
+
+  // Adjust selected permission if user doesn't have required permissions
+  useEffect(() => {
+    if (currentUserPermission && permission) {
+      if (currentUserPermission === 'Read' && permission !== 'Read') {
+        setValue('permission', 'Read');
+        toast.warning('Your permission level only allows creating Read API keys');
+      } else if (currentUserPermission === 'ReadAndPay' && permission === 'Admin') {
+        setValue('permission', 'ReadAndPay');
+        toast.warning('Your permission level only allows creating Read and ReadAndPay API keys');
+      }
+    }
+  }, [currentUserPermission, permission, setValue]);
+
   useEffect(() => {
     if (permission === 'Admin') {
       setValue('usageLimited', false);
@@ -97,6 +130,16 @@ export function AddApiKeyDialog({
   }, [permission, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
+    // Additional permission validation before submission
+    if (currentUserPermission === 'Read' && data.permission !== 'Read') {
+      toast.error('You can only create Read API keys with your current permission level');
+      return;
+    }
+    if (currentUserPermission === 'ReadAndPay' && data.permission === 'Admin') {
+      toast.error('You can only create Read and ReadAndPay API keys with your current permission level');
+      return;
+    }
+
     try {
       setIsLoading(true);
       const isReadOnly = data.permission === 'Read';
@@ -162,6 +205,15 @@ export function AddApiKeyDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {currentUserPermission && currentUserPermission !== 'Admin' && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                <strong>Permission Notice:</strong> Your current permission level ({currentUserPermission}) limits the types of API keys you can create.
+                {currentUserPermission === 'Read' && ' You can only create Read API keys.'}
+                {currentUserPermission === 'ReadAndPay' && ' You can create Read and ReadAndPay API keys.'}
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             <label className="text-sm font-medium">Permission</label>
             <Controller
@@ -174,8 +226,18 @@ export function AddApiKeyDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Read">Read</SelectItem>
-                    <SelectItem value="ReadAndPay">Read and Pay</SelectItem>
-                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem 
+                      value="ReadAndPay" 
+                      disabled={currentUserPermission === 'Read'}
+                    >
+                      Read and Pay
+                    </SelectItem>
+                    <SelectItem 
+                      value="Admin" 
+                      disabled={currentUserPermission !== 'Admin'}
+                    >
+                      Admin
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               )}
