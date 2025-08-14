@@ -16,7 +16,9 @@ export default function Settings() {
   const { dispatch, state, apiClient } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
-  const [currentUserPermission, setCurrentUserPermission] = useState<'Read' | 'ReadAndPay' | 'Admin' | null>(null);
+  const [currentUserPermission, setCurrentUserPermission] = useState<
+    'Read' | 'ReadAndPay' | 'Admin' | null
+  >(null);
 
   const adminApiKey = state.apiKey || '';
 
@@ -37,30 +39,16 @@ export default function Settings() {
     fetchUserPermission();
   }, [state.apiKey, apiClient]);
 
-  const getPermissionDisplayText = (permission: 'Read' | 'ReadAndPay' | 'Admin' | null) => {
-    switch (permission) {
-      case 'Read':
-        return 'Read API Key';
-      case 'ReadAndPay':
-        return 'Read & Pay API Key';
-      case 'Admin':
-        return 'Admin API Key';
-      default:
-        return 'API Key';
-    }
+  const getPermissionDisplayText = (
+    permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
+  ) => {
+    return 'API Key';
   };
 
-  const getPermissionDescription = (permission: 'Read' | 'ReadAndPay' | 'Admin' | null) => {
-    switch (permission) {
-      case 'Read':
-        return 'Your read-only API key for accessing the Masumi Node';
-      case 'ReadAndPay':
-        return 'Your read and payment API key for accessing the Masumi Node';
-      case 'Admin':
-        return 'Your admin API key for accessing the Masumi Node';
-      default:
-        return 'Your API key for accessing the Masumi Node';
-    }
+  const getPermissionDescription = (
+    permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
+  ) => {
+    return 'Your API key for accessing the Masumi Node';
   };
 
   const signOut = () => {
@@ -88,7 +76,9 @@ export default function Settings() {
           {/* API Key */}
           <div className="space-y-4">
             <div>
-              <h2 className="text-sm font-medium">{getPermissionDisplayText(currentUserPermission)}</h2>
+              <h2 className="text-sm font-medium">
+                {getPermissionDisplayText(currentUserPermission)}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 {getPermissionDescription(currentUserPermission)}
               </p>
