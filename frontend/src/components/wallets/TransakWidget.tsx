@@ -46,6 +46,11 @@ export function TransakWidget({
     return () => window.removeEventListener('message', handleMessage);
   }, [onClose, onSuccess]);
 
+  // Handle dialog close
+  const handleClose = () => {
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   const isPreprod = state.network === 'Preprod';
@@ -59,7 +64,7 @@ export function TransakWidget({
     };
 
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={handleClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Preprod Testnet Faucet</DialogTitle>
@@ -83,28 +88,11 @@ export function TransakWidget({
     );
   }
 
-  const transakUrl = new URL('https://global.transak.com');
-  transakUrl.searchParams.set(
-    'apiKey',
-    process.env.NEXT_PUBLIC_TRANSAK_API_KEY ||
-      '558f0caf-41d4-40fb-a2a9-808283540e40',
-  );
-  transakUrl.searchParams.set('environment', 'PRODUCTION');
-  transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');
-  transakUrl.searchParams.set('defaultCryptoCurrency', 'ADA');
-  transakUrl.searchParams.set('walletAddress', walletAddress);
-  transakUrl.searchParams.set('themeColor', '#000000');
-  transakUrl.searchParams.set('hideMenu', 'true');
-  transakUrl.searchParams.set(
-    'exchangeScreenTitle',
-    'Top up your Masumi Wallet with ADA',
-  );
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="p-0 h-full max-h-[600px]">
         <iframe
-          src={transakUrl.toString()}
+          src={`https://global.transak.com?apiKey=${process.env.NEXT_PUBLIC_TRANSAK_API_KEY}&environment=PRODUCTION&cryptoCurrencyList=ADA&defaultCryptoCurrency=ADA&walletAddress=${walletAddress}&themeColor=%23000000&hideMenu=true&exchangeScreenTitle=Top%20up%20your%20Masumi%20Wallet%20with%20ADA`}
           className="w-full h-full rounded-lg"
           allow="camera;microphone;fullscreen;payment"
         />

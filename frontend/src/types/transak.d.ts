@@ -5,6 +5,22 @@ declare module '@transak/transak-sdk' {
     [key: string]: unknown;
   }
 
+  export interface TransakConfig {
+    apiKey: string;
+    environment: string;
+    defaultCryptoCurrency: string;
+    walletAddress: string;
+    defaultNetwork: string;
+    cryptoCurrencyList: string;
+    defaultPaymentMethod?: string;
+    exchangeScreenTitle?: string;
+    hideMenu?: boolean;
+    themeColor?: string;
+    hostURL?: string;
+    widgetHeight?: string;
+    widgetWidth?: string;
+  }
+
   export class Transak {
     static ENVIRONMENTS: {
       STAGING: string;
@@ -21,26 +37,14 @@ declare module '@transak/transak-sdk' {
       TRANSAK_WIDGET_MODAL_CLOSE: string;
     };
 
-    constructor(config: {
-      apiKey: string;
-      environment: string;
-      defaultCryptoCurrency: string;
-      walletAddress: string;
-      defaultNetwork: string;
-      cryptoCurrencyList: string;
-      defaultPaymentMethod?: string;
-      exchangeScreenTitle?: string;
-      hideMenu?: boolean;
-      themeColor?: string;
-      hostURL?: string;
-      widgetHeight?: string;
-      widgetWidth?: string;
-    });
+    // Static method for event listeners (SDK v2)
+    static on(event: string, callback: (data: TransakEventData) => void): void;
+
+    constructor(config: TransakConfig);
 
     init(): void;
     close(): void;
-    on(event: string, callback: (data: TransakEventData) => void): void;
   }
 
-  export default Transak;
+  export { Transak };
 }
