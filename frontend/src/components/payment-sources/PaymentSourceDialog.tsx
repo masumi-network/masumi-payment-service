@@ -23,9 +23,6 @@ export function PaymentSourceDialog({
   onClose,
   paymentSource,
 }: PaymentSourceDialogProps) {
-  const [copiedAddresses, setCopiedAddresses] = useState<{
-    [key: string]: boolean;
-  }>({});
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
