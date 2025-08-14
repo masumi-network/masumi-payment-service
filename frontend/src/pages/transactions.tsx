@@ -307,7 +307,10 @@ export default function Transactions() {
     fetchTransactions(true);
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
-      localStorage.setItem('masumi_last_transactions_visit', new Date().toISOString());
+      localStorage.setItem(
+        'masumi_last_transactions_visit',
+        new Date().toISOString(),
+      );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
   }, [state.network, apiClient, selectedPaymentSourceId]);
