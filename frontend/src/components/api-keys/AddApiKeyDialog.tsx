@@ -65,7 +65,9 @@ export function AddApiKeyDialog({
   onSuccess,
 }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUserPermission, setCurrentUserPermission] = useState<'Read' | 'ReadAndPay' | 'Admin' | null>(null);
+  const [currentUserPermission, setCurrentUserPermission] = useState<
+    'Read' | 'ReadAndPay' | 'Admin' | null
+  >(null);
   const { apiClient } = useAppContext();
 
   const {
@@ -113,10 +115,17 @@ export function AddApiKeyDialog({
     if (currentUserPermission && permission) {
       if (currentUserPermission === 'Read' && permission !== 'Read') {
         setValue('permission', 'Read');
-        toast.warning('Your permission level only allows creating Read API keys');
-      } else if (currentUserPermission === 'ReadAndPay' && permission === 'Admin') {
+        toast.warning(
+          'Your permission level only allows creating Read API keys',
+        );
+      } else if (
+        currentUserPermission === 'ReadAndPay' &&
+        permission === 'Admin'
+      ) {
         setValue('permission', 'ReadAndPay');
-        toast.warning('Your permission level only allows creating Read and ReadAndPay API keys');
+        toast.warning(
+          'Your permission level only allows creating Read and ReadAndPay API keys',
+        );
       }
     }
   }, [currentUserPermission, permission, setValue]);
@@ -132,11 +141,15 @@ export function AddApiKeyDialog({
   const onSubmit = async (data: ApiKeyFormValues) => {
     // Additional permission validation before submission
     if (currentUserPermission === 'Read' && data.permission !== 'Read') {
-      toast.error('You can only create Read API keys with your current permission level');
+      toast.error(
+        'You can only create Read API keys with your current permission level',
+      );
       return;
     }
     if (currentUserPermission === 'ReadAndPay' && data.permission === 'Admin') {
-      toast.error('You can only create Read and ReadAndPay API keys with your current permission level');
+      toast.error(
+        'You can only create Read and ReadAndPay API keys with your current permission level',
+      );
       return;
     }
 
@@ -208,9 +221,13 @@ export function AddApiKeyDialog({
           {currentUserPermission && currentUserPermission !== 'Admin' && (
             <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
               <p className="text-sm text-blue-700 dark:text-blue-300">
-                <strong>Permission Notice:</strong> Your current permission level ({currentUserPermission}) limits the types of API keys you can create.
-                {currentUserPermission === 'Read' && ' You can only create Read API keys.'}
-                {currentUserPermission === 'ReadAndPay' && ' You can create Read and ReadAndPay API keys.'}
+                <strong>Permission Notice:</strong> Your current permission
+                level ({currentUserPermission}) limits the types of API keys you
+                can create.
+                {currentUserPermission === 'Read' &&
+                  ' You can only create Read API keys.'}
+                {currentUserPermission === 'ReadAndPay' &&
+                  ' You can create Read and ReadAndPay API keys.'}
               </p>
             </div>
           )}
@@ -226,14 +243,14 @@ export function AddApiKeyDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Read">Read</SelectItem>
-                    <SelectItem 
-                      value="ReadAndPay" 
+                    <SelectItem
+                      value="ReadAndPay"
                       disabled={currentUserPermission === 'Read'}
                     >
                       Read and Pay
                     </SelectItem>
-                    <SelectItem 
-                      value="Admin" 
+                    <SelectItem
+                      value="Admin"
                       disabled={currentUserPermission !== 'Admin'}
                     >
                       Admin
