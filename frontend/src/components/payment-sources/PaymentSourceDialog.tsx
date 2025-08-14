@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Dialog,
   DialogContent,
@@ -5,8 +6,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Copy, ChevronDown, ChevronRight } from 'lucide-react';
-import { shortenAddress, copyToClipboard } from '@/lib/utils';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import { shortenAddress } from '@/lib/utils';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -14,7 +15,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 interface PaymentSourceDialogProps {
   open: boolean;
   onClose: () => void;
-  paymentSource: any; // Using any for now, will type properly later
+  paymentSource: any;
 }
 
 export function PaymentSourceDialog({
@@ -33,14 +34,6 @@ export function PaymentSourceDialog({
     selling: false,
     fee: false,
   });
-
-  const handleCopy = async (address: string) => {
-    await copyToClipboard(address);
-    setCopiedAddresses({ ...copiedAddresses, [address]: true });
-    setTimeout(() => {
-      setCopiedAddresses((prev) => ({ ...prev, [address]: false }));
-    }, 2000);
-  };
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({
