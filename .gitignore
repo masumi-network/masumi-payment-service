@@ -25,3 +25,5 @@ smart-contracts/registry/wallet1.sk
 !.env.example
 smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
+
+otelcol-contrib
