@@ -40,7 +40,7 @@ export default function Settings() {
   }, [state.apiKey, apiClient]);
 
   const getPermissionDisplayText = (
-    permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
+    _permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
   ) => {
     return 'API Key';
   };
