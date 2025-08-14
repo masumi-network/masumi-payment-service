@@ -39,9 +39,7 @@ export default function Settings() {
     fetchUserPermission();
   }, [state.apiKey, apiClient]);
 
-  const getPermissionDisplayText = (
-    _permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
-  ) => {
+  const getPermissionDisplayText = () => {
     return 'API Key';
   };
 
@@ -86,7 +84,7 @@ export default function Settings() {
           <div className="space-y-4">
             <div>
               <h2 className="text-sm font-medium">
-                {getPermissionDisplayText(currentUserPermission)}
+                {getPermissionDisplayText()}
               </h2>
               <p className="text-sm text-muted-foreground">
                 {getPermissionDescription(currentUserPermission)}
