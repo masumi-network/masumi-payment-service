@@ -48,7 +48,16 @@ export default function Settings() {
   const getPermissionDescription = (
     permission: 'Read' | 'ReadAndPay' | 'Admin' | null,
   ) => {
-    return 'Your API key for accessing the Masumi Node';
+    switch (permission) {
+      case 'Read':
+        return 'Your read-only API key for accessing the Masumi Node';
+      case 'ReadAndPay':
+        return 'Your read and payment API key for accessing the Masumi Node';
+      case 'Admin':
+        return 'Your admin API key for accessing the Masumi Node';
+      default:
+        return 'Your API key for accessing the Masumi Node';
+    }
   };
 
   const signOut = () => {
