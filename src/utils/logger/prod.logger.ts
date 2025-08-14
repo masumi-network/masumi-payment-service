@@ -1,5 +1,6 @@
 import { createLogger, format, transports } from 'winston';
 import { logs } from '@opentelemetry/api-logs';
+import { CONFIG } from '../config';
 const { combine, timestamp, errors, json } = format;
 
 interface LogInfo {
@@ -22,7 +23,7 @@ class OpenTelemetryTransport extends transports.Console {
       attributes: {
         level: info.level,
         timestamp: new Date().toISOString(),
-        service: 'masumi-payment-service',
+        service: CONFIG.OTEL_SERVICE_NAME,
         ...(info.error && {
           error_name: info.error.name,
           error_message: info.error.message,
