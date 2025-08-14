@@ -493,7 +493,8 @@ export default function WalletsPage() {
                         </div>
                       </td>
                       <td className="p-4">
-                        {wallet.type === 'Selling' && wallet.collectionAddress ? (
+                        {wallet.type === 'Selling' &&
+                        wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -645,7 +646,9 @@ export default function WalletsPage() {
                           </div>
                         </td>
                         <td className="p-4">
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
                         </td>
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
