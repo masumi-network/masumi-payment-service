@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { RefreshCw, Share, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -63,6 +64,8 @@ export function WalletDetailsDialog({
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isEditingCollection, setIsEditingCollection] = useState(false);
+  const [newCollectionAddress, setNewCollectionAddress] = useState('');
 
   const fetchTokenBalances = async () => {
     if (!wallet) return;
@@ -233,6 +236,22 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
+  const handleEditCollection = () => {
+    setIsEditingCollection(true);
+    setNewCollectionAddress(wallet?.collectionAddress || '');
+  };
+
+  const handleSaveCollection = () => {
+    alert('will work with new wallet update endpoint');
+    setIsEditingCollection(false);
+    // TODO: Implement API call to update collection address
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingCollection(false);
+    setNewCollectionAddress('');
+  };
+
   if (!wallet) return null;
 
   return (
@@ -345,17 +364,69 @@ export function WalletDetailsDialog({
             )}
 
             {/* Linked Collection Wallet Section */}
-            {wallet.collectionAddress && wallet.type !== 'Collection' && (
+            {wallet.type !== 'Collection' && (
               <div className="flex flex-col gap-1 mt-2 border-t pt-4">
                 <div className="text-xs text-muted-foreground">
                   Linked Collection Wallet
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {shortenAddress(wallet.collectionAddress, 15)}
-                  </span>
-                  <CopyButton value={wallet.collectionAddress} />
-                </div>
+                {isEditingCollection ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newCollectionAddress}
+                      onChange={(e) => setNewCollectionAddress(e.target.value)}
+                      placeholder="Enter collection wallet address"
+                      className="flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveCollection}
+                      className="h-8"
+                    >
+                      Done
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCancelEdit}
+                      className="h-8"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {wallet.collectionAddress ? (
+                      <>
+                        <span className="font-mono text-sm">
+                          {shortenAddress(wallet.collectionAddress, 15)}
+                        </span>
+                        <CopyButton value={wallet.collectionAddress} />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEditCollection}
+                          className="h-8"
+                        >
+                          Update
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-sm italic text-muted-foreground">
+                          none
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEditCollection}
+                          className="h-8"
+                        >
+                          Add
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
