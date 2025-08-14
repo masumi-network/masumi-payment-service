@@ -143,7 +143,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
-    markAllAsRead();
+    // Don't mark as read immediately, let user view notifications first
   };
 
   const handleSearchSelect = (result: SearchableItem) => {
