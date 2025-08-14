@@ -18,23 +18,23 @@ import { Span } from '@opentelemetry/api';
 import { IncomingMessage, OutgoingMessage } from 'http';
 import { Request } from 'express';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
+import { CONFIG } from './utils/config';
+import { logInfo, logError } from './utils/logs';
 
 dotenv.config();
 
 // Service information
-const serviceName = process.env.OTEL_SERVICE_NAME || 'masumi-payment-service';
-const serviceVersion = process.env.OTEL_SERVICE_VERSION || '0.1.0';
+const serviceName = CONFIG.OTEL_SERVICE_NAME;
+const serviceVersion = CONFIG.OTEL_SERVICE_VERSION;
 
 // OTLP endpoints
-const otlpEndpoint =
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318';
+const otlpEndpoint = CONFIG.OTEL_EXPORTER_OTLP_ENDPOINT;
 const traceEndpoint =
-  process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
+  CONFIG.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
 const metricsEndpoint =
-  process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT ||
-  `${otlpEndpoint}/v1/metrics`;
+  CONFIG.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT || `${otlpEndpoint}/v1/metrics`;
 const logsEndpoint =
-  process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || `${otlpEndpoint}/v1/logs`;
+  CONFIG.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || `${otlpEndpoint}/v1/logs`;
 
 // Resource configuration
 const resource = resourceFromAttributes({
@@ -44,8 +44,8 @@ const resource = resourceFromAttributes({
 
 // Build headers from environment variables
 const headers: Record<string, string> = {};
-if (process.env.SIGNOZ_INGESTION_KEY) {
-  headers['signoz-ingestion-key'] = process.env.SIGNOZ_INGESTION_KEY;
+if (CONFIG.SIGNOZ_INGESTION_KEY) {
+  headers['signoz-ingestion-key'] = CONFIG.SIGNOZ_INGESTION_KEY;
 }
 
 // Trace exporter configuration
@@ -137,26 +137,51 @@ const sdk = new NodeSDK({
   instrumentations,
 });
 
-console.log(
-  `🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`,
-);
-console.log(`📊 Traces endpoint: ${traceEndpoint}`);
-console.log(`📈 Metrics endpoint: ${metricsEndpoint}`);
-console.log(`📝 Logs endpoint: ${logsEndpoint}`);
+logInfo(`🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`, {
+  component: 'tracing',
+  operation: 'initialization',
+});
+logInfo(`📊 Traces endpoint: ${traceEndpoint}`, {
+  component: 'tracing',
+  operation: 'configuration',
+});
+logInfo(`📈 Metrics endpoint: ${metricsEndpoint}`, {
+  component: 'tracing',
+  operation: 'configuration',
+});
+logInfo(`📝 Logs endpoint: ${logsEndpoint}`, {
+  component: 'tracing',
+  operation: 'configuration',
+});
 
 // Initialize the SDK and register with the OpenTelemetry API
 sdk.start();
 
-console.log('✅ OpenTelemetry SDK initialized successfully');
+logInfo('✅ OpenTelemetry SDK initialized successfully', {
+  component: 'tracing',
+  operation: 'initialization',
+});
 
 // Graceful shutdown handlers
 const shutdown = async (signal: string) => {
-  console.log(`📴 Received ${signal}, shutting down OpenTelemetry SDK...`);
+  logInfo(`📴 Received ${signal}, shutting down OpenTelemetry SDK...`, {
+    component: 'tracing',
+    operation: 'shutdown',
+  });
   try {
     await sdk.shutdown();
-    console.log('✅ OpenTelemetry SDK shut down successfully');
+    logInfo('✅ OpenTelemetry SDK shut down successfully', {
+      component: 'tracing',
+      operation: 'shutdown',
+    });
   } catch (error) {
-    console.error('❌ Error shutting down OpenTelemetry SDK:', error);
+    const err = error instanceof Error ? error : new Error(String(error));
+    logError(
+      '❌ Error shutting down OpenTelemetry SDK',
+      { component: 'tracing', operation: 'shutdown' },
+      {},
+      err,
+    );
   } finally {
     process.exit(0);
   }
@@ -169,11 +194,22 @@ process.on('SIGUSR2', () => void shutdown('SIGUSR2')); // For nodemon
 
 // Handle uncaught exceptions and unhandled rejections
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
+  logError(
+    '❌ Uncaught Exception',
+    { component: 'tracing', operation: 'error_handling' },
+    {},
+    error,
+  );
   void shutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled Rejection:', reason);
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logError(
+    '❌ Unhandled Rejection',
+    { component: 'tracing', operation: 'error_handling' },
+    {},
+    error,
+  );
   void shutdown('unhandledRejection');
 });
