@@ -83,7 +83,6 @@ export default function WalletsPage() {
     { name: 'All', count: null },
     { name: 'Purchasing', count: null },
     { name: 'Selling', count: null },
-    { name: 'Collection', count: null },
   ];
 
   const filterWallets = useCallback(() => {
@@ -93,8 +92,6 @@ export default function WalletsPage() {
       filtered = filtered.filter((wallet) => wallet.type === 'Purchasing');
     } else if (activeTab === 'Selling') {
       filtered = filtered.filter((wallet) => wallet.type === 'Selling');
-    } else if (activeTab === 'Collection') {
-      filtered = filtered.filter((wallet) => wallet.collectionAddress);
     }
 
     if (searchQuery) {
@@ -435,13 +432,13 @@ export default function WalletsPage() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={8}>
                     <Spinner size={20} addContainer />
                   </td>
                 </tr>
               ) : filteredWallets.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="text-center py-8">
+                  <td colSpan={8} className="text-center py-8">
                     No wallets found
                   </td>
                 </tr>
@@ -593,129 +590,6 @@ export default function WalletsPage() {
                       </td>
                     </tr>
                   ))}
-
-                  {/* Collection Wallet Section */}
-                  {filteredWallets.map((wallet) => {
-                    if (!wallet.collectionAddress) return null;
-                    return (
-                      <tr
-                        key={`collection-${wallet.id}`}
-                        className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
-                        onClick={() =>
-                          handleWalletClick({
-                            ...wallet,
-                            walletAddress: wallet.collectionAddress!,
-                            type: 'Collection' as any,
-                            balance: wallet.collectionBalance?.ada || '0',
-                            usdmBalance: wallet.collectionBalance?.usdm || '0',
-                          })
-                        }
-                      >
-                        <td className="p-4">
-                          <Checkbox
-                            checked={selectedWallets.includes(
-                              `collection-${wallet.id}`,
-                            )}
-                            onCheckedChange={() =>
-                              handleSelectWallet(`collection-${wallet.id}`)
-                            }
-                          />
-                        </td>
-                        <td className="p-4">
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/20 text-blue-600 dark:text-blue-400">
-                            Collection
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm font-medium truncate">
-                            Collection wallet
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {wallet.note || 'Created by seeding'}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="font-mono text-sm"
-                              title={wallet.collectionAddress}
-                            >
-                              {shortenAddress(wallet.collectionAddress!)}
-                            </span>
-                            <CopyButton value={wallet.collectionAddress!} />
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                              {refreshingBalances.has(
-                                `collection-${wallet.id}`,
-                              ) ? (
-                                <Spinner size={16} />
-                              ) : (
-                                <span>
-                                  {wallet.collectionBalance?.ada
-                                    ? `${useFormatBalance((parseInt(wallet.collectionBalance.ada) / 1000000).toFixed(2))}`
-                                    : '0'}
-                                </span>
-                              )}
-                            </div>
-                            {!refreshingBalances.has(
-                              `collection-${wallet.id}`,
-                            ) &&
-                              wallet.collectionBalance?.ada &&
-                              rate && (
-                                <span className="text-xs text-muted-foreground">
-                                  $
-                                  {useFormatBalance(
-                                    (
-                                      (parseInt(wallet.collectionBalance.ada) /
-                                        1000000) *
-                                      rate
-                                    ).toFixed(2),
-                                  )}
-                                </span>
-                              )}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            {refreshingBalances.has(
-                              `collection-${wallet.id}`,
-                            ) ? (
-                              <Spinner size={16} />
-                            ) : (
-                              <span>
-                                {wallet.collectionBalance?.usdm
-                                  ? `$${useFormatBalance((parseInt(wallet.collectionBalance.usdm) / 1000000).toFixed(2))}`
-                                  : '$0'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                refreshWalletBalance(wallet, true);
-                              }}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
                 </>
               )}
             </tbody>
