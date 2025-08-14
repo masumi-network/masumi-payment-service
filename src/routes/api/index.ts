@@ -32,6 +32,7 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
+import { registerWebhookPost, listWebhooksGet } from './webhooks';
 
 export const apiRouter: Routing = {
   v1: {
@@ -103,6 +104,10 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    webhooks: new DependsOnMethod({
+      get: listWebhooksGet,
+      post: registerWebhookPost,
     }),
   },
 };
