@@ -1,7 +1,7 @@
-import 'dotenv/config';
 import express from 'express';
 import { CONFIG } from '@/utils/config/';
 import { logger } from '@/utils/logger/';
+// import { logger.info, logError } from '@/utils/logs';
 import { initJobs } from '@/services/schedules';
 import { createConfig, createServer } from 'express-zod-api';
 import { router } from '@/routes/index';
@@ -9,8 +9,10 @@ import ui, { JsonObject } from 'swagger-ui-express';
 import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@/utils/db';
 import path from 'path';
+import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from './../src/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
+import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
 
 const __dirname = path.resolve();
@@ -42,12 +44,21 @@ async function initialize() {
     );
   }
   await initJobs();
-  logger.info('Initialized all services');
+
+  // Start blockchain state monitoring
+  await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
+  logger.info('Blockchain state monitoring service started', {
+    component: 'monitoring',
+    intervalSeconds: 30,
+  });
+
+  logger.info('All services initialized successfully', { component: 'main' });
 }
 logger.info('Initializing services');
 initialize()
   .then(async () => {
     const PORT = CONFIG.PORT;
+    logger.info('Starting web server', { component: 'server' }, { port: PORT });
     const serverConfig = createConfig({
       inputSources: {
         //read from body on get requests
@@ -60,6 +71,7 @@ initialize()
       startupLogo: false,
       beforeRouting: ({ app }) => {
         // Add request logger middleware
+        app.use(requestTiming);
         app.use(requestLogger);
 
         const replacer = (key: string, value: unknown): unknown => {
@@ -138,10 +150,17 @@ initialize()
     });
 
     void createServer(serverConfig, router);
+    logger.info(
+      'Web server started successfully',
+      { component: 'server' },
+      { port: PORT },
+    );
+
     // Graceful shutdown
     const shutdown = async (signal: string) => {
       try {
         logger.info(`Received ${signal}. Shutting down gracefully...`);
+        blockchainStateMonitorService.stopMonitoring();
         await cleanupDB();
       } catch (e) {
         logger.error('Error during shutdown', e);
@@ -154,5 +173,11 @@ initialize()
     process.on('SIGTERM', () => void shutdown('SIGTERM'));
   })
   .catch((e) => {
+    logger.error(
+      'Application startup failed',
+      { component: 'main' },
+      undefined,
+      e as Error,
+    );
     throw e;
   });
