@@ -52,7 +52,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
     return false;
   });
-  const sideBarWidth = 260;
+  const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
   const { searchQuery, setSearchQuery, searchResults, handleSearch } =
@@ -250,7 +250,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!collapsed && (
-              <Link href="https://www.masumi.network" target="_blank">
+              <Link href="/">
                 <MasumiLogo />
               </Link>
             )}
@@ -329,6 +329,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                 target="_blank"
               >
                 Privacy Policy
+              </Link>
+              <Link
+                href="https://www.masumi.network/product-releases"
+                target="_blank"
+              >
+                Changelog
               </Link>
             </div>
             <Button
