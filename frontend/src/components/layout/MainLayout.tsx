@@ -42,7 +42,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
   const { theme, setThemePreference, isChangingTheme } = useTheme();
-  const { newTransactionsCount, markAllAsRead } = useTransactions();
+  const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
