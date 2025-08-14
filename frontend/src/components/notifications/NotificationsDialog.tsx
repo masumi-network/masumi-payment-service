@@ -23,9 +23,8 @@ export function NotificationsDialog({
 
   const handleViewTransactions = () => {
     onClose();
-    router.push('/transactions').then(() => {
-      markAllAsRead();
-    });
+    markAllAsRead();
+    router.push('/transactions');
   };
 
   const newTransactions = transactions
