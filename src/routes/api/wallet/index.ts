@@ -286,3 +286,54 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
     }
   },
 });
+
+export const patchWalletSchemaInput = z.object({
+  id: z.string().min(1).max(250).describe('The id of the wallet to update'),
+  newCollectionAddress: z
+    .string()
+    .max(250)
+    .nullable()
+    .describe(
+      'The new collection address to set for this wallet. Pass null to clear.',
+    ),
+});
+
+export const patchWalletSchemaOutput = z.object({
+  id: z.string(),
+  walletVkey: z.string(),
+  walletAddress: z.string(),
+  collectionAddress: z.string().nullable(),
+  type: z.enum(['Selling', 'Purchasing']),
+  note: z.string().nullable(),
+});
+
+export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
+  {
+    method: 'patch',
+    input: patchWalletSchemaInput,
+    output: patchWalletSchemaOutput,
+    handler: async ({
+      input,
+    }: {
+      input: z.infer<typeof patchWalletSchemaInput>;
+    }) => {
+      const wallet = await prisma.hotWallet.findFirst({
+        where: {
+          id: input.id,
+          deletedAt: null,
+        },
+      });
+
+      if (wallet == null) {
+        throw createHttpError(404, `${input.id} wallet not found`);
+      }
+
+      const updated = await prisma.hotWallet.update({
+        where: { id: wallet.id },
+        data: { collectionAddress: input.newCollectionAddress },
+      });
+
+      return updated;
+    },
+  },
+);

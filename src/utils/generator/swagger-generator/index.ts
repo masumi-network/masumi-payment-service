@@ -43,6 +43,8 @@ import { getAPIKeyStatusSchemaOutput } from '@/routes/api/api-key-status';
 import {
   getWalletSchemaInput,
   getWalletSchemaOutput,
+  patchWalletSchemaInput,
+  patchWalletSchemaOutput,
   postWalletSchemaInput,
   postWalletSchemaOutput,
 } from '@/routes/api/wallet';
@@ -213,6 +215,7 @@ export function generateOpenAPI() {
       },
     },
   });
+
   registry.registerPath({
     method: 'post',
     path: '/wallet/',
@@ -245,6 +248,49 @@ export function generateOpenAPI() {
                 walletMnemonic: 'wallet_mnemonic',
                 walletAddress: 'wallet_address',
                 walletVkey: 'wallet_vkey',
+              },
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'patch',
+    path: '/wallet/',
+    description: 'Updates a wallet',
+    summary: 'Update a wallet. (admin access required)',
+    tags: ['wallet'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: patchWalletSchemaInput.openapi({
+              example: {
+                id: 'unique_cuid_v2_of_entry_to_update',
+                newCollectionAddress: 'collection_address',
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Wallet updated',
+        content: {
+          'application/json': {
+            schema: patchWalletSchemaOutput.openapi({
+              example: {
+                id: 'unique_cuid_v2_of_entry_to_update',
+                collectionAddress: 'collection_address',
+                type: 'Selling',
+                walletVkey: 'wallet_vkey',
+                walletAddress: 'wallet_address',
+                note: 'note',
               },
             }),
           },
