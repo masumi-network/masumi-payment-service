@@ -32,9 +32,98 @@ import { CONFIG } from '@/utils/config';
 
 const mutex = new Mutex();
 
+const CONSTANTS = {
+  DEFAULT_MAX_PARALLEL_TRANSACTIONS: 50,
+  MUTEX_TIMEOUT_MINUTES: 3,
+  MIN_COLLATERAL_LOVELACE: 1435230n,
+  MAX_SMART_CONTRACT_LEVELS: 10,
+  TRANSACTION_TIMEOUTS: {
+    SERIALIZABLE: 15000,
+    PAYMENT_HANDLE: 100000,
+    PURCHASING_HANDLE: 10000,
+    PAYMENT_SOURCE_LOCK: 10000,
+  },
+  RETRY_CONFIG: {
+    MAX_RETRIES: 5,
+    BACKOFF_MULTIPLIER: 2,
+    INITIAL_DELAY_MS: 500,
+    MAX_DELAY_MS: 15000,
+  },
+} as const;
+
+type UtxoInput = {
+  address: string;
+  amount: Array<{ unit: string; quantity: string }>;
+  tx_hash: string;
+  output_index: number;
+  data_hash: string | null;
+  inline_datum: string | null;
+  reference_script_hash: string | null;
+  collateral: boolean;
+  reference?: boolean;
+};
+
+type UtxoOutput = {
+  address: string;
+  amount: Array<{ unit: string; quantity: string }>;
+  output_index: number;
+  data_hash: string | null;
+  inline_datum: string | null;
+  collateral: boolean;
+  reference_script_hash: string | null;
+  consumed_by_tx?: string | null;
+};
+
+type ExtendedTxInfo = {
+  blockTime: number;
+  tx: { tx_hash: string };
+  block: { confirmations: number };
+  utxos: {
+    hash: string;
+    inputs: UtxoInput[];
+    outputs: UtxoOutput[];
+  };
+  transaction: Transaction;
+};
+
+type PaymentContract = {
+  id: string;
+  network: Network;
+  smartContractAddress: string;
+  lastIdentifierChecked: string | null;
+  PaymentSourceConfig: {
+    rpcProviderApiKey: string;
+  };
+};
+
+type DecodedContract = {
+  blockchainIdentifier: string;
+  payByTime: bigint;
+  resultTime: bigint;
+  unlockTime: bigint;
+  externalDisputeUnlockTime: bigint;
+  buyerVkey: string;
+  buyerAddress: string;
+  sellerVkey: string;
+  sellerAddress: string;
+  collateralReturnLovelace: bigint;
+  resultHash: string;
+  state: SmartContractState;
+  buyerCooldownTime: bigint;
+  sellerCooldownTime: bigint;
+  inputHash: string;
+};
+
+type WithdrawnAmount = {
+  unit: string;
+  quantity: bigint;
+};
+
 export async function checkLatestTransactions(
-  { maxParallelTransactions = 50 }: { maxParallelTransactions?: number } = {
-    maxParallelTransactions: 50,
+  {
+    maxParallelTransactions = CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
+  }: { maxParallelTransactions?: number } = {
+    maxParallelTransactions: CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
   },
 ) {
   let release: MutexInterface.Releaser | null;
