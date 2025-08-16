@@ -339,44 +339,28 @@ export async function checkLatestTransactions(
                   );
                   continue;
                 }
+                const valueMatches = checkPaymentAmountsMatch(
+                  paymentRequest?.RequestedFunds ??
+                    purchasingRequest?.PaidFunds ??
+                    [],
+                  valueOutputs[0].amount,
+                  decodedOldContract.collateralReturnLovelace,
+                );
 
-                let newState: OnChainState;
+                const newState: OnChainState | null = redeemerToOnChainState(
+                  redeemerVersion,
+                  decodedNewContract,
+                  valueMatches,
+                );
+                if (!newState) {
+                  logger.error(
+                    'Unexpected redeemer version detected. Possible invalid state in smart contract or bug in the software. tx_hash: ' +
+                      tx.tx.tx_hash,
+                  );
+                  continue;
+                }
 
-                if (redeemerVersion == 0) {
-                  //Withdraw
-                  newState = OnChainState.Withdrawn;
-                } else if (redeemerVersion == 1) {
-                  //RequestRefund
-                  if (
-                    decodedNewContract!.resultHash &&
-                    decodedNewContract!.resultHash != ''
-                  ) {
-                    newState = OnChainState.Disputed;
-                  } else {
-                    newState = OnChainState.RefundRequested;
-                  }
-                } else if (redeemerVersion == 2) {
-                  //CancelRefundRequest
-                  if (decodedNewContract!.resultHash) {
-                    newState = OnChainState.ResultSubmitted;
-                  } else {
-                    //Ensure the amounts match, to prevent state change attacks
-                    const valueMatches = checkPaymentAmountsMatch(
-                      paymentRequest?.RequestedFunds ??
-                        purchasingRequest?.PaidFunds ??
-                        [],
-                      valueOutputs[0].amount,
-                      decodedOldContract.collateralReturnLovelace,
-                    );
-                    newState =
-                      valueMatches == true
-                        ? OnChainState.FundsLocked
-                        : OnChainState.FundsOrDatumInvalid;
-                  }
-                } else if (redeemerVersion == 3) {
-                  //WithdrawRefund
-                  newState = OnChainState.RefundWithdrawn;
-                } else if (redeemerVersion == 4) {
+                if (newState == OnChainState.DisputedWithdrawn) {
                   sellerWithdrawn = calculateValueChange(
                     tx.utxos.inputs,
                     tx.utxos.outputs,
@@ -388,33 +372,8 @@ export async function checkLatestTransactions(
                     tx.utxos.outputs,
                     decodedOldContract.buyerVkey,
                   );
-
-                  //WithdrawDisputed
-                  newState = OnChainState.DisputedWithdrawn;
-                } else if (redeemerVersion == 5) {
-                  sellerWithdrawn = [];
-                  buyerWithdrawn = [];
-                  //SubmitResult
-                  if (
-                    decodedNewContract!.state ==
-                      SmartContractState.RefundRequested ||
-                    decodedNewContract!.state == SmartContractState.Disputed
-                  ) {
-                    newState = OnChainState.Disputed;
-                  } else {
-                    newState = OnChainState.ResultSubmitted;
-                  }
-                } else if (redeemerVersion == 6) {
-                  //AllowRefund
-                  newState = OnChainState.RefundRequested;
-                } else {
-                  //invalid transaction
-                  logger.error(
-                    'Unexpected redeemer version detected. Possible invalid state in smart contract or bug in the software. tx_hash: ' +
-                      tx.tx.tx_hash,
-                  );
-                  continue;
                 }
+
                 try {
                   if (inputTxHashMatchPaymentRequest) {
                     await handlePaymentTransactionCardanoV1(
@@ -1903,4 +1862,54 @@ async function getSmartContractInteractionTxHistoryList(
     remainingLevels--;
   }
   return [...new Set(txHashes)];
+}
+function redeemerToOnChainState(
+  redeemerVersion: number,
+  decodedNewContract: { resultHash: string; state: SmartContractState } | null,
+  valueMatches: boolean,
+) {
+  if (redeemerVersion == 0) {
+    //Withdraw
+    return OnChainState.Withdrawn;
+  } else if (redeemerVersion == 1) {
+    //RequestRefund
+    if (decodedNewContract?.resultHash && decodedNewContract.resultHash != '') {
+      return OnChainState.Disputed;
+    } else {
+      return OnChainState.RefundRequested;
+    }
+  } else if (redeemerVersion == 2) {
+    //CancelRefundRequest
+    if (decodedNewContract?.resultHash != '') {
+      return OnChainState.ResultSubmitted;
+    } else {
+      //Ensure the amounts match, to prevent state change attacks
+
+      return valueMatches == true
+        ? OnChainState.FundsLocked
+        : OnChainState.FundsOrDatumInvalid;
+    }
+  } else if (redeemerVersion == 3) {
+    //WithdrawRefund
+    return OnChainState.RefundWithdrawn;
+  } else if (redeemerVersion == 4) {
+    //WithdrawDisputed
+    return OnChainState.DisputedWithdrawn;
+  } else if (redeemerVersion == 5) {
+    //SubmitResult
+    if (
+      decodedNewContract?.state == SmartContractState.RefundRequested ||
+      decodedNewContract?.state == SmartContractState.Disputed
+    ) {
+      return OnChainState.Disputed;
+    } else {
+      return OnChainState.ResultSubmitted;
+    }
+  } else if (redeemerVersion == 6) {
+    //AllowRefund
+    return OnChainState.RefundRequested;
+  } else {
+    //invalid transaction
+    return null;
+  }
 }
