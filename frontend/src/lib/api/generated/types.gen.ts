@@ -94,6 +94,38 @@ export type GetWalletResponses = {
 
 export type GetWalletResponse = GetWalletResponses[keyof GetWalletResponses];
 
+export type PatchWalletData = {
+    body?: {
+        /**
+         * The id of the wallet to update
+         */
+        id: string;
+        /**
+         * The new collection address to set for this wallet. Pass null to clear.
+         */
+        newCollectionAddress: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/';
+};
+
+export type PatchWalletResponses = {
+    /**
+     * Wallet updated
+     */
+    200: {
+        id: string;
+        walletVkey: string;
+        walletAddress: string;
+        collectionAddress: string | null;
+        type: 'Selling' | 'Purchasing';
+        note: string | null;
+    };
+};
+
+export type PatchWalletResponse = PatchWalletResponses[keyof PatchWalletResponses];
+
 export type PostWalletData = {
     body?: {
         /**

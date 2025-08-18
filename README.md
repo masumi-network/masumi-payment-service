@@ -20,21 +20,21 @@ Learn more about Masumi in our [Introduction Guide](https://docs.masumi.network/
 
 We have been successfully audited by [TxPipe](https://txpipe.io/) please check the [full report](docs/audit.pdf)
 
-Refer to the official [Masumi Docs Website](https://docs.masumi.network) for comprehensive documentation and full setup guide. 
+Refer to the official [Masumi Docs Website](https://docs.masumi.network) for comprehensive documentation and full setup guide.
 
 Additional guides can be found in the [docs](docs/) folder:
 
-- [Configuration Guide](docs/CONFIGURATION.md)
-- [Security Guidelines](docs/SECURITY.md)
+- [Configuration Guide](docs/configuration.md)
+- [Security Guidelines](docs/security.md)
 
-- [Development and Architecture Guide](docs/DEVELOPMENT.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Development and Architecture Guide](docs/development.md)
+- [Deployment Guide](docs/deployment.md)
+- [Monitoring Guide](docs/monitoring.md)
 
 ## Audit
 
 The Masumi Payment Service Smart Contracts have been audited by [TxPipe](https://txpipe.io/).
 Audit available [here](audits/Masumi-Payment-Service-Audit-April-2025.pdf)
-
 
 ## Contributing
 
