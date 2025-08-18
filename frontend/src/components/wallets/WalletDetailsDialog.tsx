@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { RefreshCw, Share, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, getWallet } from '@/lib/api/generated';
+import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
@@ -241,10 +241,27 @@ export function WalletDetailsDialog({
     setNewCollectionAddress(wallet?.collectionAddress || '');
   };
 
-  const handleSaveCollection = () => {
-    alert('will work with new wallet update endpoint');
-    setIsEditingCollection(false);
-    // TODO: Implement API call to update collection address
+  const handleSaveCollection = async () => {
+    if (!wallet) return;
+
+    try {
+      await patchWallet({
+        client: apiClient,
+        body: {
+          id: wallet.id,
+          newCollectionAddress: newCollectionAddress || null,
+        },
+      });
+
+      toast.success('Collection address updated successfully');
+      setIsEditingCollection(false);
+
+      // Update the wallet object with the new collection address
+      wallet.collectionAddress = newCollectionAddress || null;
+    } catch (error) {
+      console.error('Failed to update collection address:', error);
+      toast.error('Failed to update collection address');
+    }
   };
 
   const handleCancelEdit = () => {
@@ -364,7 +381,7 @@ export function WalletDetailsDialog({
             )}
 
             {/* Linked Collection Wallet Section */}
-            {wallet.type !== 'Collection' && (
+            {wallet.type === 'Selling' && (
               <div className="flex flex-col gap-1 mt-2 border-t pt-4">
                 <div className="text-xs text-muted-foreground">
                   Linked Collection Wallet
