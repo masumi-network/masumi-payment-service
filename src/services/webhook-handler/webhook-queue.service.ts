@@ -40,12 +40,11 @@ export class WebhookQueueService {
     const webhookPayload = {
       event_type: eventType,
       timestamp: new Date().toISOString(),
-      webhook_id: '', // Will be set per endpoint
+      webhook_id: '',
       data: payload,
     };
 
     const deliveries = webhookEndpoints.map(async (endpoint) => {
-      // Create payload with correct webhook_id for this endpoint
       const endpointPayload = {
         ...webhookPayload,
         webhook_id: endpoint.id,
