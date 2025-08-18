@@ -21,6 +21,7 @@ model ApiKey {
   RemainingUsageCredits UnitValue[]
   PurchaseRequest       PurchaseRequest[]
   PaymentRequest        PaymentRequest[]
+  CreatedWebhooks       WebhookEndpoint[]
   deletedAt             DateTime?
 }
 
@@ -525,6 +526,9 @@ model WebhookEndpoint {
   
   PaymentSource   PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
   paymentSourceId String?
+
+  CreatedByApiKey   ApiKey? @relation(fields: [createdByApiKeyId], references: [id], onDelete: SetNull)
+  createdByApiKeyId String?
 
   isActive             Boolean   @default(true)
   failureCount         Int       @default(0)

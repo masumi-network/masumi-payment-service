@@ -47,11 +47,7 @@ export const registerWebhookPost = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: registerWebhookSchemaInput,
   output: registerWebhookSchemaOutput,
-  handler: async ({
-    input,
-  }: {
-    input: z.infer<typeof registerWebhookSchemaInput>;
-  }) => {
+  handler: async ({ input, options }) => {
     if (input.paymentSourceId) {
       const paymentSource = await prisma.paymentSource.findUnique({
         where: { id: input.paymentSourceId, deletedAt: null },
@@ -76,7 +72,7 @@ export const registerWebhookPost = adminAuthenticatedEndpointFactory.build({
       );
     }
 
-    // Creatinng webhook endpoint
+    // Create webhook endpoint with creator tracking
     const webhook = await prisma.webhookEndpoint.create({
       data: {
         url: input.url,
@@ -84,6 +80,7 @@ export const registerWebhookPost = adminAuthenticatedEndpointFactory.build({
         events: input.events,
         name: input.name,
         paymentSourceId: input.paymentSourceId,
+        createdByApiKeyId: options.id, // Track who created this webhook
         isActive: true,
       },
     });
@@ -129,6 +126,12 @@ export const listWebhooksSchemaOutput = z.object({
       failureCount: z.number(),
       lastSuccessAt: z.date().nullable(),
       disabledAt: z.date().nullable(),
+      createdBy: z
+        .object({
+          apiKeyId: z.string(),
+          apiKeyToken: z.string(),
+        })
+        .nullable(),
     }),
   ),
 });
@@ -145,6 +148,14 @@ export const listWebhooksGet = adminAuthenticatedEndpointFactory.build({
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
         paymentSourceId: input.paymentSourceId || undefined,
+      },
+      include: {
+        CreatedByApiKey: {
+          select: {
+            id: true,
+            token: true, // For display purposes (safe to show)
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit,
@@ -163,6 +174,12 @@ export const listWebhooksGet = adminAuthenticatedEndpointFactory.build({
         failureCount: webhook.failureCount,
         lastSuccessAt: webhook.lastSuccessAt,
         disabledAt: webhook.disabledAt,
+        createdBy: webhook.CreatedByApiKey
+          ? {
+              apiKeyId: webhook.CreatedByApiKey.id,
+              apiKeyToken: webhook.CreatedByApiKey.token,
+            }
+          : null,
       })),
     };
   },
