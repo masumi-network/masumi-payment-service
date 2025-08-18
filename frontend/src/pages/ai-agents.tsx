@@ -547,7 +547,7 @@ export default function AIAgentsPage() {
                         </Badge>
                       </td>
                       <td className="p-4">
-                        {['RegistrationConfirmed'].includes(agent.state) ? (
+                        {true ? (
                           <Button
                             variant="ghost"
                             size="sm"
