@@ -1,5 +1,6 @@
 import { webhookQueueService } from './webhook-queue.service';
 import { logger } from '@/utils/logger';
+import { WEBHOOK_EVENT_VALUES } from '@/types/webhook-payloads';
 
 export class WebhookEventsService {
   //purchase status change webhook
@@ -16,7 +17,7 @@ export class WebhookEventsService {
   }): Promise<void> {
     try {
       await webhookQueueService.queueWebhook(
-        'purchase.status_changed',
+        WEBHOOK_EVENT_VALUES.PURCHASE_STATUS_CHANGED,
         {
           blockchainIdentifier: data.blockchainIdentifier,
           purchase_id: data.purchaseId,
@@ -59,7 +60,7 @@ export class WebhookEventsService {
   }): Promise<void> {
     try {
       await webhookQueueService.queueWebhook(
-        'payment.status_changed',
+        WEBHOOK_EVENT_VALUES.PAYMENT_STATUS_CHANGED,
         {
           blockchainIdentifier: data.blockchainIdentifier,
           payment_id: data.paymentId,
@@ -99,7 +100,7 @@ export class WebhookEventsService {
   }): Promise<void> {
     try {
       await webhookQueueService.queueWebhook(
-        'agent.registration_changed',
+        WEBHOOK_EVENT_VALUES.AGENT_REGISTRATION_CHANGED,
         {
           agent_id: data.agentId,
           agent_identifier: data.agentIdentifier,
@@ -136,7 +137,7 @@ export class WebhookEventsService {
   }): Promise<void> {
     try {
       await webhookQueueService.queueWebhook(
-        'transaction.confirmed',
+        WEBHOOK_EVENT_VALUES.TRANSACTION_CONFIRMED,
         {
           transaction_id: data.transactionId,
           tx_hash: data.txHash,
@@ -174,7 +175,7 @@ export class WebhookEventsService {
   }): Promise<void> {
     try {
       await webhookQueueService.queueWebhook(
-        'transaction.failed',
+        WEBHOOK_EVENT_VALUES.TRANSACTION_FAILED,
         {
           transaction_id: data.transactionId,
           tx_hash: data.txHash,

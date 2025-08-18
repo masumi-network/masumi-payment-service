@@ -1,12 +1,7 @@
 import { WebhookDeliveryStatus } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-
-export interface WebhookPayload {
-  event_type: string;
-  timestamp: string;
-  data: Record<string, any>;
-}
+import { WebhookPayload } from '@/types/webhook-payloads';
 
 export interface WebhookDeliveryResult {
   success: boolean;

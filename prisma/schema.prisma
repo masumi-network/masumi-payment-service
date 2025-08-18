@@ -520,7 +520,7 @@ model WebhookEndpoint {
 
   url       String
   authToken String 
-  events    String[] 
+  events    WebhookEventType[] 
   name      String? 
   
   PaymentSource   PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
@@ -543,7 +543,7 @@ model WebhookDelivery {
   WebhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
   webhookEndpointId String
 
-  eventType String 
+  eventType WebhookEventType 
   payload   Json   
   entityId  String? 
 
@@ -556,6 +556,15 @@ model WebhookDelivery {
   errorMessage  String?
   deliveredAt   DateTime?
   durationMs    Int? 
+}
+
+enum WebhookEventType {
+  PURCHASE_STATUS_CHANGED
+  PAYMENT_STATUS_CHANGED
+  AGENT_REGISTRATION_CHANGED
+  TRANSACTION_CONFIRMED
+  TRANSACTION_FAILED
+  TIMEOUT_REACHED
 }
 
 enum WebhookDeliveryStatus {

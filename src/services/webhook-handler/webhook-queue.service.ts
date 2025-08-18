@@ -1,12 +1,12 @@
-import { WebhookDeliveryStatus } from '@prisma/client';
+import { WebhookDeliveryStatus, WebhookEventType } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-import { webhookSenderService, WebhookPayload } from './webhook-sender.service';
+import { webhookSenderService } from './webhook-sender.service';
 
 export class WebhookQueueService {
   async queueWebhook(
-    eventType: string,
-    payload: any,
+    eventType: WebhookEventType,
+    payload: Record<string, any>,
     entityId?: string,
     paymentSourceId?: string,
   ): Promise<void> {
@@ -37,19 +37,26 @@ export class WebhookQueueService {
       return;
     }
 
-    const webhookPayload: WebhookPayload = {
+    const webhookPayload = {
       event_type: eventType,
       timestamp: new Date().toISOString(),
-      data: payload as Record<string, any>,
+      webhook_id: '', // Will be set per endpoint
+      data: payload,
     };
 
     const deliveries = webhookEndpoints.map(async (endpoint) => {
+      // Create payload with correct webhook_id for this endpoint
+      const endpointPayload = {
+        ...webhookPayload,
+        webhook_id: endpoint.id,
+      };
+
       try {
         await prisma.webhookDelivery.create({
           data: {
             webhookEndpointId: endpoint.id,
             eventType,
-            payload: webhookPayload as Record<string, any>,
+            payload: endpointPayload as Record<string, any>,
             entityId,
             status: WebhookDeliveryStatus.Pending,
             nextRetryAt: new Date(),

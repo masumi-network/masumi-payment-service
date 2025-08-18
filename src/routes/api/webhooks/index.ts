@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
+import { WebhookEventType } from '@prisma/client';
 
 // Schema for registering a new webhook
 export const registerWebhookSchemaInput = z.object({
@@ -16,15 +17,7 @@ export const registerWebhookSchemaInput = z.object({
     .max(200)
     .describe('Authentication token for webhook requests'),
   events: z
-    .array(
-      z.enum([
-        'purchase.status_changed',
-        'payment.status_changed',
-        'agent.registration_changed',
-        'transaction.confirmed',
-        'transaction.failed',
-      ]),
-    )
+    .array(z.nativeEnum(WebhookEventType))
     .min(1)
     .max(10)
     .describe('Array of event types to subscribe to'),
@@ -43,7 +36,7 @@ export const registerWebhookSchemaInput = z.object({
 export const registerWebhookSchemaOutput = z.object({
   id: z.string(),
   url: z.string(),
-  events: z.array(z.string()),
+  events: z.array(z.nativeEnum(WebhookEventType)),
   name: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.date(),
@@ -127,7 +120,7 @@ export const listWebhooksSchemaOutput = z.object({
     z.object({
       id: z.string(),
       url: z.string(),
-      events: z.array(z.string()),
+      events: z.array(z.nativeEnum(WebhookEventType)),
       name: z.string().nullable(),
       isActive: z.boolean(),
       createdAt: z.date(),
