@@ -1,3 +1,4 @@
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
@@ -43,7 +44,7 @@ export const registerWebhookSchemaOutput = z.object({
   paymentSourceId: z.string().nullable(),
 });
 
-export const registerWebhookPost = adminAuthenticatedEndpointFactory.build({
+export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
   input: registerWebhookSchemaInput,
   output: registerWebhookSchemaOutput,
