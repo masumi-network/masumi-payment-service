@@ -32,7 +32,11 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
-import { registerWebhookPost, listWebhooksGet } from './webhooks';
+import {
+  registerWebhookPost,
+  listWebhooksGet,
+  deleteWebhookDelete,
+} from './webhooks';
 
 export const apiRouter: Routing = {
   v1: {
@@ -108,6 +112,7 @@ export const apiRouter: Routing = {
     webhooks: new DependsOnMethod({
       get: listWebhooksGet,
       post: registerWebhookPost,
+      delete: deleteWebhookDelete,
     }),
   },
 };

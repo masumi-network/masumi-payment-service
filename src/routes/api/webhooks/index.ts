@@ -3,7 +3,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { WebhookEventType } from '@prisma/client';
+import { WebhookEventType, Permission } from '@prisma/client';
 
 // Schema for registering a new webhook
 export const registerWebhookSchemaInput = z.object({
@@ -182,6 +182,74 @@ export const listWebhooksGet = adminAuthenticatedEndpointFactory.build({
             }
           : null,
       })),
+    };
+  },
+});
+
+// Schema for deleting a webhook
+export const deleteWebhookSchemaInput = z.object({
+  webhookId: z.string().describe('The ID of the webhook to delete'),
+});
+
+export const deleteWebhookSchemaOutput = z.object({
+  id: z.string(),
+  url: z.string(),
+  name: z.string().nullable(),
+  deletedAt: z.date(),
+});
+
+export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
+  method: 'delete',
+  input: deleteWebhookSchemaInput,
+  output: deleteWebhookSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof deleteWebhookSchemaInput>;
+    options: {
+      id: string;
+      permission: Permission;
+      networkLimit: any[];
+      usageLimited: boolean;
+    };
+  }) => {
+    const webhook = await prisma.webhookEndpoint.findUnique({
+      where: { id: input.webhookId },
+      include: {
+        CreatedByApiKey: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!webhook) {
+      throw createHttpError(404, 'Webhook not found');
+    }
+
+    // Authorization check: Only creator or admin can delete
+    const isCreator = webhook.createdByApiKeyId === options.id;
+    const isAdmin = options.permission === Permission.Admin;
+
+    if (!isCreator && !isAdmin) {
+      throw createHttpError(
+        403,
+        'Unauthorized: Only the creator or an admin can delete this webhook',
+      );
+    }
+
+    // Delete the webhook
+    await prisma.webhookEndpoint.delete({
+      where: { id: input.webhookId },
+    });
+
+    return {
+      id: webhook.id,
+      url: webhook.url,
+      name: webhook.name,
+      deletedAt: new Date(),
     };
   },
 });
