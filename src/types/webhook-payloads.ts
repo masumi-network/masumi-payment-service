@@ -1,4 +1,7 @@
 import { WebhookEventType } from '@prisma/client';
+import { z } from 'zod';
+import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
+import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 
 // Base webhook payload structure
 export interface BaseWebhookPayload {
@@ -8,113 +11,50 @@ export interface BaseWebhookPayload {
   data: Record<string, unknown>;
 }
 
-// Purchase status change event
-export interface PurchaseStatusChangedPayload extends BaseWebhookPayload {
-  event_type: 'PURCHASE_STATUS_CHANGED';
-  data: {
-    purchase_id: string;
-    blockchain_identifier: string;
-    old_status: string;
-    new_status: string;
-    agent_id?: string;
-    payment_id?: string;
-    transaction_hash?: string;
-    updated_at: string;
-  };
+// Extract individual purchase/payment item types from existing API schemas
+type PurchaseItem = z.infer<
+  typeof queryPurchaseRequestSchemaOutput
+>['Purchases'][0];
+type PaymentItem = z.infer<typeof queryPaymentsSchemaOutput>['Payments'][0];
+
+interface WebhookPayloadWithData<
+  T extends WebhookEventType,
+  TData extends Record<string, unknown>,
+> extends BaseWebhookPayload {
+  event_type: T;
+  data: TData;
 }
 
-// Payment status change event
-export interface PaymentStatusChangedPayload extends BaseWebhookPayload {
-  event_type: 'PAYMENT_STATUS_CHANGED';
-  data: {
-    payment_id: string;
-    purchase_id: string;
-    old_status: string;
-    new_status: string;
-    transaction_hash?: string;
-    amount?: string;
-    currency?: string;
-    blockchain_network: string;
-    updated_at: string;
-  };
-}
+// PURCHASE webhooks
+export type PurchaseOnChainStatusChangedPayload = WebhookPayloadWithData<
+  'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+  PurchaseItem
+>;
+export type PurchaseOnErrorPayload = WebhookPayloadWithData<
+  'PURCHASE_ON_ERROR',
+  PurchaseItem
+>;
 
-// Agent registration change event
-export interface AgentRegistrationChangedPayload extends BaseWebhookPayload {
-  event_type: 'AGENT_REGISTRATION_CHANGED';
-  data: {
-    agent_id: string;
-    blockchain_identifier: string;
-    old_status: string;
-    new_status: string;
-    agent_name?: string;
-    registration_transaction_hash?: string;
-    updated_at: string;
-  };
-}
-
-// Transaction confirmed event
-export interface TransactionConfirmedPayload extends BaseWebhookPayload {
-  event_type: 'TRANSACTION_CONFIRMED';
-  data: {
-    transaction_hash: string;
-    blockchain_network: string;
-    block_number: number;
-    confirmation_count: number;
-    purchase_id?: string;
-    payment_id?: string;
-    agent_id?: string;
-    confirmed_at: string;
-  };
-}
-
-// Transaction failed event
-export interface TransactionFailedPayload extends BaseWebhookPayload {
-  event_type: 'TRANSACTION_FAILED';
-  data: {
-    transaction_hash?: string;
-    blockchain_network: string;
-    purchase_id?: string;
-    payment_id?: string;
-    agent_id?: string;
-    error_message: string;
-    error_code?: string;
-    failed_at: string;
-  };
-}
-
-// Timeout reached event
-export interface TimeoutReachedPayload extends BaseWebhookPayload {
-  event_type: 'TIMEOUT_REACHED';
-  data: {
-    entity_type: 'purchase' | 'payment' | 'agent_registration';
-    entity_id: string;
-    timeout_type:
-      | 'payment_timeout'
-      | 'processing_timeout'
-      | 'confirmation_timeout';
-    timeout_duration_seconds: number;
-    original_status: string;
-    new_status: string;
-    timed_out_at: string;
-  };
-}
+// PAYMENT webhooks
+export type PaymentOnChainStatusChangedPayload = WebhookPayloadWithData<
+  'PAYMENT_ON_CHAIN_STATUS_CHANGED',
+  PaymentItem
+>;
+export type PaymentOnErrorPayload = WebhookPayloadWithData<
+  'PAYMENT_ON_ERROR',
+  PaymentItem
+>;
 
 // Union type for all webhook payloads
 export type WebhookPayload =
-  | PurchaseStatusChangedPayload
-  | PaymentStatusChangedPayload
-  | AgentRegistrationChangedPayload
-  | TransactionConfirmedPayload
-  | TransactionFailedPayload
-  | TimeoutReachedPayload;
+  | PurchaseOnChainStatusChangedPayload
+  | PaymentOnChainStatusChangedPayload
+  | PurchaseOnErrorPayload
+  | PaymentOnErrorPayload;
 
-// Event type values for runtime use
 export const WEBHOOK_EVENT_VALUES = {
-  PURCHASE_STATUS_CHANGED: 'PURCHASE_STATUS_CHANGED' as const,
-  PAYMENT_STATUS_CHANGED: 'PAYMENT_STATUS_CHANGED' as const,
-  AGENT_REGISTRATION_CHANGED: 'AGENT_REGISTRATION_CHANGED' as const,
-  TRANSACTION_CONFIRMED: 'TRANSACTION_CONFIRMED' as const,
-  TRANSACTION_FAILED: 'TRANSACTION_FAILED' as const,
-  TIMEOUT_REACHED: 'TIMEOUT_REACHED' as const,
+  PURCHASE_ON_CHAIN_STATUS_CHANGED: 'PURCHASE_ON_CHAIN_STATUS_CHANGED' as const,
+  PAYMENT_ON_CHAIN_STATUS_CHANGED: 'PAYMENT_ON_CHAIN_STATUS_CHANGED' as const,
+  PURCHASE_ON_ERROR: 'PURCHASE_ON_ERROR' as const,
+  PAYMENT_ON_ERROR: 'PAYMENT_ON_ERROR' as const,
 } as const;

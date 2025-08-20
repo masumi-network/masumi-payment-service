@@ -1,206 +1,205 @@
 import { webhookQueueService } from './webhook-queue.service';
 import { logger } from '@/utils/logger';
 import { WEBHOOK_EVENT_VALUES } from '@/types/webhook-payloads';
+import { prisma } from '@/utils/db';
+import type { WebhookEventType } from '@prisma/client';
 
 export class WebhookEventsService {
-  //purchase status change webhook
-  async triggerPurchaseStatusChange(data: {
-    blockchainIdentifier: string;
-    purchaseId: string;
-    oldStatus?: string;
-    newStatus: string;
-    onChainState?: string;
-    nextAction?: string;
-    errorType?: string;
-    errorNote?: string;
-    paymentSourceId?: string;
-  }): Promise<void> {
+  private async queryPurchaseForWebhook(purchaseId: string) {
+    return prisma.purchaseRequest.findUnique({
+      where: { id: purchaseId },
+      include: {
+        SellerWallet: true,
+        SmartContractWallet: { where: { deletedAt: null } },
+        PaidFunds: true,
+        NextAction: true,
+        PaymentSource: true,
+        CurrentTransaction: true,
+        WithdrawnForSeller: true,
+        WithdrawnForBuyer: true,
+        TransactionHistory: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+  }
+
+  private async queryPaymentForWebhook(paymentId: string) {
+    return prisma.paymentRequest.findUnique({
+      where: { id: paymentId },
+      include: {
+        BuyerWallet: true,
+        SmartContractWallet: { where: { deletedAt: null } },
+        PaymentSource: true,
+        RequestedFunds: { include: { AgentFixedPricing: true } },
+        NextAction: true,
+        CurrentTransaction: true,
+        WithdrawnForSeller: true,
+        WithdrawnForBuyer: true,
+        TransactionHistory: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+  }
+
+  private formatPurchaseForWebhook(
+    purchase: NonNullable<
+      Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>
+    >,
+  ) {
+    return {
+      ...purchase,
+      PaidFunds: (
+        purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        ...amount,
+        amount: amount.amount.toString(),
+      })),
+      WithdrawnForSeller: (
+        purchase.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      })),
+      WithdrawnForBuyer: (
+        purchase.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      })),
+      collateralReturnLovelace:
+        purchase.collateralReturnLovelace?.toString() ?? null,
+      payByTime: purchase.payByTime?.toString() ?? null,
+      submitResultTime: purchase.submitResultTime.toString(),
+      unlockTime: purchase.unlockTime.toString(),
+      externalDisputeUnlockTime: purchase.externalDisputeUnlockTime.toString(),
+      cooldownTime: Number(purchase.buyerCoolDownTime),
+      cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
+    };
+  }
+
+  private formatPaymentForWebhook(
+    payment: NonNullable<
+      Awaited<ReturnType<typeof this.queryPaymentForWebhook>>
+    >,
+  ) {
+    return {
+      ...payment,
+      submitResultTime: payment.submitResultTime.toString(),
+      cooldownTime: Number(payment.sellerCoolDownTime),
+      cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
+      payByTime: payment.payByTime?.toString() ?? null,
+      unlockTime: payment.unlockTime.toString(),
+      externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
+      collateralReturnLovelace:
+        payment.collateralReturnLovelace?.toString() ?? null,
+      RequestedFunds: (
+        payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        ...amount,
+        amount: amount.amount.toString(),
+      })),
+      WithdrawnForSeller: (
+        payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      })),
+      WithdrawnForBuyer: (
+        payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
+      ).map((amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      })),
+    };
+  }
+
+  private async triggerGenericWebhook(
+    eventType: WebhookEventType,
+    entityId: string,
+    entityType: 'purchase' | 'payment',
+    logContext: Record<string, unknown>,
+  ): Promise<void> {
     try {
+      let formattedData;
+      let blockchainIdentifier: string;
+      let paymentSourceId: string;
+
+      if (entityType === 'purchase') {
+        const purchase = await this.queryPurchaseForWebhook(entityId);
+        if (!purchase) {
+          logger.error('Purchase not found for webhook trigger', {
+            purchaseId: entityId,
+          });
+          return;
+        }
+        formattedData = this.formatPurchaseForWebhook(purchase);
+        blockchainIdentifier = purchase.blockchainIdentifier;
+        paymentSourceId = purchase.PaymentSource.id;
+      } else {
+        const payment = await this.queryPaymentForWebhook(entityId);
+        if (!payment) {
+          logger.error('Payment not found for webhook trigger', {
+            paymentId: entityId,
+          });
+          return;
+        }
+        formattedData = this.formatPaymentForWebhook(payment);
+        blockchainIdentifier = payment.blockchainIdentifier;
+        paymentSourceId = payment.PaymentSource.id;
+      }
+
       await webhookQueueService.queueWebhook(
-        WEBHOOK_EVENT_VALUES.PURCHASE_STATUS_CHANGED,
-        {
-          blockchainIdentifier: data.blockchainIdentifier,
-          purchase_id: data.purchaseId,
-          old_status: data.oldStatus,
-          new_status: data.newStatus,
-          on_chain_state: data.onChainState,
-          next_action: data.nextAction,
-          error_type: data.errorType,
-          error_note: data.errorNote,
-          timestamp: new Date().toISOString(),
-        },
-        data.blockchainIdentifier,
-        data.paymentSourceId,
+        eventType,
+        formattedData,
+        blockchainIdentifier,
+        paymentSourceId,
       );
 
-      logger.info('Purchase status change webhook triggered', {
-        blockchain_identifier: data.blockchainIdentifier,
-        old_status: data.oldStatus,
-        new_status: data.newStatus,
+      logger.info(`${String(eventType)} webhook triggered`, {
+        [`${entityType}Id`]: entityId,
+        blockchainIdentifier,
+        ...logContext,
       });
     } catch (error) {
-      logger.error('Failed to trigger purchase status change webhook', {
-        blockchain_identifier: data.blockchainIdentifier,
+      logger.error(`Failed to trigger ${String(eventType)} webhook`, {
+        [`${entityType}Id`]: entityId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
 
-  // payment status change webhook
-  async triggerPaymentStatusChange(data: {
-    blockchainIdentifier: string;
-    paymentId: string;
-    oldStatus?: string;
-    newStatus: string;
-    onChainState?: string;
-    nextAction?: string;
-    errorType?: string;
-    errorNote?: string;
-    paymentSourceId?: string;
-  }): Promise<void> {
-    try {
-      await webhookQueueService.queueWebhook(
-        WEBHOOK_EVENT_VALUES.PAYMENT_STATUS_CHANGED,
-        {
-          blockchainIdentifier: data.blockchainIdentifier,
-          payment_id: data.paymentId,
-          old_status: data.oldStatus,
-          new_status: data.newStatus,
-          on_chain_state: data.onChainState,
-          next_action: data.nextAction,
-          error_type: data.errorType,
-          error_note: data.errorNote,
-          timestamp: new Date().toISOString(),
-        },
-        data.blockchainIdentifier,
-        data.paymentSourceId,
-      );
-
-      logger.info('Payment status change webhook triggered', {
-        blockchain_identifier: data.blockchainIdentifier,
-        old_status: data.oldStatus,
-        new_status: data.newStatus,
-      });
-    } catch (error) {
-      logger.error('Failed to trigger payment status change webhook', {
-        blockchain_identifier: data.blockchainIdentifier,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+  async triggerPurchaseOnChainStatusChanged(purchaseId: string): Promise<void> {
+    await this.triggerGenericWebhook(
+      WEBHOOK_EVENT_VALUES.PURCHASE_ON_CHAIN_STATUS_CHANGED,
+      purchaseId,
+      'purchase',
+      {},
+    );
   }
 
-  //agent registration change webhook
-  async triggerAgentRegistrationChange(data: {
-    agentId: string;
-    agentIdentifier?: string;
-    oldState?: string;
-    newState: string;
-    errorMessage?: string;
-    paymentSourceId?: string;
-  }): Promise<void> {
-    try {
-      await webhookQueueService.queueWebhook(
-        WEBHOOK_EVENT_VALUES.AGENT_REGISTRATION_CHANGED,
-        {
-          agent_id: data.agentId,
-          agent_identifier: data.agentIdentifier,
-          old_state: data.oldState,
-          new_state: data.newState,
-          error_message: data.errorMessage,
-          timestamp: new Date().toISOString(),
-        },
-        data.agentId,
-        data.paymentSourceId,
-      );
-
-      logger.info('Agent registration change webhook triggered', {
-        agent_id: data.agentId,
-        old_state: data.oldState,
-        new_state: data.newState,
-      });
-    } catch (error) {
-      logger.error('Failed to trigger agent registration change webhook', {
-        agent_id: data.agentId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+  async triggerPaymentOnChainStatusChanged(paymentId: string): Promise<void> {
+    await this.triggerGenericWebhook(
+      WEBHOOK_EVENT_VALUES.PAYMENT_ON_CHAIN_STATUS_CHANGED,
+      paymentId,
+      'payment',
+      {},
+    );
   }
 
-  //transaction confirmation webhook
-  async triggerTransactionConfirmed(data: {
-    transactionId: string;
-    txHash: string;
-    entityType: 'payment' | 'purchase' | 'agent';
-    entityId: string;
-    blockchainIdentifier?: string;
-    paymentSourceId?: string;
-  }): Promise<void> {
-    try {
-      await webhookQueueService.queueWebhook(
-        WEBHOOK_EVENT_VALUES.TRANSACTION_CONFIRMED,
-        {
-          transaction_id: data.transactionId,
-          tx_hash: data.txHash,
-          entity_type: data.entityType,
-          entity_id: data.entityId,
-          blockchain_identifier: data.blockchainIdentifier,
-          timestamp: new Date().toISOString(),
-        },
-        data.blockchainIdentifier || data.entityId,
-        data.paymentSourceId,
-      );
-
-      logger.info('Transaction confirmed webhook triggered', {
-        tx_hash: data.txHash,
-        entity_type: data.entityType,
-        entity_id: data.entityId,
-      });
-    } catch (error) {
-      logger.error('Failed to trigger transaction confirmed webhook', {
-        tx_hash: data.txHash,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+  async triggerPurchaseOnError(purchaseId: string): Promise<void> {
+    await this.triggerGenericWebhook(
+      WEBHOOK_EVENT_VALUES.PURCHASE_ON_ERROR,
+      purchaseId,
+      'purchase',
+      {},
+    );
   }
 
-  //transaction failed webhook
-  async triggerTransactionFailed(data: {
-    transactionId: string;
-    txHash?: string;
-    entityType: 'payment' | 'purchase' | 'agent';
-    entityId: string;
-    blockchainIdentifier?: string;
-    errorMessage?: string;
-    paymentSourceId?: string;
-  }): Promise<void> {
-    try {
-      await webhookQueueService.queueWebhook(
-        WEBHOOK_EVENT_VALUES.TRANSACTION_FAILED,
-        {
-          transaction_id: data.transactionId,
-          tx_hash: data.txHash,
-          entity_type: data.entityType,
-          entity_id: data.entityId,
-          blockchain_identifier: data.blockchainIdentifier,
-          error_message: data.errorMessage,
-          timestamp: new Date().toISOString(),
-        },
-        data.blockchainIdentifier || data.entityId,
-        data.paymentSourceId,
-      );
-
-      logger.info('Transaction failed webhook triggered', {
-        tx_hash: data.txHash,
-        entity_type: data.entityType,
-        entity_id: data.entityId,
-        error: data.errorMessage,
-      });
-    } catch (error) {
-      logger.error('Failed to trigger transaction failed webhook', {
-        tx_hash: data.txHash,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
+  async triggerPaymentOnError(paymentId: string): Promise<void> {
+    await this.triggerGenericWebhook(
+      WEBHOOK_EVENT_VALUES.PAYMENT_ON_ERROR,
+      paymentId,
+      'payment',
+      {},
+    );
   }
 }
 
