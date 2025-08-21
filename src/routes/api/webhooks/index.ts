@@ -58,7 +58,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
       }
     }
 
-    // Checking if webhook URLL alraedy exist for this payment source
+    // Checking if webhook URL already exist for this payment source
     const existingWebhook = await prisma.webhookEndpoint.findFirst({
       where: {
         url: input.url,
