@@ -147,6 +147,15 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           setIsUnauthorized(true);
           return;
         }
+
+        // Check if the API key has admin permission
+        const permission = apiKeyStatus.data?.data?.permission;
+        if (!permission || permission !== 'Admin') {
+          setIsHealthy(true);
+          toast.error('Unauthorized access');
+          signOut();
+          return;
+        }
         dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
         setIsHealthy(true);
       } catch (error) {
@@ -186,7 +195,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid. Please sign out and sign in again.
+            Your API key is invalid or does not have admin permissions. Please
+            sign out and sign in with an admin API key.
           </div>
           <Button
             variant="destructive"
