@@ -28,73 +28,9 @@ import { deserializeDatum } from '@meshsdk/core';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { resolvePaymentKeyHash } from '@meshsdk/core';
-import { CONFIG } from '@/utils/config';
+import { CONFIG, CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
-
-const CONSTANTS = {
-  DEFAULT_MAX_PARALLEL_TRANSACTIONS: 50,
-  MUTEX_TIMEOUT_MINUTES: 3,
-  MIN_COLLATERAL_LOVELACE: 1435230n,
-  MAX_SMART_CONTRACT_LEVELS: 10,
-  TRANSACTION_TIMEOUTS: {
-    SERIALIZABLE: 15000,
-    PAYMENT_HANDLE: 100000,
-    PURCHASING_HANDLE: 10000,
-    PAYMENT_SOURCE_LOCK: 10000,
-  },
-  RETRY_CONFIG: {
-    MAX_RETRIES: 5,
-    BACKOFF_MULTIPLIER: 2,
-    INITIAL_DELAY_MS: 500,
-    MAX_DELAY_MS: 15000,
-  },
-} as const;
-
-type UtxoInput = {
-  address: string;
-  amount: Array<{ unit: string; quantity: string }>;
-  tx_hash: string;
-  output_index: number;
-  data_hash: string | null;
-  inline_datum: string | null;
-  reference_script_hash: string | null;
-  collateral: boolean;
-  reference?: boolean;
-};
-
-type UtxoOutput = {
-  address: string;
-  amount: Array<{ unit: string; quantity: string }>;
-  output_index: number;
-  data_hash: string | null;
-  inline_datum: string | null;
-  collateral: boolean;
-  reference_script_hash: string | null;
-  consumed_by_tx?: string | null;
-};
-
-type ExtendedTxInfo = {
-  blockTime: number;
-  tx: { tx_hash: string };
-  block: { confirmations: number };
-  utxos: {
-    hash: string;
-    inputs: UtxoInput[];
-    outputs: UtxoOutput[];
-  };
-  transaction: Transaction;
-};
-
-type PaymentContract = {
-  id: string;
-  network: Network;
-  smartContractAddress: string;
-  lastIdentifierChecked: string | null;
-  PaymentSourceConfig: {
-    rpcProviderApiKey: string;
-  };
-};
 
 type DecodedContract = {
   blockchainIdentifier: string;
@@ -112,11 +48,6 @@ type DecodedContract = {
   buyerCooldownTime: bigint;
   sellerCooldownTime: bigint;
   inputHash: string;
-};
-
-type WithdrawnAmount = {
-  unit: string;
-  quantity: bigint;
 };
 
 export async function checkLatestTransactions(
@@ -180,100 +111,44 @@ export async function checkLatestTransactions(
             }
 
             try {
-              const valueInputs = tx.utxos.inputs.filter((x) => {
-                return x.address == paymentContract.smartContractAddress;
-              });
-              const valueOutputs = tx.utxos.outputs.filter((x) => {
-                return x.address == paymentContract.smartContractAddress;
-              });
+              const extractedData = extractOnChainTransactionData(
+                tx,
+                paymentContract,
+              );
 
-              const redeemers = tx.transaction.witness_set().redeemers();
-
-              if (redeemers == null) {
+              if (extractedData.type == 'Invalid') {
+                logger.info('Skipping invalid tx: ', tx.tx.tx_hash);
+                continue;
+              } else if (extractedData.type == 'Initial') {
                 // TODO: we need a better way to handle the initial transaction as there could be other redeemers
 
-                //payment transaction
-                if (valueInputs.length != 0) {
-                  //invalid transaction
-                  continue;
-                }
-
                 await updateInitialTransactions(
-                  valueOutputs,
+                  extractedData.valueOutputs,
                   paymentContract,
                   tx,
                 );
-              } else {
-                if (redeemers.len() != 1) {
-                  //invalid transaction
-                  continue;
-                }
-
-                if (valueInputs.length != 1) {
-                  continue;
-                }
-                const valueInput = valueInputs[0];
-                if (valueInput.reference_script_hash != null) {
-                  logger.error(
-                    'Reference script hash is not null, this should not be allowed on a contract level',
-                    { tx: tx.tx.tx_hash },
-                  );
-                  //invalid transaction
-                  continue;
-                }
-
-                const inputDatum = valueInput.inline_datum;
-                if (inputDatum == null) {
-                  //invalid transaction
-                  continue;
-                }
-
-                const decodedInputDatum: unknown = deserializeDatum(inputDatum);
-                const decodedOldContract = decodeV1ContractDatum(
-                  decodedInputDatum,
-                  paymentContract.network == Network.Mainnet
-                    ? 'mainnet'
-                    : 'preprod',
-                );
-                if (decodedOldContract == null) {
-                  //invalid transaction
-                  continue;
-                }
-
-                if (valueOutputs.length > 1) {
-                  continue;
-                }
-
-                const outputDatum =
-                  valueOutputs.length == 1
-                    ? valueOutputs[0].inline_datum
-                    : null;
-                const decodedOutputDatum: unknown =
-                  outputDatum != null ? deserializeDatum(outputDatum) : null;
-                const decodedNewContract = decodeV1ContractDatum(
-                  decodedOutputDatum,
-                  paymentContract.network == Network.Mainnet
-                    ? 'mainnet'
-                    : 'preprod',
-                );
-
+              } else if (extractedData.type == 'Transaction') {
                 const paymentRequest = await prisma.paymentRequest.findUnique({
                   where: {
                     paymentSourceId: paymentContract.id,
                     blockchainIdentifier:
-                      decodedOldContract.blockchainIdentifier,
-                    payByTime: decodedOldContract.payByTime,
-                    submitResultTime: decodedOldContract.resultTime,
-                    unlockTime: decodedOldContract.unlockTime,
+                      extractedData.decodedOldContract.blockchainIdentifier,
+                    payByTime: extractedData.decodedOldContract.payByTime,
+                    submitResultTime:
+                      extractedData.decodedOldContract.resultTime,
+                    unlockTime: extractedData.decodedOldContract.unlockTime,
                     externalDisputeUnlockTime:
-                      decodedOldContract.externalDisputeUnlockTime,
+                      extractedData.decodedOldContract
+                        .externalDisputeUnlockTime,
                     BuyerWallet: {
-                      walletVkey: decodedOldContract.buyerVkey,
-                      walletAddress: decodedOldContract.buyerAddress,
+                      walletVkey: extractedData.decodedOldContract.buyerVkey,
+                      walletAddress:
+                        extractedData.decodedOldContract.buyerAddress,
                     },
                     SmartContractWallet: {
-                      walletVkey: decodedOldContract.sellerVkey,
-                      walletAddress: decodedOldContract.sellerAddress,
+                      walletVkey: extractedData.decodedOldContract.sellerVkey,
+                      walletAddress:
+                        extractedData.decodedOldContract.sellerAddress,
                     },
                   },
                   include: {
@@ -290,19 +165,23 @@ export async function checkLatestTransactions(
                     where: {
                       paymentSourceId: paymentContract.id,
                       blockchainIdentifier:
-                        decodedOldContract.blockchainIdentifier,
-                      payByTime: decodedOldContract.payByTime,
-                      submitResultTime: decodedOldContract.resultTime,
-                      unlockTime: decodedOldContract.unlockTime,
+                        extractedData.decodedOldContract.blockchainIdentifier,
+                      payByTime: extractedData.decodedOldContract.payByTime,
+                      submitResultTime:
+                        extractedData.decodedOldContract.resultTime,
+                      unlockTime: extractedData.decodedOldContract.unlockTime,
                       externalDisputeUnlockTime:
-                        decodedOldContract.externalDisputeUnlockTime,
+                        extractedData.decodedOldContract
+                          .externalDisputeUnlockTime,
                       SellerWallet: {
-                        walletVkey: decodedOldContract.sellerVkey,
-                        walletAddress: decodedOldContract.sellerAddress,
+                        walletVkey: extractedData.decodedOldContract.sellerVkey,
+                        walletAddress:
+                          extractedData.decodedOldContract.sellerAddress,
                       },
                       SmartContractWallet: {
-                        walletVkey: decodedOldContract.buyerVkey,
-                        walletAddress: decodedOldContract.buyerAddress,
+                        walletVkey: extractedData.decodedOldContract.buyerVkey,
+                        walletAddress:
+                          extractedData.decodedOldContract.buyerAddress,
                       },
                     },
                     include: {
@@ -397,10 +276,6 @@ export async function checkLatestTransactions(
                   }
                 }
 
-                const redeemer = redeemers.get(0);
-                const redeemerJson = redeemer
-                  .data()
-                  .to_json(PlutusDatumSchema.BasicConversions);
                 let sellerWithdrawn: Array<{
                   unit: string;
                   quantity: bigint;
@@ -409,36 +284,18 @@ export async function checkLatestTransactions(
                   unit: string;
                   quantity: bigint;
                 }> = [];
-                const redeemerJsonObject = JSON.parse(redeemerJson) as {
-                  constructor: number;
-                };
 
-                const redeemerVersion = redeemerJsonObject.constructor;
-
-                if (
-                  redeemerVersion != 0 &&
-                  redeemerVersion != 3 &&
-                  redeemerVersion != 4 &&
-                  decodedNewContract == null
-                ) {
-                  //this should not be possible
-                  logger.error(
-                    'Possible invalid state in smart contract detected. tx_hash: ' +
-                      tx.tx.tx_hash,
-                  );
-                  continue;
-                }
                 const valueMatches = checkPaymentAmountsMatch(
                   paymentRequest?.RequestedFunds ??
                     purchasingRequest?.PaidFunds ??
                     [],
-                  valueOutputs[0].amount,
-                  decodedOldContract.collateralReturnLovelace,
+                  extractedData.valueOutput?.amount ?? [],
+                  extractedData.decodedOldContract.collateralReturnLovelace,
                 );
 
                 const newState: OnChainState | null = redeemerToOnChainState(
-                  redeemerVersion,
-                  decodedNewContract,
+                  extractedData.redeemerVersion,
+                  extractedData.decodedNewContract,
                   valueMatches,
                 );
                 if (!newState) {
@@ -453,13 +310,13 @@ export async function checkLatestTransactions(
                   sellerWithdrawn = calculateValueChange(
                     tx.utxos.inputs,
                     tx.utxos.outputs,
-                    decodedOldContract.sellerVkey,
+                    extractedData.decodedOldContract.sellerVkey,
                   );
 
                   buyerWithdrawn = calculateValueChange(
                     tx.utxos.inputs,
                     tx.utxos.outputs,
-                    decodedOldContract.buyerVkey,
+                    extractedData.decodedOldContract.buyerVkey,
                   );
                 }
 
@@ -469,13 +326,19 @@ export async function checkLatestTransactions(
                       tx.tx.tx_hash,
                       newState,
                       paymentContract.id,
-                      decodedOldContract.blockchainIdentifier,
-                      decodedNewContract?.resultHash ??
-                        decodedOldContract.resultHash,
+                      extractedData.decodedOldContract.blockchainIdentifier,
+                      extractedData.decodedNewContract?.resultHash ??
+                        extractedData.decodedOldContract.resultHash,
                       paymentRequest?.NextAction?.requestedAction ??
                         PurchasingAction.None,
-                      Number(decodedNewContract?.buyerCooldownTime ?? 0),
-                      Number(decodedNewContract?.sellerCooldownTime ?? 0),
+                      Number(
+                        extractedData.decodedNewContract?.buyerCooldownTime ??
+                          0,
+                      ),
+                      Number(
+                        extractedData.decodedNewContract?.sellerCooldownTime ??
+                          0,
+                      ),
                       sellerWithdrawn,
                       buyerWithdrawn,
                     );
@@ -491,13 +354,19 @@ export async function checkLatestTransactions(
                       tx.tx.tx_hash,
                       newState,
                       paymentContract.id,
-                      decodedOldContract.blockchainIdentifier,
-                      decodedNewContract?.resultHash ??
-                        decodedOldContract.resultHash,
+                      extractedData.decodedOldContract.blockchainIdentifier,
+                      extractedData.decodedNewContract?.resultHash ??
+                        extractedData.decodedOldContract.resultHash,
                       purchasingRequest?.NextAction?.requestedAction ??
                         PurchasingAction.None,
-                      Number(decodedNewContract?.buyerCooldownTime ?? 0),
-                      Number(decodedNewContract?.sellerCooldownTime ?? 0),
+                      Number(
+                        extractedData.decodedNewContract?.buyerCooldownTime ??
+                          0,
+                      ),
+                      Number(
+                        extractedData.decodedNewContract?.sellerCooldownTime ??
+                          0,
+                      ),
                       sellerWithdrawn,
                       buyerWithdrawn,
                     );
@@ -1892,7 +1761,10 @@ function checkPaymentAmountsMatch(
   if (collateralReturn < 0n) {
     return false;
   }
-  if (collateralReturn > 0n && collateralReturn < 1435230n) {
+  if (
+    collateralReturn > 0n &&
+    collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE
+  ) {
     return false;
   }
   return expectedAmounts.every((x) => {
@@ -2001,4 +1873,214 @@ function redeemerToOnChainState(
     //invalid transaction
     return null;
   }
+}
+
+function extractOnChainTransactionData(
+  tx: {
+    blockTime: number;
+    tx: {
+      tx_hash: string;
+    };
+    block: {
+      confirmations: number;
+    };
+    utxos: {
+      hash: string;
+      inputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        tx_hash: string;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        reference_script_hash: string | null;
+        collateral: boolean;
+        reference?: boolean;
+      }>;
+      outputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        collateral: boolean;
+        reference_script_hash: string | null;
+        consumed_by_tx?: string | null;
+      }>;
+    };
+    transaction: Transaction;
+  },
+  paymentContract: { smartContractAddress: string; network: Network },
+):
+  | {
+      type: 'Initial';
+      valueOutputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        collateral: boolean;
+        reference_script_hash: string | null;
+        consumed_by_tx?: string | null;
+      }>;
+    }
+  | { type: 'Invalid'; error: string }
+  | {
+      type: 'Transaction';
+      valueInputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        tx_hash: string;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        reference_script_hash: string | null;
+        collateral: boolean;
+        reference?: boolean;
+      }>;
+      valueOutputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        collateral: boolean;
+        reference_script_hash: string | null;
+        consumed_by_tx?: string | null;
+      }>;
+      valueOutput: {
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+      } | null;
+      redeemerVersion: number;
+      decodedNewContract: DecodedContract | null;
+      decodedOldContract: DecodedContract;
+    } {
+  const valueInputs = tx.utxos.inputs.filter((x) => {
+    return x.address == paymentContract.smartContractAddress;
+  });
+  const valueOutputs = tx.utxos.outputs.filter((x) => {
+    return x.address == paymentContract.smartContractAddress;
+  });
+  if (valueOutputs.find((output) => output.reference_script_hash != null)) {
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value output has reference script set',
+    };
+  }
+  const redeemers = tx.transaction.witness_set().redeemers();
+  //TODO: We need to fix the redeemer check to support other smart contracts
+  if (valueInputs.length == 0 && !redeemers)
+    return { type: 'Initial', valueOutputs };
+  if (valueInputs.length != 1)
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value input invalid length (bigger than 0) ',
+    };
+  if (!redeemers) {
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract redeemer invalid',
+    };
+  }
+  if (redeemers.len() != 1) {
+    return {
+      type: 'Invalid',
+      error:
+        'Smart Contract redeemer invalid length: ' +
+        redeemers.len().toString() +
+        ' (expected 1)',
+    };
+  }
+  const valueInput = valueInputs[0];
+  if (valueInput.reference_script_hash)
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value input has reference script set',
+    };
+  const inputDatum = valueInput.inline_datum;
+  if (inputDatum == null) {
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value input has no datum',
+    };
+  }
+
+  const decodedInputDatum: unknown = deserializeDatum(inputDatum);
+  const decodedOldContract = decodeV1ContractDatum(
+    decodedInputDatum,
+    paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
+  );
+  if (decodedOldContract == null) {
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value input has no datum',
+    };
+  }
+
+  if (valueOutputs.length > 1) {
+    return {
+      type: 'Invalid',
+      error: 'Smart Contract value output invalid length (bigger than 0) ',
+    };
+  }
+  const valueOutput = valueOutputs.length == 1 ? valueOutputs[0] : null;
+
+  const outputDatum = valueOutput?.inline_datum ?? null;
+  const decodedOutputDatum: unknown =
+    outputDatum != null ? deserializeDatum(outputDatum) : null;
+  const decodedNewContract = decodeV1ContractDatum(
+    decodedOutputDatum,
+    paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
+  );
+
+  const redeemer = redeemers.get(0);
+  const redeemerJson = redeemer
+    .data()
+    .to_json(PlutusDatumSchema.BasicConversions);
+  const redeemerJsonObject = JSON.parse(redeemerJson) as {
+    constructor: number;
+  };
+  const redeemerVersion = redeemerJsonObject.constructor;
+
+  if (
+    redeemerVersion != 0 &&
+    redeemerVersion != 3 &&
+    redeemerVersion != 4 &&
+    decodedNewContract == null
+  ) {
+    return {
+      type: 'Invalid',
+      error: 'Possible invalid state in smart contract detected',
+    };
+  }
+
+  return {
+    type: 'Transaction',
+    valueInputs,
+    valueOutputs,
+    valueOutput,
+    redeemerVersion,
+    decodedNewContract,
+    decodedOldContract,
+  };
 }
