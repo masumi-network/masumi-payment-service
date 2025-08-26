@@ -604,6 +604,11 @@ export default function AIAgentsPage() {
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
           onClose={() => setSelectedAgentForDetails(null)}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <ConfirmDialog

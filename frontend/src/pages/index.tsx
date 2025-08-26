@@ -679,6 +679,11 @@ export default function Overview() {
       <AIAgentDetailsDialog
         agent={selectedAgentForDetails}
         onClose={() => setSelectedAgentForDetails(null)}
+        onSuccess={() => {
+          setTimeout(() => {
+            fetchAgents();
+          }, 2000);
+        }}
       />
 
       {/*<SwapDialog
