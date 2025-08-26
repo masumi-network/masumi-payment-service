@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
+import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -173,6 +174,8 @@ export default function PaymentSourcesPage() {
   const [sourceToSelect, setSourceToSelect] = useState<
     PaymentSource | null | undefined
   >(undefined);
+  const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
+    useState<PaymentSource | null>(null);
 
   const filterPaymentSources = useCallback(() => {
     let filtered = [...paymentSources];
@@ -426,8 +429,12 @@ export default function PaymentSourcesPage() {
                   </tr>
                 ) : (
                   filteredPaymentSources.map((source) => (
-                    <tr key={source.id} className="border-b last:border-b-0">
-                      <td className="p-4">
+                    <tr
+                      key={source.id}
+                      className="border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
+                      onClick={() => setSelectedPaymentSourceForDetails(source)}
+                    >
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selectedSources.includes(source.id)}
                           onCheckedChange={() => handleSelectSource(source.id)}
@@ -471,7 +478,7 @@ export default function PaymentSourcesPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-2">
                           <Button
                             variant="ghost"
@@ -559,10 +566,15 @@ export default function PaymentSourcesPage() {
           description="Switching payment source will update the displayed agents, wallets, and related content. Continue?"
           onConfirm={() => {
             setSelectedPaymentSourceId(sourceToSelect?.id ?? null);
-            console.log('sourceToSelect', sourceToSelect);
             setSourceToSelect(undefined);
           }}
           isLoading={false}
+        />
+
+        <PaymentSourceDialog
+          open={!!selectedPaymentSourceForDetails}
+          onClose={() => setSelectedPaymentSourceForDetails(null)}
+          paymentSource={selectedPaymentSourceForDetails}
         />
       </div>
     </MainLayout>
