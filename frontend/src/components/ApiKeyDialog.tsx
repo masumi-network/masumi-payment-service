@@ -39,6 +39,12 @@ export function ApiKeyDialog() {
         throw new Error('Invalid Key: Admin key is not active');
       }
 
+      // Check if the API key has admin permission
+      const permission = statusResponse.data?.data?.permission;
+      if (!permission || permission !== 'Admin') {
+        throw new Error('Invalid Key: Admin permission required');
+      }
+
       const hexKey = Buffer.from(key).toString('hex');
       localStorage.setItem('payment_api_key', hexKey);
       dispatch({ type: 'SET_API_KEY', payload: key });
