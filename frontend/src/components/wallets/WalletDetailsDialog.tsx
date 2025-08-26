@@ -64,7 +64,8 @@ export function WalletDetailsDialog({
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isEditingCollection, setIsEditingCollection] = useState(false);
+  const [isEditingCollectionAddress, setIsEditingCollectionAddress] =
+    useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
 
   const fetchTokenBalances = async () => {
@@ -236,8 +237,8 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
-  const handleEditCollection = () => {
-    setIsEditingCollection(true);
+  const handleEditCollectionAddress = () => {
+    setIsEditingCollectionAddress(true);
     setNewCollectionAddress(wallet?.collectionAddress || '');
   };
 
@@ -254,7 +255,7 @@ export function WalletDetailsDialog({
       });
 
       toast.success('Collection address updated successfully');
-      setIsEditingCollection(false);
+      setIsEditingCollectionAddress(false);
 
       // Update the wallet object with the new collection address
       wallet.collectionAddress = newCollectionAddress || null;
@@ -265,7 +266,7 @@ export function WalletDetailsDialog({
   };
 
   const handleCancelEdit = () => {
-    setIsEditingCollection(false);
+    setIsEditingCollectionAddress(false);
     setNewCollectionAddress('');
   };
 
@@ -386,7 +387,7 @@ export function WalletDetailsDialog({
                 <div className="text-xs text-muted-foreground">
                   Linked Collection Wallet
                 </div>
-                {isEditingCollection ? (
+                {isEditingCollectionAddress ? (
                   <div className="flex items-center gap-2">
                     <Input
                       value={newCollectionAddress}
@@ -421,7 +422,7 @@ export function WalletDetailsDialog({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={handleEditCollection}
+                          onClick={handleEditCollectionAddress}
                           className="h-8"
                         >
                           Update
@@ -435,7 +436,7 @@ export function WalletDetailsDialog({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={handleEditCollection}
+                          onClick={handleEditCollectionAddress}
                           className="h-8"
                         >
                           Add
