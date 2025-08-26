@@ -343,12 +343,7 @@ export default function ApiKeys() {
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr
-                      key={index}
-                      className="border-b"
-                      onClick={() => {
-                      }}
-                    >
+                    <tr key={index} className="border-b" onClick={() => {}}>
                       <td className="p-4">
                         <Checkbox
                           checked={selectedKeys.includes(key.token)}
@@ -396,10 +391,11 @@ export default function ApiKeys() {
                       </td>
                       <td className="p-4 text-sm">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${key.status === 'Active'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                            }`}
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                            key.status === 'Active'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
                         >
                           {key.status}
                         </span>
