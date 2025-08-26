@@ -141,10 +141,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.AdminWallets ||
                   paymentSource.AdminWallets.length === 0) && (
-                    <div className="text-sm text-muted-foreground">
-                      No admin wallets found
-                    </div>
-                  )}
+                  <div className="text-sm text-muted-foreground">
+                    No admin wallets found
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -219,10 +219,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.PurchasingWallets ||
                   paymentSource.PurchasingWallets.length === 0) && (
-                    <div className="text-sm text-muted-foreground">
-                      No purchasing wallets found
-                    </div>
-                  )}
+                  <div className="text-sm text-muted-foreground">
+                    No purchasing wallets found
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -296,10 +296,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.SellingWallets ||
                   paymentSource.SellingWallets.length === 0) && (
-                    <div className="text-sm text-muted-foreground">
-                      No selling wallets found
-                    </div>
-                  )}
+                  <div className="text-sm text-muted-foreground">
+                    No selling wallets found
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -366,6 +366,6 @@ export function PaymentSourceDialog({
           </div>
         </div>
       </DialogContent>
-    </Dialog >
+    </Dialog>
   );
 }
