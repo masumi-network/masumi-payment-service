@@ -594,7 +594,11 @@ export default function AIAgentsPage() {
         <RegisterAIAgentDialog
           open={isRegisterDialogOpen}
           onClose={() => setIsRegisterDialogOpen(false)}
-          onSuccess={fetchAgents}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <AIAgentDetailsDialog
