@@ -215,7 +215,6 @@ export default function ApiKeys() {
 
     try {
       setIsDeleting(true);
-      console.log('Deleting API key:', keyToDelete);
 
       const response = await deleteApiKey({
         client: apiClient,
@@ -344,13 +343,7 @@ export default function ApiKeys() {
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr
-                      key={index}
-                      className="border-b"
-                      onClick={() => {
-                        console.log(key);
-                      }}
-                    >
+                    <tr key={index} className="border-b" onClick={() => {}}>
                       <td className="p-4">
                         <Checkbox
                           checked={selectedKeys.includes(key.token)}

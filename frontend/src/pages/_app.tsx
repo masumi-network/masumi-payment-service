@@ -124,7 +124,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         const response = await getHealth({ client: apiClient });
 
         if (response.status !== 200) {
-          console.log(response);
           setIsHealthy(false);
           return;
         }

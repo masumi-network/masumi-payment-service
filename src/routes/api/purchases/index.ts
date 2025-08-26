@@ -816,9 +816,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           initialPurchaseRequest.externalDisputeUnlockTime.toString(),
       };
 
-      // Success is automatically recorded by middleware via recordApiRequestDuration
-      // No need for separate success recording as middleware handles it
-
       return result;
     } catch (error: unknown) {
       // Record the business-specific error with context
