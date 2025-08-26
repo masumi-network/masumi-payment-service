@@ -669,9 +669,7 @@ export default function Overview() {
       <RegisterAIAgentDialog
         open={isRegisterAgentDialogOpen}
         onClose={() => setRegisterAgentDialogOpen(false)}
-        onSuccess={() => {
-          // TODO: we can refresh data here
-        }}
+        onSuccess={fetchAgents}
       />
 
       <AIAgentDetailsDialog
