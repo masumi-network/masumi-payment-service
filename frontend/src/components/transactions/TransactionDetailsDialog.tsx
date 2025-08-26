@@ -23,8 +23,8 @@ import {
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -181,7 +181,6 @@ export default function TransactionDetailsDialog({
         blockchainIdentifier: transaction.blockchainIdentifier,
         network: state.network,
       };
-      console.log('Allow refund body:', body);
       const response = await postPaymentAuthorizeRefund({
         client: apiClient,
         body,
@@ -224,12 +223,10 @@ export default function TransactionDetailsDialog({
         blockchainIdentifier: transaction.blockchainIdentifier,
         network: state.network,
       };
-      console.log('Cancel refund body:', body);
       const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
         body,
       });
-      console.log('Cancel refund response:', response);
       if (
         response?.status &&
         response.status >= 200 &&
@@ -313,10 +310,6 @@ export default function TransactionDetailsDialog({
             <div className="rounded-md border p-4 bg-muted/10">
               <p className="text-sm font-medium">
                 {(() => {
-                  if (!transaction.onChainState) {
-                    console.log('No onChainState');
-                    console.log(transaction);
-                  }
                   const state = transaction.onChainState?.toLowerCase();
                   switch (state) {
                     case 'fundslocked':
@@ -408,10 +401,10 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <p className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds?.[0]
+                    transaction.RequestedFunds?.[0]
                     ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
                     : transaction.type === 'purchase' &&
-                        transaction.PaidFunds?.[0]
+                      transaction.PaidFunds?.[0]
                       ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
                       : '—'}
                 </p>

@@ -566,7 +566,6 @@ export default function PaymentSourcesPage() {
           description="Switching payment source will update the displayed agents, wallets, and related content. Continue?"
           onConfirm={() => {
             setSelectedPaymentSourceId(sourceToSelect?.id ?? null);
-            console.log('sourceToSelect', sourceToSelect);
             setSourceToSelect(undefined);
           }}
           isLoading={false}

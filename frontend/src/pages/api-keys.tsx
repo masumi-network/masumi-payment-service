@@ -215,7 +215,6 @@ export default function ApiKeys() {
 
     try {
       setIsDeleting(true);
-      console.log('Deleting API key:', keyToDelete);
 
       const response = await deleteApiKey({
         client: apiClient,
@@ -348,7 +347,6 @@ export default function ApiKeys() {
                       key={index}
                       className="border-b"
                       onClick={() => {
-                        console.log(key);
                       }}
                     >
                       <td className="p-4">
@@ -398,11 +396,10 @@ export default function ApiKeys() {
                       </td>
                       <td className="p-4 text-sm">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
-                            key.status === 'Active'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${key.status === 'Active'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                            }`}
                         >
                           {key.status}
                         </span>
