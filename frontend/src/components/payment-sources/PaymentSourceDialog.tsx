@@ -132,7 +132,7 @@ export function PaymentSourceDialog({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono flex-1">
-                          {shortenAddress(wallet.walletAddress, 10)}
+                          Address: {shortenAddress(wallet.walletAddress, 10)}
                         </span>
                         <CopyButton value={wallet.walletAddress} />
                       </div>
@@ -141,10 +141,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.AdminWallets ||
                   paymentSource.AdminWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No admin wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No admin wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -204,16 +204,25 @@ export function PaymentSourceDialog({
                             <CopyButton value={wallet.collectionAddress} />
                           </div>
                         )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            Verification Key:
+                          </span>
+                          <span className="text-sm font-mono flex-1">
+                            {shortenAddress(wallet.walletVkey, 10)}
+                          </span>
+                          <CopyButton value={wallet.walletVkey} />
+                        </div>
                       </div>
                     </div>
                   ),
                 )}
                 {(!paymentSource.PurchasingWallets ||
                   paymentSource.PurchasingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No purchasing wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No purchasing wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -272,16 +281,25 @@ export function PaymentSourceDialog({
                             <CopyButton value={wallet.collectionAddress} />
                           </div>
                         )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            Verification Key:
+                          </span>
+                          <span className="text-sm font-mono flex-1">
+                            {shortenAddress(wallet.walletVkey, 10)}
+                          </span>
+                          <CopyButton value={wallet.walletVkey} />
+                        </div>
                       </div>
                     </div>
                   ),
                 )}
                 {(!paymentSource.SellingWallets ||
                   paymentSource.SellingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No selling wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No selling wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -348,6 +366,6 @@ export function PaymentSourceDialog({
           </div>
         </div>
       </DialogContent>
-    </Dialog>
+    </Dialog >
   );
 }
