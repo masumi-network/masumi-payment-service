@@ -663,6 +663,7 @@ export default function Overview() {
       <AddWalletDialog
         open={isAddWalletDialogOpen}
         onClose={() => setAddWalletDialogOpen(false)}
+        onSuccess={fetchWallets}
       />
 
       <RegisterAIAgentDialog
