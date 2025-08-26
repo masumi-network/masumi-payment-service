@@ -13,12 +13,8 @@ import {
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import {
-  PlutusDatumSchema,
-  Transaction,
-} from '@emurgo/cardano-serialization-lib-nodejs';
+import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
-import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import {
   convertNewPaymentActionAndError,
   convertNewPurchasingActionAndError,
@@ -27,28 +23,19 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { deserializeDatum } from '@meshsdk/core';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { CONFIG, CONSTANTS } from '@/utils/config';
+import {
+  calculateValueChange,
+  checkPaymentAmountsMatch,
+  extractOnChainTransactionData,
+  redeemerToOnChainState,
+} from './util';
+import {
+  getExtendedTxInformation,
+  getTxsFromCardanoAfterSpecificTx,
+} from './blockchain';
 
 const mutex = new Mutex();
-
-type DecodedContract = {
-  blockchainIdentifier: string;
-  payByTime: bigint;
-  resultTime: bigint;
-  unlockTime: bigint;
-  externalDisputeUnlockTime: bigint;
-  buyerVkey: string;
-  buyerAddress: string;
-  sellerVkey: string;
-  sellerAddress: string;
-  collateralReturnLovelace: bigint;
-  resultHash: string;
-  state: SmartContractState;
-  buyerCooldownTime: bigint;
-  sellerCooldownTime: bigint;
-  inputHash: string;
-};
 
 export async function checkLatestTransactions(
   {
@@ -117,7 +104,11 @@ export async function checkLatestTransactions(
               );
 
               if (extractedData.type == 'Invalid') {
-                logger.info('Skipping invalid tx: ', tx.tx.tx_hash);
+                logger.info(
+                  'Skipping invalid tx: ',
+                  tx.tx.tx_hash,
+                  extractedData.error,
+                );
                 continue;
               } else if (extractedData.type == 'Initial') {
                 // TODO: we need a better way to handle the initial transaction as there could be other redeemers
@@ -298,6 +289,7 @@ export async function checkLatestTransactions(
                   extractedData.decodedNewContract,
                   valueMatches,
                 );
+
                 if (!newState) {
                   logger.error(
                     'Unexpected redeemer version detected. Possible invalid state in smart contract or bug in the software. tx_hash: ' +
@@ -429,73 +421,6 @@ export async function checkLatestTransactions(
   } finally {
     release();
   }
-}
-
-function calculateValueChange(
-  inputs: Array<{
-    address: string;
-    amount: Array<{ unit: string; quantity: string }>;
-    tx_hash: string;
-    output_index: number;
-    data_hash: string | null;
-    inline_datum: string | null;
-    reference_script_hash: string | null;
-    collateral: boolean;
-    reference?: boolean;
-  }>,
-  outputs: Array<{
-    address: string;
-    amount: Array<{ unit: string; quantity: string }>;
-    output_index: number;
-    data_hash: string | null;
-    inline_datum: string | null;
-    collateral: boolean;
-    reference_script_hash: string | null;
-    consumed_by_tx?: string | null;
-  }>,
-  vkey: string,
-) {
-  const withdrawnAmount: Array<{ unit: string; quantity: bigint }> = [];
-  const inputAmounts = inputs
-    .filter((x) => resolvePaymentKeyHash(x.address) == vkey)
-    .map((x) => x.amount);
-  const outputAmounts = outputs
-    .filter((x) => resolvePaymentKeyHash(x.address) == vkey)
-    .map((x) => x.amount);
-
-  outputAmounts.forEach((output) => {
-    output.forEach((amount) => {
-      const outputAmounts = withdrawnAmount.find((x) => {
-        return x.unit == amount.unit;
-      });
-      if (outputAmounts == null) {
-        const amountNumber = BigInt(amount.quantity);
-        withdrawnAmount.push({
-          unit: amount.unit,
-          quantity: amountNumber,
-        });
-      } else {
-        outputAmounts.quantity += BigInt(amount.quantity);
-      }
-    });
-  });
-  inputAmounts.forEach((input) => {
-    input.forEach((amount) => {
-      const withdrawnAmounts = withdrawnAmount.find((x) => {
-        return x.unit == amount.unit;
-      });
-      if (withdrawnAmounts == null) {
-        const amountNumber = -BigInt(amount.quantity);
-        withdrawnAmount.push({
-          unit: amount.unit,
-          quantity: amountNumber,
-        });
-      } else {
-        withdrawnAmounts.quantity -= BigInt(amount.quantity);
-      }
-    });
-  });
-  return withdrawnAmount;
 }
 
 async function updateInitialTransactions(
@@ -1289,192 +1214,6 @@ async function updateRolledBackTransaction(
   }
 }
 
-async function getExtendedTxInformation(
-  latestTxs: Array<{ tx_hash: string; block_time: number }>,
-  blockfrost: BlockFrostAPI,
-  maxTransactionToProcessInParallel: number,
-) {
-  const batchCount = Math.ceil(
-    latestTxs.length / maxTransactionToProcessInParallel,
-  );
-  const txData: Array<{
-    blockTime: number;
-    tx: { tx_hash: string };
-    block: { confirmations: number };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  }> = [];
-  for (let i = 0; i < batchCount; i++) {
-    const txBatch = latestTxs.slice(
-      i * maxTransactionToProcessInParallel,
-      Math.min((i + 1) * maxTransactionToProcessInParallel, latestTxs.length),
-    );
-
-    const txDataBatch = await advancedRetryAll({
-      operations: txBatch.map((tx) => async () => {
-        const txDetails = await blockfrost.txs(tx.tx_hash);
-        let block: { confirmations: number } = { confirmations: 0 };
-        if (CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD > 0) {
-          block = await blockfrost.blocks(txDetails.block);
-        }
-
-        const cbor = await blockfrost.txsCbor(tx.tx_hash);
-        const utxos = await blockfrost.txsUtxos(tx.tx_hash);
-
-        const transaction = Transaction.from_bytes(
-          Buffer.from(cbor.cbor, 'hex'),
-        );
-        return {
-          tx: tx,
-          block: block,
-          utxos: utxos,
-          transaction: transaction,
-          blockTime: tx.block_time,
-        };
-      }),
-      errorResolvers: [
-        delayErrorResolver({
-          configuration: {
-            maxRetries: 5,
-            backoffMultiplier: 2,
-            initialDelayMs: 500,
-            maxDelayMs: 15000,
-          },
-        }),
-      ],
-    });
-    //filter out failed operations
-    const filteredTxData = txDataBatch
-      .filter((x) => x.success == true && x.result != undefined)
-      .map((x) => x.result!);
-    //log warning for failed operations
-    const failedTxData = txDataBatch.filter((x) => x.success == false);
-    if (failedTxData.length > 0) {
-      logger.warn('Failed to get data for transactions: ignoring ', {
-        tx: failedTxData,
-      });
-    }
-    filteredTxData.forEach((x) => txData.push(x));
-  }
-
-  //sort by smallest block time first
-  txData.sort((a, b) => {
-    return a.blockTime - b.blockTime;
-  });
-  return txData;
-}
-
-async function getTxsFromCardanoAfterSpecificTx(
-  blockfrost: BlockFrostAPI,
-  paymentContract: {
-    smartContractAddress: string;
-  },
-  latestIdentifier: string | null,
-) {
-  let latestTx: Array<{ tx_hash: string; block_time: number }> = [];
-  let foundTx = -1;
-  let index = 0;
-  let rolledBackTx: Array<{ tx_hash: string }> = [];
-  do {
-    index++;
-    const txs = await blockfrost.addressesTransactions(
-      paymentContract.smartContractAddress,
-      { page: index, order: 'desc' },
-    );
-    if (txs.length == 0) {
-      if (latestTx.length == 0) {
-        logger.warn('No transactions found for payment contract', {
-          paymentContractAddress: paymentContract.smartContractAddress,
-        });
-      }
-      break;
-    }
-
-    latestTx.push(...txs);
-    foundTx = txs.findIndex((tx) => tx.tx_hash == latestIdentifier);
-    if (foundTx != -1) {
-      const latestTxIndex = latestTx.findIndex(
-        (tx) => tx.tx_hash == latestIdentifier,
-      );
-      latestTx = latestTx.slice(0, latestTxIndex);
-    } else if (latestIdentifier != null) {
-      //if not found we assume a rollback happened and need to check all previous txs
-      for (let i = 0; i < txs.length; i++) {
-        const exists = await prisma.paymentSourceIdentifiers.findUnique({
-          where: {
-            txHash: txs[i].tx_hash,
-            PaymentSource: {
-              smartContractAddress: paymentContract.smartContractAddress,
-            },
-          },
-        });
-        if (exists != null) {
-          //get newer txs from db
-          const newerThanRollbackTxs =
-            await prisma.paymentSourceIdentifiers.findMany({
-              where: {
-                createdAt: {
-                  gte: exists.createdAt,
-                },
-                PaymentSource: {
-                  smartContractAddress: paymentContract.smartContractAddress,
-                },
-              },
-              select: {
-                txHash: true,
-              },
-            });
-          rolledBackTx = [
-            ...newerThanRollbackTxs.map((x) => {
-              return {
-                tx_hash: x.txHash,
-              };
-            }),
-            { tx_hash: latestIdentifier },
-          ].filter(
-            (x) => latestTx.findIndex((y) => y.tx_hash == x.tx_hash) == -1,
-          );
-          rolledBackTx = rolledBackTx.reverse();
-
-          const foundTxIndex = latestTx.findIndex(
-            (x) => x.tx_hash == txs[i].tx_hash,
-          );
-          foundTx = foundTxIndex;
-          latestTx = latestTx.slice(0, foundTxIndex);
-          break;
-        }
-      }
-    }
-  } while (foundTx == -1);
-
-  //invert to get oldest first
-  latestTx = latestTx.reverse();
-  return { latestTx, rolledBackTx };
-}
-
 async function unlockPaymentSources(paymentContractIds: string[]) {
   try {
     await prisma.paymentSource.updateMany({
@@ -1753,40 +1492,6 @@ async function handlePurchasingTransactionCardanoV1(
   );
 }
 
-function checkPaymentAmountsMatch(
-  expectedAmounts: Array<{ unit: string; amount: bigint }>,
-  actualAmounts: Array<{ unit: string; quantity: string }>,
-  collateralReturn: bigint,
-) {
-  if (collateralReturn < 0n) {
-    return false;
-  }
-  if (
-    collateralReturn > 0n &&
-    collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE
-  ) {
-    return false;
-  }
-  return expectedAmounts.every((x) => {
-    if (x.unit.toLowerCase() == 'lovelace') {
-      x.unit = '';
-    }
-    const existingAmount = actualAmounts.find((y) => {
-      if (y.unit.toLowerCase() == 'lovelace') {
-        y.unit = '';
-      }
-      return y.unit == x.unit;
-    });
-    if (existingAmount == null) return false;
-    //allow for some overpayment to handle min lovelace requirements
-    if (x.unit == '') {
-      return x.amount <= BigInt(existingAmount.quantity) - collateralReturn;
-    }
-    //require exact match for non-lovelace amounts
-    return x.amount == BigInt(existingAmount.quantity);
-  });
-}
-
 //returns all tx hashes that are part of the smart contract interaction, excluding the initial purchase tx hash
 async function getSmartContractInteractionTxHistoryList(
   blockfrost: BlockFrostAPI,
@@ -1823,264 +1528,4 @@ async function getSmartContractInteractionTxHistoryList(
     remainingLevels--;
   }
   return [...new Set(txHashes)];
-}
-function redeemerToOnChainState(
-  redeemerVersion: number,
-  decodedNewContract: { resultHash: string; state: SmartContractState } | null,
-  valueMatches: boolean,
-) {
-  if (redeemerVersion == 0) {
-    //Withdraw
-    return OnChainState.Withdrawn;
-  } else if (redeemerVersion == 1) {
-    //RequestRefund
-    if (decodedNewContract?.resultHash && decodedNewContract.resultHash != '') {
-      return OnChainState.Disputed;
-    } else {
-      return OnChainState.RefundRequested;
-    }
-  } else if (redeemerVersion == 2) {
-    //CancelRefundRequest
-    if (decodedNewContract?.resultHash != '') {
-      return OnChainState.ResultSubmitted;
-    } else {
-      //Ensure the amounts match, to prevent state change attacks
-
-      return valueMatches == true
-        ? OnChainState.FundsLocked
-        : OnChainState.FundsOrDatumInvalid;
-    }
-  } else if (redeemerVersion == 3) {
-    //WithdrawRefund
-    return OnChainState.RefundWithdrawn;
-  } else if (redeemerVersion == 4) {
-    //WithdrawDisputed
-    return OnChainState.DisputedWithdrawn;
-  } else if (redeemerVersion == 5) {
-    //SubmitResult
-    if (
-      decodedNewContract?.state == SmartContractState.RefundRequested ||
-      decodedNewContract?.state == SmartContractState.Disputed
-    ) {
-      return OnChainState.Disputed;
-    } else {
-      return OnChainState.ResultSubmitted;
-    }
-  } else if (redeemerVersion == 6) {
-    //AllowRefund
-    return OnChainState.RefundRequested;
-  } else {
-    //invalid transaction
-    return null;
-  }
-}
-
-function extractOnChainTransactionData(
-  tx: {
-    blockTime: number;
-    tx: {
-      tx_hash: string;
-    };
-    block: {
-      confirmations: number;
-    };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
-  paymentContract: { smartContractAddress: string; network: Network },
-):
-  | {
-      type: 'Initial';
-      valueOutputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    }
-  | { type: 'Invalid'; error: string }
-  | {
-      type: 'Transaction';
-      valueInputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      valueOutputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-      valueOutput: {
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-      } | null;
-      redeemerVersion: number;
-      decodedNewContract: DecodedContract | null;
-      decodedOldContract: DecodedContract;
-    } {
-  const valueInputs = tx.utxos.inputs.filter((x) => {
-    return x.address == paymentContract.smartContractAddress;
-  });
-  const valueOutputs = tx.utxos.outputs.filter((x) => {
-    return x.address == paymentContract.smartContractAddress;
-  });
-  if (valueOutputs.find((output) => output.reference_script_hash != null)) {
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value output has reference script set',
-    };
-  }
-  const redeemers = tx.transaction.witness_set().redeemers();
-  //TODO: We need to fix the redeemer check to support other smart contracts
-  if (valueInputs.length == 0 && !redeemers)
-    return { type: 'Initial', valueOutputs };
-  if (valueInputs.length != 1)
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value input invalid length (bigger than 0) ',
-    };
-  if (!redeemers) {
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract redeemer invalid',
-    };
-  }
-  if (redeemers.len() != 1) {
-    return {
-      type: 'Invalid',
-      error:
-        'Smart Contract redeemer invalid length: ' +
-        redeemers.len().toString() +
-        ' (expected 1)',
-    };
-  }
-  const valueInput = valueInputs[0];
-  if (valueInput.reference_script_hash)
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value input has reference script set',
-    };
-  const inputDatum = valueInput.inline_datum;
-  if (inputDatum == null) {
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value input has no datum',
-    };
-  }
-
-  const decodedInputDatum: unknown = deserializeDatum(inputDatum);
-  const decodedOldContract = decodeV1ContractDatum(
-    decodedInputDatum,
-    paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-  );
-  if (decodedOldContract == null) {
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value input has no datum',
-    };
-  }
-
-  if (valueOutputs.length > 1) {
-    return {
-      type: 'Invalid',
-      error: 'Smart Contract value output invalid length (bigger than 0) ',
-    };
-  }
-  const valueOutput = valueOutputs.length == 1 ? valueOutputs[0] : null;
-
-  const outputDatum = valueOutput?.inline_datum ?? null;
-  const decodedOutputDatum: unknown =
-    outputDatum != null ? deserializeDatum(outputDatum) : null;
-  const decodedNewContract = decodeV1ContractDatum(
-    decodedOutputDatum,
-    paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
-  );
-
-  const redeemer = redeemers.get(0);
-  const redeemerJson = redeemer
-    .data()
-    .to_json(PlutusDatumSchema.BasicConversions);
-  const redeemerJsonObject = JSON.parse(redeemerJson) as {
-    constructor: number;
-  };
-  const redeemerVersion = redeemerJsonObject.constructor;
-
-  if (
-    redeemerVersion != 0 &&
-    redeemerVersion != 3 &&
-    redeemerVersion != 4 &&
-    decodedNewContract == null
-  ) {
-    return {
-      type: 'Invalid',
-      error: 'Possible invalid state in smart contract detected',
-    };
-  }
-
-  return {
-    type: 'Transaction',
-    valueInputs,
-    valueOutputs,
-    valueOutput,
-    redeemerVersion,
-    decodedNewContract,
-    decodedOldContract,
-  };
 }
