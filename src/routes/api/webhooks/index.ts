@@ -1,5 +1,4 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -137,18 +136,29 @@ export const listWebhooksSchemaOutput = z.object({
   ),
 });
 
-export const listWebhooksGet = adminAuthenticatedEndpointFactory.build({
+export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: listWebhooksSchemaInput,
   output: listWebhooksSchemaOutput,
   handler: async ({
     input,
+    options,
   }: {
     input: z.infer<typeof listWebhooksSchemaInput>;
+    options: {
+      id: string;
+      permission: Permission;
+      networkLimit: any[];
+      usageLimited: boolean;
+    };
   }) => {
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
         paymentSourceId: input.paymentSourceId || undefined,
+        // Only show webhooks created by this API key, unless user is admin
+        ...(options.permission === Permission.Admin
+          ? {}
+          : { createdByApiKeyId: options.id }),
       },
       include: {
         CreatedByApiKey: {
