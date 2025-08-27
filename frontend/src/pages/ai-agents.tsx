@@ -594,12 +594,21 @@ export default function AIAgentsPage() {
         <RegisterAIAgentDialog
           open={isRegisterDialogOpen}
           onClose={() => setIsRegisterDialogOpen(false)}
-          onSuccess={fetchAgents}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
           onClose={() => setSelectedAgentForDetails(null)}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <ConfirmDialog
