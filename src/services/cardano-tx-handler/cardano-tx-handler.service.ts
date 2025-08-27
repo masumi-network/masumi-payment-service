@@ -188,7 +188,7 @@ async function queryAndLockPaymentSourcesForSync() {
                 lte: new Date(
                   Date.now() -
                     //3 minutes
-                    1000 * 60 * 3,
+                    CONFIG.SYNC_LOCK_TIMEOUT_INTERVAL,
                 ),
               },
             },

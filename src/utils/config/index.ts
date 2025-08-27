@@ -88,9 +88,23 @@ const blockConfirmationsThreshold = Number(
 if (blockConfirmationsThreshold < 0)
   throw new Error('BLOCK_CONFIRMATIONS_THRESHOLD must be at least 0');
 
+const syncLockTimeoutInterval = Number(
+  process.env.SYNC_LOCK_TIMEOUT_INTERVAL ?? '300',
+);
+if (syncLockTimeoutInterval < 5)
+  throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
+
+const walletLockTimeoutInterval = Number(
+  process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300',
+);
+if (walletLockTimeoutInterval < 5)
+  throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
+
 export const CONFIG = {
   PORT: process.env.PORT ?? '3001',
   DATABASE_URL: process.env.DATABASE_URL,
+  SYNC_LOCK_TIMEOUT_INTERVAL: syncLockTimeoutInterval * 1000,
+  WALLET_LOCK_TIMEOUT_INTERVAL: walletLockTimeoutInterval * 1000,
   BATCH_PAYMENT_INTERVAL: batchPaymentInterval,
   BLOCK_CONFIRMATIONS_THRESHOLD: blockConfirmationsThreshold,
   CHECK_TX_INTERVAL: checkTxInterval,
@@ -143,7 +157,6 @@ export const CONSTANTS = {
 export const DEFAULTS = {
   DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
   TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
-  LOCK_TIMEOUT_INTERVAL: 1000 * 60 * 3, // 3 minutes in seconds
   DEFAULT_METADATA_VERSION: 1,
   DEFAULT_IMAGE: 'ipfs://QmXXW7tmBgpQpXoJMAMEXXFe9dyQcrLFKGuzxnHDnbKC7f',
 
