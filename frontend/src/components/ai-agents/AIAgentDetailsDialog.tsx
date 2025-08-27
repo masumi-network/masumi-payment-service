@@ -86,12 +86,19 @@ export function AIAgentDetailsDialog({
         agent?.state === 'RegistrationFailed' ||
         agent?.state === 'DeregistrationConfirmed'
       ) {
-        await deleteRegistry({
+        const response = await deleteRegistry({
           client: apiClient,
           body: {
             id: agent.id,
           },
         });
+
+        if (response.error) {
+          const error = response.error as { message: string };
+          toast.error(error.message || 'Failed to delete AI agent');
+          return;
+        }
+
         toast.success('AI agent deleted from the database successfully');
         onClose();
         onSuccess?.();
@@ -103,7 +110,7 @@ export function AIAgentDetailsDialog({
         }
 
         setIsDeleting(true);
-        await postRegistryDeregister({
+        const response = await postRegistryDeregister({
           client: apiClient,
           body: {
             agentIdentifier: agent.agentIdentifier,
@@ -112,6 +119,13 @@ export function AIAgentDetailsDialog({
               state.paymentSources?.[0]?.smartContractAddress,
           },
         });
+
+        if (response.error) {
+          const error = response.error as { message: string };
+          toast.error(error.message || 'Failed to deregister AI agent');
+          return;
+        }
+
         toast.success('AI agent deregistration initiated successfully');
         onClose();
         onSuccess?.();
