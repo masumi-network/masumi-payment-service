@@ -26,6 +26,8 @@ export class WebhookQueueService {
             }
           : {}),
       },
+      orderBy: [{ lastSuccessAt: 'asc' }, { updatedAt: 'asc' }],
+      take: 50,
     });
 
     if (webhookEndpoints.length === 0) {
@@ -92,10 +94,14 @@ export class WebhookQueueService {
         nextRetryAt: {
           lte: new Date(),
         },
+        WebhookEndpoint: {
+          isActive: true,
+        },
       },
-      orderBy: {
-        createdAt: 'asc',
+      include: {
+        WebhookEndpoint: true,
       },
+      orderBy: [{ updatedAt: 'asc' }, { createdAt: 'asc' }],
       take: 50,
     });
 
