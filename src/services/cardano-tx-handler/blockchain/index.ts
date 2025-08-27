@@ -1,4 +1,4 @@
-import { CONFIG } from '@/utils/config';
+import { CONFIG, CONSTANTS } from '@/utils/config';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -197,7 +197,7 @@ export async function getSmartContractInteractionTxHistoryList(
   scriptAddress: string,
   txHash: string,
   lastTxHash: string,
-  maxLevels: number = 10,
+  maxLevels: number = CONSTANTS.MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS,
 ) {
   let remainingLevels = maxLevels;
   let hashToCheck = txHash;

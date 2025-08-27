@@ -218,8 +218,8 @@ async function queryAndLockPaymentSourcesForSync() {
     },
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 10000,
-      maxWait: 10000,
+      timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+      maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
     },
   );
 }

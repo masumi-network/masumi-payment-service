@@ -27,6 +27,7 @@ import {
 import { deserializeDatum } from '@meshsdk/core';
 import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { CONSTANTS } from '@/utils/config';
 
 export async function handlePaymentTransactionCardanoV1(
   tx_hash: string,
@@ -128,8 +129,8 @@ export async function handlePaymentTransactionCardanoV1(
     },
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 100000,
-      maxWait: 10000,
+      timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+      maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
     },
   );
 }
@@ -235,8 +236,8 @@ export async function handlePurchasingTransactionCardanoV1(
     },
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 10000,
-      maxWait: 10000,
+      timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+      maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
     },
   );
 }
@@ -788,8 +789,8 @@ export async function updateInitialPurchaseTransaction(
     },
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 15000,
-      maxWait: 15000,
+      timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+      maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
     },
   );
 }
@@ -1165,8 +1166,8 @@ export async function updateInitialPaymentTransaction(
     },
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-      timeout: 15000,
-      maxWait: 15000,
+      timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+      maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
     },
   );
 }
