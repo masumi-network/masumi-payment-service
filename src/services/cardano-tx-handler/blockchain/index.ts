@@ -12,6 +12,7 @@ async function detectRollbackForTxPage(
   latestTx: Array<{ tx_hash: string }>,
 ) {
   let rolledBackTx: Array<{ tx_hash: string }> = [];
+  //newest first
   for (let i = 0; i < txs.length; i++) {
     const exists = await prisma.paymentSourceIdentifiers.findUnique({
       where: {
@@ -46,10 +47,8 @@ async function detectRollbackForTxPage(
       ].filter((x) => latestTx.findIndex((y) => y.tx_hash == x.tx_hash) == -1);
       rolledBackTx = rolledBackTx.reverse();
 
-      const foundTxIndex = latestTx.findIndex(
-        (x) => x.tx_hash == txs[i].tx_hash,
-      );
-      return { rolledBackTx, foundIndex: foundTxIndex };
+      const foundIndex = latestTx.findIndex((x) => x.tx_hash == txs[i].tx_hash);
+      return { rolledBackTx, foundIndex };
     }
   }
   return null;
@@ -171,6 +170,7 @@ export async function getTxsFromCardanoAfterSpecificTx(
       { page: index, order: 'desc' },
     );
     if (txs.length == 0) {
+      //we reached the last page of all smart contract transactions
       if (latestTx.length == 0) {
         logger.warn('No transactions found for payment contract', {
           paymentContractAddress: paymentContract.smartContractAddress,
@@ -199,6 +199,13 @@ export async function getTxsFromCardanoAfterSpecificTx(
         foundTx = rollbackInfo.foundIndex;
         latestTx = latestTx.slice(0, rollbackInfo.foundIndex);
       }
+    } else {
+      logger.info(
+        'Full sync in progress, processing tx page ' + index.toString(),
+        {
+          tx: txs[0],
+        },
+      );
     }
   } while (foundTx == -1);
 
