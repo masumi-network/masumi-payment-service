@@ -84,12 +84,26 @@ export class WebhookSenderService {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
 
-      logger.error('Webhook delivery error', {
-        url,
-        event_type: payload.event_type,
-        error: errorMessage,
-        duration_ms: durationMs,
-      });
+      // Check if this is a timeout or HTTP connection error
+      const isTimeoutError = this.isTimeoutOrNetworkError(error);
+
+      if (isTimeoutError) {
+        // Log timeout/network errors as warnings (expected external issues)
+        logger.warn('Webhook delivery timeout/network error', {
+          url,
+          event_type: payload.event_type,
+          error: errorMessage,
+          duration_ms: durationMs,
+        });
+      } else {
+        // Log other errors as errors (unexpected application issues)
+        logger.error('Webhook delivery error', {
+          url,
+          event_type: payload.event_type,
+          error: errorMessage,
+          duration_ms: durationMs,
+        });
+      }
 
       return {
         success: false,
@@ -227,6 +241,28 @@ export class WebhookSenderService {
         consecutiveFailures: 0,
       },
     });
+  }
+
+  /**
+   * Check if the error is a timeout or HTTP error
+   */
+  private isTimeoutOrNetworkError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+
+    const errorName = error.name.toLowerCase();
+    const errorMessage = error.message.toLowerCase();
+
+    // Check for timeout errors (from AbortSignal.timeout)
+    if (errorName === 'aborterror' || errorName === 'timeouterror') {
+      return true;
+    }
+
+    // Check for HTTP connection errors
+    if (errorMessage.includes('fetch failed')) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
