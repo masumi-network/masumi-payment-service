@@ -5,6 +5,56 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 
+async function detectRollbackForTxPage(
+  txs: Array<{ tx_hash: string }>,
+  paymentContractAddress: string,
+  latestIdentifier: string,
+  latestTx: Array<{ tx_hash: string }>,
+) {
+  let rolledBackTx: Array<{ tx_hash: string }> = [];
+  for (let i = 0; i < txs.length; i++) {
+    const exists = await prisma.paymentSourceIdentifiers.findUnique({
+      where: {
+        txHash: txs[i].tx_hash,
+        PaymentSource: {
+          smartContractAddress: paymentContractAddress,
+        },
+      },
+    });
+    if (exists != null) {
+      const newerThanRollbackTxs =
+        await prisma.paymentSourceIdentifiers.findMany({
+          where: {
+            createdAt: {
+              gte: exists.createdAt,
+            },
+            PaymentSource: {
+              smartContractAddress: paymentContractAddress,
+            },
+          },
+          select: {
+            txHash: true,
+          },
+        });
+      rolledBackTx = [
+        ...newerThanRollbackTxs.map((x) => {
+          return {
+            tx_hash: x.txHash,
+          };
+        }),
+        { tx_hash: latestIdentifier },
+      ].filter((x) => latestTx.findIndex((y) => y.tx_hash == x.tx_hash) == -1);
+      rolledBackTx = rolledBackTx.reverse();
+
+      const foundTxIndex = latestTx.findIndex(
+        (x) => x.tx_hash == txs[i].tx_hash,
+      );
+      return { rolledBackTx, foundIndex: foundTxIndex };
+    }
+  }
+  return null;
+}
+
 export async function getExtendedTxInformation(
   latestTxs: Array<{ tx_hash: string; block_time: number }>,
   blockfrost: BlockFrostAPI,
@@ -137,51 +187,17 @@ export async function getTxsFromCardanoAfterSpecificTx(
       );
       latestTx = latestTx.slice(0, latestTxIndex);
     } else if (latestIdentifier != null) {
-      //if not found we assume a rollback happened and need to check all previous txs
-      for (let i = 0; i < txs.length; i++) {
-        const exists = await prisma.paymentSourceIdentifiers.findUnique({
-          where: {
-            txHash: txs[i].tx_hash,
-            PaymentSource: {
-              smartContractAddress: paymentContract.smartContractAddress,
-            },
-          },
-        });
-        if (exists != null) {
-          //get newer txs from db
-          const newerThanRollbackTxs =
-            await prisma.paymentSourceIdentifiers.findMany({
-              where: {
-                createdAt: {
-                  gte: exists.createdAt,
-                },
-                PaymentSource: {
-                  smartContractAddress: paymentContract.smartContractAddress,
-                },
-              },
-              select: {
-                txHash: true,
-              },
-            });
-          rolledBackTx = [
-            ...newerThanRollbackTxs.map((x) => {
-              return {
-                tx_hash: x.txHash,
-              };
-            }),
-            { tx_hash: latestIdentifier },
-          ].filter(
-            (x) => latestTx.findIndex((y) => y.tx_hash == x.tx_hash) == -1,
-          );
-          rolledBackTx = rolledBackTx.reverse();
-
-          const foundTxIndex = latestTx.findIndex(
-            (x) => x.tx_hash == txs[i].tx_hash,
-          );
-          foundTx = foundTxIndex;
-          latestTx = latestTx.slice(0, foundTxIndex);
-          break;
-        }
+      // if not found we assume a rollback happened and need to check all previous txs
+      const rollbackInfo = await detectRollbackForTxPage(
+        txs,
+        paymentContract.smartContractAddress,
+        latestIdentifier,
+        latestTx,
+      );
+      if (rollbackInfo != null) {
+        rolledBackTx = rollbackInfo.rolledBackTx;
+        foundTx = rollbackInfo.foundIndex;
+        latestTx = latestTx.slice(0, rollbackInfo.foundIndex);
       }
     }
   } while (foundTx == -1);
