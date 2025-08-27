@@ -190,3 +190,41 @@ export async function getTxsFromCardanoAfterSpecificTx(
   latestTx = latestTx.reverse();
   return { latestTx, rolledBackTx };
 }
+
+//returns all tx hashes that are part of the smart contract interaction, excluding the initial purchase tx hash
+export async function getSmartContractInteractionTxHistoryList(
+  blockfrost: BlockFrostAPI,
+  scriptAddress: string,
+  txHash: string,
+  lastTxHash: string,
+  maxLevels: number = 10,
+) {
+  let remainingLevels = maxLevels;
+  let hashToCheck = txHash;
+  const txHashes = [];
+  while (remainingLevels > 0) {
+    const tx = await blockfrost.txsUtxos(hashToCheck);
+    const inputUtxos = tx.inputs.filter((x) =>
+      x.address.startsWith(scriptAddress),
+    );
+    const outputUtxos = tx.outputs.filter((x) =>
+      x.address.startsWith(scriptAddress),
+    );
+    if (inputUtxos.length != 1) {
+      if (inputUtxos.find((x) => x.tx_hash == lastTxHash) != null) {
+        txHashes.push(lastTxHash);
+      }
+      break;
+    }
+    txHashes.push(...inputUtxos.map((x) => x.tx_hash));
+    if (txHashes.find((x) => x == lastTxHash) != null) {
+      break;
+    }
+    if (outputUtxos.length > 1) {
+      return [];
+    }
+    hashToCheck = inputUtxos[0].tx_hash;
+    remainingLevels--;
+  }
+  return [...new Set(txHashes)];
+}

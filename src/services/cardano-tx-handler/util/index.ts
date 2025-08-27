@@ -1,12 +1,14 @@
 import { CONSTANTS } from '@/utils/config';
 import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
+import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import {
   PlutusDatumSchema,
   Transaction,
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
 import { Network, OnChainState } from '@prisma/client';
+import { getSmartContractInteractionTxHistoryList } from '../blockchain';
 
 export function calculateValueChange(
   inputs: Array<{
@@ -384,4 +386,64 @@ export function extractOnChainTransactionData(
     decodedNewContract,
     decodedOldContract,
   };
+}
+
+export async function checkIfTxIsInHistory(
+  currentTxHash: string | undefined,
+  transactionHistory: Array<{
+    txHash: string;
+  }>,
+  blockfrost: BlockFrostAPI,
+  smartContractAddress: string,
+  tx: {
+    blockTime: number;
+    tx: { tx_hash: string };
+    block: { confirmations: number };
+    utxos: {
+      hash: string;
+      inputs: Array<{
+        address: string;
+        amount: Array<{ unit: string; quantity: string }>;
+        tx_hash: string;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        reference_script_hash: string | null;
+        collateral: boolean;
+        reference?: boolean;
+      }>;
+      outputs: Array<{
+        address: string;
+        amount: Array<{ unit: string; quantity: string }>;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        collateral: boolean;
+        reference_script_hash: string | null;
+        consumed_by_tx?: string | null;
+      }>;
+    };
+    transaction: Transaction;
+  },
+) {
+  if (currentTxHash == tx.tx.tx_hash) {
+    return true;
+  }
+  const txHistory = await getSmartContractInteractionTxHistoryList(
+    blockfrost,
+    smartContractAddress,
+    tx.tx.tx_hash,
+    currentTxHash ?? 'no-tx',
+  );
+  //find tx hash in history
+  for (const txHash of txHistory) {
+    if (
+      currentTxHash == txHash ||
+      transactionHistory.find((x) => x.txHash == txHash) != null
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
