@@ -22,12 +22,47 @@ import {
   calculateValueChange,
   checkIfTxIsInHistory,
   checkPaymentAmountsMatch,
+  ExtractOnChainTransactionDataOutput,
   redeemerToOnChainState,
 } from '../util';
 import { deserializeDatum } from '@meshsdk/core';
-import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import {
+  DecodedV1ContractDatum,
+  decodeV1ContractDatum,
+} from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
+
+export type UpdateTransactionInput = {
+  blockTime: number;
+  tx: { tx_hash: string };
+  block: { confirmations: number };
+  utxos: {
+    hash: string;
+    inputs: Array<{
+      address: string;
+      amount: Array<{ unit: string; quantity: string }>;
+      tx_hash: string;
+      output_index: number;
+      data_hash: string | null;
+      inline_datum: string | null;
+      reference_script_hash: string | null;
+      collateral: boolean;
+      reference?: boolean;
+    }>;
+    outputs: Array<{
+      address: string;
+      amount: Array<{ unit: string; quantity: string }>;
+      output_index: number;
+      data_hash: string | null;
+      inline_datum: string | null;
+      collateral: boolean;
+      reference_script_hash: string | null;
+      consumed_by_tx?: string | null;
+    }>;
+  };
+  transaction: Transaction;
+};
 
 export async function handlePaymentTransactionCardanoV1(
   tx_hash: string,
@@ -345,50 +380,15 @@ export async function updateRolledBackTransaction(
   }
 }
 export async function updateInitialTransactions(
-  valueOutputs: Array<{
-    address: string;
-    amount: Array<{ unit: string; quantity: string }>;
-    output_index: number;
-    data_hash: string | null;
-    inline_datum: string | null;
-    collateral: boolean;
-    reference_script_hash: string | null;
-    consumed_by_tx?: string | null;
-  }>,
+  valueOutputs: Extract<
+    ExtractOnChainTransactionDataOutput,
+    { type: 'Initial' }
+  >['valueOutputs'],
   paymentContract: {
     id: string;
     network: Network;
   },
-  tx: {
-    blockTime: number;
-    tx: { tx_hash: string };
-    block: { confirmations: number };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
+  tx: UpdateTransactionInput,
 ) {
   for (const output of valueOutputs) {
     const outputDatum = output.inline_datum;
@@ -423,67 +423,12 @@ export async function updateInitialTransactions(
 }
 export async function updateInitialPurchaseTransaction(
   paymentContract: { id: string; network: Network },
-  decodedNewContract: {
-    blockchainIdentifier: string;
-    buyerAddress: string;
-    sellerAddress: string;
-    buyerVkey: string;
-    sellerVkey: string;
-    state: SmartContractState;
-    referenceKey: string;
-    referenceSignature: string;
-    sellerNonce: string;
-    buyerNonce: string;
-    collateralReturnLovelace: bigint;
-    inputHash: string;
-    resultHash: string;
-    payByTime: bigint;
-    resultTime: bigint;
-    unlockTime: bigint;
-    externalDisputeUnlockTime: bigint;
-    buyerCooldownTime: bigint;
-    sellerCooldownTime: bigint;
-  },
-  output: {
-    address: string;
-    amount: Array<{ unit: string; quantity: string }>;
-    output_index: number;
-    data_hash: string | null;
-    inline_datum: string | null;
-    collateral: boolean;
-    reference_script_hash: string | null;
-    consumed_by_tx?: string | null;
-  },
-  tx: {
-    blockTime: number;
-    tx: { tx_hash: string };
-    block: { confirmations: number };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
+  decodedNewContract: DecodedV1ContractDatum,
+  output: Extract<
+    ExtractOnChainTransactionDataOutput,
+    { type: 'Initial' }
+  >['valueOutputs'][number],
+  tx: UpdateTransactionInput,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -796,68 +741,13 @@ export async function updateInitialPurchaseTransaction(
 }
 
 export async function updateInitialPaymentTransaction(
-  decodedNewContract: {
-    blockchainIdentifier: string;
-    buyerAddress: string;
-    sellerAddress: string;
-    buyerVkey: string;
-    sellerVkey: string;
-    state: SmartContractState;
-    referenceKey: string;
-    referenceSignature: string;
-    sellerNonce: string;
-    buyerNonce: string;
-    collateralReturnLovelace: bigint;
-    inputHash: string;
-    resultHash: string;
-    payByTime: bigint;
-    resultTime: bigint;
-    unlockTime: bigint;
-    externalDisputeUnlockTime: bigint;
-    buyerCooldownTime: bigint;
-    sellerCooldownTime: bigint;
-  },
+  decodedNewContract: DecodedV1ContractDatum,
   paymentContract: { id: string; network: Network },
-  tx: {
-    blockTime: number;
-    tx: { tx_hash: string };
-    block: { confirmations: number };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
-  output: {
-    address: string;
-    amount: Array<{ unit: string; quantity: string }>;
-    output_index: number;
-    data_hash: string | null;
-    inline_datum: string | null;
-    collateral: boolean;
-    reference_script_hash: string | null;
-    consumed_by_tx?: string | null;
-  },
+  tx: UpdateTransactionInput,
+  output: Extract<
+    ExtractOnChainTransactionDataOutput,
+    { type: 'Initial' }
+  >['valueOutputs'][number],
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -1174,100 +1064,12 @@ export async function updateInitialPaymentTransaction(
 
 export async function updateTransaction(
   paymentContract: PaymentSource,
-  extractedData: {
-    type: 'Transaction';
-    valueInputs: Array<{
-      address: string;
-      amount: Array<{ unit: string; quantity: string }>;
-      tx_hash: string;
-      output_index: number;
-      data_hash: string | null;
-      inline_datum: string | null;
-      reference_script_hash: string | null;
-      collateral: boolean;
-      reference?: boolean;
-    }>;
-    valueOutputs: Array<{
-      address: string;
-      amount: Array<{ unit: string; quantity: string }>;
-      output_index: number;
-      data_hash: string | null;
-      inline_datum: string | null;
-      collateral: boolean;
-      reference_script_hash: string | null;
-      consumed_by_tx?: string | null;
-    }>;
-    valueOutput: {
-      address: string;
-      amount: Array<{ unit: string; quantity: string }>;
-    } | null;
-    redeemerVersion: number;
-    decodedNewContract: {
-      blockchainIdentifier: string;
-      payByTime: bigint;
-      resultTime: bigint;
-      unlockTime: bigint;
-      externalDisputeUnlockTime: bigint;
-      buyerVkey: string;
-      buyerAddress: string;
-      sellerVkey: string;
-      sellerAddress: string;
-      collateralReturnLovelace: bigint;
-      resultHash: string;
-      state: SmartContractState;
-      buyerCooldownTime: bigint;
-      sellerCooldownTime: bigint;
-      inputHash: string;
-    } | null;
-    decodedOldContract: {
-      blockchainIdentifier: string;
-      payByTime: bigint;
-      resultTime: bigint;
-      unlockTime: bigint;
-      externalDisputeUnlockTime: bigint;
-      buyerVkey: string;
-      buyerAddress: string;
-      sellerVkey: string;
-      sellerAddress: string;
-      collateralReturnLovelace: bigint;
-      resultHash: string;
-      state: SmartContractState;
-      buyerCooldownTime: bigint;
-      sellerCooldownTime: bigint;
-      inputHash: string;
-    };
-  },
+  extractedData: Extract<
+    ExtractOnChainTransactionDataOutput,
+    { type: 'Transaction' }
+  >,
   blockfrost: BlockFrostAPI,
-  tx: {
-    blockTime: number;
-    tx: { tx_hash: string };
-    block: { confirmations: number };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{ unit: string; quantity: string }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
+  tx: UpdateTransactionInput,
 ) {
   const paymentRequest = await prisma.paymentRequest.findUnique({
     where: {

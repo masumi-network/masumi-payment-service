@@ -1,5 +1,8 @@
 import { CONSTANTS } from '@/utils/config';
-import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
+import {
+  DecodedV1ContractDatum,
+  decodeV1ContractDatum,
+} from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import {
@@ -161,66 +164,8 @@ export function redeemerToOnChainState(
     return null;
   }
 }
-type DecodedContract = {
-  blockchainIdentifier: string;
-  payByTime: bigint;
-  resultTime: bigint;
-  unlockTime: bigint;
-  externalDisputeUnlockTime: bigint;
-  buyerVkey: string;
-  buyerAddress: string;
-  sellerVkey: string;
-  sellerAddress: string;
-  collateralReturnLovelace: bigint;
-  resultHash: string;
-  state: SmartContractState;
-  buyerCooldownTime: bigint;
-  sellerCooldownTime: bigint;
-  inputHash: string;
-};
-export function extractOnChainTransactionData(
-  tx: {
-    blockTime: number;
-    tx: {
-      tx_hash: string;
-    };
-    block: {
-      confirmations: number;
-    };
-    utxos: {
-      hash: string;
-      inputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        tx_hash: string;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        reference_script_hash: string | null;
-        collateral: boolean;
-        reference?: boolean;
-      }>;
-      outputs: Array<{
-        address: string;
-        amount: Array<{
-          unit: string;
-          quantity: string;
-        }>;
-        output_index: number;
-        data_hash: string | null;
-        inline_datum: string | null;
-        collateral: boolean;
-        reference_script_hash: string | null;
-        consumed_by_tx?: string | null;
-      }>;
-    };
-    transaction: Transaction;
-  },
-  paymentContract: { smartContractAddress: string; network: Network },
-):
+
+export type ExtractOnChainTransactionDataOutput =
   | {
       type: 'Initial';
       valueOutputs: Array<{
@@ -275,9 +220,52 @@ export function extractOnChainTransactionData(
         }>;
       } | null;
       redeemerVersion: number;
-      decodedNewContract: DecodedContract | null;
-      decodedOldContract: DecodedContract;
-    } {
+      decodedNewContract: DecodedV1ContractDatum | null;
+      decodedOldContract: DecodedV1ContractDatum;
+    };
+export function extractOnChainTransactionData(
+  tx: {
+    blockTime: number;
+    tx: {
+      tx_hash: string;
+    };
+    block: {
+      confirmations: number;
+    };
+    utxos: {
+      hash: string;
+      inputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        tx_hash: string;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        reference_script_hash: string | null;
+        collateral: boolean;
+        reference?: boolean;
+      }>;
+      outputs: Array<{
+        address: string;
+        amount: Array<{
+          unit: string;
+          quantity: string;
+        }>;
+        output_index: number;
+        data_hash: string | null;
+        inline_datum: string | null;
+        collateral: boolean;
+        reference_script_hash: string | null;
+        consumed_by_tx?: string | null;
+      }>;
+    };
+    transaction: Transaction;
+  },
+  paymentContract: { smartContractAddress: string; network: Network },
+): ExtractOnChainTransactionDataOutput {
   const valueInputs = tx.utxos.inputs.filter((x) => {
     return x.address == paymentContract.smartContractAddress;
   });
