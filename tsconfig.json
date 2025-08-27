@@ -15,9 +15,10 @@
     "allowSyntheticDefaultImports": true,
     "paths": {
       "@/*": ["src/*"],
-      "@smart-contracts/*": ["smart-contracts/*"]
+      "@smart-contracts/*": ["smart-contracts/*"],
+      "@e2e/*": ["tests/e2e/*"]
     }
   },
-  "include": ["src/**/*.ts", "smart-contracts/**/plutus.json"],
+  "include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts"],
   "exclude": ["node_modules"]
 }

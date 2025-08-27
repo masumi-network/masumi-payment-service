@@ -17,9 +17,10 @@
       "@/routes/*": ["src/routes/*"],
       "@/services/*": ["src/services/*"],
       "@/utils/*": ["src/utils/*"],
-      "@/repositories/*": ["src/repositories/*"]
+      "@/repositories/*": ["src/repositories/*"],
+      "@e2e/*": ["tests/e2e/*"]
     }
   },
-  "include": ["src/**/*.spec.ts"],
+  "include": ["src/**/*.spec.ts", "tests/**/*.ts", "jest.e2e.config.ts"],
   "exclude": ["node_modules"]
 }
