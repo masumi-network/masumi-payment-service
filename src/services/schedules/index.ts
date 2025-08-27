@@ -214,7 +214,7 @@ export async function initJobs() {
           (new Date().getTime() - start.getTime()) / 1000 +
           's',
       );
-    }, 10 * 1000);
+    }, CONFIG.WEBHOOK_DELIVERY_INTERVAL * 1000); // Convert seconds to milliseconds
   });
 
   void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {

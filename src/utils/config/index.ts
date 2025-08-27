@@ -82,6 +82,8 @@ const autoDecisionInterval = Number(process.env.AUTO_DECISION_INTERVAL ?? '30');
 if (autoDecisionInterval < 5)
   throw new Error('AUTO_DECISION_INTERVAL must be at least 5 seconds');
 
+const webhookDeliveryInterval = 10; // 10 seconds
+
 const blockConfirmationsThreshold = Number(
   process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1',
 );
@@ -108,6 +110,7 @@ export const CONFIG = {
   AUTO_WITHDRAW_PAYMENTS: autoWithdrawPayments,
   AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,
   AUTO_DECISION_INTERVAL: autoDecisionInterval,
+  WEBHOOK_DELIVERY_INTERVAL: webhookDeliveryInterval,
 };
 
 export const DEFAULTS = {
