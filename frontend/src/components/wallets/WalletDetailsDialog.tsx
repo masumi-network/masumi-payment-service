@@ -382,10 +382,12 @@ export function WalletDetailsDialog({
             )}
 
             {/* Linked Collection Wallet Section */}
-            {wallet.type === 'Selling' && (
+            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
               <div className="flex flex-col gap-1 mt-2 border-t pt-4">
                 <div className="text-xs text-muted-foreground">
-                  Linked Collection Wallet
+                  {wallet.type === 'Selling'
+                    ? 'Linked Revenue Collection Address'
+                    : 'Linked Refund Collection Address'}
                 </div>
                 {isEditingCollectionAddress ? (
                   <div className="flex items-center gap-2">
