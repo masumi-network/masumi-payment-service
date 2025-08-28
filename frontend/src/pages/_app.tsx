@@ -61,7 +61,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (sourceResponse.error) {
       const error = sourceResponse.error as { message: string };
       console.error('Failed to fetch payment sources:', error);
-      toast.error(error.message || 'Error fetching payment sources. Please try again later.');
+      toast.error(
+        error.message ||
+          'Error fetching payment sources. Please try again later.',
+      );
       return;
     }
 
@@ -106,7 +109,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (response.error) {
       const error = response.error as { message: string };
       console.error('Failed to fetch RPC API keys:', error);
-      toast.error(error.message || 'Error fetching RPC API keys. Please try again later.');
+      toast.error(
+        error.message || 'Error fetching RPC API keys. Please try again later.',
+      );
       return;
     }
 
@@ -146,7 +151,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         },
       });
       const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
-      
+
       if (apiKeyStatus.error) {
         setIsHealthy(true);
         setIsUnauthorized(true);
