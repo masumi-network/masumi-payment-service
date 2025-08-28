@@ -19,6 +19,7 @@ import {
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
@@ -154,29 +155,38 @@ export default function AIAgentsPage() {
       );
       const smartContractAddress = selectedPaymentSource?.smartContractAddress;
 
-      const response = await getRegistry({
-        client: apiClient,
-        query: {
-          network: state.network,
-          cursorId: cursor || undefined,
-          filterSmartContractAddress: smartContractAddress
-            ? smartContractAddress
-            : undefined,
+      const response = await handleApiCall(
+        () =>
+          getRegistry({
+            client: apiClient,
+            query: {
+              network: state.network,
+              cursorId: cursor || undefined,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching agents:', error);
+            toast.error(error.message || 'Failed to load AI agents');
+            if (!cursor) {
+              setAllAgents([]);
+            }
+            setHasMore(false);
+            setIsLoading(false);
+            setIsLoadingMore(false);
+          },
+          onFinally: () => {
+            setIsLoading(false);
+            setIsLoadingMore(false);
+          },
+          errorMessage: 'Failed to load AI agents',
         },
-      });
+      );
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error fetching agents:', error);
-        toast.error(error.message || 'Failed to load AI agents');
-        if (!cursor) {
-          setAllAgents([]);
-        }
-        setHasMore(false);
-        setIsLoading(false);
-        setIsLoadingMore(false);
-        return;
-      }
+      if (!response) return;
 
       if (response.data?.data?.Assets) {
         const newAgents = response.data.data.Assets;
@@ -193,9 +203,6 @@ export default function AIAgentsPage() {
         }
         setHasMore(false);
       }
-
-      setIsLoading(false);
-      setIsLoadingMore(false);
     },
     [apiClient, state.network, selectedPaymentSourceId],
   );
@@ -271,53 +278,63 @@ export default function AIAgentsPage() {
       selectedAgentToDelete?.state === 'DeregistrationConfirmed'
     ) {
       setIsDeleting(true);
-      const response = await deleteRegistry({
-        client: apiClient,
-        body: {
-          id: selectedAgentToDelete.id,
+      const response = await handleApiCall(
+        () =>
+          deleteRegistry({
+            client: apiClient,
+            body: {
+              id: selectedAgentToDelete.id,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deleted successfully');
+            setIsDeleteDialogOpen(false);
+            setSelectedAgentToDelete(null);
+            fetchAgents();
+          },
+          onError: (error: any) => {
+            console.error('Error deleting agent:', error);
+            toast.error(error.message || 'Failed to delete AI agent');
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+          },
+          errorMessage: 'Failed to delete AI agent',
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error deleting agent:', error);
-        toast.error(error.message || 'Failed to delete AI agent');
-        setIsDeleting(false);
-        return;
-      }
-
-      toast.success('AI agent deleted successfully');
-      setIsDeleteDialogOpen(false);
-      setSelectedAgentToDelete(null);
-      fetchAgents();
-      setIsDeleting(false);
+      );
     } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
       if (!selectedAgentToDelete?.agentIdentifier) {
         toast.error('Cannot delete agent: Missing identifier');
         return;
       }
       setIsDeleting(true);
-      const response = await postRegistryDeregister({
-        client: apiClient,
-        body: {
-          agentIdentifier: selectedAgentToDelete.agentIdentifier,
-          network: state.network,
+      const response = await handleApiCall(
+        () =>
+          postRegistryDeregister({
+            client: apiClient,
+            body: {
+              agentIdentifier: selectedAgentToDelete.agentIdentifier!,
+              network: state.network,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deleted successfully');
+            setIsDeleteDialogOpen(false);
+            setSelectedAgentToDelete(null);
+            fetchAgents();
+          },
+          onError: (error: any) => {
+            console.error('Error deleting agent:', error);
+            toast.error(error.message || 'Failed to delete AI agent');
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+          },
+          errorMessage: 'Failed to delete AI agent',
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error deleting agent:', error);
-        toast.error(error.message || 'Failed to delete AI agent');
-        setIsDeleting(false);
-        return;
-      }
-
-      toast.success('AI agent deleted successfully');
-      setIsDeleteDialogOpen(false);
-      setSelectedAgentToDelete(null);
-      fetchAgents();
-      setIsDeleting(false);
+      );
     } else {
       toast.error(
         'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
@@ -331,27 +348,32 @@ export default function AIAgentsPage() {
 
   const handleWalletClick = async (walletAddress: string) => {
     // Fetch wallet balance
-    const response = await getUtxos({
-      client: apiClient,
-      query: {
-        address: walletAddress,
-        network: state.network,
+    const response = await handleApiCall(
+      () =>
+        getUtxos({
+          client: apiClient,
+          query: {
+            address: walletAddress,
+            network: state.network,
+          },
+        }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching wallet details:', error);
+          toast.error(error.message || 'Failed to fetch wallet details');
+        },
+        errorMessage: 'Failed to fetch wallet details',
       },
-    });
+    );
 
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error fetching wallet details:', error);
-      toast.error(error.message || 'Failed to fetch wallet details');
-      return;
-    }
+    if (!response) return;
 
     let adaBalance = '0';
     let usdmBalance = '0';
 
     if (response.data?.data?.Utxos) {
-      response.data.data.Utxos.forEach((utxo) => {
-        utxo.Amounts.forEach((amount) => {
+      response.data.data.Utxos.forEach((utxo: any) => {
+        utxo.Amounts.forEach((amount: any) => {
           if (amount.unit === 'lovelace' || amount.unit === '') {
             adaBalance = (
               parseInt(adaBalance) + (amount.quantity || 0)
