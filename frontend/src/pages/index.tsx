@@ -180,11 +180,13 @@ export default function Overview() {
         let adaBalance = 0;
         let usdmBalance = 0;
 
+        const usdmConfig = getUsdmConfig(state.network);
+        
         response.data.data.Utxos.forEach((utxo: any) => {
           utxo.Amounts.forEach((amount: any) => {
             if (amount.unit === 'lovelace' || amount.unit == '') {
               adaBalance += amount.quantity || 0;
-            } else if (amount.unit === 'USDM') {
+            } else if (amount.unit === usdmConfig.fullAssetId) {
               usdmBalance += amount.quantity || 0;
             }
           });
@@ -417,9 +419,7 @@ export default function Overview() {
               {isLoadingAgents ? (
                 <Spinner size={20} addContainer />
               ) : (
-                <div className="text-2xl font-semibold">
-                  {agents.length}
-                </div>
+                <div className="text-2xl font-semibold">{agents.length}</div>
               )}
             </div>
             <div className="border rounded-lg p-6">
