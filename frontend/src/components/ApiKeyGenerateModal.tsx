@@ -46,7 +46,20 @@ export function ApiKeyGenerateModal({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate API key');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage =
+          errorData.message ||
+          errorData.error ||
+          `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+
+      if (result.error) {
+        throw new Error(
+          result.error.message || result.error || 'Failed to generate API key',
+        );
       }
 
       toast.success('API key generated successfully');
@@ -54,7 +67,9 @@ export function ApiKeyGenerateModal({
       onClose();
     } catch (error) {
       console.error('Error generating API key:', error);
-      toast.error('Failed to generate API key');
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to generate API key';
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
