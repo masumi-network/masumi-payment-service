@@ -10,12 +10,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 
-interface ApiError {
-  message: string;
-  error?: {
-    message?: string;
-  };
-}
+
 
 export function ApiKeyDialog() {
   const router = useRouter();
