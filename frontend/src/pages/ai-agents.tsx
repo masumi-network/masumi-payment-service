@@ -304,7 +304,7 @@ export default function AIAgentsPage() {
       );
     } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
       if (!selectedAgentToDelete?.agentIdentifier) {
-        toast.error('Cannot delete agent: Missing identifier');
+        toast.error('Cannot deregister agent: Missing identifier');
         return;
       }
       setIsDeleting(true);
@@ -319,19 +319,19 @@ export default function AIAgentsPage() {
           }),
         {
           onSuccess: () => {
-            toast.success('AI agent deleted successfully');
+            toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
             fetchAgents();
           },
           onError: (error: any) => {
-            console.error('Error deleting agent:', error);
-            toast.error(error.message || 'Failed to delete AI agent');
+            console.error('Error deregistering agent:', error);
+            toast.error(error.message || 'Failed to deregister AI agent');
           },
           onFinally: () => {
             setIsDeleting(false);
           },
-          errorMessage: 'Failed to delete AI agent',
+          errorMessage: 'Failed to deregister AI agent',
         },
       );
     } else {
