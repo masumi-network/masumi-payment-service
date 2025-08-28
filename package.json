@@ -22,6 +22,8 @@
         "test:e2e:registration": "jest --config jest.e2e.config.ts flows/registration",
         "test:e2e:payment": "jest --config jest.e2e.config.ts flows/payment",
         "test:e2e:purchase": "jest --config jest.e2e.config.ts flows/purchase",
+        "test:e2e:submit-result": "jest --config jest.e2e.config.ts flows/submit-result",
+        "test:e2e:complete": "jest --config jest.e2e.config.ts flows/complete-flow",
         "test:e2e:verbose": "jest --config jest.e2e.config.ts --verbose",
         "prisma:generate": "npx prisma generate",
         "prisma:migrate": "npx prisma migrate deploy",
