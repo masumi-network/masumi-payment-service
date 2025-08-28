@@ -335,7 +335,7 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Network <span className="text-destructive">*</span>
+                    Network <span className="text-red-500">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
@@ -364,8 +364,7 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key{' '}
-                    <span className="text-destructive">*</span>
+                    Blockfrost API Key <span className="text-red-500">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
@@ -393,7 +392,7 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Fee Permille <span className="text-destructive">*</span>
+                    Fee Permille <span className="text-red-500">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
@@ -438,7 +437,7 @@ export function AddPaymentSourceDialog({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Wallet Address <span className="text-destructive">*</span>
+                Wallet Address <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
