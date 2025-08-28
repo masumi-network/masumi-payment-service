@@ -140,7 +140,9 @@ export default function WalletsPage() {
         {
           onError: (error: any) => {
             console.error('Error fetching wallet balance:', error);
-            toast.error(error.message || 'Failed to fetch wallet balance');
+            if (error.message) {
+              toast.error(error.message);
+            }
           },
           errorMessage: 'Failed to fetch wallet balance',
         },
