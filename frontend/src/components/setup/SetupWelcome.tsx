@@ -22,7 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postWallet, postPaymentSourceExtended } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
