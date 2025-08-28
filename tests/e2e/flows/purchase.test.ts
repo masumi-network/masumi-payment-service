@@ -97,10 +97,11 @@ describe(`Purchase E2E Tests (${testNetwork})`, () => {
           `✅ Found confirmed agent: ${confirmedAgent.name} (${confirmedAgent.agentIdentifier})`,
         );
 
-        // Step 2: Create a fresh payment for this purchase test
-        console.log('🔍 Step 2: Creating a fresh payment for purchase test...');
+        // Step 2: Always create a new payment to ensure identifierFromPurchaser compatibility
+        console.log(
+          '🔍 Step 2: Creating new payment with known purchaser identifier...',
+        );
 
-        // We need to create a payment first so we have the correct identifierFromPurchaser
         const { generateTestPaymentData } = await import(
           '../fixtures/testData'
         );
@@ -109,15 +110,29 @@ describe(`Purchase E2E Tests (${testNetwork})`, () => {
           confirmedAgent.agentIdentifier,
         );
 
-        console.log('🚀 Creating payment for purchase test...');
+        // Store the identifierFromPurchaser used in payment creation
+        const originalPurchaserIdentifier = paymentData.identifierFromPurchaser;
+
         const newPayment = await (global as any).testApiClient.createPayment(
           paymentData,
         );
+        const existingPayment = newPayment;
 
-        console.log(`✅ Created payment for purchase:
-        - Payment ID: ${newPayment.id}
-        - Blockchain ID: ${newPayment.blockchainIdentifier.substring(0, 50)}...
-        - State: ${newPayment.NextAction.requestedAction}
+        console.log(`✅ Created new payment: ${newPayment.id}`);
+        console.log(
+          `📋 Stored purchaser identifier: ${originalPurchaserIdentifier}`,
+        );
+
+        // Track for cleanup
+        testCleanupData.push({
+          purchaseId: undefined, // Will be set later
+          blockchainIdentifier: newPayment.blockchainIdentifier,
+        });
+
+        console.log(`📋 Using payment for purchase:
+        - Payment ID: ${existingPayment.id}
+        - Blockchain ID: ${existingPayment.blockchainIdentifier.substring(0, 50)}...
+        - State: ${existingPayment.NextAction.requestedAction}
       `);
 
         // Step 3: Generate purchase data using the fresh payment and agent info
@@ -125,21 +140,25 @@ describe(`Purchase E2E Tests (${testNetwork})`, () => {
           '🎯 Step 3: Generating purchase data from payment and agent...',
         );
 
-        // We need to use the same identifierFromPurchaser that was used in payment creation
+        // Create purchase data manually using the original purchaser identifier
         const purchaseData = {
-          blockchainIdentifier: newPayment.blockchainIdentifier,
-          network: newPayment.PaymentSource.network,
-          inputHash: newPayment.inputHash,
+          blockchainIdentifier: existingPayment.blockchainIdentifier,
+          network: existingPayment.PaymentSource.network,
+          inputHash: existingPayment.inputHash,
           sellerVkey: confirmedAgent.SmartContractWallet.walletVkey,
           agentIdentifier: confirmedAgent.agentIdentifier,
-          paymentType: newPayment.PaymentSource.paymentType,
-          unlockTime: newPayment.unlockTime,
-          externalDisputeUnlockTime: newPayment.externalDisputeUnlockTime,
-          submitResultTime: newPayment.submitResultTime,
-          payByTime: newPayment.payByTime,
-          identifierFromPurchaser: paymentData.identifierFromPurchaser, // Use the SAME identifier from payment
+          paymentType: existingPayment.PaymentSource.paymentType,
+          unlockTime: existingPayment.unlockTime,
+          externalDisputeUnlockTime: existingPayment.externalDisputeUnlockTime,
+          submitResultTime: existingPayment.submitResultTime,
+          payByTime: existingPayment.payByTime,
+          identifierFromPurchaser: originalPurchaserIdentifier, // Use the original identifier
           metadata: `E2E test purchase - ${new Date().toISOString()}`,
         };
+
+        console.log(
+          `🔄 Purchase data created with matching purchaser ID: ${originalPurchaserIdentifier}`,
+        );
 
         // Step 4: Create purchase
         console.log('🚀 Step 4: Creating purchase request...');
@@ -180,11 +199,16 @@ describe(`Purchase E2E Tests (${testNetwork})`, () => {
         - Paid Funds: ${purchaseResponse.PaidFunds.length} entries
       `);
 
-        // Track for cleanup
-        testCleanupData.push({
-          purchaseId: purchaseResponse.id,
-          blockchainIdentifier: purchaseResponse.blockchainIdentifier,
-        });
+        // Update cleanup data with purchase ID
+        if (testCleanupData.length > 0) {
+          testCleanupData[testCleanupData.length - 1].purchaseId =
+            purchaseResponse.id;
+        } else {
+          testCleanupData.push({
+            purchaseId: purchaseResponse.id,
+            blockchainIdentifier: purchaseResponse.blockchainIdentifier,
+          });
+        }
 
         console.log(`🎉 Purchase creation test completed successfully!
         - Successfully created purchase for confirmed agent: ${confirmedAgent.name}

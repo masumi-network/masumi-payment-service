@@ -1,10 +1,5 @@
 import { Network } from '@prisma/client';
-import {
-  CreatePaymentData,
-  CreatePurchaseData,
-  PaymentResponse,
-  RegistrationData,
-} from '../utils/apiClient';
+import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
 import { createHash } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -113,9 +108,9 @@ export function getTestEnvironment() {
       process.env.TEST_DATABASE_URL ||
       'postgresql://test@localhost:5432/masumi_payment_service_test',
     timeout: {
-      api: parseInt(process.env.TEST_API_TIMEOUT || '30000'),
-      registration: parseInt(process.env.TEST_REGISTRATION_TIMEOUT || '600000'), // 10 minutes
-      blockchain: parseInt(process.env.TEST_BLOCKCHAIN_TIMEOUT || '600000'),
+      api: 30000, // 30 seconds
+      registration: 0, // 0 = infinite wait, change to milliseconds for custom timeout
+      blockchain: 600000, // 10 minutes
     },
   };
 }
@@ -180,6 +175,25 @@ export function generateSHA256Hash(input: string): string {
 }
 
 /**
+ * Generate a random SHA256 hash for testing submitResultHash
+ */
+export function generateRandomSubmitResultHash(): string {
+  const randomData = {
+    status: 'success',
+    output: `AI processing completed at ${new Date().toISOString()}`,
+    result: `Generated result: ${Math.random().toString(36).substring(2, 15)}`,
+    confidence: Math.random(),
+    processing_time: `${(Math.random() * 5 + 1).toFixed(2)}s`,
+    model: 'test-ai-model-v1.0',
+    timestamp: Date.now(),
+    requestId: createId(),
+  };
+
+  const resultString = JSON.stringify(randomData);
+  return createHash('sha256').update(resultString).digest('hex');
+}
+
+/**
  * Generate test payment data for creating a payment request
  */
 export function generateTestPaymentData(
@@ -229,140 +243,6 @@ export function generateTestPaymentData(
   };
 }
 
-/**
- * Generate mock AI agent result data
- */
-export function generateMockAgentResult(inputData?: string): {
-  result: string;
-  resultHash: string;
-} {
-  const result = JSON.stringify({
-    status: 'success',
-    input: inputData || 'test-input',
-    output: {
-      message: `AI processing completed at ${new Date().toISOString()}`,
-      confidence: 0.95,
-      processingTime: Math.floor(Math.random() * 5000) + 1000, // 1-6 seconds
-    },
-    metadata: {
-      model: 'test-ai-model-v1.0',
-      version: '1.0.0',
-      timestamp: new Date().toISOString(),
-    },
-  });
-
-  const resultHash = generateSHA256Hash(result);
-
-  return { result, resultHash };
-}
-
-/**
- * Validate payment timing constraints
- */
-export function validatePaymentTiming(timing: PaymentTimingConfig): {
-  valid: boolean;
-  errors: string[];
-} {
-  const errors: string[] = [];
-  const now = new Date();
-
-  // Check payByTime is in the future (max 5 minutes in the past allowed)
-  if (timing.payByTime.getTime() < now.getTime() - 5 * 60 * 1000) {
-    errors.push(
-      'Pay by time must be in the future (max 5 minutes in the past allowed)',
-    );
-  }
-
-  // Check submitResultTime is in the future (min 15 minutes)
-  if (timing.submitResultTime.getTime() < now.getTime() + 15 * 60 * 1000) {
-    errors.push('Submit result time must be in the future (min 15 minutes)');
-  }
-
-  // Check payByTime vs submitResultTime (min 5 minutes difference)
-  if (
-    timing.payByTime.getTime() >
-    timing.submitResultTime.getTime() - 5 * 60 * 1000
-  ) {
-    errors.push(
-      'Pay by time must be before submit result time (min 5 minutes difference)',
-    );
-  }
-
-  // Check submitResultTime vs unlockTime (min 15 minutes difference)
-  if (timing.unlockTime) {
-    if (
-      timing.submitResultTime.getTime() >
-      timing.unlockTime.getTime() - 15 * 60 * 1000
-    ) {
-      errors.push(
-        'Submit result time must be before unlock time (min 15 minutes difference)',
-      );
-    }
-  }
-
-  // Check unlockTime vs externalDisputeUnlockTime (min 15 minutes difference)
-  if (timing.unlockTime && timing.externalDisputeUnlockTime) {
-    if (
-      timing.unlockTime.getTime() >
-      timing.externalDisputeUnlockTime.getTime() - 15 * 60 * 1000
-    ) {
-      errors.push(
-        'Unlock time must be before external dispute unlock time (min 15 minutes difference)',
-      );
-    }
-  }
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
-/**
- * Generate test purchase data using payment response data
- */
-export function generateTestPurchaseData(
-  paymentResponse: PaymentResponse,
-  confirmedAgent: {
-    agentIdentifier: string;
-    SmartContractWallet: { walletVkey: string };
-  },
-  options: {
-    metadata?: string;
-  } = {},
-): CreatePurchaseData {
-  console.log(`Generated Purchase Test Data:
-    - Blockchain Identifier: ${paymentResponse.blockchainIdentifier.substring(0, 50)}...
-    - Agent Identifier: ${confirmedAgent.agentIdentifier}
-    - Seller VKey: ${confirmedAgent.SmartContractWallet.walletVkey}
-    - Input Hash: ${paymentResponse.inputHash}
-    - Network: ${paymentResponse.PaymentSource.network}
-  `);
-
-  return {
-    blockchainIdentifier: paymentResponse.blockchainIdentifier,
-    network: paymentResponse.PaymentSource.network,
-    inputHash: paymentResponse.inputHash,
-    sellerVkey: confirmedAgent.SmartContractWallet.walletVkey,
-    agentIdentifier: confirmedAgent.agentIdentifier,
-    paymentType: paymentResponse.PaymentSource.paymentType,
-    unlockTime: paymentResponse.unlockTime,
-    externalDisputeUnlockTime: paymentResponse.externalDisputeUnlockTime,
-    submitResultTime: paymentResponse.submitResultTime,
-    payByTime: paymentResponse.payByTime,
-    identifierFromPurchaser: extractIdentifierFromBlockchain(
-      paymentResponse.blockchainIdentifier,
-    ),
-    metadata:
-      options.metadata || `E2E test purchase - ${new Date().toISOString()}`,
-  };
-}
-
-function extractIdentifierFromBlockchain(blockchainIdentifier: string): string {
-  const hash = generateSHA256Hash(blockchainIdentifier);
-  return hash.substring(0, 20);
-}
-
 export default {
   generateTestRegistrationData,
   getTestScenarios,
@@ -371,7 +251,5 @@ export default {
   generatePaymentTiming,
   generateHexIdentifier,
   generateSHA256Hash,
-  generateMockAgentResult,
-  validatePaymentTiming,
-  generateTestPurchaseData,
+  generateRandomSubmitResultHash,
 };
