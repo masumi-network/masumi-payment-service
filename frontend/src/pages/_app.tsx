@@ -54,59 +54,64 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const fetchPaymentSources = useCallback(async () => {
-    try {
-      const sourceResponse = await getPaymentSource({
-        client: apiClient,
-      });
-      const { data } = sourceResponse;
+    const sourceResponse = await getPaymentSource({
+      client: apiClient,
+    });
 
-      const sources = data?.data?.PaymentSources ?? [];
-      // Filter by network
-      const filteredSources = sources.filter(
-        (source: any) => source.network === state.network,
-      );
-      const sortedByCreatedAt = filteredSources.sort(
-        (a: any, b: any) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-      const reversed = [...sortedByCreatedAt]?.reverse();
-      const sourcesMapped = reversed?.map((source: any, index: number) => ({
-        ...source,
-        index: index + 1,
-      }));
-      const reversedBack = [...sourcesMapped]?.reverse();
-
-      dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
-
-      if (reversedBack.length === 1) {
-        setSelectedPaymentSourceId(reversedBack[0].id);
-      }
-
-      // If no payment sources, redirect to setup
-      if (reversedBack.length === 0 && isHealthy && state.apiKey) {
-        if (router.pathname !== '/setup') {
-          router.push(`/setup?network=${encodeURIComponent(state.network)}`);
-        }
-      }
-    } catch (error) {
+    if (sourceResponse.error) {
+      const error = sourceResponse.error as { message: string };
       console.error('Failed to fetch payment sources:', error);
-      toast.error('Error fetching payment sources. Please try again later.');
+      toast.error(error.message || 'Error fetching payment sources. Please try again later.');
+      return;
+    }
+
+    const { data } = sourceResponse;
+
+    const sources = data?.data?.PaymentSources ?? [];
+    // Filter by network
+    const filteredSources = sources.filter(
+      (source: any) => source.network === state.network,
+    );
+    const sortedByCreatedAt = filteredSources.sort(
+      (a: any, b: any) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const reversed = [...sortedByCreatedAt]?.reverse();
+    const sourcesMapped = reversed?.map((source: any, index: number) => ({
+      ...source,
+      index: index + 1,
+    }));
+    const reversedBack = [...sourcesMapped]?.reverse();
+
+    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
+
+    if (reversedBack.length === 1) {
+      setSelectedPaymentSourceId(reversedBack[0].id);
+    }
+
+    // If no payment sources, redirect to setup
+    if (reversedBack.length === 0 && isHealthy && state.apiKey) {
+      if (router.pathname !== '/setup') {
+        router.push(`/setup?network=${encodeURIComponent(state.network)}`);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiClient, dispatch, isHealthy, state.apiKey, state.network, router]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
 
   const fetchRpcApiKeys = useCallback(async () => {
-    try {
-      const response = await getRpcApiKeys({
-        client: apiClient,
-      });
+    const response = await getRpcApiKeys({
+      client: apiClient,
+    });
 
-      const rpcKeys = response.data?.RpcProviderKeys ?? [];
-      dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
-    } catch (error) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Failed to fetch RPC API keys:', error);
-      toast.error('Error fetching RPC API keys. Please try again later.');
+      toast.error(error.message || 'Error fetching RPC API keys. Please try again later.');
+      return;
     }
+
+    const rpcKeys = response.data?.RpcProviderKeys ?? [];
+    dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
   }, [apiClient, dispatch]);
 
   const signOut = () => {
@@ -119,48 +124,45 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   useEffect(() => {
     const init = async () => {
-      try {
-        setIsUnauthorized(false);
-        const response = await getHealth({ client: apiClient });
+      setIsUnauthorized(false);
+      const response = await getHealth({ client: apiClient });
 
-        if (response.status !== 200) {
-          setIsHealthy(false);
-          return;
-        }
-
-        const hexedKey = localStorage.getItem('payment_api_key');
-        if (!hexedKey) {
-          setIsHealthy(true);
-          return;
-        }
-
-        const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
-        apiClient.setConfig({
-          headers: {
-            token: storedApiKey,
-          },
-        });
-        const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
-        if (apiKeyStatus.status !== 200) {
-          setIsHealthy(true);
-          setIsUnauthorized(true);
-          return;
-        }
-
-        // Check if the API key has admin permission
-        const permission = apiKeyStatus.data?.data?.permission;
-        if (!permission || permission !== 'Admin') {
-          setIsHealthy(true);
-          toast.error('Unauthorized access');
-          signOut();
-          return;
-        }
-        dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
-        setIsHealthy(true);
-      } catch (error) {
-        console.error('Health check failed:', error);
+      if (response.error) {
+        console.error('Health check failed:', response.error);
         setIsHealthy(false);
+        return;
       }
+
+      const hexedKey = localStorage.getItem('payment_api_key');
+      if (!hexedKey) {
+        setIsHealthy(true);
+        return;
+      }
+
+      const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
+      apiClient.setConfig({
+        headers: {
+          token: storedApiKey,
+        },
+      });
+      const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
+      
+      if (apiKeyStatus.error) {
+        setIsHealthy(true);
+        setIsUnauthorized(true);
+        return;
+      }
+
+      // Check if the API key has admin permission
+      const permission = apiKeyStatus.data?.data?.permission;
+      if (!permission || permission !== 'Admin') {
+        setIsHealthy(true);
+        toast.error('Unauthorized access');
+        signOut();
+        return;
+      }
+      dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
+      setIsHealthy(true);
     };
 
     init();
