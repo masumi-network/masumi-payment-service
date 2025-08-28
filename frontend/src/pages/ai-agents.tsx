@@ -278,7 +278,7 @@ export default function AIAgentsPage() {
       selectedAgentToDelete?.state === 'DeregistrationConfirmed'
     ) {
       setIsDeleting(true);
-      const response = await handleApiCall(
+      await handleApiCall(
         () =>
           deleteRegistry({
             client: apiClient,
@@ -309,7 +309,7 @@ export default function AIAgentsPage() {
         return;
       }
       setIsDeleting(true);
-      const response = await handleApiCall(
+      await handleApiCall(
         () =>
           postRegistryDeregister({
             client: apiClient,

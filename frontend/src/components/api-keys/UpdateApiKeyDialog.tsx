@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
-import { parseError, handleApiCall } from '@/lib/utils';
+import { handleApiCall } from '@/lib/utils';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';

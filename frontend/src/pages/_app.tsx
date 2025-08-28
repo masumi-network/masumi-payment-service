@@ -159,7 +159,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const apiKeyStatus = await handleApiCall(
         () => getApiKeyStatus({ client: apiClient }),
         {
-          onError: (error: any) => {
+          onError: () => {
             setIsHealthy(true);
             setIsUnauthorized(true);
           },
