@@ -19,6 +19,7 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
@@ -97,63 +98,59 @@ export function AddApiKeyDialog({
   }, [permission, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    try {
-      setIsLoading(true);
-      const isReadOnly = data.permission === 'Read';
-      const defaultCredits = [
-        {
-          unit: 'lovelace',
-          amount: '1000000000', // 1000 ADA
+    const isReadOnly = data.permission === 'Read';
+    const defaultCredits = [
+      {
+        unit: 'lovelace',
+        amount: '1000000000', // 1000 ADA
+      },
+    ];
+    await handleApiCall(
+      () =>
+        postApiKey({
+          client: apiClient,
+          body: {
+            permission: data.permission,
+            usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
+            networkLimit: data.networks,
+            UsageCredits: isReadOnly
+              ? defaultCredits
+              : data.usageLimited
+                ? [
+                    ...(data.credits.lovelace
+                      ? [
+                          {
+                            unit: 'lovelace',
+                            amount: (
+                              parseFloat(data.credits.lovelace) * 1000000
+                            ).toString(),
+                          },
+                        ]
+                      : []),
+                    ...(data.credits.usdm
+                      ? [
+                          {
+                            unit: 'usdm',
+                            amount: data.credits.usdm,
+                          },
+                        ]
+                      : []),
+                  ]
+                : [],
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('API key created successfully');
+          onSuccess();
+          onClose();
         },
-      ];
-      const response = await postApiKey({
-        client: apiClient,
-        body: {
-          permission: data.permission,
-          usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
-          networkLimit: data.networks,
-          UsageCredits: isReadOnly
-            ? defaultCredits
-            : data.usageLimited
-              ? [
-                  ...(data.credits.lovelace
-                    ? [
-                        {
-                          unit: 'lovelace',
-                          amount: (
-                            parseFloat(data.credits.lovelace) * 1000000
-                          ).toString(),
-                        },
-                      ]
-                    : []),
-                  ...(data.credits.usdm
-                    ? [
-                        {
-                          unit: 'usdm',
-                          amount: data.credits.usdm,
-                        },
-                      ]
-                    : []),
-                ]
-              : [],
+        onFinally: () => {
+          setIsLoading(false);
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Failed to create API key');
-        return;
-      }
-
-      toast.success('API key created successfully');
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error creating API key:', error);
-      toast.error('Failed to create API key');
-    } finally {
-      setIsLoading(false);
-    }
+        errorMessage: 'Failed to create API key',
+      },
+    );
   };
 
   const handleClose = () => {

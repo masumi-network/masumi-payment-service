@@ -203,28 +203,25 @@ export function RegisterAIAgentDialog({
   }, [open, reset]);
 
   const fetchSellingWallets = async () => {
-    await handleApiCall(
-      () => getPaymentSource({ client: apiClient }),
-      {
-        onSuccess: (response) => {
-          if (response.data?.data?.PaymentSources) {
-            const paymentSources = response.data.data.PaymentSources.filter(
-              (s: any) => s.network == state.network,
-            );
-            if (paymentSources.length > 0) {
-              const aggregatedWallets: SellingWallet[] = [];
-              paymentSources.forEach((ps: any) => {
-                ps.SellingWallets.forEach((w: any) => {
-                  aggregatedWallets.push(w);
-                });
+    await handleApiCall(() => getPaymentSource({ client: apiClient }), {
+      onSuccess: (response) => {
+        if (response.data?.data?.PaymentSources) {
+          const paymentSources = response.data.data.PaymentSources.filter(
+            (s: any) => s.network == state.network,
+          );
+          if (paymentSources.length > 0) {
+            const aggregatedWallets: SellingWallet[] = [];
+            paymentSources.forEach((ps: any) => {
+              ps.SellingWallets.forEach((w: any) => {
+                aggregatedWallets.push(w);
               });
-              setSellingWallets(aggregatedWallets);
-            }
+            });
+            setSellingWallets(aggregatedWallets);
           }
-        },
-        errorMessage: 'Failed to load selling wallets',
+        }
       },
-    );
+      errorMessage: 'Failed to load selling wallets',
+    });
   };
 
   const onSubmit = useCallback(
@@ -307,7 +304,9 @@ export function RegisterAIAgentDialog({
         {
           onSuccess: (response) => {
             if (!response.data?.data?.id) {
-              toast.error('Failed to register AI agent: Invalid response from server');
+              toast.error(
+                'Failed to register AI agent: Invalid response from server',
+              );
               return;
             }
             toast.success('AI agent registered successfully');
