@@ -19,6 +19,7 @@ import {
   //getWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -127,20 +128,25 @@ export default function WalletsPage() {
 
   const fetchWalletBalance = useCallback(
     async (address: string) => {
-      const response = await getUtxos({
-        client: apiClient,
-        query: {
-          address: address,
-          network: state.network,
+      const response = await handleApiCall(
+        () =>
+          getUtxos({
+            client: apiClient,
+            query: {
+              address: address,
+              network: state.network,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching wallet balance:', error);
+            toast.error(error.message || 'Failed to fetch wallet balance');
+          },
+          errorMessage: 'Failed to fetch wallet balance',
         },
-      });
+      );
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error fetching wallet balance:', error);
-        toast.error(error.message || 'Failed to fetch wallet balance');
-        return { ada: '0', usdm: '0' };
-      }
+      if (!response) return { ada: '0', usdm: '0' };
 
       if (response.data?.data?.Utxos) {
         let adaBalance = 0;
@@ -170,46 +176,50 @@ export default function WalletsPage() {
 
   const fetchWallets = useCallback(async () => {
     setIsLoading(true);
-    const response = await getPaymentSource({
-      client: apiClient,
-    });
+    const response = await handleApiCall(
+      () => getPaymentSource({ client: apiClient }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching wallets:', error);
+          toast.error(error.message || 'Failed to load wallets');
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to load wallets',
+      },
+    );
 
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error fetching wallets:', error);
-      toast.error(error.message || 'Failed to load wallets');
-      setIsLoading(false);
-      return;
-    }
+    if (!response) return;
 
     if (response.data?.data?.PaymentSources) {
       const paymentSources = response.data.data.PaymentSources.filter(
-        (source) =>
+        (source: any) =>
           selectedPaymentSourceId
             ? source.id === selectedPaymentSourceId
             : true,
       );
       const purchasingWallets = paymentSources
-        .map((source) => source.PurchasingWallets)
+        .map((source: any) => source.PurchasingWallets)
         .flat();
       const sellingWallets = paymentSources
-        .map((source) => source.SellingWallets)
+        .map((source: any) => source.SellingWallets)
         .flat();
 
       if (paymentSources.length > 0) {
         const allWallets: Wallet[] = [
-          ...purchasingWallets.map((wallet) => ({
+          ...purchasingWallets.map((wallet: any) => ({
             ...wallet,
             type: 'Purchasing' as const,
           })),
-          ...sellingWallets.map((wallet) => ({
+          ...sellingWallets.map((wallet: any) => ({
             ...wallet,
             type: 'Selling' as const,
           })),
         ];
 
         const walletsWithBalances = await Promise.all(
-          allWallets.map(async (wallet) => {
+          allWallets.map(async (wallet: any) => {
             const balance = await fetchWalletBalance(wallet.walletAddress);
             let collectionBalance = null;
 
