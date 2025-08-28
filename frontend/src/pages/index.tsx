@@ -418,11 +418,7 @@ export default function Overview() {
                 <Spinner size={20} addContainer />
               ) : (
                 <div className="text-2xl font-semibold">
-                  {
-                    agents.filter(
-                      (agent) => agent.state === 'RegistrationConfirmed',
-                    ).length
-                  }
+                  {agents.length}
                 </div>
               )}
             </div>
