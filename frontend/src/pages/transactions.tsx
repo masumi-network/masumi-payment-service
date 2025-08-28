@@ -178,116 +178,130 @@ export default function Transactions() {
 
   const fetchTransactions = useCallback(
     async (reset = false) => {
-      try {
-        if (reset) {
-          setIsLoading(true);
-          setAllTransactions([]);
-          setPurchaseCursorId(null);
-          setPaymentCursorId(null);
-          setHasMorePurchases(true);
-          setHasMorePayments(true);
-        } else {
-          setIsLoadingMore(true);
-        }
-        const selectedPaymentSource = state.paymentSources.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress;
-        // Fetch purchases
-        let purchases: Transaction[] = [];
-        let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = hasMorePurchases;
-        if (hasMorePurchases) {
-          const purchaseRes = await getPurchase({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: purchaseCursorId || undefined,
-              includeHistory: 'true',
-              limit: 10,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          });
-          if (purchaseRes.data?.data?.Purchases) {
-            purchases = purchaseRes.data.data.Purchases.map((purchase) => ({
-              ...purchase,
-              type: 'purchase',
-            }));
-            if (purchases.length > 0) {
-              newPurchaseCursor = purchases[purchases.length - 1].id;
-            }
-            morePurchases = purchases.length === 10;
-          } else {
-            morePurchases = false;
-          }
-        }
-
-        // Fetch payments
-        let payments: Transaction[] = [];
-        let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = hasMorePayments;
-        if (hasMorePayments) {
-          const paymentRes = await getPayment({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: paymentCursorId || undefined,
-              includeHistory: 'true',
-              limit: 10,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          });
-          if (paymentRes.data?.data?.Payments) {
-            payments = paymentRes.data.data.Payments.map((payment) => ({
-              ...payment,
-              type: 'payment',
-            }));
-            if (payments.length > 0) {
-              newPaymentCursor = payments[payments.length - 1].id;
-            }
-            morePayments = payments.length === 10;
-          } else {
-            morePayments = false;
-          }
-        }
-
-        // Combine and dedupe by type+hash
-        const combined = [
-          ...purchases,
-          ...payments,
-          //fixes ordering for updates
-          ...(reset ? [] : allTransactions),
-        ];
-        const seen = new Set();
-        const deduped = combined.filter((tx) => {
-          const key = tx.id;
-          if (!key) return true;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        // Sort by createdAt
-        const sorted = deduped.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-        setAllTransactions(sorted);
-        setPurchaseCursorId(newPurchaseCursor);
-        setPaymentCursorId(newPaymentCursor);
-        setHasMorePurchases(morePurchases);
-        setHasMorePayments(morePayments);
-      } catch (error) {
-        console.error('Failed to fetch transactions:', error);
-        toast.error('Failed to load transactions');
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+      if (reset) {
+        setIsLoading(true);
+        setAllTransactions([]);
+        setPurchaseCursorId(null);
+        setPaymentCursorId(null);
+        setHasMorePurchases(true);
+        setHasMorePayments(true);
+      } else {
+        setIsLoadingMore(true);
       }
+      const selectedPaymentSource = state.paymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+      const smartContractAddress = selectedPaymentSource?.smartContractAddress;
+      // Fetch purchases
+      let purchases: Transaction[] = [];
+      let newPurchaseCursor: string | null = purchaseCursorId;
+      let morePurchases = hasMorePurchases;
+      if (hasMorePurchases) {
+        const purchaseRes = await getPurchase({
+          client: apiClient,
+          query: {
+            network: state.network,
+            cursorId: purchaseCursorId || undefined,
+            includeHistory: 'true',
+            limit: 10,
+            filterSmartContractAddress: smartContractAddress
+              ? smartContractAddress
+              : undefined,
+          },
+        });
+
+        if (purchaseRes.error) {
+          const error = purchaseRes.error as { message: string };
+          console.error('Error fetching purchases:', error);
+          toast.error(error.message || 'Failed to load purchases');
+          setIsLoading(false);
+          setIsLoadingMore(false);
+          return;
+        }
+
+        if (purchaseRes.data?.data?.Purchases) {
+          purchases = purchaseRes.data.data.Purchases.map((purchase) => ({
+            ...purchase,
+            type: 'purchase',
+          }));
+          if (purchases.length > 0) {
+            newPurchaseCursor = purchases[purchases.length - 1].id;
+          }
+          morePurchases = purchases.length === 10;
+        } else {
+          morePurchases = false;
+        }
+      }
+
+      // Fetch payments
+      let payments: Transaction[] = [];
+      let newPaymentCursor: string | null = paymentCursorId;
+      let morePayments = hasMorePayments;
+      if (hasMorePayments) {
+        const paymentRes = await getPayment({
+          client: apiClient,
+          query: {
+            network: state.network,
+            cursorId: paymentCursorId || undefined,
+            includeHistory: 'true',
+            limit: 10,
+            filterSmartContractAddress: smartContractAddress
+              ? smartContractAddress
+              : undefined,
+          },
+        });
+
+        if (paymentRes.error) {
+          const error = paymentRes.error as { message: string };
+          console.error('Error fetching payments:', error);
+          toast.error(error.message || 'Failed to load payments');
+          setIsLoading(false);
+          setIsLoadingMore(false);
+          return;
+        }
+
+        if (paymentRes.data?.data?.Payments) {
+          payments = paymentRes.data.data.Payments.map((payment) => ({
+            ...payment,
+            type: 'payment',
+          }));
+          if (payments.length > 0) {
+            newPaymentCursor = payments[payments.length - 1].id;
+          }
+          morePayments = payments.length === 10;
+        } else {
+          morePayments = false;
+        }
+      }
+
+      // Combine and dedupe by type+hash
+      const combined = [
+        ...purchases,
+        ...payments,
+        //fixes ordering for updates
+        ...(reset ? [] : allTransactions),
+      ];
+      const seen = new Set();
+      const deduped = combined.filter((tx) => {
+        const key = tx.id;
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      // Sort by createdAt
+      const sorted = deduped.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setAllTransactions(sorted);
+      setPurchaseCursorId(newPurchaseCursor);
+      setPaymentCursorId(newPaymentCursor);
+      setHasMorePurchases(morePurchases);
+      setHasMorePayments(morePayments);
+
+      setIsLoading(false);
+      setIsLoadingMore(false);
     },
     [
       selectedPaymentSourceId,
