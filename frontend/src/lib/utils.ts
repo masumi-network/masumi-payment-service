@@ -34,3 +34,11 @@ export function parseError(error: any): string {
   }
   return 'An error occurred';
 }
+
+export function parseFetchError(errorData: any, response: Response): string {
+  return (
+    errorData.message ||
+    errorData.error ||
+    `HTTP ${response.status}: ${response.statusText}`
+  );
+}

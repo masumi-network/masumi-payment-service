@@ -5,6 +5,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { parseFetchError } from '@/lib/utils';
 
 type UsageCredit = {
   unit: string;
@@ -47,10 +48,7 @@ export function ApiKeyGenerateModal({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMessage =
-          errorData.message ||
-          errorData.error ||
-          `HTTP ${response.status}: ${response.statusText}`;
+        const errorMessage = parseFetchError(errorData, response);
         throw new Error(errorMessage);
       }
 
