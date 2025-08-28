@@ -142,53 +142,60 @@ export default function AIAgentsPage() {
 
   const fetchAgents = useCallback(
     async (cursor?: string | null) => {
-      try {
-        if (!cursor) {
-          setIsLoading(true);
-          setAllAgents([]);
-        } else {
-          setIsLoadingMore(true);
-        }
+      if (!cursor) {
+        setIsLoading(true);
+        setAllAgents([]);
+      } else {
+        setIsLoadingMore(true);
+      }
 
-        const selectedPaymentSource = state.paymentSources.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress;
+      const selectedPaymentSource = state.paymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+      const smartContractAddress = selectedPaymentSource?.smartContractAddress;
 
-        const response = await getRegistry({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: cursor || undefined,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
-          },
-        });
+      const response = await getRegistry({
+        client: apiClient,
+        query: {
+          network: state.network,
+          cursorId: cursor || undefined,
+          filterSmartContractAddress: smartContractAddress
+            ? smartContractAddress
+            : undefined,
+        },
+      });
 
-        if (response.data?.data?.Assets) {
-          const newAgents = response.data.data.Assets;
-          if (cursor) {
-            setAllAgents((prev) => [...prev, ...newAgents]);
-          } else {
-            setAllAgents(newAgents);
-          }
-
-          setHasMore(newAgents.length === 10);
-        } else {
-          if (!cursor) {
-            setAllAgents([]);
-          }
-          setHasMore(false);
-        }
-      } catch (error) {
+      if (response.error) {
+        const error = response.error as { message: string };
         console.error('Error fetching agents:', error);
-        toast.error('Failed to load AI agents');
-      } finally {
+        toast.error(error.message || 'Failed to load AI agents');
+        if (!cursor) {
+          setAllAgents([]);
+        }
+        setHasMore(false);
         setIsLoading(false);
         setIsLoadingMore(false);
+        return;
       }
+
+      if (response.data?.data?.Assets) {
+        const newAgents = response.data.data.Assets;
+        if (cursor) {
+          setAllAgents((prev) => [...prev, ...newAgents]);
+        } else {
+          setAllAgents(newAgents);
+        }
+
+        setHasMore(newAgents.length === 10);
+      } else {
+        if (!cursor) {
+          setAllAgents([]);
+        }
+        setHasMore(false);
+      }
+
+      setIsLoading(false);
+      setIsLoadingMore(false);
     },
     [apiClient, state.network, selectedPaymentSourceId],
   );
@@ -259,50 +266,62 @@ export default function AIAgentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    try {
-      if (
-        selectedAgentToDelete?.state === 'RegistrationFailed' ||
-        selectedAgentToDelete?.state === 'DeregistrationConfirmed'
-      ) {
-        setIsDeleting(true);
-        await deleteRegistry({
-          client: apiClient,
-          body: {
-            id: selectedAgentToDelete.id,
-          },
-        });
-        toast.success('AI agent deleted successfully');
-        setIsDeleteDialogOpen(false);
-        setSelectedAgentToDelete(null);
-        fetchAgents();
-      } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
-        if (!selectedAgentToDelete?.agentIdentifier) {
-          toast.error('Cannot delete agent: Missing identifier');
-          return;
-        }
-        setIsDeleting(true);
-        await postRegistryDeregister({
-          client: apiClient,
-          body: {
-            agentIdentifier: selectedAgentToDelete.agentIdentifier,
-            network: state.network,
-          },
-        });
+    if (
+      selectedAgentToDelete?.state === 'RegistrationFailed' ||
+      selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+    ) {
+      setIsDeleting(true);
+      const response = await deleteRegistry({
+        client: apiClient,
+        body: {
+          id: selectedAgentToDelete.id,
+        },
+      });
 
-        toast.success('AI agent deleted successfully');
-        setIsDeleteDialogOpen(false);
-        setSelectedAgentToDelete(null);
-        fetchAgents();
-      } else {
-        toast.error(
-          'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
-        );
+      if (response.error) {
+        const error = response.error as { message: string };
+        console.error('Error deleting agent:', error);
+        toast.error(error.message || 'Failed to delete AI agent');
+        setIsDeleting(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      toast.error('Failed to delete AI agent');
-    } finally {
+
+      toast.success('AI agent deleted successfully');
+      setIsDeleteDialogOpen(false);
+      setSelectedAgentToDelete(null);
+      fetchAgents();
       setIsDeleting(false);
+    } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
+      if (!selectedAgentToDelete?.agentIdentifier) {
+        toast.error('Cannot delete agent: Missing identifier');
+        return;
+      }
+      setIsDeleting(true);
+      const response = await postRegistryDeregister({
+        client: apiClient,
+        body: {
+          agentIdentifier: selectedAgentToDelete.agentIdentifier,
+          network: state.network,
+        },
+      });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        console.error('Error deleting agent:', error);
+        toast.error(error.message || 'Failed to delete AI agent');
+        setIsDeleting(false);
+        return;
+      }
+
+      toast.success('AI agent deleted successfully');
+      setIsDeleteDialogOpen(false);
+      setSelectedAgentToDelete(null);
+      fetchAgents();
+      setIsDeleting(false);
+    } else {
+      toast.error(
+        'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
+      );
     }
   };
 
@@ -311,52 +330,54 @@ export default function AIAgentsPage() {
   };
 
   const handleWalletClick = async (walletAddress: string) => {
-    try {
-      // Fetch wallet balance
-      const response = await getUtxos({
-        client: apiClient,
-        query: {
-          address: walletAddress,
-          network: state.network,
-        },
-      });
+    // Fetch wallet balance
+    const response = await getUtxos({
+      client: apiClient,
+      query: {
+        address: walletAddress,
+        network: state.network,
+      },
+    });
 
-      let adaBalance = '0';
-      let usdmBalance = '0';
-
-      if (response.data?.data?.Utxos) {
-        response.data.data.Utxos.forEach((utxo) => {
-          utxo.Amounts.forEach((amount) => {
-            if (amount.unit === 'lovelace' || amount.unit === '') {
-              adaBalance = (
-                parseInt(adaBalance) + (amount.quantity || 0)
-              ).toString();
-            } else if (amount.unit === 'USDM') {
-              usdmBalance = (
-                parseInt(usdmBalance) + (amount.quantity || 0)
-              ).toString();
-            }
-          });
-        });
-      }
-
-      // Create wallet details object
-      const walletDetails: WalletWithBalance = {
-        id: walletAddress, // Using address as ID since we don't have the actual wallet ID
-        walletVkey: '', // We don't have this information
-        walletAddress,
-        collectionAddress: null,
-        note: null,
-        type: 'Selling', // AI agents use selling wallets
-        balance: adaBalance,
-        usdmBalance,
-      };
-
-      setSelectedWalletForDetails(walletDetails);
-    } catch (error) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error fetching wallet details:', error);
-      toast.error('Failed to fetch wallet details');
+      toast.error(error.message || 'Failed to fetch wallet details');
+      return;
     }
+
+    let adaBalance = '0';
+    let usdmBalance = '0';
+
+    if (response.data?.data?.Utxos) {
+      response.data.data.Utxos.forEach((utxo) => {
+        utxo.Amounts.forEach((amount) => {
+          if (amount.unit === 'lovelace' || amount.unit === '') {
+            adaBalance = (
+              parseInt(adaBalance) + (amount.quantity || 0)
+            ).toString();
+          } else if (amount.unit === 'USDM') {
+            usdmBalance = (
+              parseInt(usdmBalance) + (amount.quantity || 0)
+            ).toString();
+          }
+        });
+      });
+    }
+
+    // Create wallet details object
+    const walletDetails: WalletWithBalance = {
+      id: walletAddress, // Using address as ID since we don't have the actual wallet ID
+      walletVkey: '', // We don't have this information
+      walletAddress,
+      collectionAddress: null,
+      note: null,
+      type: 'Selling', // AI agents use selling wallets
+      balance: adaBalance,
+      usdmBalance,
+    };
+
+    setSelectedWalletForDetails(walletDetails);
   };
 
   return (
