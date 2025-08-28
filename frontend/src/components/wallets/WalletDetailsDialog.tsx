@@ -88,6 +88,12 @@ export function WalletDetailsDialog({
         },
       });
 
+      if (response.error) {
+        const error = response.error as { message: string };
+        setError(error.message || 'Failed to fetch token balances');
+        return;
+      }
+
       if (response.data?.data?.Utxos) {
         const balanceMap = new Map<string, number>();
 
@@ -203,6 +209,13 @@ export function WalletDetailsDialog({
           includeSecret: 'true',
         },
       });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Failed to export wallet');
+        return;
+      }
+
       setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
     } catch {
       toast.error('Failed to export wallet');
@@ -246,13 +259,19 @@ export function WalletDetailsDialog({
     if (!wallet) return;
 
     try {
-      await patchWallet({
+      const response = await patchWallet({
         client: apiClient,
         body: {
           id: wallet.id,
           newCollectionAddress: newCollectionAddress || null,
         },
       });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Failed to update collection address');
+        return;
+      }
 
       toast.success('Collection address updated successfully');
       setIsEditingCollectionAddress(false);

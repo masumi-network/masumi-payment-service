@@ -87,6 +87,14 @@ export function AddWalletDialog({
       const response = await getPaymentSourceExtended({
         client: apiClient,
       });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        setError(error.message || 'Failed to load payment source');
+        onClose();
+        return;
+      }
+
       const paymentSources =
         response.data?.data?.ExtendedPaymentSources?.filter((p) => {
           return p.network == state.network;
@@ -119,7 +127,16 @@ export function AddWalletDialog({
         },
       });
 
-      if (response.status === 200 && response.data?.data?.walletMnemonic) {
+      if (response.error) {
+        const error = response.error as { message: string };
+        const errorMessage =
+          error.message || 'Failed to generate mnemonic phrase';
+        setError(errorMessage);
+        toast.error(errorMessage);
+        return;
+      }
+
+      if (response.data?.data?.walletMnemonic) {
         setValue('mnemonic', response.data.data.walletMnemonic);
       } else {
         throw new Error('Failed to generate mnemonic phrase');
@@ -164,14 +181,15 @@ export function AddWalletDialog({
         },
       });
 
-      if (response.status === 200) {
-        toast.success(`${type} wallet added successfully`);
-        onSuccess?.();
-        onClose();
-      } else {
-        const err: any = parseError(response?.error);
-        setError(err?.message || err.code || err);
+      if (response.error) {
+        const error = response.error as { message: string };
+        setError(error.message || `Failed to add ${type} wallet`);
+        return;
       }
+
+      toast.success(`${type} wallet added successfully`);
+      onSuccess?.();
+      onClose();
     } catch (error: any) {
       console.error(error);
       if (error.message) {
