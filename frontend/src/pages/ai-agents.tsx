@@ -662,8 +662,8 @@ export default function AIAgentsPage() {
           title={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
             selectedAgentToDelete?.state === 'DeregistrationConfirmed'
-              ? 'Delete AI Agent'
-              : 'Deregister AI Agent'
+              ? `Delete ${selectedAgentToDelete?.name}`
+              : `Deregister ${selectedAgentToDelete?.name}`
           }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
