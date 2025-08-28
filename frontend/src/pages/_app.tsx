@@ -7,7 +7,7 @@ import type { AppProps } from 'next/app';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { ApiKeyDialog } from '@/components/ApiKeyDialog';
+import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import {
   getHealth,
   getPaymentSource,
