@@ -85,51 +85,60 @@ export default function Overview() {
 
   const fetchAgents = useCallback(
     async (cursor?: string | null) => {
-      try {
+      if (!cursor) {
+        setIsLoadingAgents(true);
+        setAgents([]);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const selectedPaymentSource = state.paymentSources?.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+      const smartContractAddress =
+        selectedPaymentSource?.smartContractAddress ?? null;
+
+      const response = await getRegistry({
+        client: apiClient,
+        query: {
+          network: state.network,
+          cursorId: cursor || undefined,
+          filterSmartContractAddress: smartContractAddress
+            ? smartContractAddress
+            : undefined,
+        },
+      });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        console.error('Error fetching agents:', error);
+        toast.error(error.message || 'Failed to load AI agents');
         if (!cursor) {
-          setIsLoadingAgents(true);
           setAgents([]);
-        } else {
-          setIsLoadingMore(true);
         }
-
-        const selectedPaymentSource = state.paymentSources?.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress ?? null;
-
-        const response = await getRegistry({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: cursor || undefined,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
-          },
-        });
-
-        if (response.data?.data?.Assets) {
-          const newAgents = response.data.data.Assets;
-          if (cursor) {
-            setAgents((prev) => [...prev, ...newAgents]);
-          } else {
-            setAgents(newAgents);
-          }
-          setHasMore(newAgents.length === 10);
-        } else {
-          if (!cursor) {
-            setAgents([]);
-          }
-          setHasMore(false);
-        }
-      } catch {
-        toast.error('Failed to load AI agents');
-      } finally {
+        setHasMore(false);
         setIsLoadingAgents(false);
         setIsLoadingMore(false);
+        return;
       }
+
+      if (response.data?.data?.Assets) {
+        const newAgents = response.data.data.Assets;
+        if (cursor) {
+          setAgents((prev) => [...prev, ...newAgents]);
+        } else {
+          setAgents(newAgents);
+        }
+        setHasMore(newAgents.length === 10);
+      } else {
+        if (!cursor) {
+          setAgents([]);
+        }
+        setHasMore(false);
+      }
+
+      setIsLoadingAgents(false);
+      setIsLoadingMore(false);
     },
     [apiClient, state.network, state.paymentSources, selectedPaymentSourceId],
   );
@@ -143,124 +152,132 @@ export default function Overview() {
 
   const fetchWalletBalance = useCallback(
     async (address: string) => {
-      try {
-        const response = await getUtxos({
-          client: apiClient,
-          query: {
-            address: address,
-            network: state.network,
-          },
-        });
+      const response = await getUtxos({
+        client: apiClient,
+        query: {
+          address: address,
+          network: state.network,
+        },
+      });
 
-        if (response.data?.data?.Utxos) {
-          let adaBalance = 0;
-          let usdmBalance = 0;
-
-          response.data.data.Utxos.forEach((utxo) => {
-            utxo.Amounts.forEach((amount) => {
-              if (amount.unit === 'lovelace' || amount.unit == '') {
-                adaBalance += amount.quantity || 0;
-              } else if (amount.unit === 'USDM') {
-                usdmBalance += amount.quantity || 0;
-              }
-            });
-          });
-
-          return {
-            ada: adaBalance.toString(),
-            usdm: usdmBalance.toString(),
-          };
-        }
-        return { ada: '0', usdm: '0' };
-      } catch (error) {
+      if (response.error) {
+        const error = response.error as { message: string };
         console.error('Error fetching wallet balance:', error);
         return { ada: '0', usdm: '0' };
       }
+
+      if (response.data?.data?.Utxos) {
+        let adaBalance = 0;
+        let usdmBalance = 0;
+
+        response.data.data.Utxos.forEach((utxo) => {
+          utxo.Amounts.forEach((amount) => {
+            if (amount.unit === 'lovelace' || amount.unit == '') {
+              adaBalance += amount.quantity || 0;
+            } else if (amount.unit === 'USDM') {
+              usdmBalance += amount.quantity || 0;
+            }
+          });
+        });
+
+        return {
+          ada: adaBalance.toString(),
+          usdm: usdmBalance.toString(),
+        };
+      }
+      return { ada: '0', usdm: '0' };
     },
     [apiClient, state.network],
   );
 
   const fetchWallets = useCallback(async () => {
-    try {
-      setIsLoadingWallets(true);
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
+    setIsLoadingWallets(true);
+    const response = await getPaymentSource({
+      client: apiClient,
+    });
 
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (source) =>
-            selectedPaymentSourceId
-              ? source.id === selectedPaymentSourceId
-              : true,
-        );
-        const purchasingWallets = paymentSources
-          .map((source) => source.PurchasingWallets)
-          .flat();
-        const sellingWallets = paymentSources
-          .map((source) => source.SellingWallets)
-          .flat();
-        if (paymentSources.length > 0) {
-          const allWallets: Wallet[] = [
-            ...purchasingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Purchasing' as const,
-            })),
-            ...sellingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Selling' as const,
-            })),
-          ];
-
-          const walletsWithBalances = await Promise.all(
-            allWallets.map(async (wallet) => {
-              const balance = await fetchWalletBalance(wallet.walletAddress);
-              let collectionBalance = { ada: '0', usdm: '0' };
-              if (wallet.collectionAddress) {
-                collectionBalance = await fetchWalletBalance(
-                  wallet.collectionAddress,
-                );
-              }
-              return {
-                ...wallet,
-                usdmBalance: balance.usdm,
-                balance: balance.ada,
-                collectionBalance,
-              };
-            }),
-          );
-
-          const totalAdaBalance = walletsWithBalances.reduce((sum, wallet) => {
-            const main = parseInt(wallet.balance || '0') || 0;
-            const collection =
-              wallet.collectionBalance && wallet.collectionBalance.ada
-                ? parseInt(wallet.collectionBalance.ada)
-                : 0;
-            return sum + main + collection;
-          }, 0);
-          const totalUsdmBalance = walletsWithBalances.reduce((sum, wallet) => {
-            const main = parseInt(wallet.usdmBalance || '0') || 0;
-            const collection =
-              wallet.collectionBalance && wallet.collectionBalance.usdm
-                ? parseInt(wallet.collectionBalance.usdm)
-                : 0;
-            return sum + main + collection;
-          }, 0);
-
-          setTotalBalance(totalAdaBalance.toString());
-          setTotalUsdmBalance(totalUsdmBalance.toString());
-          setWallets(walletsWithBalances);
-        } else {
-          setWallets([]);
-          setTotalBalance('0');
-          setTotalUsdmBalance('0');
-        }
-      }
-    } catch {
-      toast.error('Failed to load wallets');
-    } finally {
+    if (response.error) {
+      const error = response.error as { message: string };
+      console.error('Error fetching wallets:', error);
+      toast.error(error.message || 'Failed to load wallets');
+      setWallets([]);
+      setTotalBalance('0');
+      setTotalUsdmBalance('0');
       setIsLoadingWallets(false);
+      return;
     }
+
+    if (response.data?.data?.PaymentSources) {
+      const paymentSources = response.data.data.PaymentSources.filter(
+        (source) =>
+          selectedPaymentSourceId
+            ? source.id === selectedPaymentSourceId
+            : true,
+      );
+      const purchasingWallets = paymentSources
+        .map((source) => source.PurchasingWallets)
+        .flat();
+      const sellingWallets = paymentSources
+        .map((source) => source.SellingWallets)
+        .flat();
+      if (paymentSources.length > 0) {
+        const allWallets: Wallet[] = [
+          ...purchasingWallets.map((wallet) => ({
+            ...wallet,
+            type: 'Purchasing' as const,
+          })),
+          ...sellingWallets.map((wallet) => ({
+            ...wallet,
+            type: 'Selling' as const,
+          })),
+        ];
+
+        const walletsWithBalances = await Promise.all(
+          allWallets.map(async (wallet) => {
+            const balance = await fetchWalletBalance(wallet.walletAddress);
+            let collectionBalance = { ada: '0', usdm: '0' };
+            if (wallet.collectionAddress) {
+              collectionBalance = await fetchWalletBalance(
+                wallet.collectionAddress,
+              );
+            }
+            return {
+              ...wallet,
+              usdmBalance: balance.usdm,
+              balance: balance.ada,
+              collectionBalance,
+            };
+          }),
+        );
+
+        const totalAdaBalance = walletsWithBalances.reduce((sum, wallet) => {
+          const main = parseInt(wallet.balance || '0') || 0;
+          const collection =
+            wallet.collectionBalance && wallet.collectionBalance.ada
+              ? parseInt(wallet.collectionBalance.ada)
+              : 0;
+          return sum + main + collection;
+        }, 0);
+        const totalUsdmBalance = walletsWithBalances.reduce((sum, wallet) => {
+          const main = parseInt(wallet.usdmBalance || '0') || 0;
+          const collection =
+            wallet.collectionBalance && wallet.collectionBalance.usdm
+              ? parseInt(wallet.collectionBalance.usdm)
+              : 0;
+          return sum + main + collection;
+        }, 0);
+
+        setTotalBalance(totalAdaBalance.toString());
+        setTotalUsdmBalance(totalUsdmBalance.toString());
+        setWallets(walletsWithBalances);
+      } else {
+        setWallets([]);
+        setTotalBalance('0');
+        setTotalUsdmBalance('0');
+      }
+    }
+
+    setIsLoadingWallets(false);
   }, [apiClient, fetchWalletBalance, selectedPaymentSourceId]);
 
   useEffect(() => {
