@@ -109,6 +109,11 @@ function SeedPhrasesScreen({
           },
         });
 
+        if (buyingResponse.error) {
+          const error = buyingResponse.error as { message: string };
+          throw new Error(error.message || 'Failed to generate buying wallet');
+        }
+
         if (
           !buyingResponse?.data?.data?.walletMnemonic ||
           !buyingResponse?.data?.data?.walletAddress
@@ -127,6 +132,11 @@ function SeedPhrasesScreen({
             network: state.network,
           },
         });
+
+        if (sellingResponse.error) {
+          const error = sellingResponse.error as { message: string };
+          throw new Error(error.message || 'Failed to generate selling wallet');
+        }
 
         if (
           !sellingResponse?.data?.data?.walletMnemonic ||
@@ -434,9 +444,10 @@ function PaymentSourceSetupScreen({
         },
       });
 
-      if (response.status !== 200) {
-        setError('Failed to create payment source');
-        toast.error('Failed to create payment source');
+      if (response.error) {
+        const error = response.error as { message: string };
+        setError(error.message || 'Failed to create payment source');
+        toast.error(error.message || 'Failed to create payment source');
         return;
       }
 
