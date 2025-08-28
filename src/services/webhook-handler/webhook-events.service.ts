@@ -1,8 +1,7 @@
 import { webhookQueueService } from './webhook-queue.service';
 import { logger } from '@/utils/logger';
-import { WEBHOOK_EVENT_VALUES } from '@/types/webhook-payloads';
 import { prisma } from '@/utils/db';
-import type { WebhookEventType } from '@prisma/client';
+import { WebhookEventType } from '@prisma/client';
 
 export class WebhookEventsService {
   private async queryPurchaseForWebhook(purchaseId: string) {
@@ -168,7 +167,7 @@ export class WebhookEventsService {
 
   async triggerPurchaseOnChainStatusChanged(purchaseId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WEBHOOK_EVENT_VALUES.PURCHASE_ON_CHAIN_STATUS_CHANGED,
+      WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED,
       purchaseId,
       'purchase',
       {},
@@ -177,7 +176,7 @@ export class WebhookEventsService {
 
   async triggerPaymentOnChainStatusChanged(paymentId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WEBHOOK_EVENT_VALUES.PAYMENT_ON_CHAIN_STATUS_CHANGED,
+      WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED,
       paymentId,
       'payment',
       {},
@@ -186,7 +185,7 @@ export class WebhookEventsService {
 
   async triggerPurchaseOnError(purchaseId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WEBHOOK_EVENT_VALUES.PURCHASE_ON_ERROR,
+      WebhookEventType.PURCHASE_ON_ERROR,
       purchaseId,
       'purchase',
       {},
@@ -195,7 +194,7 @@ export class WebhookEventsService {
 
   async triggerPaymentOnError(paymentId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WEBHOOK_EVENT_VALUES.PAYMENT_ON_ERROR,
+      WebhookEventType.PAYMENT_ON_ERROR,
       paymentId,
       'payment',
       {},
