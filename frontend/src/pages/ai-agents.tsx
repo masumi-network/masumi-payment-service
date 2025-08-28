@@ -659,7 +659,12 @@ export default function AIAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
           }}
-          title="Delete AI Agent"
+          title={
+            selectedAgentToDelete?.state === 'RegistrationFailed' ||
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              ? 'Delete AI Agent'
+              : 'Deregister AI Agent'
+          }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
             selectedAgentToDelete?.state === 'DeregistrationConfirmed'
