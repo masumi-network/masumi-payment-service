@@ -235,7 +235,10 @@ export function AddPaymentSourceDialog({
           onClose();
         },
         onError: (error: any) => {
-          const errorMessage = error.message || error.error?.message || 'Failed to create payment source';
+          const errorMessage =
+            error.message ||
+            error.error?.message ||
+            'Failed to create payment source';
           setError(errorMessage);
         },
         onFinally: () => {
@@ -263,7 +266,8 @@ export function AddPaymentSourceDialog({
         onSuccess: (response: any) => {
           if (response.data?.data?.walletMnemonic) {
             // Set the mnemonic in the form
-            const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
+            const fieldName =
+              `purchasingWallets.${index}.walletMnemonic` as const;
             setValue(fieldName, response.data.data.walletMnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
