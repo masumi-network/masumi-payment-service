@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
-import { parseError } from '@/lib/utils';
+import { parseError, handleApiCall } from '@/lib/utils';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -114,54 +114,49 @@ export function UpdateApiKeyDialog({
   });
 
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
-    try {
-      setIsLoading(true);
-      const usageCredits = [];
-      if (data.credits.lovelace) {
-        usageCredits.push({
-          unit: 'lovelace',
-          amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
-        });
-      }
-      if (data.credits.usdm) {
-        usageCredits.push({
-          unit: 'usdm',
-          amount: data.credits.usdm,
-        });
-      }
-      const response = await patchApiKey({
-        client: apiClient,
-        body: {
-          id: apiKey.id,
-          ...(data.newToken && { token: data.newToken }),
-          ...(data.status !== apiKey.status && { status: data.status }),
-          ...(usageCredits.length > 0 && {
-            UsageCreditsToAddOrRemove: usageCredits,
-          }),
-        },
+    const usageCredits: Array<{ unit: string; amount: string }> = [];
+    if (data.credits.lovelace) {
+      usageCredits.push({
+        unit: 'lovelace',
+        amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
       });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Failed to update API key');
-        return;
-      }
-
-      const responseData = response?.data as PatchApiKeyResponse;
-      if (!responseData?.data?.id) {
-        throw new Error(
-          'Failed to update API key: Invalid response from server',
-        );
-      }
-      toast.success('API key updated successfully');
-      onSuccess();
-      handleClose();
-    } catch (error: any) {
-      console.error('Error updating API key:', error);
-      toast.error(parseError(error));
-    } finally {
-      setIsLoading(false);
     }
+    if (data.credits.usdm) {
+      usageCredits.push({
+        unit: 'usdm',
+        amount: data.credits.usdm,
+      });
+    }
+    await handleApiCall(
+      () =>
+        patchApiKey({
+          client: apiClient,
+          body: {
+            id: apiKey.id,
+            ...(data.newToken && { token: data.newToken }),
+            ...(data.status !== apiKey.status && { status: data.status }),
+            ...(usageCredits.length > 0 && {
+              UsageCreditsToAddOrRemove: usageCredits,
+            }),
+          },
+        }),
+      {
+        onSuccess: (response) => {
+          const responseData = response?.data as PatchApiKeyResponse;
+          if (!responseData?.data?.id) {
+            toast.error('Failed to update API key: Invalid response from server');
+            return;
+          }
+          toast.success('API key updated successfully');
+          onSuccess();
+          handleClose();
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to update API key',
+      },
+    );
   };
 
   const handleClose = () => {
