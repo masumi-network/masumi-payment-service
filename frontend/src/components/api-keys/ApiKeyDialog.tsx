@@ -1,10 +1,10 @@
-import { Button } from './ui/button';
-import { Input } from './ui/input';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getApiKeyStatus, getPaymentSource } from '@/lib/api/generated';
-import { Header } from './Header';
-import { Footer } from './Footer';
+import { Header } from '../Header';
+import { Footer } from '../Footer';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
