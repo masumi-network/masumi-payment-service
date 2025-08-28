@@ -22,7 +22,7 @@ import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, getPaymentSource } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, handleApiCall } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
@@ -203,134 +203,124 @@ export function RegisterAIAgentDialog({
   }, [open, reset]);
 
   const fetchSellingWallets = async () => {
-    try {
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Failed to load selling wallets');
-        return;
-      }
-
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (s) => s.network == state.network,
-        );
-        if (paymentSources.length > 0) {
-          const aggregatedWallets: SellingWallet[] = [];
-          paymentSources.forEach((ps) => {
-            ps.SellingWallets.forEach((w) => {
-              aggregatedWallets.push(w);
-            });
-          });
-          setSellingWallets(aggregatedWallets);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching selling wallets:', error);
-      toast.error('Failed to load selling wallets');
-    }
+    await handleApiCall(
+      () => getPaymentSource({ client: apiClient }),
+      {
+        onSuccess: (response) => {
+          if (response.data?.data?.PaymentSources) {
+            const paymentSources = response.data.data.PaymentSources.filter(
+              (s: any) => s.network == state.network,
+            );
+            if (paymentSources.length > 0) {
+              const aggregatedWallets: SellingWallet[] = [];
+              paymentSources.forEach((ps: any) => {
+                ps.SellingWallets.forEach((w: any) => {
+                  aggregatedWallets.push(w);
+                });
+              });
+              setSellingWallets(aggregatedWallets);
+            }
+          }
+        },
+        errorMessage: 'Failed to load selling wallets',
+      },
+    );
   };
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
-      try {
-        setIsLoading(true);
-        const selectedWallet = data.selectedWallet;
-        const paymentSource = state.paymentSources?.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
-        );
-        if (!paymentSource) {
-          throw new Error('Smart contract wallet not found in payment sources');
-        }
-
-        const legal: {
-          privacyPolicy?: string;
-          terms?: string;
-          other?: string;
-        } = {};
-        if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
-        if (data.termsOfUseUrl) legal.terms = data.termsOfUseUrl;
-        if (data.otherUrl) legal.other = data.otherUrl;
-
-        const author: {
-          name: string;
-          contactEmail?: string;
-          contactOther?: string;
-          organization?: string;
-        } = {
-          name: data.authorName || 'Default Author', // Default in case it's empty
-        };
-        if (data.authorEmail) author.contactEmail = data.authorEmail;
-        if (data.contactOther) author.contactOther = data.contactOther;
-        if (data.organization) author.organization = data.organization;
-
-        const capability =
-          data.capabilityName && data.capabilityVersion
-            ? {
-                name: data.capabilityName,
-                version: data.capabilityVersion,
-              }
-            : { name: 'Custom Agent', version: '1.0.0' };
-
-        const response = await postRegistry({
-          client: apiClient,
-          body: {
-            network: state.network,
-            sellingWalletVkey: data.selectedWallet,
-            name: data.name,
-            description: data.description,
-            apiBaseUrl: data.apiUrl,
-            Tags: data.tags,
-            Capability: capability,
-            AgentPricing: {
-              pricingType: 'Fixed',
-              Pricing: data.prices.map((price) => {
-                const unit =
-                  price.unit === 'USDM'
-                    ? getUsdmConfig(state.network).fullAssetId
-                    : price.unit;
-                return {
-                  unit,
-                  amount: (parseFloat(price.amount) * 1_000_000).toString(),
-                };
-              }),
-            },
-            Author: author,
-            Legal: Object.keys(legal).length > 0 ? legal : undefined,
-            ExampleOutputs:
-              data.exampleOutputs?.map((e) => ({
-                name: e.name,
-                url: e.url,
-                mimeType: e.mimeType,
-              })) || [],
-          },
-        });
-
-        if (response.error) {
-          const error = response.error as { message: string };
-          toast.error(error.message || 'Failed to register AI agent');
-          return;
-        }
-
-        if (!response.data?.data?.id) {
-          throw new Error(
-            'Failed to register AI agent: Invalid response from server',
-          );
-        }
-
-        toast.success('AI agent registered successfully');
-        onSuccess();
-        onClose();
-        reset();
-      } catch (error: any) {
-        console.error('Error registering AI agent:', error);
-        toast.error(error?.message ?? 'Failed to register AI agent');
-      } finally {
+      setIsLoading(true);
+      const selectedWallet = data.selectedWallet;
+      const paymentSource = state.paymentSources?.find((ps) =>
+        ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
+      );
+      if (!paymentSource) {
+        toast.error('Smart contract wallet not found in payment sources');
         setIsLoading(false);
+        return;
       }
+
+      const legal: {
+        privacyPolicy?: string;
+        terms?: string;
+        other?: string;
+      } = {};
+      if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
+      if (data.termsOfUseUrl) legal.terms = data.termsOfUseUrl;
+      if (data.otherUrl) legal.other = data.otherUrl;
+
+      const author: {
+        name: string;
+        contactEmail?: string;
+        contactOther?: string;
+        organization?: string;
+      } = {
+        name: data.authorName || 'Default Author', // Default in case it's empty
+      };
+      if (data.authorEmail) author.contactEmail = data.authorEmail;
+      if (data.contactOther) author.contactOther = data.contactOther;
+      if (data.organization) author.organization = data.organization;
+
+      const capability =
+        data.capabilityName && data.capabilityVersion
+          ? {
+              name: data.capabilityName,
+              version: data.capabilityVersion,
+            }
+          : { name: 'Custom Agent', version: '1.0.0' };
+
+      await handleApiCall(
+        () =>
+          postRegistry({
+            client: apiClient,
+            body: {
+              network: state.network,
+              sellingWalletVkey: data.selectedWallet,
+              name: data.name,
+              description: data.description,
+              apiBaseUrl: data.apiUrl,
+              Tags: data.tags,
+              Capability: capability,
+              AgentPricing: {
+                pricingType: 'Fixed',
+                Pricing: data.prices.map((price) => {
+                  const unit =
+                    price.unit === 'USDM'
+                      ? getUsdmConfig(state.network).fullAssetId
+                      : price.unit;
+                  return {
+                    unit,
+                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  };
+                }),
+              },
+              Author: author,
+              Legal: Object.keys(legal).length > 0 ? legal : undefined,
+              ExampleOutputs:
+                data.exampleOutputs?.map((e) => ({
+                  name: e.name,
+                  url: e.url,
+                  mimeType: e.mimeType,
+                })) || [],
+            },
+          }),
+        {
+          onSuccess: (response) => {
+            if (!response.data?.data?.id) {
+              toast.error('Failed to register AI agent: Invalid response from server');
+              return;
+            }
+            toast.success('AI agent registered successfully');
+            onSuccess();
+            onClose();
+            reset();
+          },
+          onFinally: () => {
+            setIsLoading(false);
+          },
+          errorMessage: 'Failed to register AI agent',
+        },
+      );
     },
     [apiClient, state.network, state.paymentSources, onSuccess, onClose, reset],
   );
