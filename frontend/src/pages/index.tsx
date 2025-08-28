@@ -10,13 +10,14 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useEffect, useState, useCallback } from 'react';
 import {
+  getRegistry,
+  GetRegistryResponses,
+  getUtxos,
   getPaymentSource,
   GetPaymentSourceResponses,
-  getRegistry,
-  getUtxos,
-  GetRegistryResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
@@ -98,29 +99,38 @@ export default function Overview() {
       const smartContractAddress =
         selectedPaymentSource?.smartContractAddress ?? null;
 
-      const response = await getRegistry({
-        client: apiClient,
-        query: {
-          network: state.network,
-          cursorId: cursor || undefined,
-          filterSmartContractAddress: smartContractAddress
-            ? smartContractAddress
-            : undefined,
+      const response = await handleApiCall(
+        () =>
+          getRegistry({
+            client: apiClient,
+            query: {
+              network: state.network,
+              cursorId: cursor || undefined,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching agents:', error);
+            toast.error(error.message || 'Failed to load AI agents');
+            if (!cursor) {
+              setAgents([]);
+            }
+            setHasMore(false);
+            setIsLoadingAgents(false);
+            setIsLoadingMore(false);
+          },
+          onFinally: () => {
+            setIsLoadingAgents(false);
+            setIsLoadingMore(false);
+          },
+          errorMessage: 'Failed to load AI agents',
         },
-      });
+      );
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error fetching agents:', error);
-        toast.error(error.message || 'Failed to load AI agents');
-        if (!cursor) {
-          setAgents([]);
-        }
-        setHasMore(false);
-        setIsLoadingAgents(false);
-        setIsLoadingMore(false);
-        return;
-      }
+      if (!response) return;
 
       if (response.data?.data?.Assets) {
         const newAgents = response.data.data.Assets;
@@ -136,9 +146,6 @@ export default function Overview() {
         }
         setHasMore(false);
       }
-
-      setIsLoadingAgents(false);
-      setIsLoadingMore(false);
     },
     [apiClient, state.network, state.paymentSources, selectedPaymentSourceId],
   );
@@ -152,26 +159,31 @@ export default function Overview() {
 
   const fetchWalletBalance = useCallback(
     async (address: string) => {
-      const response = await getUtxos({
-        client: apiClient,
-        query: {
-          address: address,
-          network: state.network,
+      const response = await handleApiCall(
+        () =>
+          getUtxos({
+            client: apiClient,
+            query: {
+              address: address,
+              network: state.network,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching wallet balance:', error);
+          },
+          errorMessage: 'Error fetching wallet balance',
         },
-      });
+      );
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error fetching wallet balance:', error);
-        return { ada: '0', usdm: '0' };
-      }
+      if (!response) return { ada: '0', usdm: '0' };
 
       if (response.data?.data?.Utxos) {
         let adaBalance = 0;
         let usdmBalance = 0;
 
-        response.data.data.Utxos.forEach((utxo) => {
-          utxo.Amounts.forEach((amount) => {
+        response.data.data.Utxos.forEach((utxo: any) => {
+          utxo.Amounts.forEach((amount: any) => {
             if (amount.unit === 'lovelace' || amount.unit == '') {
               adaBalance += amount.quantity || 0;
             } else if (amount.unit === 'USDM') {
@@ -192,48 +204,52 @@ export default function Overview() {
 
   const fetchWallets = useCallback(async () => {
     setIsLoadingWallets(true);
-    const response = await getPaymentSource({
-      client: apiClient,
-    });
+    const response = await handleApiCall(
+      () => getPaymentSource({ client: apiClient }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching wallets:', error);
+          toast.error(error.message || 'Failed to load wallets');
+          setWallets([]);
+          setTotalBalance('0');
+          setTotalUsdmBalance('0');
+        },
+        onFinally: () => {
+          setIsLoadingWallets(false);
+        },
+        errorMessage: 'Failed to load wallets',
+      },
+    );
 
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error fetching wallets:', error);
-      toast.error(error.message || 'Failed to load wallets');
-      setWallets([]);
-      setTotalBalance('0');
-      setTotalUsdmBalance('0');
-      setIsLoadingWallets(false);
-      return;
-    }
+    if (!response) return;
 
     if (response.data?.data?.PaymentSources) {
       const paymentSources = response.data.data.PaymentSources.filter(
-        (source) =>
+        (source: any) =>
           selectedPaymentSourceId
             ? source.id === selectedPaymentSourceId
             : true,
       );
       const purchasingWallets = paymentSources
-        .map((source) => source.PurchasingWallets)
+        .map((source: any) => source.PurchasingWallets)
         .flat();
       const sellingWallets = paymentSources
-        .map((source) => source.SellingWallets)
+        .map((source: any) => source.SellingWallets)
         .flat();
       if (paymentSources.length > 0) {
         const allWallets: Wallet[] = [
-          ...purchasingWallets.map((wallet) => ({
+          ...purchasingWallets.map((wallet: any) => ({
             ...wallet,
             type: 'Purchasing' as const,
           })),
-          ...sellingWallets.map((wallet) => ({
+          ...sellingWallets.map((wallet: any) => ({
             ...wallet,
             type: 'Selling' as const,
           })),
         ];
 
         const walletsWithBalances = await Promise.all(
-          allWallets.map(async (wallet) => {
+          allWallets.map(async (wallet: any) => {
             const balance = await fetchWalletBalance(wallet.walletAddress);
             let collectionBalance = { ada: '0', usdm: '0' };
             if (wallet.collectionAddress) {
@@ -276,8 +292,6 @@ export default function Overview() {
         setTotalUsdmBalance('0');
       }
     }
-
-    setIsLoadingWallets(false);
   }, [apiClient, fetchWalletBalance, selectedPaymentSourceId]);
 
   useEffect(() => {
