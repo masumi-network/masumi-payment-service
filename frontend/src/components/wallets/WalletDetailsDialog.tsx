@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { shortenAddress } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
@@ -74,70 +75,71 @@ export function WalletDetailsDialog({
     setIsLoading(true);
     setError(null);
     setTokenBalances([]); // Reset balances when refreshing
-    try {
-      const response = await getUtxos({
-        client: apiClient,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0',
-        },
-        query: {
-          address: wallet.walletAddress,
-          network: state.network,
-        },
-      });
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        setError(error.message || 'Failed to fetch token balances');
-        return;
-      }
+    await handleApiCall(
+      () =>
+        getUtxos({
+          client: apiClient,
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+          },
+          query: {
+            address: wallet.walletAddress,
+            network: state.network,
+          },
+        }),
+      {
+        onSuccess: (response: any) => {
+          if (response.data?.data?.Utxos) {
+            const balanceMap = new Map<string, number>();
 
-      if (response.data?.data?.Utxos) {
-        const balanceMap = new Map<string, number>();
-
-        response.data.data.Utxos.forEach((utxo) => {
-          utxo.Amounts.forEach((amount) => {
-            const currentAmount = balanceMap.get(amount.unit) || 0;
-            balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
-          });
-        });
-
-        const tokens: TokenBalance[] = [];
-        balanceMap.forEach((quantity, unit) => {
-          if (unit === 'lovelace' || unit === '') {
-            tokens.push({
-              unit: 'lovelace',
-              policyId: '',
-              assetName: 'ADA',
-              quantity,
-              displayName: 'ADA',
+            response.data.data.Utxos.forEach((utxo: any) => {
+              utxo.Amounts.forEach((amount: any) => {
+                const currentAmount = balanceMap.get(amount.unit) || 0;
+                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
+              });
             });
-          } else {
-            // For other tokens, split into policy ID and asset name
-            const policyId = unit.slice(0, 56);
-            const assetNameHex = unit.slice(56);
-            const assetName = hexToAscii(assetNameHex);
 
-            tokens.push({
-              unit,
-              policyId,
-              assetName,
-              quantity,
-              displayName: assetName || unit,
+            const tokens: TokenBalance[] = [];
+            balanceMap.forEach((quantity, unit) => {
+              if (unit === 'lovelace' || unit === '') {
+                tokens.push({
+                  unit: 'lovelace',
+                  policyId: '',
+                  assetName: 'ADA',
+                  quantity,
+                  displayName: 'ADA',
+                });
+              } else {
+                // For other tokens, split into policy ID and asset name
+                const policyId = unit.slice(0, 56);
+                const assetNameHex = unit.slice(56);
+                const assetName = hexToAscii(assetNameHex);
+
+                tokens.push({
+                  unit,
+                  policyId,
+                  assetName,
+                  quantity,
+                  displayName: assetName || unit,
+                });
+              }
             });
+
+            setTokenBalances(tokens);
           }
-        });
-
-        setTokenBalances(tokens);
-      }
-    } catch (error) {
-      console.error('Failed to fetch token balances:', error);
-      setError('Failed to fetch token balances');
-    } finally {
-      setIsLoading(false);
-    }
+        },
+        onError: (error: any) => {
+          setError(error.message || 'Failed to fetch token balances');
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to fetch token balances',
+      },
+    );
   };
 
   useEffect(() => {
@@ -200,28 +202,29 @@ export function WalletDetailsDialog({
   const handleExport = async () => {
     if (!wallet || wallet.type === 'Collection') return;
     setIsExporting(true);
-    try {
-      const response = await getWallet({
-        client: apiClient,
-        query: {
-          walletType: wallet.type as 'Purchasing' | 'Selling',
-          id: wallet.id,
-          includeSecret: 'true',
+    await handleApiCall(
+      () =>
+        getWallet({
+          client: apiClient,
+          query: {
+            walletType: wallet.type as 'Purchasing' | 'Selling',
+            id: wallet.id,
+            includeSecret: 'true',
+          },
+        }),
+      {
+        onSuccess: (response: any) => {
+          setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Failed to export wallet');
-        return;
-      }
-
-      setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
-    } catch {
-      toast.error('Failed to export wallet');
-    } finally {
-      setIsExporting(false);
-    }
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to export wallet');
+        },
+        onFinally: () => {
+          setIsExporting(false);
+        },
+        errorMessage: 'Failed to export wallet',
+      },
+    );
   };
 
   const handleCopyMnemonic = async () => {
@@ -258,30 +261,29 @@ export function WalletDetailsDialog({
   const handleSaveCollection = async () => {
     if (!wallet) return;
 
-    try {
-      const response = await patchWallet({
-        client: apiClient,
-        body: {
-          id: wallet.id,
-          newCollectionAddress: newCollectionAddress || null,
+    await handleApiCall(
+      () =>
+        patchWallet({
+          client: apiClient,
+          body: {
+            id: wallet.id,
+            newCollectionAddress: newCollectionAddress || null,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Collection address updated successfully');
+          setIsEditingCollectionAddress(false);
+
+          // Update the wallet object with the new collection address
+          wallet.collectionAddress = newCollectionAddress || null;
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        toast.error(error.message || 'Failed to update collection address');
-        return;
-      }
-
-      toast.success('Collection address updated successfully');
-      setIsEditingCollectionAddress(false);
-
-      // Update the wallet object with the new collection address
-      wallet.collectionAddress = newCollectionAddress || null;
-    } catch (error) {
-      console.error('Failed to update collection address:', error);
-      toast.error('Failed to update collection address');
-    }
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to update collection address');
+        },
+        errorMessage: 'Failed to update collection address',
+      },
+    );
   };
 
   const handleCancelEdit = () => {
