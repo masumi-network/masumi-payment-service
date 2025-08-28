@@ -134,8 +134,8 @@ export function WalletDetailsDialog({
             setTokenBalances(tokens);
           }
         },
-        onError: (error: any) => {
-          setError(error.message || 'Failed to fetch token balances');
+        onError: () => {
+          setError('No token balances found');
         },
         onFinally: () => {
           setIsLoading(false);
