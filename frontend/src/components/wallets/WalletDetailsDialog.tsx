@@ -135,7 +135,9 @@ export function WalletDetailsDialog({
           }
         },
         onError: () => {
-          setError('No token balances found');
+          // Don't set error for no token balances - treat as normal state
+          setTokenBalances([]);
+          setError(null);
         },
         onFinally: () => {
           setIsLoading(false);
