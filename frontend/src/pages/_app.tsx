@@ -20,6 +20,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { handleApiCall } from '@/lib/utils';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -130,13 +131,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   useEffect(() => {
     const init = async () => {
       setIsUnauthorized(false);
-      const response = await getHealth({ client: apiClient });
+      const response = await handleApiCall(
+        () => getHealth({ client: apiClient }),
+        {
+          onError: (error: any) => {
+            console.error('Health check failed:', error);
+            setIsHealthy(false);
+          },
+          errorMessage: 'Health check failed',
+        },
+      );
 
-      if (response.error) {
-        console.error('Health check failed:', response.error);
-        setIsHealthy(false);
-        return;
-      }
+      if (!response) return;
 
       const hexedKey = localStorage.getItem('payment_api_key');
       if (!hexedKey) {
@@ -150,9 +156,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           token: storedApiKey,
         },
       });
-      const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
+      const apiKeyStatus = await handleApiCall(
+        () => getApiKeyStatus({ client: apiClient }),
+        {
+          onError: (error: any) => {
+            setIsHealthy(true);
+            setIsUnauthorized(true);
+          },
+          errorMessage: 'API key status check failed',
+        },
+      );
 
-      if (apiKeyStatus.error) {
+      if (!apiKeyStatus) {
         setIsHealthy(true);
         setIsUnauthorized(true);
         return;
