@@ -45,10 +45,7 @@ type Wallet =
 type WalletWithBalance = Wallet & {
   balance: string;
   usdmBalance: string;
-  collectionBalance?: {
-    ada: string;
-    usdm: string;
-  };
+  isLoadingBalance?: boolean;
 };
 
 export const getStaticProps: GetStaticProps = async () => {
@@ -63,6 +60,7 @@ export default function Overview() {
   const [wallets, setWallets] = useState<WalletWithBalance[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
+  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [totalBalance, setTotalBalance] = useState('0');
   const [totalUsdmBalance, setTotalUsdmBalance] = useState('0');
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
@@ -248,44 +246,90 @@ export default function Overview() {
           })),
         ];
 
-        const walletsWithBalances = await Promise.all(
-          allWallets.map(async (wallet: any) => {
-            const balance = await fetchWalletBalance(wallet.walletAddress);
-            let collectionBalance = { ada: '0', usdm: '0' };
-            if (wallet.collectionAddress) {
-              collectionBalance = await fetchWalletBalance(
-                wallet.collectionAddress,
-              );
-            }
-            return {
-              ...wallet,
-              usdmBalance: balance.usdm,
-              balance: balance.ada,
-              collectionBalance,
-            };
+        // Display wallets immediately with loading states
+        const initialWallets: WalletWithBalance[] = allWallets.map(
+          (wallet: any) => ({
+            ...wallet,
+            balance: '0',
+            usdmBalance: '0',
+            isLoadingBalance: true,
           }),
         );
 
-        const totalAdaBalance = walletsWithBalances.reduce((sum, wallet) => {
-          const main = parseInt(wallet.balance || '0') || 0;
-          const collection =
-            wallet.collectionBalance && wallet.collectionBalance.ada
-              ? parseInt(wallet.collectionBalance.ada)
-              : 0;
-          return sum + main + collection;
-        }, 0);
-        const totalUsdmBalance = walletsWithBalances.reduce((sum, wallet) => {
-          const main = parseInt(wallet.usdmBalance || '0') || 0;
-          const collection =
-            wallet.collectionBalance && wallet.collectionBalance.usdm
-              ? parseInt(wallet.collectionBalance.usdm)
-              : 0;
-          return sum + main + collection;
-        }, 0);
+        setWallets(initialWallets);
+        setTotalBalance('0');
+        setTotalUsdmBalance('0');
 
+        // Fetch balances concurrently
+        setIsLoadingBalances(true);
+        let totalAdaBalance = 0;
+        let totalUsdmBalance = 0;
+
+        // Helper function to update wallet balance
+        const updateWalletBalance = (
+          walletAddress: string,
+          updates: Partial<WalletWithBalance>,
+        ) => {
+          setWallets((prevWallets) =>
+            prevWallets.map((w) =>
+              w.walletAddress === walletAddress ? { ...w, ...updates } : w,
+            ),
+          );
+        };
+
+        // Fetch balances for each wallet concurrently
+        const balancePromises = allWallets.map(async (wallet) => {
+          try {
+            const balance = await fetchWalletBalance(wallet.walletAddress);
+
+            const walletWithBalance: WalletWithBalance = {
+              ...wallet,
+              usdmBalance: balance.usdm,
+              balance: balance.ada,
+              isLoadingBalance: false,
+            };
+
+            // Update wallet state individually
+            updateWalletBalance(wallet.walletAddress, walletWithBalance);
+
+            // Calculate totals
+            const mainAda = parseInt(balance.ada || '0') || 0;
+            const mainUsdm = parseInt(balance.usdm || '0') || 0;
+
+            return {
+              mainAda,
+              mainUsdm,
+            };
+          } catch (error) {
+            console.error(
+              `Failed to fetch balance for wallet ${wallet.walletAddress}:`,
+              error,
+            );
+            updateWalletBalance(wallet.walletAddress, {
+              balance: '0',
+              usdmBalance: '0',
+              isLoadingBalance: false,
+            });
+            return {
+              mainAda: 0,
+              mainUsdm: 0,
+            };
+          }
+        });
+
+        // Wait for all balance fetches to complete and update totals
+        const balanceResults = await Promise.all(balancePromises);
+
+        // Calculate final totals
+        balanceResults.forEach(({ mainAda, mainUsdm }) => {
+          totalAdaBalance += mainAda;
+          totalUsdmBalance += mainUsdm;
+        });
+
+        // Update final totals
         setTotalBalance(totalAdaBalance.toString());
         setTotalUsdmBalance(totalUsdmBalance.toString());
-        setWallets(walletsWithBalances);
+        setIsLoadingBalances(false);
       } else {
         setWallets([]);
         setTotalBalance('0');
@@ -386,7 +430,7 @@ export default function Overview() {
               <div className="text-sm text-muted-foreground mb-2">
                 Total USDM
               </div>
-              {isLoadingWallets ? (
+              {isLoadingWallets || isLoadingBalances ? (
                 <Spinner size={20} addContainer />
               ) : (
                 <div className="text-2xl font-semibold flex items-center gap-1">
@@ -405,7 +449,7 @@ export default function Overview() {
               <div className="text-sm text-muted-foreground mb-2">
                 Total ada balance
               </div>
-              {isLoadingWallets ? (
+              {isLoadingWallets || isLoadingBalances ? (
                 <Spinner size={20} addContainer />
               ) : (
                 <div className="flex flex-col gap-2">
@@ -615,27 +659,40 @@ export default function Overview() {
                             </td>
                             <td className="py-3 px-2 w-32">
                               <div className="text-xs flex items-center gap-1">
-                                {useFormatBalance(
-                                  (parseInt(wallet.balance || '0') / 1000000)
-                                    .toFixed(2)
-                                    ?.toString(),
-                                )}{' '}
-                                <span className="text-xs text-muted-foreground">
-                                  ADA
-                                </span>
+                                {wallet.isLoadingBalance ? (
+                                  <Spinner className="h-3 w-3" />
+                                ) : (
+                                  <>
+                                    {useFormatBalance(
+                                      (
+                                        parseInt(wallet.balance || '0') /
+                                        1000000
+                                      )
+                                        .toFixed(2)
+                                        ?.toString(),
+                                    )}{' '}
+                                    <span className="text-xs text-muted-foreground">
+                                      ADA
+                                    </span>
+                                  </>
+                                )}
                               </div>
                               <div className="text-xs flex items-center gap-1">
-                                {useFormatBalance(
-                                  (
-                                    parseInt(wallet.usdmBalance || '0') /
-                                    1000000
-                                  )
-                                    .toFixed(2)
-                                    ?.toString(),
-                                )}{' '}
-                                <span className="text-xs text-muted-foreground">
-                                  USDM
-                                </span>
+                                {!wallet.isLoadingBalance && (
+                                  <>
+                                    {useFormatBalance(
+                                      (
+                                        parseInt(wallet.usdmBalance || '0') /
+                                        1000000
+                                      )
+                                        .toFixed(2)
+                                        ?.toString(),
+                                    )}{' '}
+                                    <span className="text-xs text-muted-foreground">
+                                      USDM
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </td>
                             <td className="py-3 px-2 w-32">

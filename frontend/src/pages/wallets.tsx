@@ -19,11 +19,7 @@ import {
   //getWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import {
-  handleApiCall,
-  loadWalletsProgressively,
-  WalletWithLoadingState,
-} from '@/lib/utils';
+import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -214,20 +210,21 @@ export default function WalletsPage() {
         .map((source: any) => source.SellingWallets)
         .flat();
 
-              if (paymentSources.length > 0) {
-          const allWallets: Wallet[] = [
-            ...purchasingWallets.map((wallet: any) => ({
-              ...wallet,
-              type: 'Purchasing' as const,
-            })),
-            ...sellingWallets.map((wallet: any) => ({
-              ...wallet,
-              type: 'Selling' as const,
-            })),
-          ];
+      if (paymentSources.length > 0) {
+        const allWallets: Wallet[] = [
+          ...purchasingWallets.map((wallet: any) => ({
+            ...wallet,
+            type: 'Purchasing' as const,
+          })),
+          ...sellingWallets.map((wallet: any) => ({
+            ...wallet,
+            type: 'Selling' as const,
+          })),
+        ];
 
-          // Display wallets immediately with loading states
-          const initialWallets: WalletWithBalance[] = allWallets.map((wallet: any) => ({
+        // Display wallets immediately with loading states
+        const initialWallets: WalletWithBalance[] = allWallets.map(
+          (wallet: any) => ({
             id: wallet.id,
             walletVkey: wallet.walletVkey,
             walletAddress: wallet.walletAddress,
@@ -239,55 +236,64 @@ export default function WalletsPage() {
             collectionBalance: null,
             isLoadingBalance: true,
             isLoadingCollectionBalance: !!wallet.collectionAddress,
-          }));
+          }),
+        );
 
-          setAllWallets(initialWallets);
-          setFilteredWallets(initialWallets);
+        setAllWallets(initialWallets);
+        setFilteredWallets(initialWallets);
 
-          // Fetch balances progressively
-          const updateWalletBalance = (walletId: string, updates: Partial<WalletWithBalance>) => {
-            setAllWallets((prev) =>
-              prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w))
-            );
-            setFilteredWallets((prev) =>
-              prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w))
-            );
-          };
+        // Fetch balances progressively
+        const updateWalletBalance = (
+          walletId: string,
+          updates: Partial<WalletWithBalance>,
+        ) => {
+          setAllWallets((prev) =>
+            prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w)),
+          );
+          setFilteredWallets((prev) =>
+            prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w)),
+          );
+        };
 
-          // Fetch balances for each wallet
-          allWallets.forEach(async (wallet: any) => {
-            try {
-              const balance = await fetchWalletBalance(wallet.walletAddress);
+        // Fetch balances for each wallet
+        allWallets.forEach(async (wallet: any) => {
+          try {
+            const balance = await fetchWalletBalance(wallet.walletAddress);
+            updateWalletBalance(wallet.id, {
+              balance: balance.ada,
+              usdmBalance: balance.usdm,
+              isLoadingBalance: false,
+            });
+
+            if (wallet.collectionAddress) {
+              const collectionBalance = await fetchWalletBalance(
+                wallet.collectionAddress,
+              );
               updateWalletBalance(wallet.id, {
-                balance: balance.ada,
-                usdmBalance: balance.usdm,
-                isLoadingBalance: false,
-              });
-
-              if (wallet.collectionAddress) {
-                const collectionBalance = await fetchWalletBalance(wallet.collectionAddress);
-                updateWalletBalance(wallet.id, {
-                  collectionBalance: {
-                    ada: collectionBalance.ada,
-                    usdm: collectionBalance.usdm,
-                  },
-                  isLoadingCollectionBalance: false,
-                });
-              }
-            } catch (error) {
-              console.error(`Failed to fetch balance for wallet ${wallet.id}:`, error);
-              updateWalletBalance(wallet.id, {
-                balance: '0',
-                usdmBalance: '0',
-                isLoadingBalance: false,
+                collectionBalance: {
+                  ada: collectionBalance.ada,
+                  usdm: collectionBalance.usdm,
+                },
                 isLoadingCollectionBalance: false,
               });
             }
-          });
-        } else {
-          setAllWallets([]);
-          setFilteredWallets([]);
-        }
+          } catch (error) {
+            console.error(
+              `Failed to fetch balance for wallet ${wallet.id}:`,
+              error,
+            );
+            updateWalletBalance(wallet.id, {
+              balance: '0',
+              usdmBalance: '0',
+              isLoadingBalance: false,
+              isLoadingCollectionBalance: false,
+            });
+          }
+        });
+      } else {
+        setAllWallets([]);
+        setFilteredWallets([]);
+      }
     }
 
     setIsLoading(false);
@@ -555,7 +561,8 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                            {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
+                            {refreshingBalances.has(wallet.id) ||
+                            wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
@@ -587,7 +594,8 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
+                          {refreshingBalances.has(wallet.id) ||
+                          wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>
