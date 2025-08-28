@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import { handleApiCall } from '@/lib/utils';
 
 export function ApiKeyDialog() {
   const router = useRouter();
@@ -23,17 +24,21 @@ export function ApiKeyDialog() {
 
     apiClient.setConfig({ headers: { token: key } });
 
-    const statusResponse = await getApiKeyStatus({
-      client: apiClient,
-    });
+    const statusResponse = await handleApiCall(
+      () => getApiKeyStatus({ client: apiClient }),
+      {
+        onError: (error: any) => {
+          setError(error.message || 'Invalid Key, check the entered data');
+          localStorage.removeItem('payment_api_key');
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Invalid Key, check the entered data',
+      },
+    );
 
-    if (statusResponse.error) {
-      const error = statusResponse.error as { message: string };
-      setError(error.message || 'Invalid Key, check the entered data');
-      localStorage.removeItem('payment_api_key');
-      setIsLoading(false);
-      return;
-    }
+    if (!statusResponse) return;
 
     if (statusResponse.data?.data.status !== 'Active') {
       setError('Invalid Key: Admin key is not active');
@@ -55,17 +60,21 @@ export function ApiKeyDialog() {
     localStorage.setItem('payment_api_key', hexKey);
     dispatch({ type: 'SET_API_KEY', payload: key });
 
-    const sourcesResponse = await getPaymentSource({
-      client: apiClient,
-    });
+    const sourcesResponse = await handleApiCall(
+      () => getPaymentSource({ client: apiClient }),
+      {
+        onError: (error: any) => {
+          setError(error.message || 'Failed to fetch payment sources');
+          localStorage.removeItem('payment_api_key');
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to fetch payment sources',
+      },
+    );
 
-    if (sourcesResponse.error) {
-      const error = sourcesResponse.error as { message: string };
-      setError(error.message || 'Failed to fetch payment sources');
-      localStorage.removeItem('payment_api_key');
-      setIsLoading(false);
-      return;
-    }
+    if (!sourcesResponse) return;
 
     const sources = sourcesResponse.data?.data?.PaymentSources ?? [];
 
