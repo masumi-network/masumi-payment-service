@@ -19,7 +19,7 @@ import { registerAgentV1 } from '../cardano-register-handler/';
 import { deRegisterAgentV1 } from '../cardano-deregister-handler/';
 import { authorizeRefundV1 } from '../cardano-authorize-refund-handler/';
 import { cancelRefundsV1 } from '../cardano-cancel-refund-handler/';
-import { DEFAULTS } from '@/utils/config';
+import { CONFIG, DEFAULTS } from '@/utils/config';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 
@@ -54,7 +54,7 @@ export async function updateWalletTransactionHash() {
                 lt: new Date(
                   Date.now() -
                     //15 minutes for timeouts, check every tx older than 1 minute
-                    DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                    CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                 ),
               },
               CurrentTransaction: null,
@@ -82,7 +82,7 @@ export async function updateWalletTransactionHash() {
             paymentRequest.SmartContractWallet.pendingTransactionId == null &&
             paymentRequest.SmartContractWallet.lockedAt &&
             new Date(paymentRequest.SmartContractWallet.lockedAt) <
-              new Date(Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL)
+              new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
             unlockedSellingWalletIds.push(
               paymentRequest.SmartContractWallet?.id,
@@ -105,7 +105,7 @@ export async function updateWalletTransactionHash() {
                             paymentRequest.SmartContractWallet.lockedAt,
                           ) <
                             new Date(
-                              Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                             )
                             ? null
                             : undefined,
@@ -214,7 +214,7 @@ export async function updateWalletTransactionHash() {
                 lt: new Date(
                   Date.now() -
                     //15 minutes for timeouts, check every tx older than 1 minute
-                    DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                    CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                 ),
               },
               CurrentTransaction: null,
@@ -241,7 +241,7 @@ export async function updateWalletTransactionHash() {
             purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
             purchaseRequest.SmartContractWallet.lockedAt &&
             new Date(purchaseRequest.SmartContractWallet.lockedAt) <
-              new Date(Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL)
+              new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
             unlockedPurchasingWalletIds.push(
               purchaseRequest.SmartContractWallet?.id,
@@ -264,7 +264,7 @@ export async function updateWalletTransactionHash() {
                             purchaseRequest.SmartContractWallet.lockedAt,
                           ) <
                             new Date(
-                              Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                             )
                             ? null
                             : undefined,
@@ -373,7 +373,7 @@ export async function updateWalletTransactionHash() {
                 lt: new Date(
                   Date.now() -
                     //15 minutes for timeouts, check every tx older than 1 minute
-                    DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                    CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                 ),
               },
               CurrentTransaction: null,
@@ -401,7 +401,7 @@ export async function updateWalletTransactionHash() {
             registryRequest.SmartContractWallet.pendingTransactionId == null &&
             registryRequest.SmartContractWallet.lockedAt &&
             new Date(registryRequest.SmartContractWallet.lockedAt) <
-              new Date(Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL)
+              new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
             unlockedSellingWalletIds.push(
               registryRequest.SmartContractWallet?.id,
@@ -424,7 +424,7 @@ export async function updateWalletTransactionHash() {
                             registryRequest.SmartContractWallet.lockedAt,
                           ) <
                             new Date(
-                              Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL,
+                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
                             )
                             ? null
                             : undefined,
@@ -524,7 +524,7 @@ export async function updateWalletTransactionHash() {
         OR: [
           {
             lockedAt: {
-              lt: new Date(Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL),
+              lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
             },
           },
           { lockedAt: null },
@@ -582,7 +582,9 @@ export async function updateWalletTransactionHash() {
 
     const timedOutLockedHotWallets = await prisma.hotWallet.findMany({
       where: {
-        lockedAt: { lt: new Date(Date.now() - DEFAULTS.LOCK_TIMEOUT_INTERVAL) },
+        lockedAt: {
+          lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
+        },
         deletedAt: null,
         PendingTransaction: null,
       },
