@@ -33,6 +33,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { handleApiCall } from '@/lib/utils';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -267,28 +268,30 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
-    setIsDeleting(true);
-
-    const response = await deletePaymentSourceExtended({
-      client: apiClient,
-      body: {
-        id: sourceToDelete.id,
+    await handleApiCall(
+      () =>
+        deletePaymentSourceExtended({
+          client: apiClient,
+          body: {
+            id: sourceToDelete.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Payment source deleted successfully');
+          fetchPaymentSources();
+        },
+        onError: (error: any) => {
+          console.error('Error deleting payment source:', error);
+          toast.error(error.message || 'Failed to delete payment source');
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+          setSourceToDelete(null);
+        },
+        errorMessage: 'Failed to delete payment source',
       },
-    });
-
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error deleting payment source:', error);
-      toast.error(error.message || 'Failed to delete payment source');
-      setIsDeleting(false);
-      setSourceToDelete(null);
-      return;
-    }
-
-    toast.success('Payment source deleted successfully');
-    fetchPaymentSources();
-    setIsDeleting(false);
-    setSourceToDelete(null);
+    );
   };
 
   const handleLoadMore = () => {
