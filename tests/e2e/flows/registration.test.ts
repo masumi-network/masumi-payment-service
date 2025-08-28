@@ -105,17 +105,41 @@ describe('Agent Registration E2E Flow', () => {
 
         // Act - Step 2: Wait for registration to be confirmed using wait-for-expect
         console.log('⏳ Step 2: Waiting for registration confirmation...');
-        let confirmedRegistration: any;
+        console.log(
+          '💡 Blockchain confirmations can be unpredictable on Preprod network',
+        );
+        console.log('🕐 Started waiting at:', new Date().toLocaleString());
 
-        // Configure wait-for-expect
-        waitForExpect.defaults.timeout = (
-          global as any
-        ).testConfig.timeout.registration; // 5 minutes
-        waitForExpect.defaults.interval = 10000; // Check every 10 seconds
+        const startTime = Date.now();
+        let confirmedRegistration: any;
+        let checkCount = 0;
+
+        // Configure wait-for-expect for blockchain confirmation
+        const registrationTimeout = (global as any).testConfig.timeout
+          .registration;
+
+        if (registrationTimeout === 0) {
+          console.log(
+            '⏳ INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
+          );
+          console.log('💡 Press Ctrl+C to stop if needed');
+          waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER; // Effectively infinite
+        } else {
+          console.log(
+            `⏳ TIMEOUT MODE: Will wait ${Math.floor(registrationTimeout / 60000)} minutes for blockchain confirmation`,
+          );
+          waitForExpect.defaults.timeout = registrationTimeout;
+        }
+
+        waitForExpect.defaults.interval = 15000; // Check every 15 seconds
 
         await waitForExpect(async () => {
+          checkCount++;
+          const elapsedMinutes = Math.floor(
+            (Date.now() - startTime) / (1000 * 60),
+          );
           console.log(
-            `🔄 Checking registration state for ${registrationResponse.id}...`,
+            `🔄 Check #${checkCount} (${elapsedMinutes} min elapsed): Checking registration state for ${registrationResponse.id}...`,
           );
           const registration = await (
             global as any
@@ -227,7 +251,21 @@ describe('Agent Registration E2E Flow', () => {
         - Total time: ${Date.now() - new Date(registrationResponse.createdAt).getTime()}ms
       `);
       },
-      10 * 60 * 1000,
-    ); // 10 minute test timeout
+      // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
+      (() => {
+        const { getTestEnvironment } = require('../fixtures/testData');
+        const configTimeout = getTestEnvironment().timeout.registration;
+        if (configTimeout === 0) {
+          console.log('🔧 Jest timeout set to 24 hours (effectively infinite)');
+          return 24 * 60 * 60 * 1000; // 24 hours - effectively infinite for Jest
+        } else {
+          const bufferTime = 5 * 60 * 1000; // 5 minute buffer
+          console.log(
+            `🔧 Jest timeout set to ${Math.floor((configTimeout + bufferTime) / 60000)} minutes`,
+          );
+          return configTimeout + bufferTime;
+        }
+      })(),
+    ); // Dynamic timeout: infinite mode or configured timeout + buffer
   });
 });
