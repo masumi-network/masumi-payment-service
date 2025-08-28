@@ -31,6 +31,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { handleApiCall } from '@/lib/utils';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -162,42 +163,38 @@ export function AddWalletDialog({
       return;
     }
 
-    setIsLoading(true);
-
-    try {
-      const response: any = await patchPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          id: paymentSourceId,
-          [type === 'Purchasing'
-            ? 'AddPurchasingWallets'
-            : 'AddSellingWallets']: [
-            {
-              walletMnemonic: data.mnemonic.trim(),
-              note: data.note.trim(),
-              collectionAddress: data.collectionAddress.trim(),
-            },
-          ],
+    await handleApiCall(
+      () =>
+        patchPaymentSourceExtended({
+          client: apiClient,
+          body: {
+            id: paymentSourceId,
+            [type === 'Purchasing'
+              ? 'AddPurchasingWallets'
+              : 'AddSellingWallets']: [
+              {
+                walletMnemonic: data.mnemonic.trim(),
+                note: data.note.trim(),
+                collectionAddress: data.collectionAddress.trim(),
+              },
+            ],
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success(`${type} wallet added successfully`);
+          onSuccess?.();
+          onClose();
         },
-      });
-
-      if (response.error) {
-        const error = response.error as { message: string };
-        setError(error.message || `Failed to add ${type} wallet`);
-        return;
-      }
-
-      toast.success(`${type} wallet added successfully`);
-      onSuccess?.();
-      onClose();
-    } catch (error: any) {
-      console.error(error);
-      if (error.message) {
-        setError(error.message);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+        onError: (error: any) => {
+          setError(error.message || `Failed to add ${type} wallet`);
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: `Failed to add ${type} wallet`,
+      },
+    );
   };
 
   return (
