@@ -97,55 +97,53 @@ export default function ApiKeys() {
 
   const fetchApiKeys = useCallback(
     async (cursor?: string | null) => {
-      try {
+      if (!cursor) {
+        setIsLoading(true);
+        setAllApiKeys([]);
+      } else {
+        setIsLoadingMore(true);
+      }
+
+      const response = await getApiKey({
+        client: apiClient,
+        query: {
+          limit: 10,
+          cursorToken: cursor || undefined,
+        },
+      });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        console.error('Error fetching API keys:', error);
+        toast.error(error.message || 'Failed to fetch API keys');
         if (!cursor) {
-          setIsLoading(true);
           setAllApiKeys([]);
-        } else {
-          setIsLoadingMore(true);
         }
+        setHasMore(false);
+        setIsLoading(false);
+        setIsLoadingMore(false);
+        return;
+      }
 
-        const response = await getApiKey({
-          client: apiClient,
-          query: {
-            limit: 10,
-            cursorToken: cursor || undefined,
-          },
-        });
+      if (response?.data?.data?.ApiKeys) {
+        const newKeys = response.data.data.ApiKeys;
 
-        if (response?.data?.data?.ApiKeys) {
-          const newKeys = response.data.data.ApiKeys;
+        if (cursor) {
+          setAllApiKeys((prev) => {
+            // Create a map of existing keys by token to prevent duplicates
+            const existingKeysMap = new Map(
+              prev.map((key) => [key.token, key]),
+            );
 
-          if (cursor) {
-            setAllApiKeys((prev) => {
-              // Create a map of existing keys by token to prevent duplicates
-              const existingKeysMap = new Map(
-                prev.map((key) => [key.token, key]),
-              );
-
-              // Add new keys, overwriting any existing ones with the same token
-              newKeys.forEach((key) => {
-                existingKeysMap.set(key.token, key);
-              });
-
-              const combinedKeys = Array.from(existingKeysMap.values());
-
-              // Check if we need to fetch more
-              const filteredCount = combinedKeys.filter((key) =>
-                key.networkLimit.includes(state.network),
-              ).length;
-
-              if (newKeys.length === 10 && filteredCount < 10) {
-                const lastKey = newKeys[newKeys.length - 1];
-                fetchApiKeys(lastKey.token);
-              }
-
-              return combinedKeys;
+            // Add new keys, overwriting any existing ones with the same token
+            newKeys.forEach((key) => {
+              existingKeysMap.set(key.token, key);
             });
-          } else {
-            setAllApiKeys(newKeys);
-            // Check if we need to fetch more for initial load
-            const filteredCount = newKeys.filter((key) =>
+
+            const combinedKeys = Array.from(existingKeysMap.values());
+
+            // Check if we need to fetch more
+            const filteredCount = combinedKeys.filter((key) =>
               key.networkLimit.includes(state.network),
             ).length;
 
@@ -153,22 +151,32 @@ export default function ApiKeys() {
               const lastKey = newKeys[newKeys.length - 1];
               fetchApiKeys(lastKey.token);
             }
-          }
 
-          setHasMore(newKeys.length === 10);
+            return combinedKeys;
+          });
         } else {
-          if (!cursor) {
-            setAllApiKeys([]);
+          setAllApiKeys(newKeys);
+          // Check if we need to fetch more for initial load
+          const filteredCount = newKeys.filter((key) =>
+            key.networkLimit.includes(state.network),
+          ).length;
+
+          if (newKeys.length === 10 && filteredCount < 10) {
+            const lastKey = newKeys[newKeys.length - 1];
+            fetchApiKeys(lastKey.token);
           }
-          setHasMore(false);
         }
-      } catch (error) {
-        console.error('Error fetching API keys:', error);
-        toast.error('Failed to fetch API keys');
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+
+        setHasMore(newKeys.length === 10);
+      } else {
+        if (!cursor) {
+          setAllApiKeys([]);
+        }
+        setHasMore(false);
       }
+
+      setIsLoading(false);
+      setIsLoadingMore(false);
     },
     [apiClient, state.network],
   );
@@ -213,40 +221,28 @@ export default function ApiKeys() {
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
 
-    try {
-      setIsDeleting(true);
+    setIsDeleting(true);
 
-      const response = await deleteApiKey({
-        client: apiClient,
-        body: {
-          id: keyToDelete.id,
-        },
-      });
+    const response = await deleteApiKey({
+      client: apiClient,
+      body: {
+        id: keyToDelete.id,
+      },
+    });
 
-      if (response?.status !== 200) {
-        throw new Error('Failed to delete API key');
-      }
-
-      toast.success('API key deleted successfully');
-      fetchApiKeys();
-    } catch (error) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error deleting API key:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
+      toast.error(error.message || 'Failed to delete API key');
       setIsDeleting(false);
       setKeyToDelete(null);
+      return;
     }
+
+    toast.success('API key deleted successfully');
+    fetchApiKeys();
+    setIsDeleting(false);
+    setKeyToDelete(null);
   };
 
   return (
