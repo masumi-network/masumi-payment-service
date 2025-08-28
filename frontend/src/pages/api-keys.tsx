@@ -11,6 +11,7 @@ import {
   GetApiKeyResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -104,26 +105,33 @@ export default function ApiKeys() {
         setIsLoadingMore(true);
       }
 
-      const response = await getApiKey({
-        client: apiClient,
-        query: {
-          limit: 10,
-          cursorToken: cursor || undefined,
+      const response = await handleApiCall(
+        () =>
+          getApiKey({
+            client: apiClient,
+            query: {
+              limit: 10,
+              cursorToken: cursor || undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching API keys:', error);
+            toast.error(error.message || 'Failed to fetch API keys');
+            if (!cursor) {
+              setAllApiKeys([]);
+            }
+            setHasMore(false);
+          },
+          onFinally: () => {
+            setIsLoading(false);
+            setIsLoadingMore(false);
+          },
+          errorMessage: 'Failed to fetch API keys',
         },
-      });
+      );
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        console.error('Error fetching API keys:', error);
-        toast.error(error.message || 'Failed to fetch API keys');
-        if (!cursor) {
-          setAllApiKeys([]);
-        }
-        setHasMore(false);
-        setIsLoading(false);
-        setIsLoadingMore(false);
-        return;
-      }
+      if (!response) return;
 
       if (response?.data?.data?.ApiKeys) {
         const newKeys = response.data.data.ApiKeys;
@@ -221,28 +229,30 @@ export default function ApiKeys() {
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
 
-    setIsDeleting(true);
-
-    const response = await deleteApiKey({
-      client: apiClient,
-      body: {
-        id: keyToDelete.id,
+    await handleApiCall(
+      () =>
+        deleteApiKey({
+          client: apiClient,
+          body: {
+            id: keyToDelete.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('API key deleted successfully');
+          fetchApiKeys();
+        },
+        onError: (error: any) => {
+          console.error('Error deleting API key:', error);
+          toast.error(error.message || 'Failed to delete API key');
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+          setKeyToDelete(null);
+        },
+        errorMessage: 'Failed to delete API key',
       },
-    });
-
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Error deleting API key:', error);
-      toast.error(error.message || 'Failed to delete API key');
-      setIsDeleting(false);
-      setKeyToDelete(null);
-      return;
-    }
-
-    toast.success('API key deleted successfully');
-    fetchApiKeys();
-    setIsDeleting(false);
-    setKeyToDelete(null);
+    );
   };
 
   return (
