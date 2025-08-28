@@ -140,6 +140,13 @@ export function UpdateApiKeyDialog({
           }),
         },
       });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Failed to update API key');
+        return;
+      }
+
       const responseData = response?.data as PatchApiKeyResponse;
       if (!responseData?.data?.id) {
         throw new Error(

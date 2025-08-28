@@ -52,8 +52,10 @@ export function DeleteApiKeyDialog({
         },
       });
 
-      if (response.status !== 200) {
-        throw new Error('Failed to delete API key');
+      if (response.error) {
+        const error = response.error as { message: string };
+        setError(error.message || 'Failed to delete API key');
+        return;
       }
 
       await onSuccess();

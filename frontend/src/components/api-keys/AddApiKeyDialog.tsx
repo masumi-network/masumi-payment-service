@@ -106,7 +106,7 @@ export function AddApiKeyDialog({
           amount: '1000000000', // 1000 ADA
         },
       ];
-      await postApiKey({
+      const response = await postApiKey({
         client: apiClient,
         body: {
           permission: data.permission,
@@ -138,6 +138,13 @@ export function AddApiKeyDialog({
               : [],
         },
       });
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Failed to create API key');
+        return;
+      }
+
       toast.success('API key created successfully');
       onSuccess();
       onClose();
