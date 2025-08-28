@@ -267,7 +267,15 @@ export function AddPaymentSourceDialog({
         client: apiClient,
         body: { network: watch('network') },
       });
-      if (response.status === 200 && response.data?.data?.walletMnemonic) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        setWalletGenError(error.message || 'Failed to generate mnemonic');
+        toast.error(error.message || 'Failed to generate mnemonic');
+        return;
+      }
+
+      if (response.data?.data?.walletMnemonic) {
         // Set the mnemonic in the form
         const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
         setValue(fieldName, response.data.data.walletMnemonic);
@@ -290,7 +298,15 @@ export function AddPaymentSourceDialog({
         client: apiClient,
         body: { network: watch('network') },
       });
-      if (response.status === 200 && response.data?.data?.walletMnemonic) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        setWalletGenError(error.message || 'Failed to generate mnemonic');
+        toast.error(error.message || 'Failed to generate mnemonic');
+        return;
+      }
+
+      if (response.data?.data?.walletMnemonic) {
         const fieldName = `sellingWallets.${index}.walletMnemonic` as const;
         setValue(fieldName, response.data.data.walletMnemonic);
       } else {
@@ -348,7 +364,8 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key <span className="text-destructive">*</span>
+                    Blockfrost API Key{' '}
+                    <span className="text-destructive">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
