@@ -10,8 +10,6 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
 
-
-
 export function ApiKeyDialog() {
   const router = useRouter();
   const [apiKey, setApiKey] = useState('');
