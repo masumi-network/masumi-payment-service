@@ -127,125 +127,130 @@ export default function WalletsPage() {
 
   const fetchWalletBalance = useCallback(
     async (address: string) => {
-      try {
-        const response = await getUtxos({
-          client: apiClient,
-          query: {
-            address: address,
-            network: state.network,
-          },
-        });
+      const response = await getUtxos({
+        client: apiClient,
+        query: {
+          address: address,
+          network: state.network,
+        },
+      });
 
-        if (response.data?.data?.Utxos) {
-          let adaBalance = 0;
-          let usdmBalance = 0;
-
-          response.data.data.Utxos.forEach((utxo: UTXO) => {
-            utxo.Amounts.forEach((amount) => {
-              if (amount.unit === 'lovelace' || amount.unit == '') {
-                adaBalance += amount.quantity || 0;
-              } else if (
-                amount.unit === getUsdmConfig(state.network).fullAssetId
-              ) {
-                usdmBalance += amount.quantity || 0;
-              }
-            });
-          });
-
-          return {
-            ada: adaBalance.toString(),
-            usdm: usdmBalance.toString(),
-          };
-        }
-        return { ada: '0', usdm: '0' };
-      } catch (error) {
+      if (response.error) {
+        const error = response.error as { message: string };
         console.error('Error fetching wallet balance:', error);
+        toast.error(error.message || 'Failed to fetch wallet balance');
         return { ada: '0', usdm: '0' };
       }
+
+      if (response.data?.data?.Utxos) {
+        let adaBalance = 0;
+        let usdmBalance = 0;
+
+        response.data.data.Utxos.forEach((utxo: UTXO) => {
+          utxo.Amounts.forEach((amount) => {
+            if (amount.unit === 'lovelace' || amount.unit == '') {
+              adaBalance += amount.quantity || 0;
+            } else if (
+              amount.unit === getUsdmConfig(state.network).fullAssetId
+            ) {
+              usdmBalance += amount.quantity || 0;
+            }
+          });
+        });
+
+        return {
+          ada: adaBalance.toString(),
+          usdm: usdmBalance.toString(),
+        };
+      }
+      return { ada: '0', usdm: '0' };
     },
     [apiClient, state.network],
   );
 
   const fetchWallets = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
+    setIsLoading(true);
+    const response = await getPaymentSource({
+      client: apiClient,
+    });
 
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (source) =>
-            selectedPaymentSourceId
-              ? source.id === selectedPaymentSourceId
-              : true,
-        );
-        const purchasingWallets = paymentSources
-          .map((source) => source.PurchasingWallets)
-          .flat();
-        const sellingWallets = paymentSources
-          .map((source) => source.SellingWallets)
-          .flat();
-
-        if (paymentSources.length > 0) {
-          const allWallets: Wallet[] = [
-            ...purchasingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Purchasing' as const,
-            })),
-            ...sellingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Selling' as const,
-            })),
-          ];
-
-          const walletsWithBalances = await Promise.all(
-            allWallets.map(async (wallet) => {
-              const balance = await fetchWalletBalance(wallet.walletAddress);
-              let collectionBalance = null;
-
-              if (wallet.collectionAddress) {
-                collectionBalance = await fetchWalletBalance(
-                  wallet.collectionAddress,
-                );
-              }
-
-              const baseWallet: BaseWalletWithBalance = {
-                id: wallet.id,
-                walletVkey: wallet.walletVkey,
-                walletAddress: wallet.walletAddress,
-                note: wallet.note,
-                type: wallet.type,
-                balance: balance.ada,
-                usdmBalance: balance.usdm,
-                collectionAddress: wallet.collectionAddress,
-              };
-
-              return {
-                ...baseWallet,
-                collectionBalance: collectionBalance
-                  ? {
-                      ada: collectionBalance.ada,
-                      usdm: collectionBalance.usdm,
-                    }
-                  : null,
-              } as WalletWithBalance;
-            }),
-          );
-
-          setAllWallets(walletsWithBalances);
-          setFilteredWallets(walletsWithBalances);
-        } else {
-          setAllWallets([]);
-          setFilteredWallets([]);
-        }
-      }
-    } catch (error) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error fetching wallets:', error);
-      toast.error('Failed to load wallets');
-    } finally {
+      toast.error(error.message || 'Failed to load wallets');
       setIsLoading(false);
+      return;
     }
+
+    if (response.data?.data?.PaymentSources) {
+      const paymentSources = response.data.data.PaymentSources.filter(
+        (source) =>
+          selectedPaymentSourceId
+            ? source.id === selectedPaymentSourceId
+            : true,
+      );
+      const purchasingWallets = paymentSources
+        .map((source) => source.PurchasingWallets)
+        .flat();
+      const sellingWallets = paymentSources
+        .map((source) => source.SellingWallets)
+        .flat();
+
+      if (paymentSources.length > 0) {
+        const allWallets: Wallet[] = [
+          ...purchasingWallets.map((wallet) => ({
+            ...wallet,
+            type: 'Purchasing' as const,
+          })),
+          ...sellingWallets.map((wallet) => ({
+            ...wallet,
+            type: 'Selling' as const,
+          })),
+        ];
+
+        const walletsWithBalances = await Promise.all(
+          allWallets.map(async (wallet) => {
+            const balance = await fetchWalletBalance(wallet.walletAddress);
+            let collectionBalance = null;
+
+            if (wallet.collectionAddress) {
+              collectionBalance = await fetchWalletBalance(
+                wallet.collectionAddress,
+              );
+            }
+
+            const baseWallet: BaseWalletWithBalance = {
+              id: wallet.id,
+              walletVkey: wallet.walletVkey,
+              walletAddress: wallet.walletAddress,
+              note: wallet.note,
+              type: wallet.type,
+              balance: balance.ada,
+              usdmBalance: balance.usdm,
+              collectionAddress: wallet.collectionAddress,
+            };
+
+            return {
+              ...baseWallet,
+              collectionBalance: collectionBalance
+                ? {
+                    ada: collectionBalance.ada,
+                    usdm: collectionBalance.usdm,
+                  }
+                : null,
+            } as WalletWithBalance;
+          }),
+        );
+
+        setAllWallets(walletsWithBalances);
+        setFilteredWallets(walletsWithBalances);
+      } else {
+        setAllWallets([]);
+        setFilteredWallets([]);
+      }
+    }
+
+    setIsLoading(false);
   }, [apiClient, fetchWalletBalance, selectedPaymentSourceId]);
 
   useEffect(() => {
