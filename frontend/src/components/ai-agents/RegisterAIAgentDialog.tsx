@@ -208,6 +208,12 @@ export function RegisterAIAgentDialog({
         client: apiClient,
       });
 
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Failed to load selling wallets');
+        return;
+      }
+
       if (response.data?.data?.PaymentSources) {
         const paymentSources = response.data.data.PaymentSources.filter(
           (s) => s.network == state.network,
@@ -302,6 +308,12 @@ export function RegisterAIAgentDialog({
               })) || [],
           },
         });
+
+        if (response.error) {
+          const error = response.error as { message: string };
+          toast.error(error.message || 'Failed to register AI agent');
+          return;
+        }
 
         if (!response.data?.data?.id) {
           throw new Error(
