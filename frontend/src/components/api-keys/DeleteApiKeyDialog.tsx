@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
+import { handleApiCall } from '@/lib/utils';
 
 interface DeleteApiKeyDialogProps {
   open: boolean;
@@ -41,40 +42,40 @@ export function DeleteApiKeyDialog({
   const handleDelete = async () => {
     if (!apiKey.id) return;
 
-    try {
-      setIsDeleting(true);
-      setError(null);
+    setIsDeleting(true);
+    setError(null);
 
-      const response = await deleteApiKey({
-        client: apiClient,
-        body: {
-          id: apiKey.id,
+    await handleApiCall(
+      () =>
+        deleteApiKey({
+          client: apiClient,
+          body: {
+            id: apiKey.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          onSuccess();
+          onClose();
         },
-      });
+        onError: (error: any) => {
+          let message = 'An unexpected error occurred';
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        setError(error.message || 'Failed to delete API key');
-        return;
-      }
+          if (error instanceof Error) {
+            message = error.message;
+          } else if (typeof error === 'object' && error !== null) {
+            const apiError = error as { response?: ApiErrorResponse };
+            message = apiError.response?.data?.error?.message ?? message;
+          }
 
-      await onSuccess();
-      onClose();
-    } catch (e) {
-      let message = 'An unexpected error occurred';
-
-      if (e instanceof Error) {
-        message = e.message;
-      } else if (typeof e === 'object' && e !== null) {
-        const apiError = e as { response?: ApiErrorResponse };
-        message = apiError.response?.data?.error?.message ?? message;
-      }
-
-      setError(message);
-      throw e;
-    } finally {
-      setIsDeleting(false);
-    }
+          setError(message);
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+        },
+        errorMessage: 'Failed to delete API key',
+      },
+    );
   };
 
   return (

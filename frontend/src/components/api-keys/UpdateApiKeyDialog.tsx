@@ -144,7 +144,9 @@ export function UpdateApiKeyDialog({
         onSuccess: (response) => {
           const responseData = response?.data as PatchApiKeyResponse;
           if (!responseData?.data?.id) {
-            toast.error('Failed to update API key: Invalid response from server');
+            toast.error(
+              'Failed to update API key: Invalid response from server',
+            );
             return;
           }
           toast.success('API key updated successfully');
