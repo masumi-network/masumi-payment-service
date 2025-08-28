@@ -26,7 +26,7 @@ import {
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { parseError } from '@/lib/utils';
+
 import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
