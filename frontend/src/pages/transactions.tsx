@@ -14,6 +14,7 @@ import {
   GetPurchaseResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
@@ -197,30 +198,39 @@ export default function Transactions() {
       let newPurchaseCursor: string | null = purchaseCursorId;
       let morePurchases = hasMorePurchases;
       if (hasMorePurchases) {
-        const purchaseRes = await getPurchase({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: purchaseCursorId || undefined,
-            includeHistory: 'true',
-            limit: 10,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
+        const purchaseRes = await handleApiCall(
+          () =>
+            getPurchase({
+              client: apiClient,
+              query: {
+                network: state.network,
+                cursorId: purchaseCursorId || undefined,
+                includeHistory: 'true',
+                limit: 10,
+                filterSmartContractAddress: smartContractAddress
+                  ? smartContractAddress
+                  : undefined,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Error fetching purchases:', error);
+              toast.error(error.message || 'Failed to load purchases');
+              setIsLoading(false);
+              setIsLoadingMore(false);
+            },
+            onFinally: () => {
+              setIsLoading(false);
+              setIsLoadingMore(false);
+            },
+            errorMessage: 'Failed to load purchases',
           },
-        });
+        );
 
-        if (purchaseRes.error) {
-          const error = purchaseRes.error as { message: string };
-          console.error('Error fetching purchases:', error);
-          toast.error(error.message || 'Failed to load purchases');
-          setIsLoading(false);
-          setIsLoadingMore(false);
-          return;
-        }
+        if (!purchaseRes) return;
 
         if (purchaseRes.data?.data?.Purchases) {
-          purchases = purchaseRes.data.data.Purchases.map((purchase) => ({
+          purchases = purchaseRes.data.data.Purchases.map((purchase: any) => ({
             ...purchase,
             type: 'purchase',
           }));
@@ -238,30 +248,39 @@ export default function Transactions() {
       let newPaymentCursor: string | null = paymentCursorId;
       let morePayments = hasMorePayments;
       if (hasMorePayments) {
-        const paymentRes = await getPayment({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: paymentCursorId || undefined,
-            includeHistory: 'true',
-            limit: 10,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
+        const paymentRes = await handleApiCall(
+          () =>
+            getPayment({
+              client: apiClient,
+              query: {
+                network: state.network,
+                cursorId: paymentCursorId || undefined,
+                includeHistory: 'true',
+                limit: 10,
+                filterSmartContractAddress: smartContractAddress
+                  ? smartContractAddress
+                  : undefined,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Error fetching payments:', error);
+              toast.error(error.message || 'Failed to load payments');
+              setIsLoading(false);
+              setIsLoadingMore(false);
+            },
+            onFinally: () => {
+              setIsLoading(false);
+              setIsLoadingMore(false);
+            },
+            errorMessage: 'Failed to load payments',
           },
-        });
+        );
 
-        if (paymentRes.error) {
-          const error = paymentRes.error as { message: string };
-          console.error('Error fetching payments:', error);
-          toast.error(error.message || 'Failed to load payments');
-          setIsLoading(false);
-          setIsLoadingMore(false);
-          return;
-        }
+        if (!paymentRes) return;
 
         if (paymentRes.data?.data?.Payments) {
-          payments = paymentRes.data.data.Payments.map((payment) => ({
+          payments = paymentRes.data.data.Payments.map((payment: any) => ({
             ...payment,
             type: 'payment',
           }));
