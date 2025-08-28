@@ -181,7 +181,7 @@ export default function Overview() {
         let usdmBalance = 0;
 
         const usdmConfig = getUsdmConfig(state.network);
-        
+
         response.data.data.Utxos.forEach((utxo: any) => {
           utxo.Amounts.forEach((amount: any) => {
             if (amount.unit === 'lovelace' || amount.unit == '') {
