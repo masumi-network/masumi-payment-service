@@ -9450,6 +9450,459 @@
                     }
                 }
             }
+        },
+        "/webhooks/": {
+            "get": {
+                "description": "List webhook endpoints",
+                "summary": "List all webhook endpoints registered by your API key. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Filter by payment source ID"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source ID",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                            "description": "Number of webhooks to return"
+                        },
+                        "required": false,
+                        "description": "Number of webhooks to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of webhook endpoints",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "webhooks": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "url": {
+                                                                "type": "string"
+                                                            },
+                                                            "events": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                                        "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                                        "PURCHASE_ON_ERROR",
+                                                                        "PAYMENT_ON_ERROR"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "isActive": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "paymentSourceId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "failureCount": {
+                                                                "type": "number"
+                                                            },
+                                                            "lastSuccessAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "disabledAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "createdBy": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "properties": {
+                                                                    "apiKeyId": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "apiKeyToken": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "apiKeyId",
+                                                                    "apiKeyToken"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "url",
+                                                            "events",
+                                                            "name",
+                                                            "isActive",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "paymentSourceId",
+                                                            "failureCount",
+                                                            "lastSuccessAt",
+                                                            "disabledAt",
+                                                            "createdBy"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "webhooks"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "webhooks": [
+                                                {
+                                                    "id": "webhook_endpoint_id",
+                                                    "url": "https://your-server.com/webhook",
+                                                    "name": "My Webhook",
+                                                    "events": [
+                                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                        "PAYMENT_ON_ERROR"
+                                                    ],
+                                                    "isActive": true,
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "paymentSourceId": null,
+                                                    "failureCount": 0,
+                                                    "lastSuccessAt": "1970-01-20T20:00:36.260Z",
+                                                    "disabledAt": null,
+                                                    "createdBy": {
+                                                        "apiKeyId": "api_key_id",
+                                                        "apiKeyToken": "masked_token"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a new webhook endpoint",
+                "summary": "Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook registration details",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "url": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "The webhook URL to receive notifications"
+                                    },
+                                    "authToken": {
+                                        "type": "string",
+                                        "minLength": 10,
+                                        "maxLength": 200,
+                                        "description": "Authentication token for webhook requests"
+                                    },
+                                    "events": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "enum": [
+                                                "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                "PURCHASE_ON_ERROR",
+                                                "PAYMENT_ON_ERROR"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "Array of event types to subscribe to"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 100,
+                                        "description": "Human-readable name for the webhook"
+                                    },
+                                    "paymentSourceId": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Optional: link webhook to specific payment source"
+                                    }
+                                },
+                                "required": [
+                                    "url",
+                                    "authToken",
+                                    "events"
+                                ],
+                                "example": {
+                                    "url": "https://your-server.com/webhook",
+                                    "authToken": "your-webhook-secret-token",
+                                    "events": [
+                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                        "PAYMENT_ON_ERROR"
+                                    ],
+                                    "name": "My Payment Webhook",
+                                    "paymentSourceId": "payment_source_id_optional"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Webhook endpoint registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "url": {
+                                                    "type": "string"
+                                                },
+                                                "events": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                            "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                            "PURCHASE_ON_ERROR",
+                                                            "PAYMENT_ON_ERROR"
+                                                        ]
+                                                    }
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "isActive": {
+                                                    "type": "boolean"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "paymentSourceId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "url",
+                                                "events",
+                                                "name",
+                                                "isActive",
+                                                "createdAt",
+                                                "paymentSourceId"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "webhook_endpoint_id",
+                                            "url": "https://your-server.com/webhook",
+                                            "name": "My Payment Webhook",
+                                            "events": [
+                                                "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                "PAYMENT_ON_ERROR"
+                                            ],
+                                            "isActive": true,
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "paymentSourceId": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid webhook URL or configuration)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a webhook endpoint",
+                "summary": "Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook deletion request",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "webhookId": {
+                                        "type": "string",
+                                        "description": "The ID of the webhook to delete"
+                                    }
+                                },
+                                "required": [
+                                    "webhookId"
+                                ],
+                                "example": {
+                                    "webhookId": "webhook_endpoint_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook endpoint deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "url": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "deletedAt": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "url",
+                                                "name",
+                                                "deletedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "webhook_endpoint_id",
+                                            "url": "https://your-server.com/webhook",
+                                            "name": "My Payment Webhook",
+                                            "deletedAt": "1970-01-20T20:00:36.260Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (only creator or admin can delete)"
+                    },
+                    "404": {
+                        "description": "Webhook endpoint not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
         }
     }
 }

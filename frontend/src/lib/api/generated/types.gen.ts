@@ -2436,6 +2436,180 @@ export type GetRpcApiKeysResponses = {
 
 export type GetRpcApiKeysResponse = GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
 
+export type DeleteWebhooksData = {
+    /**
+     * Webhook deletion request
+     */
+    body?: {
+        /**
+         * The ID of the webhook to delete
+         */
+        webhookId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type DeleteWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden (only creator or admin can delete)
+     */
+    403: unknown;
+    /**
+     * Webhook endpoint not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type DeleteWebhooksResponses = {
+    /**
+     * Webhook endpoint deleted successfully
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            name: string | null;
+            deletedAt: string;
+        };
+    };
+};
+
+export type DeleteWebhooksResponse = DeleteWebhooksResponses[keyof DeleteWebhooksResponses];
+
+export type GetWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by payment source ID
+         */
+        paymentSourceId?: string | null;
+        /**
+         * Number of webhooks to return
+         */
+        limit?: number;
+    };
+    url: '/webhooks/';
+};
+
+export type GetWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetWebhooksResponses = {
+    /**
+     * List of webhook endpoints
+     */
+    200: {
+        status: string;
+        data: {
+            webhooks: Array<{
+                id: string;
+                url: string;
+                events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                name: string | null;
+                isActive: boolean;
+                createdAt: string;
+                updatedAt: string;
+                paymentSourceId: string | null;
+                failureCount: number;
+                lastSuccessAt: string | null;
+                disabledAt: string | null;
+                createdBy: {
+                    apiKeyId: string;
+                    apiKeyToken: string;
+                } | null;
+            }>;
+        };
+    };
+};
+
+export type GetWebhooksResponse = GetWebhooksResponses[keyof GetWebhooksResponses];
+
+export type PostWebhooksData = {
+    /**
+     * Webhook registration details
+     */
+    body?: {
+        /**
+         * The webhook URL to receive notifications
+         */
+        url: string;
+        /**
+         * Authentication token for webhook requests
+         */
+        authToken: string;
+        /**
+         * Array of event types to subscribe to
+         */
+        events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        /**
+         * Human-readable name for the webhook
+         */
+        name?: string;
+        /**
+         * Optional: link webhook to specific payment source
+         */
+        paymentSourceId?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type PostWebhooksErrors = {
+    /**
+     * Bad Request (invalid webhook URL or configuration)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWebhooksResponses = {
+    /**
+     * Webhook endpoint registered successfully
+     */
+    201: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            name: string | null;
+            isActive: boolean;
+            createdAt: string;
+            paymentSourceId: string | null;
+        };
+    };
+};
+
+export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
+
 export type ClientOptions = {
     baseURL: `${string}://${string}` | (string & {});
 };
