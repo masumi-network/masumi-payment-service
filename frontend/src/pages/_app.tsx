@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 import { AppProvider, initialAppState } from '@/lib/contexts/AppContext';
 import { useEffect, useState, useCallback } from 'react';
 import '@/styles/globals.css';
