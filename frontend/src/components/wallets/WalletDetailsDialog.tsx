@@ -98,7 +98,10 @@ export function WalletDetailsDialog({
             response.data.data.Utxos.forEach((utxo: any) => {
               utxo.Amounts.forEach((amount: any) => {
                 const currentAmount = balanceMap.get(amount.unit) || 0;
-                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
+                balanceMap.set(
+                  amount.unit,
+                  currentAmount + (amount.quantity || 0),
+                );
               });
             });
 
