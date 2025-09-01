@@ -105,6 +105,10 @@ import {
   postPurchaseRequestSchemaInput,
   postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
+import {
+  getRevealDataSchemaOutput,
+  getVerifyDataRevealSchemaInput,
+} from '@/routes/api/reveal-data';
 
 extendZodWithOpenApi(z);
 
@@ -291,6 +295,42 @@ export function generateOpenAPI() {
                 walletVkey: 'wallet_vkey',
                 walletAddress: 'wallet_address',
                 note: 'note',
+              },
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  /********************* REVEAL DATA *****************************/
+  registry.registerPath({
+    method: 'get',
+    path: '/reveal-data/',
+    description: 'Reveals data',
+    summary: 'Reveals data. (admin access required)',
+    tags: ['reveal-data'],
+    request: {
+      query: getVerifyDataRevealSchemaInput.openapi({
+        example: {
+          action: 'reveal_data',
+          blockchainIdentifier: 'blockchain_identifier',
+          signature: 'signature',
+          key: 'key',
+          walletAddress: 'wallet_address',
+          validUntil: 1713636260,
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Revealed data',
+        content: {
+          'application/json': {
+            schema: getRevealDataSchemaOutput.openapi({
+              example: {
+                isValid: true,
               },
             }),
           },

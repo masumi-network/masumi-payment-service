@@ -36,9 +36,13 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
+import { getRevealDataEndpointGet } from './reveal-data';
 
 export const apiRouter: Routing = {
   v1: {
+    'reveal-data': new DependsOnMethod({
+      get: getRevealDataEndpointGet,
+    }),
     health: healthEndpointGet,
     purchase: new DependsOnMethod({
       get: queryPurchaseRequestGet,
