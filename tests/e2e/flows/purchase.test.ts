@@ -105,9 +105,34 @@ describe(`Purchase E2E Tests (${testNetwork})`, () => {
         const { generateTestPaymentData } = await import(
           '../fixtures/testData'
         );
+        
+        // Define custom times - payByTime must be BEFORE submitResultTime (min 5 minutes gap)
+        const now = Date.now();
+        const oneHourFromNow = now + (1 * 60 * 60 * 1000); // 1 hour
+        const twoHoursFromNow = now + (2 * 60 * 60 * 1000); // 2 hours
+        const fourHoursFromNow = now + (4 * 60 * 60 * 1000); // 4 hours  
+        const eightHoursFromNow = now + (8 * 60 * 60 * 1000); // 8 hours
+
+        const customTiming = {
+          payByTime: new Date(oneHourFromNow),           // 1hr - payment deadline (FIRST)
+          submitResultTime: new Date(twoHoursFromNow),   // 2hrs - submit work deadline (AFTER payByTime)
+          unlockTime: new Date(fourHoursFromNow),        // 4hrs - unlock funds time
+          externalDisputeUnlockTime: new Date(eightHoursFromNow), // 8hrs - dispute resolution
+        };
+
+        console.log(`⏰ Setting custom payment times (logical order):
+          - Pay By Time: ${customTiming.payByTime.toISOString()} (1hr) ← Payment deadline
+          - Submit Result Time: ${customTiming.submitResultTime.toISOString()} (2hrs) ← Work submission deadline  
+          - Unlock Time: ${customTiming.unlockTime.toISOString()} (4hrs) ← Funds unlock
+          - External Dispute Time: ${customTiming.externalDisputeUnlockTime.toISOString()} (8hrs) ← Dispute resolution
+        `);
+
         const paymentData = generateTestPaymentData(
           testNetwork,
           confirmedAgent.agentIdentifier,
+          {
+            customTiming,
+          }
         );
 
         // Store the identifierFromPurchaser used in payment creation
