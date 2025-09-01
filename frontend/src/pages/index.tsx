@@ -663,19 +663,27 @@ export default function Overview() {
       <AddWalletDialog
         open={isAddWalletDialogOpen}
         onClose={() => setAddWalletDialogOpen(false)}
+        onSuccess={fetchWallets}
       />
 
       <RegisterAIAgentDialog
         open={isRegisterAgentDialogOpen}
         onClose={() => setRegisterAgentDialogOpen(false)}
         onSuccess={() => {
-          // TODO: we can refresh data here
+          setTimeout(() => {
+            fetchAgents();
+          }, 2000);
         }}
       />
 
       <AIAgentDetailsDialog
         agent={selectedAgentForDetails}
         onClose={() => setSelectedAgentForDetails(null)}
+        onSuccess={() => {
+          setTimeout(() => {
+            fetchAgents();
+          }, 2000);
+        }}
       />
 
       {/*<SwapDialog

@@ -26,6 +26,7 @@ type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -68,6 +69,7 @@ const useFormatPrice = (amount: string | undefined) => {
 export function AIAgentDetailsDialog({
   agent,
   onClose,
+  onSuccess,
 }: AIAgentDetailsDialogProps) {
   const { apiClient, state } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -92,6 +94,7 @@ export function AIAgentDetailsDialog({
         });
         toast.success('AI agent deleted from the database successfully');
         onClose();
+        onSuccess?.();
         return;
       } else if (agent?.state === 'RegistrationConfirmed') {
         if (!agent?.agentIdentifier) {
@@ -111,6 +114,7 @@ export function AIAgentDetailsDialog({
         });
         toast.success('AI agent deregistration initiated successfully');
         onClose();
+        onSuccess?.();
         return;
       } else {
         toast.error(
