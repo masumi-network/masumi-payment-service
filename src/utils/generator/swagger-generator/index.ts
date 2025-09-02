@@ -307,8 +307,9 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'post',
     path: '/reveal-data/',
-    description: 'Reveals data',
-    summary: 'Reveals data. (admin access required)',
+    description: 'Verifies the reveal data signature is valid.',
+    summary:
+      'Verifies the reveal data signature is valid. (read access required)',
     tags: ['reveal-data'],
     request: {
       body: {
