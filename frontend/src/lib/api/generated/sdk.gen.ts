@@ -105,8 +105,8 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 };
 
 /**
- * Reveals data. (admin access required)
- * Reveals data
+ * Verifies the reveal data signature is valid. (read access required)
+ * Verifies the reveal data signature is valid.
  */
 export const postRevealData = <ThrowOnError extends boolean = false>(options?: Options<PostRevealDataData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostRevealDataResponse, unknown, ThrowOnError>({

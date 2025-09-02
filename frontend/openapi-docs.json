@@ -494,8 +494,8 @@
         },
         "/reveal-data/": {
             "post": {
-                "description": "Reveals data",
-                "summary": "Reveals data. (admin access required)",
+                "description": "Verifies the reveal data signature is valid.",
+                "summary": "Verifies the reveal data signature is valid. (read access required)",
                 "tags": [
                     "reveal-data"
                 ],
