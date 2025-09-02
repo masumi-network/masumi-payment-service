@@ -6,6 +6,7 @@ import { recordBusinessEndpointError } from '@/utils/metrics';
 import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
+import { CONSTANTS } from '@/utils/config';
 
 export const postVerifyDataRevealSchemaInput = z.object({
   signature: z.string().max(7500),
@@ -141,7 +142,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         );
         throw createHttpError(400, 'Signature is expired');
       }
-      if (Date.now() + 1000 * 60 * 60 * 2 < input.validUntil) {
+      if (Date.now() + CONSTANTS.REVEAL_DATA_VALIDITY_TIME < input.validUntil) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
           'GET',
