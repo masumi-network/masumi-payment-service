@@ -16,17 +16,15 @@ stateDiagram-v2
     FundsLocked --> ResultSubmitted : SubmitResult (Seller)
     FundsLocked --> RefundRequested : SetRefundRequested (Buyer)
 
-    ResultSubmitted --> ResultSubmitted : SubmitResult (Seller) - Updates result hash
-    ResultSubmitted --> RefundRequested : SetRefundRequested (Buyer) - If no result hash
-    ResultSubmitted --> Disputed : SetRefundRequested (Buyer) - If result hash exists
+    ResultSubmitted --> ResultSubmitted : SubmitResult (Seller)
+    ResultSubmitted --> Disputed : SetRefundRequested (Buyer)
     ResultSubmitted --> [*] : Withdraw (Seller) - After unlock_time
 
-    RefundRequested --> FundsLocked : UnSetRefundRequested (Buyer) - If no result hash
-    RefundRequested --> ResultSubmitted : UnSetRefundRequested (Buyer) - If result hash exists
+    RefundRequested --> FundsLocked : UnSetRefundRequested (Buyer)
     RefundRequested --> [*] : WithdrawRefund (Buyer) - After submit_result_time
 
-    Disputed --> RefundRequested : AuthorizeRefund (Seller) - Clears result hash
-    Disputed --> ResultSubmitted : UnSetRefundRequested (Buyer) - If result hash exists
+    Disputed --> RefundRequested : AuthorizeRefund (Seller)
+    Disputed --> ResultSubmitted : UnSetRefundRequested (Buyer)
     Disputed --> [*] : WithdrawDisputed (Admins) - After external_dispute_unlock_time
 ```
 
@@ -45,7 +43,7 @@ stateDiagram-v2
 ### 2. **SetRefundRequested** (Buyer)
 
 - **Triggered by**: Buyer
-- **From States**: FundsLocked, ResultSubmitted, Disputed
+- **From States**: FundsLocked, ResultSubmitted
 - **Conditions**:
   - Before unlock_time
   - After buyer_cooldown_time
@@ -62,8 +60,8 @@ stateDiagram-v2
   - After buyer_cooldown_time
   - Buyer must sign the transaction
 - **To State**:
-  - FundsLocked (if no result hash)
-  - ResultSubmitted (if result hash exists)
+  - FundsLocked (if no result hash/from RefundRequested)
+  - ResultSubmitted (if result hash exists/from Disputed)
 
 ### 4. **WithdrawRefund** (Buyer)
 
@@ -83,7 +81,7 @@ stateDiagram-v2
   - After external_dispute_unlock_time
   - Result hash must not be empty
   - Required number of admins must sign
-- **Effect**: Admins withdraw disputed funds
+- **Effect**: Admins withdraw disputed funds and distributes it to the buyer and seller
 
 ### 6. **SubmitResult** (Seller)
 
