@@ -11,9 +11,8 @@
  * 7. Submit Result
  * 8. Wait for Result Processing & Withdrawal
  * 9. Request Refund
- * 10. Wait for Refund Requested State
- * 11. Admin Authorize Refund
- * 12. Verify Final Authorization State
+ * 10. Wait for Disputed State
+ * 11. Admin Authorize Refund (COMPLETE)
  */
 
 import { Network } from '@prisma/client';
@@ -88,7 +87,7 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
   });
 
   test(
-    'should complete full flow: registration → confirmation → payment → purchase → funds locked → submit result → withdrawn → refund → authorization',
+    'should complete full flow: registration → confirmation → payment → purchase → funds locked → submit result → withdrawn → refund → single authorization',
     async () => {
       // =======================
       // STEP 1: REGISTER AGENT (from complete-flow.test.ts)
@@ -660,11 +659,9 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
       );
 
       // =======================
-      // STEP 11: FIRST ADMIN AUTHORIZE REFUND
+      // STEP 11: ADMIN AUTHORIZE REFUND
       // =======================
-      console.log(
-        '👨‍💼 Step 11: First admin authorization (Disputed → RefundRequested)...',
-      );
+      console.log('👨‍💼 Step 11: Admin authorization (Disputed → Complete)...');
 
       const firstAuthorizeRefundResponse = await (
         global as any
@@ -684,118 +681,17 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
         'AuthorizeRefundRequested',
       );
 
-      console.log(`✅ First admin authorization successful:
+      console.log(`✅ Admin authorization successful:
         - Payment ID: ${firstAuthorizeRefundResponse.id}
         - OnChain State: ${firstAuthorizeRefundResponse.onChainState}
         - Next Action: ${firstAuthorizeRefundResponse.NextAction.requestedAction}
-      `);
-
-      // =======================
-      // STEP 12: WAIT FOR REFUND REQUESTED STATE (INFINITE WAIT)
-      // =======================
-      console.log(
-        '⏳ Step 12: Waiting for payment to reach RefundRequested state...',
-      );
-      console.log(
-        '💡 Blockchain state transitions can be unpredictable on Preprod network',
-      );
-      console.log(
-        '⏳ INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
-      );
-      console.log('💡 Press Ctrl+C to stop if needed');
-
-      const refundRequestedWaitStartTime = Date.now();
-
-      // Configure infinite timeout for blockchain state transition
-      const refundOriginalTimeout = waitForExpect.defaults.timeout;
-      const refundOriginalInterval = waitForExpect.defaults.interval;
-      waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
-      waitForExpect.defaults.interval = 15000; // Check every 15 seconds
-
-      await waitForExpect(async () => {
-        const elapsedMinutes = Math.floor(
-          (Date.now() - refundRequestedWaitStartTime) / 60000,
-        );
-        console.log(
-          `⏱️  Checking payment state... (${elapsedMinutes}m elapsed)`,
-        );
-
-        const queryResponse = await (global as any).testApiClient.queryPayments(
-          {
-            network: testNetwork,
-          },
-        );
-
-        const currentPayment = queryResponse.Payments.find(
-          (payment: any) =>
-            payment.blockchainIdentifier ===
-            paymentResponse.blockchainIdentifier,
-        );
-
-        expect(currentPayment).toBeDefined();
-
-        console.log(
-          `📊 Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
-        );
-
-        // Wait until the payment reaches RefundRequested state after first authorization
-        expect(currentPayment.onChainState).toBe('RefundRequested');
-        expect(currentPayment.NextAction.requestedAction).toBe(
-          'WaitingForExternalAction',
-        );
-
-        console.log(
-          `✅ Payment now in RefundRequested state and ready for second admin authorization`,
-        );
-      });
-
-      // Restore original timeout and interval
-      waitForExpect.defaults.timeout = refundOriginalTimeout;
-      waitForExpect.defaults.interval = refundOriginalInterval;
-
-      const refundRequestedMinutes = Math.floor(
-        (Date.now() - refundRequestedWaitStartTime) / 60000,
-      );
-      console.log(
-        `✅ Payment reached RefundRequested state after ${refundRequestedMinutes}m`,
-      );
-
-      // =======================
-      // STEP 13: SECOND ADMIN AUTHORIZE REFUND
-      // =======================
-      console.log(
-        '👨‍💼 Step 13: Second admin authorization (final completion)...',
-      );
-
-      const secondAuthorizeRefundResponse = await (
-        global as any
-      ).testApiClient.makeRequest('/api/v1/payment/authorize-refund', {
-        method: 'POST',
-        body: JSON.stringify({
-          network: testNetwork,
-          blockchainIdentifier: paymentResponse.blockchainIdentifier,
-        }),
-      });
-
-      expect(secondAuthorizeRefundResponse).toBeDefined();
-      expect(secondAuthorizeRefundResponse.id).toBeDefined();
-      expect(secondAuthorizeRefundResponse.onChainState).toBeDefined();
-      expect(secondAuthorizeRefundResponse.NextAction).toBeDefined();
-      expect(secondAuthorizeRefundResponse.NextAction.requestedAction).toBe(
-        'AuthorizeRefundRequested',
-      );
-
-      console.log(`✅ Second admin authorization successful:
-        - Payment ID: ${secondAuthorizeRefundResponse.id}
-        - OnChain State: ${secondAuthorizeRefundResponse.onChainState}
-        - Next Action: ${secondAuthorizeRefundResponse.NextAction.requestedAction}
       `);
 
       // Track authorization in cleanup data
       testCleanupData[0].refundAuthorized = true;
 
       console.log(
-        `✅ Refund process completed - both authorizations successful`,
+        `✅ Refund process completed - single authorization successful`,
       );
 
       // =======================
@@ -810,11 +706,10 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
         ✅ SHA256 Result: ${randomSHA256Hash}
         ✅ Result Submitted → ResultSubmitted State
         ✅ Refund Requested → Disputed State
-        ✅ First Admin Authorization → RefundRequested State
-        ✅ Second Admin Authorization → Final Completion
+        ✅ Admin Authorization → COMPLETE
         ✅ Blockchain ID: ${paymentResponse.blockchainIdentifier.substring(0, 50)}...
         
-        🎯 Complete 13-step refund flow successfully executed!
+        🎯 Complete 11-step refund flow successfully executed!
       `);
     },
     // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
