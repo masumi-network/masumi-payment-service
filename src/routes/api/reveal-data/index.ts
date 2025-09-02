@@ -7,34 +7,34 @@ import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 
-export const getVerifyDataRevealSchemaInput = z.object({
-  signature: z.string(),
-  key: z.string(),
-  walletAddress: z.string(),
-  validUntil: z.number(),
+export const postVerifyDataRevealSchemaInput = z.object({
+  signature: z.string().max(7500),
+  key: z.string().max(2500),
+  walletAddress: z.string().max(250),
+  validUntil: z.number().min(0).max(1000000000000000000),
   blockchainIdentifier: z
     .string()
     .min(1)
-    .max(500)
+    .max(2500)
     .describe(
       'The blockchain identifier, for which the data should be revealed',
     ),
   action: z.literal('reveal_data').describe('The action to perform'),
 });
 
-export const getRevealDataSchemaOutput = z.object({
+export const postRevealDataSchemaOutput = z.object({
   isValid: z.boolean(),
 });
 
-export const getRevealDataEndpointGet = readAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: getVerifyDataRevealSchemaInput,
-  output: getRevealDataSchemaOutput,
+export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
+  method: 'post',
+  input: postVerifyDataRevealSchemaInput,
+  output: postRevealDataSchemaOutput,
   handler: async ({
     input,
     options,
   }: {
-    input: z.infer<typeof getVerifyDataRevealSchemaInput>;
+    input: z.infer<typeof postVerifyDataRevealSchemaInput>;
     options: {
       id: string;
       permission: $Enums.Permission;
@@ -73,6 +73,18 @@ export const getRevealDataEndpointGet = readAuthenticatedEndpointFactory.build({
           },
         );
         throw createHttpError(404, 'Payment not found');
+      }
+      if (
+        options.permission !== 'Admin' &&
+        !options.networkLimit.includes(payment.PaymentSource.network)
+      ) {
+        recordBusinessEndpointError(
+          '/api/v1/reveal-data',
+          'GET',
+          400,
+          'Payment is not on the requested network',
+        );
+        throw createHttpError(403, 'Network not allowed');
       }
       if (payment.onChainState !== 'Disputed') {
         recordBusinessEndpointError(

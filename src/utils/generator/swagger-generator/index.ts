@@ -106,8 +106,8 @@ import {
   postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import {
-  getRevealDataSchemaOutput,
-  getVerifyDataRevealSchemaInput,
+  postRevealDataSchemaOutput,
+  postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
 
 extendZodWithOpenApi(z);
@@ -305,22 +305,29 @@ export function generateOpenAPI() {
 
   /********************* REVEAL DATA *****************************/
   registry.registerPath({
-    method: 'get',
+    method: 'post',
     path: '/reveal-data/',
     description: 'Reveals data',
     summary: 'Reveals data. (admin access required)',
     tags: ['reveal-data'],
     request: {
-      query: getVerifyDataRevealSchemaInput.openapi({
-        example: {
-          action: 'reveal_data',
-          blockchainIdentifier: 'blockchain_identifier',
-          signature: 'signature',
-          key: 'key',
-          walletAddress: 'wallet_address',
-          validUntil: 1713636260,
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postVerifyDataRevealSchemaInput.openapi({
+              example: {
+                action: 'reveal_data',
+                blockchainIdentifier: 'blockchain_identifier',
+                signature: 'signature',
+                key: 'key',
+                walletAddress: 'wallet_address',
+                validUntil: 1713636260,
+              },
+            }),
+          },
         },
-      }),
+      },
     },
     security: [{ [apiKeyAuth.name]: [] }],
     responses: {
@@ -328,7 +335,7 @@ export function generateOpenAPI() {
         description: 'Revealed data',
         content: {
           'application/json': {
-            schema: getRevealDataSchemaOutput.openapi({
+            schema: postRevealDataSchemaOutput.openapi({
               example: {
                 isValid: true,
               },
