@@ -151,6 +151,37 @@ export type PostWalletResponses = {
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
 
+export type PostRevealDataData = {
+    body?: {
+        signature: string;
+        key: string;
+        walletAddress: string;
+        validUntil: number;
+        /**
+         * The blockchain identifier, for which the data should be revealed
+         */
+        blockchainIdentifier: string;
+        /**
+         * The action to perform
+         */
+        action: 'reveal_data';
+    };
+    path?: never;
+    query?: never;
+    url: '/reveal-data/';
+};
+
+export type PostRevealDataResponses = {
+    /**
+     * Revealed data
+     */
+    200: {
+        isValid: boolean;
+    };
+};
+
+export type PostRevealDataResponse = PostRevealDataResponses[keyof PostRevealDataResponses];
+
 export type DeleteApiKeyData = {
     body?: {
         /**
