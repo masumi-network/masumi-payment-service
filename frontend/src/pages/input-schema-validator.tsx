@@ -167,51 +167,6 @@ const EXAMPLES = [
 ]`,
   },
   {
-    label: 'File Upload Example',
-    value: `[
-  {
-    "id": "profile-picture",
-    "type": "file",
-    "name": "Profile Picture",
-    "data": {
-      "description": "Upload a profile picture (JPG, PNG, max 2MB)",
-      "outputFormat": "string"
-    }
-  },
-  {
-    "id": "resume",
-    "type": "file",
-    "name": "Resume/CV",
-    "data": {
-      "description": "Upload your resume (PDF, DOC, DOCX, max 5MB)",
-      "outputFormat": "string"
-    }
-  },
-  {
-    "id": "portfolio",
-    "type": "file",
-    "name": "Portfolio",
-    "data": {
-      "description": "Upload your portfolio files (ZIP, max 10MB)",
-      "outputFormat": "string"
-    }
-  },
-  {
-    "id": "cover-letter",
-    "type": "textarea",
-    "name": "Cover Letter",
-    "data": {
-      "placeholder": "Write a brief cover letter explaining why you're interested in this position...",
-      "description": "Tell us about yourself and why you'd be a great fit"
-    },
-    "validations": [
-      { "validation": "min", "value": "100" },
-      { "validation": "max", "value": "1000" }
-    ]
-  }
-]`,
-  },
-  {
     label: 'With Optional Wrapper',
     value: `{
   "input_data": [
