@@ -29,6 +29,7 @@ import {
   toValue,
   TransactionOutput,
 } from '@meshsdk/core-cst';
+import { CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
 
@@ -335,9 +336,13 @@ export async function batchLatestPaymentEntriesV1() {
                 //overpaidLovelace 0.5 ada
                 //we want to be overpaid lovelace to be 1.43523 ada
                 //so we need to add 1.43523 ada - 0.5 ada = 0.93523 ada
-                if (overpaidLovelace > 0n && overpaidLovelace < 1435230n) {
-                  overestimatedMinUtxoCost += 1435230n - overpaidLovelace;
-                  overpaidLovelace = 1435230n;
+                if (
+                  overpaidLovelace > 0n &&
+                  overpaidLovelace < CONSTANTS.MIN_COLLATERAL_LOVELACE
+                ) {
+                  overestimatedMinUtxoCost +=
+                    CONSTANTS.MIN_COLLATERAL_LOVELACE - overpaidLovelace;
+                  overpaidLovelace = CONSTANTS.MIN_COLLATERAL_LOVELACE;
                 }
 
                 paymentRequest.PaidFunds.splice(lovelaceRequired, 1);

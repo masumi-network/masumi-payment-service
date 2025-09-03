@@ -25,6 +25,7 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
+import { CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
 
@@ -238,7 +239,7 @@ export async function collectOutstandingPaymentsV1() {
                 assetValue.unit == '' ||
                 assetValue.unit.toLowerCase() == 'lovelace'
               ) {
-                minFee = 1435230;
+                minFee = Number(CONSTANTS.MIN_COLLATERAL_LOVELACE);
               }
               const value = BigInt(assetValue.quantity);
               const feeValue = BigInt(

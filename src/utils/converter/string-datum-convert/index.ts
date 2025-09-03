@@ -8,7 +8,32 @@ import { serializeAddressObj } from '@meshsdk/core';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { Network } from '@meshsdk/core';
 
-export function decodeV1ContractDatum(decodedDatum: any, network: Network) {
+export type DecodedV1ContractDatum = {
+  blockchainIdentifier: string;
+  buyerAddress: string;
+  sellerAddress: string;
+  buyerVkey: string;
+  sellerVkey: string;
+  state: SmartContractState;
+  referenceKey: string;
+  referenceSignature: string;
+  sellerNonce: string;
+  buyerNonce: string;
+  collateralReturnLovelace: bigint;
+  inputHash: string;
+  resultHash: string;
+  payByTime: bigint;
+  resultTime: bigint;
+  unlockTime: bigint;
+  externalDisputeUnlockTime: bigint;
+  buyerCooldownTime: bigint;
+  sellerCooldownTime: bigint;
+};
+
+export function decodeV1ContractDatum(
+  decodedDatum: any,
+  network: Network,
+): DecodedV1ContractDatum | null {
   try {
     /*
   buyer: VerificationKeyHash,
@@ -167,6 +192,7 @@ export function decodeV1ContractDatum(decodedDatum: any, network: Network) {
     return null;
   }
 }
+
 export function newCooldownTime(cooldownTime: bigint) {
   //We add some additional cooldown time to avoid validity issues with blocktime
   const cooldownTimeMs =

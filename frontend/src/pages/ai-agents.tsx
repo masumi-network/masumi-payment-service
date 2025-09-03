@@ -547,11 +547,7 @@ export default function AIAgentsPage() {
                         </Badge>
                       </td>
                       <td className="p-4">
-                        {[
-                          'RegistrationConfirmed',
-                          'RegistrationFailed',
-                          'DeregistrationFailed',
-                        ].includes(agent.state) ? (
+                        {['RegistrationConfirmed'].includes(agent.state) ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -598,12 +594,21 @@ export default function AIAgentsPage() {
         <RegisterAIAgentDialog
           open={isRegisterDialogOpen}
           onClose={() => setIsRegisterDialogOpen(false)}
-          onSuccess={fetchAgents}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
           onClose={() => setSelectedAgentForDetails(null)}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <ConfirmDialog

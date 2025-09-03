@@ -305,6 +305,14 @@ export default function Transactions() {
 
   useEffect(() => {
     fetchTransactions(true);
+    // Set last visit timestamp when user visits transactions page
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(
+        'masumi_last_transactions_visit',
+        new Date().toISOString(),
+      );
+      localStorage.setItem('masumi_new_transactions_count', '0');
+    }
   }, [state.network, apiClient, selectedPaymentSourceId]);
 
   useEffect(() => {
@@ -342,8 +350,9 @@ export default function Transactions() {
       case 'resultsubmitted':
         return 'text-green-500';
       case 'refundrequested':
-      case 'refundwithdrawn':
         return 'text-orange-500';
+      case 'refundwithdrawn':
+        return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
         return 'text-red-500';

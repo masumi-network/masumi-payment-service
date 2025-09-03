@@ -392,6 +392,104 @@
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "Updates a wallet",
+                "summary": "Update a wallet. (admin access required)",
+                "tags": [
+                    "wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "The id of the wallet to update"
+                                    },
+                                    "newCollectionAddress": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "maxLength": 250,
+                                        "description": "The new collection address to set for this wallet. Pass null to clear."
+                                    }
+                                },
+                                "required": [
+                                    "id",
+                                    "newCollectionAddress"
+                                ],
+                                "example": {
+                                    "id": "unique_cuid_v2_of_entry_to_update",
+                                    "newCollectionAddress": "collection_address"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "walletVkey": {
+                                            "type": "string"
+                                        },
+                                        "walletAddress": {
+                                            "type": "string"
+                                        },
+                                        "collectionAddress": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "Selling",
+                                                "Purchasing"
+                                            ]
+                                        },
+                                        "note": {
+                                            "type": "string",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "walletVkey",
+                                        "walletAddress",
+                                        "collectionAddress",
+                                        "type",
+                                        "note"
+                                    ],
+                                    "example": {
+                                        "id": "unique_cuid_v2_of_entry_to_update",
+                                        "collectionAddress": "collection_address",
+                                        "type": "Selling",
+                                        "walletVkey": "wallet_vkey",
+                                        "walletAddress": "wallet_address",
+                                        "note": "note"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         "/api-key/": {

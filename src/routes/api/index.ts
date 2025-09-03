@@ -20,7 +20,11 @@ import {
   paymentSourceExtendedEndpointPost,
 } from './payment-source-extended';
 import { queryAPIKeyStatusEndpointGet } from './api-key-status';
-import { postWalletEndpointPost, queryWalletEndpointGet } from './wallet';
+import {
+  patchWalletEndpointPatch,
+  postWalletEndpointPost,
+  queryWalletEndpointGet,
+} from './wallet';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
 import { paymentSourceEndpointGet } from './payment-source';
@@ -93,6 +97,7 @@ export const apiRouter: Routing = {
     wallet: new DependsOnMethod({
       get: queryWalletEndpointGet,
       post: postWalletEndpointPost,
+      patch: patchWalletEndpointPatch,
     }),
     'payment-source-extended': new DependsOnMethod({
       get: paymentSourceExtendedEndpointGet,
