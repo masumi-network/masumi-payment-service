@@ -137,7 +137,9 @@ export class WebhookSenderService {
 
       await prisma.webhookDelivery.update({
         where: { id: deliveryId },
-        data: { status: WebhookDeliveryStatus.Cancelled },
+        data: {
+          status: WebhookDeliveryStatus.Cancelled as WebhookDeliveryStatus,
+        },
       });
       return;
     }
@@ -151,7 +153,7 @@ export class WebhookSenderService {
 
       await prisma.webhookDelivery.update({
         where: { id: deliveryId },
-        data: { status: WebhookDeliveryStatus.Failed },
+        data: { status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus },
       });
 
       // Update webhook endpoint failure tracking
@@ -162,7 +164,7 @@ export class WebhookSenderService {
     await prisma.webhookDelivery.update({
       where: { id: deliveryId },
       data: {
-        status: WebhookDeliveryStatus.Retrying,
+        status: WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus,
         attempts: { increment: 1 },
       },
     });
@@ -177,7 +179,7 @@ export class WebhookSenderService {
       await prisma.webhookDelivery.update({
         where: { id: deliveryId },
         data: {
-          status: WebhookDeliveryStatus.Success,
+          status: WebhookDeliveryStatus.Success as WebhookDeliveryStatus,
           responseCode: result.responseCode,
           deliveredAt: new Date(),
           durationMs: result.durationMs,
@@ -196,8 +198,8 @@ export class WebhookSenderService {
         where: { id: deliveryId },
         data: {
           status: isFinalAttempt
-            ? WebhookDeliveryStatus.Failed
-            : WebhookDeliveryStatus.Pending,
+            ? (WebhookDeliveryStatus.Failed as WebhookDeliveryStatus)
+            : (WebhookDeliveryStatus.Pending as WebhookDeliveryStatus),
           responseCode: result.responseCode,
           errorMessage: result.errorMessage,
           durationMs: result.durationMs,

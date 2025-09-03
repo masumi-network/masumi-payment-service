@@ -167,7 +167,7 @@ export class WebhookEventsService {
 
   async triggerPurchaseOnChainStatusChanged(purchaseId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED,
+      WebhookEventType.PURCHASE_ON_CHAIN_STATUS_CHANGED as WebhookEventType,
       purchaseId,
       'purchase',
       {},
@@ -176,7 +176,7 @@ export class WebhookEventsService {
 
   async triggerPaymentOnChainStatusChanged(paymentId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED,
+      WebhookEventType.PAYMENT_ON_CHAIN_STATUS_CHANGED as WebhookEventType,
       paymentId,
       'payment',
       {},
@@ -185,7 +185,7 @@ export class WebhookEventsService {
 
   async triggerPurchaseOnError(purchaseId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WebhookEventType.PURCHASE_ON_ERROR,
+      WebhookEventType.PURCHASE_ON_ERROR as WebhookEventType,
       purchaseId,
       'purchase',
       {},
@@ -194,7 +194,7 @@ export class WebhookEventsService {
 
   async triggerPaymentOnError(paymentId: string): Promise<void> {
     await this.triggerGenericWebhook(
-      WebhookEventType.PAYMENT_ON_ERROR,
+      WebhookEventType.PAYMENT_ON_ERROR as WebhookEventType,
       paymentId,
       'payment',
       {},

@@ -59,7 +59,7 @@ export class WebhookQueueService {
             eventType,
             payload: endpointPayload as Record<string, any>,
             entityId,
-            status: WebhookDeliveryStatus.Pending,
+            status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
             nextRetryAt: new Date(),
           },
         });
@@ -89,7 +89,10 @@ export class WebhookQueueService {
     const pendingDeliveries = await prisma.webhookDelivery.findMany({
       where: {
         status: {
-          in: [WebhookDeliveryStatus.Pending, WebhookDeliveryStatus.Retrying],
+          in: [
+            WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
+            WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus,
+          ],
         },
         nextRetryAt: {
           lte: new Date(),
@@ -148,9 +151,9 @@ export class WebhookQueueService {
           },
           status: {
             in: [
-              WebhookDeliveryStatus.Success,
-              WebhookDeliveryStatus.Failed,
-              WebhookDeliveryStatus.Cancelled,
+              WebhookDeliveryStatus.Success as WebhookDeliveryStatus,
+              WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+              WebhookDeliveryStatus.Cancelled as WebhookDeliveryStatus,
             ],
           },
         },
@@ -180,16 +183,24 @@ export class WebhookQueueService {
   }> {
     const [pending, success, failed, retrying] = await Promise.all([
       prisma.webhookDelivery.count({
-        where: { status: WebhookDeliveryStatus.Pending },
+        where: {
+          status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
+        },
       }),
       prisma.webhookDelivery.count({
-        where: { status: WebhookDeliveryStatus.Success },
+        where: {
+          status: WebhookDeliveryStatus.Success as WebhookDeliveryStatus,
+        },
       }),
       prisma.webhookDelivery.count({
-        where: { status: WebhookDeliveryStatus.Failed },
+        where: {
+          status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
+        },
       }),
       prisma.webhookDelivery.count({
-        where: { status: WebhookDeliveryStatus.Retrying },
+        where: {
+          status: WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus,
+        },
       }),
     ]);
 
