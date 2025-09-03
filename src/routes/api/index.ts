@@ -41,6 +41,7 @@ import {
   listWebhooksGet,
   deleteWebhookDelete,
 } from './webhooks';
+import { retryExternalActionPost } from './retry-external-action';
 
 export const apiRouter: Routing = {
   v1: {
@@ -118,6 +119,9 @@ export const apiRouter: Routing = {
       get: listWebhooksGet,
       post: registerWebhookPost,
       delete: deleteWebhookDelete,
+    }),
+    'retry-external-action': new DependsOnMethod({
+      post: retryExternalActionPost,
     }),
   },
 };
