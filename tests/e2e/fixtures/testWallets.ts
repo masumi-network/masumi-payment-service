@@ -72,38 +72,6 @@ export const TEST_WALLETS: TestWalletConfig = {
 };
 
 /**
- * Get a test wallet for specific network and role
- */
-export function getTestWallet(
-  network: Network,
-  role: 'seller' | 'buyer',
-  index: number = 0,
-): TestWallet {
-  const wallets = TEST_WALLETS[network];
-
-  switch (role) {
-    case 'seller':
-      if (index >= wallets.sellers.length) {
-        throw new Error(
-          `Seller wallet index ${index} not available for network ${network}`,
-        );
-      }
-      return wallets.sellers[index];
-
-    case 'buyer':
-      if (index >= wallets.buyers.length) {
-        throw new Error(
-          `Buyer wallet index ${index} not available for network ${network}`,
-        );
-      }
-      return wallets.buyers[index];
-
-    default:
-      throw new Error(`Unknown wallet role: ${role as string}`);
-  }
-}
-
-/**
  * Validate that test wallets are properly configured
  */
 export function validateTestWallets(network: Network): {
@@ -143,6 +111,5 @@ export function validateTestWallets(network: Network): {
 
 export default {
   TEST_WALLETS,
-  getTestWallet,
   validateTestWallets,
 };

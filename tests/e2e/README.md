@@ -4,31 +4,84 @@ This directory contains comprehensive end-to-end tests for the Masumi Payment Se
 
 ## 🎯 What These Tests Do
 
-The e2e tests simulate real user workflows:
+The E2E tests simulate real user workflows covering the complete payment service lifecycle:
 
-1. **Agent Registration Flow**
-   - Submit agent registration
-   - Wait for blockchain processing  
-   - Verify registration confirmation
-   - Check agent appears in registry
+1. **Complete Payment Flow with Refund** - Full agent registration → payment → purchase → funds locked → submit result → refund process
+2. **Early Refund Flow** - Refund requested before result submission  
+3. **Cancel Refund Request** - Cancel a refund after it's been requested
+4. **Agent Deregistration** - Remove agents from the registry
 
-2. **Future Flows** (to be implemented)
-   - Payment creation and execution
-   - Purchase flows with refunds
-   - Complete agent-to-agent transactions
+## 📋 Available Tests
+
+### Part 1: Complete Flow with Refund
+**Filename**: `complete-flow-with-refund.test.ts`
+
+**Command**:
+```bash
+npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
+```
+
+**What it tests**: Complete 11-step flow from agent registration to refund authorization
+
+---
+
+### Part 2: Early Refund Complete Flow  
+**Filename**: `early-refund-complete-flow.test.ts`
+
+**Command**:
+```bash
+npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
+```
+
+**What it tests**: Refund requested while funds are still locked (before result submission)
+
+---
+
+### Part 3: Cancel Refund Request Flow
+**Filename**: `cancel-refund-request-flow.test.ts`
+
+**Command**:
+```bash
+npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
+```
+
+**What it tests**: Request refund, submit result → disputed state, then cancel the refund
+
+---
+
+### Part 4: Agent Deregister Flow
+**Filename**: `agent-deregister-delete-flow.test.ts`
+
+**Command**:
+```bash
+npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
+```
+
+**What it tests**: Find existing confirmed agents and deregister them
+
+---
+
+### Run All Tests
+```bash
+npm run test:e2e
+```
 
 ## 🏗️ Test Architecture
 
 ```
 tests/e2e/
-├── flows/                 # Complete business flow tests
-│   └── registration.test.ts
+├── flows/                 # 4 Complete business flow tests
+│   ├── complete-flow-with-refund.test.ts      # Part 1
+│   ├── early-refund-complete-flow.test.ts     # Part 2
+│   ├── cancel-refund-request-flow.test.ts     # Part 3
+│   └── agent-deregister-delete-flow.test.ts   # Part 4
 ├── utils/                 # Reusable testing utilities
 │   ├── apiClient.ts       # HTTP client wrapper  
-│   ├── waitFor.ts         # Polling utilities
-│   └── testData.ts        # Test data generators
-├── fixtures/              # Static test data
-│   └── testWallets.ts     # Test wallet configurations
+│   ├── paymentSourceHelper.ts # Dynamic database queries
+│   └── waitFor.ts         # Polling utilities
+├── fixtures/              # Static test data and generators
+│   ├── testData.ts        # Test data generators
+│   └── testWallets.ts     # Test wallet configurations (validation only)
 └── setup/                 # Test environment setup
     └── testEnvironment.ts # Global test configuration
 ```
@@ -39,236 +92,204 @@ tests/e2e/
 
 - Node.js and npm installed
 - PostgreSQL database running
-- Cardano test wallets with ADA
-- API keys for your test environment
+- Cardano Preprod testnet access
+- Server running on `http://localhost:3001`
 
 ### 2. Environment Setup
 
-Create a `.env.test` file or export these variables:
+The tests use your main `.env` file. Ensure these variables are set:
 
 ```bash
 # Required
-export TEST_API_KEY="your-test-api-key-here"
+TEST_API_KEY="your-test-api-key-here"
+
+# Database (can use temporary test database)
+DATABASE_URL="postgresql://user:pass@localhost:5432/your_test_db"
 
 # Optional (defaults shown)
-export TEST_NETWORK="Preprod"
-export TEST_API_URL="http://localhost:3001"
-export TEST_DATABASE_URL="postgresql://test@localhost:5432/masumi_payment_service_test"
-
-# Timeouts (in milliseconds)
-export TEST_API_TIMEOUT="30000"
-export TEST_REGISTRATION_TIMEOUT="300000"
-export TEST_BLOCKCHAIN_TIMEOUT="600000"
+TEST_NETWORK="Preprod"
+TEST_API_URL="http://localhost:3001"
 ```
 
-### 3. Configure Test Wallets
+### 3. Database Setup
 
-⚠️ **IMPORTANT**: Update test wallet configurations in `fixtures/testWallets.ts`
+For clean testing, create a separate test database:
 
-Replace placeholder vkeys with actual test wallets:
-- Seller wallets (for agent registration)
-- Buyer wallets (for purchases)  
-- Admin wallets (for admin operations)
+```bash
+# Create test database
+createdb masumi_payment_service_e2e_test
+
+# Update .env temporarily
+DATABASE_URL="postgresql://user:pass@localhost:5432/masumi_payment_service_e2e_test"
+
+# Run migrations and seeding
+npx prisma migrate deploy
+npx prisma db seed
+```
 
 ### 4. Start the Server
 
-In one terminal:
 ```bash
 npm run dev
 ```
 
 ### 5. Run the Tests
 
-In another terminal:
 ```bash
-# Run all e2e tests
+# Run individual tests (recommended)
+npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
+npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
+npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
+npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
+
+# Or run all tests (will take longer)
 npm run test:e2e
-
-# Run just registration tests
-npm run test:e2e:registration
-
-# Run with detailed output
-npm run test:e2e:verbose
-
-# Run in watch mode (for development)
-npm run test:e2e:watch
 ```
 
-## 📋 Test Configuration
+## 🔄 Dynamic Database Integration
+
+### Key Features
+
+✅ **Fully Portable**: Tests work on any developer's environment
+✅ **Dynamic API Keys**: Uses environment-based authentication  
+✅ **Dynamic Smart Contract Addresses**: Queries from seeded database
+✅ **Dynamic Wallet VKeys**: Automatically uses seeded wallet data
+✅ **No Hardcoded Dependencies**: Everything queried at runtime
+
+### How It Works
+
+The tests use `paymentSourceHelper.ts` utilities to:
+
+1. **Query Active PaymentSource**: `getActiveSmartContractAddress(network)`
+2. **Query Wallet VKeys**: `getTestWalletFromDatabase(network, 'seller')`
+3. **Validate Environment**: Ensures database seeding is complete
+
+This means tests work regardless of:
+- Your specific API key
+- Your seeded smart contract addresses  
+- Your generated wallet VKeys
+- Your database configuration
+
+## 📊 Test Scenarios
+
+### Part 1: Complete Flow with Refund
+- Agent registration and confirmation
+- Payment creation with custom timing
+- Purchase creation and funds locking
+- Result submission and processing
+- Refund request and dispute handling
+- Admin authorization and completion
+
+### Part 2: Early Refund Flow
+- Same setup as Part 1
+- Refund requested **before** result submission
+- Result submission creates disputed state
+- Admin resolves the dispute
+
+### Part 3: Cancel Refund Request
+- Same setup through disputed state
+- Cancel refund request instead of authorizing
+- Returns to normal completion flow
+
+### Part 4: Agent Deregistration
+- Finds existing confirmed agents
+- Calls deregister endpoint
+- Verifies deregistration state
+
+## 🔧 Technical Details
 
 ### Jest Configuration
+- 24-hour timeout for blockchain operations
+- Sequential execution to avoid conflicts
+- Comprehensive logging and cleanup
 
-The tests use a separate Jest config (`jest.e2e.config.ts`) with:
-- 10-minute test timeout (blockchain operations are slow)
-- Sequential execution (avoid conflicts)
-- Separate test environment setup
+### Blockchain Integration
+- Infinite wait modes for unpredictable blockchain timing
+- Proper cooldown periods between operations
+- State transition validation
 
-### API Client
-
-Tests use a custom `ApiClient` wrapper instead of curl:
-- Automatic authentication headers
-- Error handling and retries
-- Request/response logging
-- TypeScript types for all endpoints
-
-### waitFor Utilities
-
-Specialized polling functions for async operations:
-- `waitForRegistrationState()` - Wait for registration confirmation
-- `waitForAgentIdentifier()` - Wait for agent ID creation
-- `waitForServer()` - Wait for server startup
-- Generic `waitFor()` - Custom polling conditions
-
-## 🧪 Test Scenarios
-
-### Registration Tests
-
-#### ✅ Happy Path Tests
-- **Basic Agent**: Simple registration with minimal config
-- **Premium Agent**: Multi-tier pricing and complex metadata
-- **Multi-Output Agent**: Agents with multiple example outputs
-
-#### ❌ Error Handling Tests  
-- Invalid wallet verification keys
-- Missing required fields
-- Malformed data structures
-- Network/timeout scenarios
-
-#### ⏱️ Timing Tests
-- waitFor timeout handling
-- Registration processing delays
-- Server startup timing
-
-## 🔧 Customization
-
-### Adding New Flow Tests
-
-1. Create test file in `flows/` directory
-2. Import required utilities
-3. Use `global.testApiClient` for API calls
-4. Add cleanup for test data
-
-Example:
-```typescript
-// tests/e2e/flows/payment.test.ts
-import { generateTestPaymentData } from '../utils/testData';
-import { waitForPaymentConfirmation } from '../utils/waitFor';
-
-describe('Payment Flow E2E', () => {
-  test('should create and execute payment', async () => {
-    const paymentData = generateTestPaymentData();
-    const response = await global.testApiClient.createPayment(paymentData);
-    
-    await waitForPaymentConfirmation(response.id);
-    // ... assertions
-  });
-});
-```
-
-### Adding New Utilities
-
-Create reusable functions in `utils/`:
-- `testData.ts` - Data generators
-- `waitFor.ts` - Polling utilities  
-- `assertions.ts` - Custom expect matchers
-
-### Environment Variables
-
-All configuration through environment variables:
-- `TEST_*` prefix for test-specific config
-- Sensible defaults for development
-- Override for different environments
+### Error Handling
+- Network and address validation
+- Authentication error detection
+- Blockchain timeout management
 
 ## 🚨 Troubleshooting
 
 ### Common Issues
 
-#### 1. "Server is not ready" 
+#### 1. "Network and Address combination not supported"
 ```bash
-# Make sure server is running
+# Database not seeded properly
+npx prisma db seed
+
+# Check PaymentSource records exist
+psql -d your_test_db -c "SELECT network, \"smartContractAddress\" FROM \"PaymentSource\";"
+```
+
+#### 2. "Unauthorized, invalid authentication token"  
+```bash
+# Check API key in database
+psql -d your_test_db -c "SELECT token FROM \"ApiKey\" WHERE status = 'Active';"
+
+# Update TEST_API_KEY to match
+export TEST_API_KEY="your-actual-seeded-key"
+```
+
+#### 3. "Server is not ready"
+```bash
+# Ensure server is running
 npm run dev
 
-# Check server URL
-curl http://localhost:3000/api/v1/health
+# Test server health
+curl http://localhost:3001/api/v1/health
 ```
 
-#### 2. "API key validation failed"
+#### 4. "No RegistrationConfirmed agents found"
 ```bash
-# Verify API key is correct
-export TEST_API_KEY="your-actual-api-key"
+# Run tests that create agents first (Parts 1-3)
+npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 
-# Test manually
-curl -H "Authorization: Bearer $TEST_API_KEY" http://localhost:3000/api/v1/health
+# Then run deregister test (Part 4)
+npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 ```
-
-#### 3. "Test wallet validation failed"
-- Update `fixtures/testWallets.ts` with real test wallet vkeys
-- Ensure wallets exist in your payment source configuration
-- Fund wallets with sufficient test ADA
-
-#### 4. "Registration timeout"
-- Blockchain operations can be slow (5+ minutes)
-- Check Cardano network status
-- Verify test wallet permissions in database
 
 ### Debug Mode
 
-Enable verbose logging:
+Enable detailed logging:
 ```bash
-DEBUG=* npm run test:e2e:verbose
+DEBUG=* npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 ```
-
-View full API responses:
-```bash
-NODE_ENV=development npm run test:e2e
-```
-
-## 📊 Performance
-
-### Expected Timings
-- Server startup: 10-30 seconds
-- Registration submission: < 5 seconds  
-- Registration confirmation: 2-10 minutes
-- Registry queries: < 2 seconds
-
-### Optimization Tips
-- Run tests on preprod (faster than mainnet)
-- Use dedicated test database
-- Parallel test execution (future improvement)
-- Cached test data between runs
 
 ## 🔐 Security Notes
 
-⚠️ **Never commit real wallet keys to version control**
+⚠️ **Test Environment Safety**
+- Uses test database (separate from production)
+- Uses Cardano Preprod network (test ADA)
+- No real funds or production data involved
+- API keys are for testing only
 
-- Use environment variables for sensitive data
-- Test wallets should have minimal funds
-- Separate test and production environments
-- Regular rotation of test API keys
+## 📈 Restore Production Environment
 
-## 📈 Future Enhancements
+After testing, restore your original database:
 
-### Planned Features
-1. **Payment Flow Tests** - Complete payment execution
-2. **Purchase Flow Tests** - Buy/sell with refunds
-3. **Admin Operation Tests** - Administrative functions
-4. **Performance Tests** - Load testing scenarios
-5. **Integration Tests** - Cross-service validation
+```bash
+# Update .env back to production database
+DATABASE_URL="postgresql://user:pass@localhost:5432/masumi_payment_service"
 
-### Improvements
-- Parallel test execution
-- Test data seeding/cleanup
-- Visual test reporting  
-- Continuous integration
-- Network resilience testing
+# Optional: Clean up test database
+dropdb masumi_payment_service_e2e_test
+```
 
 ## 🤝 Contributing
 
-When adding new tests:
-1. Follow existing patterns and conventions
-2. Add appropriate cleanup logic
-3. Include both happy path and error scenarios
-4. Update documentation
-5. Test on both preprod and mainnet (if applicable)
+When working with these tests:
+1. Always use a separate test database
+2. Run individual tests during development  
+3. Ensure proper cleanup after testing
+4. Update this README for any new test patterns
 
-For questions or issues, refer to the main project documentation or create an issue.
+For questions or issues, refer to the main project documentation.
+
+---
+
+**Total Test Coverage**: 4 comprehensive E2E scenarios covering the complete Masumi Payment Service workflow

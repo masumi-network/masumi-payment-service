@@ -2,7 +2,6 @@ import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';
 import { waitForServer } from '../utils/waitFor';
 import dotenv from 'dotenv';
-import path from 'path';
 
 /**
  * Global test environment setup for e2e tests
@@ -19,11 +18,10 @@ declare global {
 beforeAll(async () => {
   console.log('🚀 Setting up E2E test environment...');
 
-  // Load environment variables from .env.e2e file
-  const envPath = path.resolve(process.cwd(), '.env.e2e');
-  dotenv.config({ path: envPath });
+  // Load environment variables from main .env file
+  dotenv.config();
 
-  console.log('📁 Loading environment from:', envPath);
+  console.log('📁 Loading environment from main .env file');
 
   // Load test configuration
   const config = getTestEnvironment();

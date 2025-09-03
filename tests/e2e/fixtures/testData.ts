@@ -102,10 +102,10 @@ export function getTestScenarios() {
 export function getTestEnvironment() {
   return {
     network: (process.env.TEST_NETWORK as Network) || Network.Preprod,
-    apiUrl: process.env.TEST_API_URL || 'http://localhost:3000',
-    apiKey: process.env.TEST_API_KEY || 'Faizan12620Shaikh@3033',
+    apiUrl: process.env.TEST_API_URL || 'http://localhost:3001',
+    apiKey: process.env.TEST_API_KEY || 'DefaultTestApiKey12345',
     database:
-      process.env.TEST_DATABASE_URL ||
+      process.env.DATABASE_URL ||
       'postgresql://test@localhost:5432/masumi_payment_service_test',
     timeout: {
       api: 30000, // 30 seconds
@@ -125,7 +125,7 @@ export interface PaymentTimingConfig {
 /**
  * Generate valid payment timing constraints
  */
-export function generatePaymentTiming(): PaymentTimingConfig {
+function generatePaymentTiming(): PaymentTimingConfig {
   const now = new Date();
 
   // payByTime: 11 hours from now (leave buffer before submitResultTime)
@@ -153,7 +153,7 @@ export function generatePaymentTiming(): PaymentTimingConfig {
 /**
  * Generate a random hex string for identifiers
  */
-export function generateHexIdentifier(length: number): string {
+function generateHexIdentifier(length: number): string {
   const bytes = Math.ceil(length / 2);
   const randomBytes: number[] = [];
 
@@ -170,7 +170,7 @@ export function generateHexIdentifier(length: number): string {
 /**
  * Generate SHA256 hash of input string
  */
-export function generateSHA256Hash(input: string): string {
+function generateSHA256Hash(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
@@ -248,8 +248,5 @@ export default {
   getTestScenarios,
   getTestEnvironment,
   generateTestPaymentData,
-  generatePaymentTiming,
-  generateHexIdentifier,
-  generateSHA256Hash,
   generateRandomSubmitResultHash,
 };

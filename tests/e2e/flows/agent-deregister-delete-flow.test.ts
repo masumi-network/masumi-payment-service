@@ -13,6 +13,7 @@
 
 import { Network } from '@prisma/client';
 import { validateTestWallets } from '../fixtures/testWallets';
+import { getActiveSmartContractAddress } from '../utils/paymentSourceHelper';
 import waitForExpect from 'wait-for-expect';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
@@ -118,10 +119,10 @@ describe(`Agent Deregister Flow E2E Tests (${testNetwork})`, () => {
       // ============================
       console.log('🔄 Step 2: Starting agent deregistration...');
 
-      // Use the correct active smart contract address from database
-      // The DEFAULTS address was deleted, so we use the currently active PaymentSource address
-      const correctSmartContractAddress =
-        'addr_test1wr9wzw5e59lsf7uuzsdfyvh2n0vgkwst0zmpjnjjxkwgu6q3wlx5v';
+      // Query the active smart contract address dynamically from database
+      console.log('🔍 Querying active smart contract address from database...');
+      const activeSmartContractAddress =
+        await getActiveSmartContractAddress(testNetwork);
 
       const deregisterResponse = await (
         global as any
@@ -130,7 +131,7 @@ describe(`Agent Deregister Flow E2E Tests (${testNetwork})`, () => {
         body: JSON.stringify({
           network: testNetwork,
           agentIdentifier: confirmedAgent.agentIdentifier,
-          smartContractAddress: correctSmartContractAddress,
+          smartContractAddress: activeSmartContractAddress,
         }),
       });
 

@@ -19,11 +19,6 @@
         "test:coverage": "jest --coverage",
         "test:e2e": "jest --config jest.e2e.config.ts",
         "test:e2e:watch": "jest --config jest.e2e.config.ts --watch",
-        "test:e2e:registration": "jest --config jest.e2e.config.ts flows/registration",
-        "test:e2e:payment": "jest --config jest.e2e.config.ts flows/payment",
-        "test:e2e:purchase": "jest --config jest.e2e.config.ts flows/purchase",
-        "test:e2e:submit-result": "jest --config jest.e2e.config.ts flows/submit-result",
-        "test:e2e:complete": "jest --config jest.e2e.config.ts flows/complete-flow",
         "test:e2e:verbose": "jest --config jest.e2e.config.ts --verbose",
         "prisma:generate": "npx prisma generate",
         "prisma:migrate": "npx prisma migrate deploy",
@@ -42,8 +37,6 @@
         "@blockfrost/blockfrost-js": "^6.0.0",
         "@emurgo/cardano-serialization-lib-nodejs": "^14.1.1",
         "@harmoniclabs/cbor": "1.3.0",
-        "@jest/globals": "^29.7.0",
-        "@jest/types": "^29.6.3",
         "@meshsdk/core": "1.9.0-beta.65",
         "@meshsdk/core-cst": "1.9.0-beta.65",
         "@opentelemetry/auto-instrumentations-node": "^0.62.0",
@@ -98,7 +91,9 @@
         "ts-jest": "^29.3.1",
         "tsx": "^4.19.3",
         "typescript": "^5.8.3",
-        "wait-for-expect": "^4.0.0"
+        "wait-for-expect": "^4.0.0",
+        "@jest/globals": "^29.7.0",
+        "@jest/types": "^29.6.3"
     },
     "lint-staged": {
         "*.{js,ts}": [

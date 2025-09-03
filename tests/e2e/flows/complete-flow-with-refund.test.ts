@@ -16,7 +16,8 @@
  */
 
 import { Network } from '@prisma/client';
-import { validateTestWallets, getTestWallet } from '../fixtures/testWallets';
+import { validateTestWallets } from '../fixtures/testWallets';
+import { getTestWalletFromDatabase } from '../utils/paymentSourceHelper';
 import {
   generateTestPaymentData,
   generateTestRegistrationData,
@@ -94,7 +95,9 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
       // =======================
       console.log('📝 Step 1: Preparing and submitting agent registration...');
 
-      const testWallet = getTestWallet(testNetwork, 'seller', 0);
+      // Get test wallet dynamically from database
+      console.log('🔍 Getting test wallet dynamically from database...');
+      const testWallet = await getTestWalletFromDatabase(testNetwork, 'seller');
       const testScenario = getTestScenarios().basicAgent;
 
       const registrationData = generateTestRegistrationData(
