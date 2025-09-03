@@ -62,7 +62,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       if (payment == null) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           404,
           'Payment not found',
           {
@@ -81,7 +81,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       ) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           400,
           'Payment is not on the requested network',
         );
@@ -90,7 +90,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       if (payment.onChainState !== 'Disputed') {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           400,
           'Payment is not disputed state',
           {
@@ -112,7 +112,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       ) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           400,
           'Wallet is not an admin wallet',
           {
@@ -129,7 +129,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       if (Date.now() > input.validUntil) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           400,
           'Signature is expired',
           {
@@ -145,7 +145,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       if (Date.now() + CONSTANTS.REVEAL_DATA_VALIDITY_TIME < input.validUntil) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
-          'GET',
+          'POST',
           400,
           'Signature is to far in the future',
           {
@@ -184,7 +184,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         500;
       recordBusinessEndpointError(
         '/api/v1/reveal-data',
-        'GET',
+        'POST',
         statusCode,
         errorInstance,
         {
