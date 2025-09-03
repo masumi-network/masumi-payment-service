@@ -492,6 +492,101 @@
                 }
             }
         },
+        "/reveal-data/": {
+            "post": {
+                "description": "Verifies the reveal data signature is valid.",
+                "summary": "Verifies the reveal data signature is valid. (read access required)",
+                "tags": [
+                    "reveal-data"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "signature": {
+                                        "type": "string",
+                                        "maxLength": 7500
+                                    },
+                                    "key": {
+                                        "type": "string",
+                                        "maxLength": 2500
+                                    },
+                                    "walletAddress": {
+                                        "type": "string",
+                                        "maxLength": 250
+                                    },
+                                    "validUntil": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1000000000000000000
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2500,
+                                        "description": "The blockchain identifier, for which the data should be revealed"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "reveal_data"
+                                        ],
+                                        "description": "The action to perform"
+                                    }
+                                },
+                                "required": [
+                                    "signature",
+                                    "key",
+                                    "walletAddress",
+                                    "validUntil",
+                                    "blockchainIdentifier",
+                                    "action"
+                                ],
+                                "example": {
+                                    "action": "reveal_data",
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "signature": "signature",
+                                    "key": "key",
+                                    "walletAddress": "wallet_address",
+                                    "validUntil": 1713636260
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Revealed data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "isValid": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": [
+                                        "isValid"
+                                    ],
+                                    "example": {
+                                        "isValid": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api-key/": {
             "get": {
                 "description": "Gets api key status",
