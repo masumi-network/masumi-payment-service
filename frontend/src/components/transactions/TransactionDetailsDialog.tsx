@@ -157,12 +157,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund request failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request submitted successfully');
         onRefresh();
         onClose();
@@ -185,26 +187,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.data &&
-        typeof response.data === 'object' &&
-        'error' in response.data &&
-        response.data.error &&
-        typeof response.data.error === 'object' &&
-        'message' in response.data.error &&
-        typeof response.data.error.message === 'string'
-      ) {
-        throw {
-          message: response.data.error.message,
-          error: response.data.error,
-        };
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund authorization failed');
+        return;
       }
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.data?.data) {
         toast.success('Refund authorized successfully');
         onRefresh();
         onClose();
@@ -227,12 +217,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund cancel failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request cancelled successfully');
         onRefresh();
         onClose();
