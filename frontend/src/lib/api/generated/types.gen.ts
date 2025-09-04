@@ -824,6 +824,79 @@ export type PostPaymentAuthorizeRefundResponses = {
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
 
+export type PostRetryExternalActionData = {
+    /**
+     * Error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the payment or purchase request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/retry-external-action/';
+};
+
+export type PostRetryExternalActionErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment/purchase request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostRetryExternalActionError = PostRetryExternalActionErrors[keyof PostRetryExternalActionErrors];
+
+export type PostRetryExternalActionResponses = {
+    /**
+     * Error state cleared successfully
+     */
+    200: {
+        status: string;
+        data: {
+            success: boolean;
+            message: string;
+            type: 'payment' | 'purchase';
+            id: string;
+            currentTransactionId: string | null;
+            nextAction: {
+                requestedAction: 'WaitingForExternalAction';
+                errorType: unknown;
+                errorNote: unknown;
+            };
+        };
+    };
+};
+
+export type PostRetryExternalActionResponse = PostRetryExternalActionResponses[keyof PostRetryExternalActionResponses];
+
 export type GetPurchaseData = {
     body?: never;
     path?: never;
