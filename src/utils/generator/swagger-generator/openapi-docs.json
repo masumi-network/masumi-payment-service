@@ -2991,7 +2991,7 @@
                 "description": "Clears error states for payment/purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).",
                 "summary": "Clear error state and retry external action (PAY access required)",
                 "tags": [
-                    "error-state-recovery"
+                    "error-recovery"
                 ],
                 "security": [
                     {
