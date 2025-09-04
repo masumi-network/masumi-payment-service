@@ -106,6 +106,10 @@ import {
   postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import {
+  postRevealDataSchemaOutput,
+  postVerifyDataRevealSchemaInput,
+} from '@/routes/api/reveal-data';
+import {
   retryExternalActionSchemaInput,
   retryExternalActionSchemaOutput,
 } from '@/routes/api/retry-external-action';
@@ -295,6 +299,50 @@ export function generateOpenAPI() {
                 walletVkey: 'wallet_vkey',
                 walletAddress: 'wallet_address',
                 note: 'note',
+              },
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  /********************* REVEAL DATA *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/reveal-data/',
+    description: 'Verifies the reveal data signature is valid.',
+    summary:
+      'Verifies the reveal data signature is valid. (read access required)',
+    tags: ['reveal-data'],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postVerifyDataRevealSchemaInput.openapi({
+              example: {
+                action: 'reveal_data',
+                blockchainIdentifier: 'blockchain_identifier',
+                signature: 'signature',
+                key: 'key',
+                walletAddress: 'wallet_address',
+                validUntil: 1713636260,
+              },
+            }),
+          },
+        },
+      },
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Revealed data',
+        content: {
+          'application/json': {
+            schema: postRevealDataSchemaOutput.openapi({
+              example: {
+                isValid: true,
               },
             }),
           },
@@ -923,7 +971,7 @@ export function generateOpenAPI() {
       'Clears error states for payment/purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
     summary:
       'Clear error state and retry external action (PAY access required)',
-    tags: ['error-state-recovery'],
+    tags: ['error-recovery'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
       body: {
