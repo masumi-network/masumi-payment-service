@@ -113,6 +113,10 @@ import {
   deleteWebhookSchemaInput,
   deleteWebhookSchemaOutput,
 } from '@/routes/api/webhooks';
+import {
+  retryExternalActionSchemaInput,
+  retryExternalActionSchemaOutput,
+} from '@/routes/api/retry-external-action';
 
 extendZodWithOpenApi(z);
 
@@ -912,6 +916,105 @@ export function generateOpenAPI() {
       },
       401: {
         description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* ERROR RECOVERY *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/retry-external-action/',
+    description:
+      'Clears error states for payment/purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
+    summary:
+      'Clear error state and retry external action (PAY access required)',
+    tags: ['error-state-recovery'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Error recovery request details',
+        content: {
+          'application/json': {
+            schema: retryExternalActionSchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Error state cleared successfully',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: retryExternalActionSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    success: true,
+                    message:
+                      'Error state cleared successfully for payment request',
+                    type: 'payment',
+                    id: 'cmf40vg7h0016ucj1u1ro6651',
+                    currentTransactionId: 'cmf41enan001qucj18mm1ipnj',
+                    nextAction: {
+                      requestedAction: PaymentAction.WaitingForExternalAction,
+                      errorType: null,
+                      errorNote: null,
+                    },
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description:
+          'Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: {
+                message:
+                  'Request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
+              },
+            },
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Payment/purchase request not found',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: { message: 'Payment request not found' },
+            },
+          },
+        },
       },
       500: {
         description: 'Internal Server Error',
