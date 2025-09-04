@@ -7,6 +7,7 @@ export enum ValidJobInputTypes {
   NUMBER = 'number',
   BOOLEAN = 'boolean',
   OPTION = 'option',
+  FILE = 'file',
   NONE = 'none',
 }
 
@@ -152,6 +153,20 @@ export const jobInputOptionSchema = z.object({
     .optional(),
 });
 
+export const jobInputFileSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum([ValidJobInputTypes.FILE]),
+  name: z.string().min(1),
+  data: z.object({
+    accept: z.string().optional(),
+    maxSize: z.string().optional(),
+    multiple: z.boolean().optional(),
+    description: z.string().optional(),
+    outputFormat: z.string().optional(),
+  }),
+  validations: z.array(optionalValidationSchema).optional(),
+});
+
 export const jobInputNoneSchema = z.object({
   id: z.string().min(1),
   type: z.enum([ValidJobInputTypes.NONE]),
@@ -169,6 +184,7 @@ export const jobInputSchema = jobInputStringSchema
   .or(jobInputNumberSchema)
   .or(jobInputBooleanSchema)
   .or(jobInputOptionSchema)
+  .or(jobInputFileSchema)
   .or(jobInputNoneSchema);
 
 export type JobInputSchemaType = z.infer<typeof jobInputSchema>;
@@ -177,6 +193,7 @@ export type JobInputTextareaSchemaType = z.infer<typeof jobInputTextareaSchema>;
 export type JobInputNumberSchemaType = z.infer<typeof jobInputNumberSchema>;
 export type JobInputBooleanSchemaType = z.infer<typeof jobInputBooleanSchema>;
 export type JobInputOptionSchemaType = z.infer<typeof jobInputOptionSchema>;
+export type JobInputFileSchemaType = z.infer<typeof jobInputFileSchema>;
 export type JobInputNoneSchemaType = z.infer<typeof jobInputNoneSchema>;
 
 // Form schema generation (based on sokosumi's approach)
@@ -194,6 +211,8 @@ export const makeZodSchemaFromJobInputSchema = (
       return makeZodSchemaFromJobInputBooleanSchema();
     case ValidJobInputTypes.OPTION:
       return makeZodSchemaFromJobInputOptionSchema(jobInputSchema);
+    case ValidJobInputTypes.FILE:
+      return makeZodSchemaFromJobInputFileSchema(jobInputSchema);
     case ValidJobInputTypes.NONE:
       return z.never().nullable();
   }
@@ -333,6 +352,28 @@ const makeZodSchemaFromJobInputOptionSchema = (
   return canBeOptional ? schema.optional() : schema;
 };
 
+const makeZodSchemaFromJobInputFileSchema = (
+  jobInputFileSchema: JobInputFileSchemaType,
+) => {
+  const { validations } = jobInputFileSchema;
+  const defaultSchema = z.string();
+  if (!validations) return defaultSchema;
+
+  let canBeOptional: boolean = false;
+  const schema = validations.reduce((acc, cur) => {
+    const { validation, value } = cur;
+    switch (validation) {
+      case ValidJobInputValidationTypes.OPTIONAL:
+        canBeOptional = value === 'true';
+        return acc;
+      default:
+        return acc;
+    }
+  }, defaultSchema);
+
+  return canBeOptional ? schema.optional() : schema;
+};
+
 // Helper functions
 export const isOptional = (jobInputSchema: JobInputSchemaType): boolean => {
   if (!('validations' in jobInputSchema) || !jobInputSchema.validations)
@@ -372,6 +413,8 @@ export const getDefaultValue = (jobInputSchema: JobInputSchemaType) => {
       return null;
     case ValidJobInputTypes.OPTION:
       return [];
+    case ValidJobInputTypes.FILE:
+      return null;
     case ValidJobInputTypes.NONE:
       return null;
   }
