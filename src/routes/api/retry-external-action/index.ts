@@ -108,19 +108,19 @@ export const retryExternalActionPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    // Validate that the request is in WaitingForExternalAction with error
-    const isInWaitingForExternalAction =
+    // Validate that the request is in WaitingForManualAction with error
+    const isInWaitingForManualAction =
       (isPayment &&
         request.NextAction.requestedAction ===
-          PaymentAction.WaitingForExternalAction) ||
+          PaymentAction.WaitingForManualAction) ||
       (!isPayment &&
         request.NextAction.requestedAction ===
-          PurchasingAction.WaitingForExternalAction);
+          PurchasingAction.WaitingForManualAction);
 
-    if (!isInWaitingForExternalAction) {
+    if (!isInWaitingForManualAction) {
       throw createHttpError(
         400,
-        `Request is not in WaitingForExternalAction state. Current state: ${request.NextAction.requestedAction}`,
+        `Request is not in WaitingForManualAction state. Current state: ${request.NextAction.requestedAction}`,
       );
     }
 
@@ -131,17 +131,35 @@ export const retryExternalActionPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    // Find the most recent confirmed transaction
-    const confirmedTransaction = request.TransactionHistory.find(
+    // Find the most recent successful transaction (confirmed or pending)
+    // Priority 1: Most recent Confirmed transaction (fully successful)
+    const confirmedTransaction = request.TransactionHistory.filter(
       (tx) => tx.status === TransactionStatus.Confirmed,
-    );
+    ).sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )[0];
 
-    // Update the request to clear error and set confirmed transaction
+    // Priority 2: If no confirmed, get most recent Pending transaction (in progress)
+    const pendingTransaction = !confirmedTransaction
+      ? request.TransactionHistory.filter(
+          (tx) => tx.status === TransactionStatus.Pending,
+        ).sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )[0]
+      : null;
+
+    // Use the best available transaction
+    const lastSuccessfulTransaction =
+      confirmedTransaction || pendingTransaction;
+
+    // Update the request to clear error and set last successful transaction
     if (isPayment) {
       const updatedPaymentRequest = await prisma.paymentRequest.update({
         where: { id: request.id },
         data: {
-          currentTransactionId: confirmedTransaction?.id || null,
+          currentTransactionId: lastSuccessfulTransaction?.id || null,
         },
         include: {
           NextAction: true,
@@ -163,7 +181,7 @@ export const retryExternalActionPost = payAuthenticatedEndpointFactory.build({
         message: 'Error state cleared successfully for payment request',
         type: 'payment' as const,
         id: updatedPaymentRequest.id,
-        currentTransactionId: confirmedTransaction?.id || null,
+        currentTransactionId: lastSuccessfulTransaction?.id || null,
         nextAction: {
           requestedAction: PaymentAction.WaitingForExternalAction,
           errorType: null,
@@ -174,7 +192,7 @@ export const retryExternalActionPost = payAuthenticatedEndpointFactory.build({
       const updatedPurchaseRequest = await prisma.purchaseRequest.update({
         where: { id: request.id },
         data: {
-          currentTransactionId: confirmedTransaction?.id || null,
+          currentTransactionId: lastSuccessfulTransaction?.id || null,
         },
         include: {
           NextAction: true,
@@ -196,7 +214,7 @@ export const retryExternalActionPost = payAuthenticatedEndpointFactory.build({
         message: 'Error state cleared successfully for purchase request',
         type: 'purchase' as const,
         id: updatedPurchaseRequest.id,
-        currentTransactionId: confirmedTransaction?.id || null,
+        currentTransactionId: lastSuccessfulTransaction?.id || null,
         nextAction: {
           requestedAction: PurchasingAction.WaitingForExternalAction,
           errorType: null,
