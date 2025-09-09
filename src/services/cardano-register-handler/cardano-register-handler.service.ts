@@ -26,6 +26,25 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 
 const mutex = new Mutex();
 
+// Constants for better maintainability
+const TRANSACTION_CONSTANTS = {
+  MAX_UTXOS: 4,
+  COLLATERAL_AMOUNT: '5000000',
+  MINT_QUANTITY: '1',
+  METADATA_LABEL_NFT: 721,
+  METADATA_LABEL_MASUMI: 674,
+  DEFAULT_EX_UNITS: {
+    mem: 7e6,
+    steps: 3e9,
+  },
+  RETRY_CONFIG: {
+    maxRetries: 5,
+    backoffMultiplier: 5,
+    initialDelayMs: 500,
+    maxDelayMs: 7500,
+  },
+} as const;
+
 export async function registerAgentV1() {
   let release: MutexInterface.Releaser | null;
   try {
@@ -43,7 +62,7 @@ export async function registerAgentV1() {
 
     await Promise.allSettled(
       paymentSourcesWithWalletLocked.map(async (paymentSource) => {
-        if (paymentSource.RegistryRequest.length == 0) return;
+        if (paymentSource.RegistryRequest.length === 0) return;
 
         logger.info(
           `Registering ${paymentSource.RegistryRequest.length} agents for payment source ${paymentSource.id}`,
@@ -53,7 +72,7 @@ export async function registerAgentV1() {
 
         const registryRequests = paymentSource.RegistryRequest;
 
-        if (registryRequests.length == 0) return;
+        if (registryRequests.length === 0) return;
 
         const blockchainProvider = new BlockfrostProvider(
           paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -62,21 +81,16 @@ export async function registerAgentV1() {
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: {
-                maxRetries: 5,
-                backoffMultiplier: 5,
-                initialDelayMs: 500,
-                maxDelayMs: 7500,
-              },
+              configuration: TRANSACTION_CONSTANTS.RETRY_CONFIG,
             }),
           ],
           operations: registryRequests.map((request) => async () => {
-            if (request.Pricing.pricingType != PricingType.Fixed) {
+            if (request.Pricing.pricingType !== PricingType.Fixed) {
               throw new Error('Other than fixed pricing is not supported yet');
             }
             if (
-              request.Pricing.FixedPricing == null ||
-              request.Pricing.FixedPricing.Amounts.length == 0
+              request.Pricing.FixedPricing === null ||
+              request.Pricing.FixedPricing.Amounts.length === 0
             ) {
               throw new Error('No fixed pricing found, this is likely a bug');
             }
@@ -92,24 +106,27 @@ export async function registerAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const utxosSortedByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
+            // Extract lovelace amounts once for better performance O(n) instead of O(n²)
+            const utxosWithLovelace = utxos.map((utxo) => ({
+              utxo,
+              lovelace: parseInt(
+                utxo.output.amount.find(
+                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
                 )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              //sort by biggest lovelace
-              return bLovelace - aLovelace;
-            });
+              ),
+            }));
+
+            // Sort by lovelace amount (descending)
+            const utxosSortedByLovelaceDesc = utxosWithLovelace
+              .sort((a, b) => b.lovelace - a.lovelace)
+              .map((item) => item.utxo);
 
             const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
               0,
-              Math.min(4, utxosSortedByLovelaceDesc.length),
+              Math.min(
+                TRANSACTION_CONSTANTS.MAX_UTXOS,
+                utxosSortedByLovelaceDesc.length,
+              ),
             );
 
             const firstUtxo = limitedFilteredUtxos[0];
@@ -240,7 +257,7 @@ export async function registerAgentV1() {
         let index = 0;
         for (const result of results) {
           const request = registryRequests[index];
-          if (result.success == false || result.result != true) {
+          if (result.success === false || result.result !== true) {
             const error = result.error;
             logger.error(`Error registering agent ${request.id}`, {
               error: error,
@@ -295,10 +312,7 @@ async function generateRegisterAgentTransaction(
   exUnits: {
     mem: number;
     steps: number;
-  } = {
-    mem: 7e6,
-    steps: 3e9,
-  },
+  } = TRANSACTION_CONSTANTS.DEFAULT_EX_UNITS,
 ) {
   const txBuilder = new MeshTxBuilder({
     fetcher: blockchainProvider,
@@ -312,7 +326,7 @@ async function generateRegisterAgentTransaction(
     .mint('1', policyId, assetName)
     .mintingScript(script.code)
     .mintRedeemerValue({ alternative: 0, fields: [] }, 'Mesh', exUnits)
-    .metadataValue(721, {
+    .metadataValue(TRANSACTION_CONSTANTS.METADATA_LABEL_NFT, {
       [policyId]: {
         [assetName]: metadata,
       },
@@ -323,10 +337,13 @@ async function generateRegisterAgentTransaction(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000')
+    .setTotalCollateral(TRANSACTION_CONSTANTS.COLLATERAL_AMOUNT)
     .txOut(walletAddress, [
-      { unit: policyId + assetName, quantity: '1' },
-      { unit: 'lovelace', quantity: '5000000' },
+      {
+        unit: policyId + assetName,
+        quantity: TRANSACTION_CONSTANTS.MINT_QUANTITY,
+      },
+      { unit: 'lovelace', quantity: TRANSACTION_CONSTANTS.COLLATERAL_AMOUNT },
     ]);
   for (const utxo of utxos) {
     txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
@@ -334,7 +351,9 @@ async function generateRegisterAgentTransaction(
   return await txBuilder
     .requiredSignerHash(deserializedAddress.pubKeyHash)
     .setNetwork(network)
-    .metadataValue(674, { msg: ['Masumi', 'RegisterAgent'] })
+    .metadataValue(TRANSACTION_CONSTANTS.METADATA_LABEL_MASUMI, {
+      msg: ['Masumi', 'RegisterAgent'],
+    })
     .changeAddress(walletAddress)
     .complete();
 }
