@@ -5,6 +5,7 @@ import {
   PaymentType,
 } from '@prisma/client';
 import { prisma } from '..';
+import { logger } from '@/utils/logger';
 
 export async function lockAndQueryPayments({
   paymentStatus,
@@ -23,94 +24,99 @@ export async function lockAndQueryPayments({
 }) {
   return await prisma.$transaction(
     async (prisma) => {
-      const minCooldownTime = Date.now() - 1000 * 60 * 3;
-      const paymentSources = await prisma.paymentSource.findMany({
-        where: {
-          paymentType: PaymentType.Web3CardanoV1,
-          syncInProgress: false,
-          deletedAt: null,
-          disablePaymentAt: null,
-        },
-        include: {
-          PaymentRequests: {
-            where: {
-              NextAction: {
-                requestedAction: paymentStatus,
-                errorType: null,
-                resultHash: requestedResultHash,
-              },
-              submitResultTime: submitResultTime,
-              unlockTime: unlockTime,
-              SmartContractWallet: {
-                PendingTransaction: { is: null },
-                lockedAt: null,
-                deletedAt: null,
-              },
-              onChainState: onChainState,
-              //we only want to lock the payment if the cooldown time has passed
-              sellerCoolDownTime: { lte: minCooldownTime },
-              resultHash: resultHash,
-            },
-            include: {
-              NextAction: true,
-              CurrentTransaction: true,
-              RequestedFunds: true,
-              BuyerWallet: true,
-              SmartContractWallet: {
-                include: {
-                  Secret: true,
-                },
-                where: { deletedAt: null },
-              },
-            },
-            orderBy: {
-              createdAt: 'asc',
-            },
+      try {
+        const minCooldownTime = Date.now() - 1000 * 60 * 3;
+        const paymentSources = await prisma.paymentSource.findMany({
+          where: {
+            paymentType: PaymentType.Web3CardanoV1,
+            syncInProgress: false,
+            deletedAt: null,
+            disablePaymentAt: null,
           },
-          AdminWallets: true,
-          FeeReceiverNetworkWallet: true,
-          PaymentSourceConfig: true,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-      });
-      const sellingWallets: HotWallet[] = [];
+          include: {
+            PaymentRequests: {
+              where: {
+                NextAction: {
+                  requestedAction: paymentStatus,
+                  errorType: null,
+                  resultHash: requestedResultHash,
+                },
+                submitResultTime: submitResultTime,
+                unlockTime: unlockTime,
+                SmartContractWallet: {
+                  PendingTransaction: { is: null },
+                  lockedAt: null,
+                  deletedAt: null,
+                },
+                onChainState: onChainState,
+                //we only want to lock the payment if the cooldown time has passed
+                sellerCoolDownTime: { lte: minCooldownTime },
+                resultHash: resultHash,
+              },
+              include: {
+                NextAction: true,
+                CurrentTransaction: true,
+                RequestedFunds: true,
+                BuyerWallet: true,
+                SmartContractWallet: {
+                  include: {
+                    Secret: true,
+                  },
+                  where: { deletedAt: null },
+                },
+              },
+              orderBy: {
+                createdAt: 'asc',
+              },
+            },
+            AdminWallets: true,
+            FeeReceiverNetworkWallet: true,
+            PaymentSourceConfig: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        });
+        const sellingWallets: HotWallet[] = [];
 
-      const newPaymentSources = [];
-      for (const paymentSource of paymentSources) {
-        const paymentRequests = [];
-        const minCooldownTime = paymentSource.cooldownTime;
-        for (const paymentRequest of paymentSource.PaymentRequests) {
-          if (
-            paymentRequest.sellerCoolDownTime >
-            Date.now() - minCooldownTime
-          ) {
-            continue;
+        const newPaymentSources = [];
+        for (const paymentSource of paymentSources) {
+          const paymentRequests = [];
+          const minCooldownTime = paymentSource.cooldownTime;
+          for (const paymentRequest of paymentSource.PaymentRequests) {
+            if (
+              paymentRequest.sellerCoolDownTime >
+              Date.now() - minCooldownTime
+            ) {
+              continue;
+            }
+
+            const wallet = paymentRequest.SmartContractWallet;
+            if (
+              wallet != null &&
+              !sellingWallets.some((w) => w.id === wallet.id)
+            ) {
+              const result = await prisma.hotWallet.update({
+                where: { id: wallet.id, deletedAt: null },
+                data: { lockedAt: new Date() },
+              });
+              wallet.pendingTransactionId = result.pendingTransactionId;
+              sellingWallets.push(wallet);
+              paymentRequests.push(paymentRequest);
+            }
           }
-
-          const wallet = paymentRequest.SmartContractWallet;
-          if (
-            wallet != null &&
-            !sellingWallets.some((w) => w.id === wallet.id)
-          ) {
-            const result = await prisma.hotWallet.update({
-              where: { id: wallet.id, deletedAt: null },
-              data: { lockedAt: new Date() },
+          if (paymentRequests.length > 0) {
+            newPaymentSources.push({
+              ...paymentSource,
+              PaymentRequests: paymentRequests,
             });
-            wallet.pendingTransactionId = result.pendingTransactionId;
-            sellingWallets.push(wallet);
-            paymentRequests.push(paymentRequest);
           }
         }
-        if (paymentRequests.length > 0) {
-          newPaymentSources.push({
-            ...paymentSource,
-            PaymentRequests: paymentRequests,
-          });
-        }
+        return newPaymentSources;
+      } catch (error) {
+        logger.error('Error locking and querying payments', error);
+        throw error;
       }
-      return newPaymentSources;
     },
     { isolationLevel: 'Serializable', timeout: 10000 },
   );
