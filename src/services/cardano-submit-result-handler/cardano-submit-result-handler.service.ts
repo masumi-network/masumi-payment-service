@@ -33,6 +33,23 @@ import { generateMasumiSmartContractInteractionTransaction } from '@/utils/gener
 
 const mutex = new Mutex();
 
+// Configuration constants for maintainability
+const SUBMIT_RESULT_CONFIG = {
+  RETRY: {
+    maxRetries: 5,
+    backoffMultiplier: 5,
+    initialDelayMs: 500,
+    maxDelayMs: 7500,
+  },
+  TRANSACTION: {
+    maxUtxos: 4,
+    timeBufferMs: 150000, // 2.5 minutes
+    blockTimeBufferMs: 60000, // 1 minute
+    validitySlotBuffer: 5,
+    resultTimeSlotBuffer: 3,
+  },
+} as const;
+
 export async function submitResultV1() {
   let release: MutexInterface.Releaser | null;
   try {
@@ -47,14 +64,14 @@ export async function submitResultV1() {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.SubmitResultRequested,
       submitResultTime: {
-        gte: Date.now() + 1000 * 60 * 1, //remove 1 minute for block time
+        gte: Date.now() + SUBMIT_RESULT_CONFIG.TRANSACTION.blockTimeBufferMs, //remove 1 minute for block time
       },
       requestedResultHash: { not: null },
     });
 
     await Promise.allSettled(
       paymentContractsWithWalletLocked.map(async (paymentContract) => {
-        if (paymentContract.PaymentRequests.length == 0) return;
+        if (paymentContract.PaymentRequests.length === 0) return;
 
         logger.info(
           `Submitting ${paymentContract.PaymentRequests.length} results for payment source ${paymentContract.id}`,
@@ -67,24 +84,19 @@ export async function submitResultV1() {
         );
 
         const paymentRequests = paymentContract.PaymentRequests;
-        if (paymentRequests.length == 0) return;
+        if (paymentRequests.length === 0) return;
 
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: {
-                maxRetries: 5,
-                backoffMultiplier: 5,
-                initialDelayMs: 500,
-                maxDelayMs: 7500,
-              },
+              configuration: SUBMIT_RESULT_CONFIG.RETRY,
             }),
           ],
           operations: paymentRequests.map((request) => async () => {
-            if (request.payByTime == null) {
+            if (request.payByTime === null) {
               throw new Error('Pay by time is null, this is deprecated');
             }
-            if (request.collateralReturnLovelace == null) {
+            if (request.collateralReturnLovelace === null) {
               throw new Error(
                 'Collateral return lovelace is null, this is deprecated',
               );
@@ -109,7 +121,7 @@ export async function submitResultV1() {
             const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
 
             const utxo = utxoByHash.find((utxo) => {
-              if (utxo.input.txHash != txHash) {
+              if (utxo.input.txHash !== txHash) {
                 return false;
               }
               const utxoDatum = utxo.output.plutusData;
@@ -120,11 +132,11 @@ export async function submitResultV1() {
               const decodedDatum: unknown = deserializeDatum(utxoDatum);
               const decodedContract = decodeV1ContractDatum(
                 decodedDatum,
-                paymentContract.network == Network.Mainnet
+                paymentContract.network === Network.Mainnet
                   ? 'mainnet'
                   : 'preprod',
               );
-              if (decodedContract == null) {
+              if (decodedContract === null) {
                 return false;
               }
 
@@ -133,25 +145,25 @@ export async function submitResultV1() {
                   decodedContract.state,
                   request.onChainState,
                 ) &&
-                decodedContract.buyerVkey == request.BuyerWallet!.walletVkey &&
-                decodedContract.sellerVkey ==
+                decodedContract.buyerVkey === request.BuyerWallet!.walletVkey &&
+                decodedContract.sellerVkey ===
                   request.SmartContractWallet!.walletVkey &&
-                decodedContract.buyerAddress ==
+                decodedContract.buyerAddress ===
                   request.BuyerWallet!.walletAddress &&
-                decodedContract.sellerAddress ==
+                decodedContract.sellerAddress ===
                   request.SmartContractWallet!.walletAddress &&
-                decodedContract.blockchainIdentifier ==
+                decodedContract.blockchainIdentifier ===
                   request.blockchainIdentifier &&
-                decodedContract.inputHash == request.inputHash &&
-                BigInt(decodedContract.resultTime) ==
+                decodedContract.inputHash === request.inputHash &&
+                BigInt(decodedContract.resultTime) ===
                   BigInt(request.submitResultTime) &&
-                BigInt(decodedContract.unlockTime) ==
+                BigInt(decodedContract.unlockTime) ===
                   BigInt(request.unlockTime) &&
-                BigInt(decodedContract.externalDisputeUnlockTime) ==
+                BigInt(decodedContract.externalDisputeUnlockTime) ===
                   BigInt(request.externalDisputeUnlockTime) &&
-                BigInt(decodedContract.collateralReturnLovelace) ==
+                BigInt(decodedContract.collateralReturnLovelace) ===
                   BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                BigInt(decodedContract.payByTime) === BigInt(request.payByTime!)
               );
             });
 
@@ -167,11 +179,11 @@ export async function submitResultV1() {
             const decodedDatum: unknown = deserializeDatum(utxoDatum);
             const decodedContract = decodeV1ContractDatum(
               decodedDatum,
-              paymentContract.network == Network.Mainnet
+              paymentContract.network === Network.Mainnet
                 ? 'mainnet'
                 : 'preprod',
             );
-            if (decodedContract == null) {
+            if (decodedContract === null) {
               throw new Error('Invalid datum');
             }
 
@@ -193,46 +205,50 @@ export async function submitResultV1() {
               ),
               newCooldownTimeBuyer: BigInt(0),
               state:
-                decodedContract.state == SmartContractState.Disputed ||
-                decodedContract.state == SmartContractState.RefundRequested
+                decodedContract.state === SmartContractState.Disputed ||
+                decodedContract.state === SmartContractState.RefundRequested
                   ? SmartContractState.Disputed
                   : SmartContractState.ResultSubmitted,
             });
 
             const invalidBefore =
               unixTimeToEnclosingSlot(
-                Date.now() - 150000,
+                Date.now() - SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, // 150000
                 SLOT_CONFIG_NETWORK[network],
               ) - 1;
 
             const invalidAfter = Math.min(
               unixTimeToEnclosingSlot(
-                Date.now() + 150000,
+                Date.now() + SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, // 150000
                 SLOT_CONFIG_NETWORK[network],
-              ) + 5,
+              ) + SUBMIT_RESULT_CONFIG.TRANSACTION.validitySlotBuffer,
               unixTimeToEnclosingSlot(
-                Number(decodedContract.resultTime) + 150000,
+                Number(decodedContract.resultTime) +
+                  SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, //150000
                 SLOT_CONFIG_NETWORK[network],
-              ) + 3,
+              ) + SUBMIT_RESULT_CONFIG.TRANSACTION.resultTimeSlotBuffer, // 3
             );
 
-            //sort by biggest lovelace first
-            const sortedUtxosByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
+            // Extract lovelace amounts once for better performance
+            const utxosWithLovelace = utxos.map((utxo) => ({
+              utxo,
+              lovelace: parseInt(
+                utxo.output.amount.find(
+                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
                 )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
+              ),
+            }));
+
+            // Sort by lovelace amount (descending)
+            const sortedUtxosByLovelaceDesc = utxosWithLovelace
+              .sort((a, b) => b.lovelace - a.lovelace)
+              .map((item) => item.utxo);
             const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
               0,
-              Math.min(4, sortedUtxosByLovelaceDesc.length),
+              Math.min(
+                SUBMIT_RESULT_CONFIG.TRANSACTION.maxUtxos,
+                sortedUtxosByLovelaceDesc.length,
+              ),
             );
 
             const evaluationTx =
@@ -345,7 +361,7 @@ export async function submitResultV1() {
         let index = 0;
         for (const result of results) {
           const request = paymentRequests[index];
-          if (result.success == false || result.result != true) {
+          if (result.success === false || result.result !== true) {
             const error = result.error;
             logger.error(`Error submitting result ${request.id}`, {
               error: error,
