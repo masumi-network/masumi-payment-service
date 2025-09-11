@@ -2315,7 +2315,6 @@ export type GetPaymentSourceResponses = {
         network: 'Preprod' | 'Mainnet';
         policyId: string | null;
         smartContractAddress: string;
-        paymentType: 'Web3CardanoV1' | 'None';
         lastIdentifierChecked: string | null;
         lastCheckedAt: string | null;
         AdminWallets: Array<{

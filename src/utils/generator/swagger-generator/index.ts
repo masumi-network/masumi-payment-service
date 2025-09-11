@@ -2074,7 +2074,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         smartContractAddress: 'address_of_the_smart_contract',
                         policyId: 'policy_id',
                         AdminWallets: [

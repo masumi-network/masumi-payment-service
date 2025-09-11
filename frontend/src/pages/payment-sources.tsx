@@ -187,10 +187,8 @@ export default function PaymentSourcesPage() {
           source.smartContractAddress?.toLowerCase().includes(query) || false;
         const matchNetwork =
           source.network?.toLowerCase().includes(query) || false;
-        const matchType =
-          source.paymentType?.toLowerCase().includes(query) || false;
 
-        return matchAddress || matchNetwork || matchType;
+        return matchAddress || matchNetwork;
       });
     }
 
@@ -454,9 +452,6 @@ export default function PaymentSourcesPage() {
                       </td>
                       <td className="p-4">
                         <div className="text-sm">{source.network}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">{source.paymentType}</div>
                       </td>
                       <td className="p-4">
                         <div className="text-sm">

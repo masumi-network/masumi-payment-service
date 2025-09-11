@@ -7835,13 +7835,6 @@
                                                             "smartContractAddress": {
                                                                 "type": "string"
                                                             },
-                                                            "paymentType": {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "Web3CardanoV1",
-                                                                    "None"
-                                                                ]
-                                                            },
                                                             "lastIdentifierChecked": {
                                                                 "type": "string",
                                                                 "nullable": true
@@ -7956,7 +7949,6 @@
                                                             "network",
                                                             "policyId",
                                                             "smartContractAddress",
-                                                            "paymentType",
                                                             "lastIdentifierChecked",
                                                             "lastCheckedAt",
                                                             "AdminWallets",
@@ -7986,7 +7978,6 @@
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "network": "Mainnet",
-                                                    "paymentType": "Web3CardanoV1",
                                                     "smartContractAddress": "address_of_the_smart_contract",
                                                     "policyId": "policy_id",
                                                     "AdminWallets": [
