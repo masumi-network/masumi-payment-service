@@ -21,6 +21,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { parseError } from '@/lib/utils';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
+import { Download } from 'lucide-react';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -366,6 +367,79 @@ export default function Transactions() {
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
+  // Calculate fee amount based on transaction amount and default fee rate (5%)
+  const calculateFeeAmount = (transaction: Transaction): number => {
+    const feeRate = 0.05; // 5% default fee rate
+    let amount = 0;
+
+    if (transaction.type === 'payment' && transaction.RequestedFunds?.[0]) {
+      amount = parseInt(transaction.RequestedFunds[0].amount) / 1000000;
+    } else if (transaction.type === 'purchase' && transaction.PaidFunds?.[0]) {
+      amount = parseInt(transaction.PaidFunds[0].amount) / 1000000;
+    }
+
+    return amount * feeRate;
+  };
+
+  // Generate CSV data for transactions
+  const generateCSVData = (transactions: Transaction[]): string => {
+    const headers = [
+      'Transaction Type',
+      'Transaction Hash',
+      'Payment Amount (₳)',
+      'Fee Amount (₳)',
+      'Network',
+      'Status',
+      'Date',
+    ];
+    const rows = transactions.map((transaction) => {
+      const amount =
+        transaction.type === 'payment' && transaction.RequestedFunds?.[0]
+          ? (parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(
+              2,
+            )
+          : transaction.type === 'purchase' && transaction.PaidFunds?.[0]
+            ? (parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)
+            : '0.00';
+
+      const feeAmount = calculateFeeAmount(transaction).toFixed(2);
+      const hash = transaction.CurrentTransaction?.txHash || '—';
+      const status = formatStatus(transaction.onChainState);
+      const date = new Date(transaction.createdAt).toLocaleString();
+
+      return [
+        transaction.type,
+        hash,
+        amount,
+        feeAmount,
+        transaction.PaymentSource.network,
+        status,
+        date,
+      ];
+    });
+
+    return [headers, ...rows]
+      .map((row) => row.map((field) => `"${field}"`).join(','))
+      .join('\n');
+  };
+
+  // Download CSV file
+  const downloadCSV = (
+    transactions: Transaction[],
+    filename: string = 'transactions.csv',
+  ) => {
+    const csvData = generateCSVData(transactions);
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <MainLayout>
       <Head>
@@ -373,17 +447,34 @@ export default function Transactions() {
       </Head>
       <div>
         <div className="mb-6">
-          <h1 className="text-xl font-semibold mb-1">Transactions</h1>
-          <p className="text-sm text-muted-foreground">
-            View and manage your transaction history.{' '}
-            <a
-              href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
-              target="_blank"
-              className="text-primary hover:underline"
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold mb-1">Transactions</h1>
+              <p className="text-sm text-muted-foreground">
+                View and manage your transaction history.{' '}
+                <a
+                  href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  Learn more
+                </a>
+              </p>
+            </div>
+            <Button
+              onClick={() =>
+                downloadCSV(
+                  filteredTransactions,
+                  `transactions-${activeTab.toLowerCase()}.csv`,
+                )
+              }
+              disabled={filteredTransactions.length === 0}
+              className="flex items-center gap-2"
             >
-              Learn more
-            </a>
-          </p>
+              <Download className="h-4 w-4" />
+              Download CSV
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -428,6 +519,9 @@ export default function Transactions() {
                     Transaction Hash
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Amount</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Fee Amount
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
                   <th className="p-4 text-left text-sm font-medium">Date</th>
@@ -437,13 +531,13 @@ export default function Transactions() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={9} className="text-center py-8">
                       No transactions found
                     </td>
                   </tr>
@@ -494,6 +588,15 @@ export default function Transactions() {
                           : transaction.type === 'purchase' &&
                               transaction.PaidFunds?.[0]
                             ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
+                            : '—'}
+                      </td>
+                      <td className="p-4">
+                        {transaction.type === 'payment' &&
+                        transaction.RequestedFunds?.[0]
+                          ? `${calculateFeeAmount(transaction).toFixed(2)} ₳`
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.[0]
+                            ? `${calculateFeeAmount(transaction).toFixed(2)} ₳`
                             : '—'}
                       </td>
                       <td className="p-4">
