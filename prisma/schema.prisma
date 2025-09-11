@@ -282,6 +282,8 @@ model PaymentRequest {
   TransactionHistory   Transaction[] @relation("PaymentTransactionHistory")
   CurrentTransaction   Transaction?  @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
   currentTransactionId String?       @unique
+
+  InvoiceItem InvoiceItem[]
 }
 
 model PaymentActionData {
@@ -427,6 +429,99 @@ enum PurchasingAction {
 
   WithdrawRefundRequested
   WithdrawRefundInitiated
+}
+
+model InvoiceBase {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  InvoiceRevisions InvoiceRevision[]
+}
+
+model InvoiceRevision {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  invoiceBaseId  String
+  InvoiceBase    InvoiceBase   @relation(fields: [invoiceBaseId], references: [id])
+  invoiceItems   InvoiceItem[]
+  revisionNumber Int           @default(0)
+
+  // Invoice metadata
+  invoiceTitle       String
+  invoiceDescription String?
+  invoiceDate        DateTime
+  invoiceGreetings   String?
+  invoiceClosing     String?
+  invoiceSignature   String?
+  invoiceLogo        String?
+  invoiceFooter      String?
+  invoiceTerms       String?
+  invoicePrivacy     String?
+  invoiceDisclaimer  String?
+
+  // Correction invoice fields
+  correctionInvoiceOriginalNumber String?
+  correctionInvoiceOriginalDate   String?
+  correctionInvoiceReason         String?
+  correctionInvoiceTitle          String?
+  correctionInvoiceDescription    String?
+
+  // Global formatting options
+  thousandDelimiter String
+  decimalDelimiter  String
+  language          String?
+  dateFormat        String
+
+  // Seller information
+  sellerCountry      String
+  sellerCity         String
+  sellerZipCode      String
+  sellerStreet       String
+  sellerStreetNumber String
+  sellerEmail        String?
+  sellerPhone        String?
+  sellerName         String?
+  sellerCompanyName  String?
+  sellerVatNumber    String?
+
+  // Buyer information
+  buyerCountry      String
+  buyerCity         String
+  buyerZipCode      String
+  buyerStreet       String
+  buyerStreetNumber String
+  buyerEmail        String?
+  buyerPhone        String?
+  buyerName         String?
+  buyerCompanyName  String?
+  buyerVatNumber    String?
+
+  generatedPDFInvoice Bytes
+
+  @@unique([invoiceBaseId, revisionNumber])
+}
+
+model InvoiceItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name                   String
+  quantity               Decimal
+  pricePerUnitWithoutVat Decimal
+  currency               String
+  vatRate                Decimal
+  vatAmount              Decimal
+  totalAmount            Decimal
+  decimals               Int
+
+  referencedPayment   PaymentRequest? @relation(fields: [referencedPaymentId], references: [id])
+  referencedPaymentId String?
+
+  InvoiceRevision   InvoiceRevision @relation(fields: [invoiceRevisionId], references: [id])
+  invoiceRevisionId String
 }
 
 model PaymentSourceIdentifiers {

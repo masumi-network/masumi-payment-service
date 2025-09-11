@@ -27,3 +27,5 @@ smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
 
 otelcol-contrib
+test-output/example-invoice.pdf
+test-output/minimal-invoice.pdf
