@@ -367,9 +367,20 @@ export default function Transactions() {
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
-  // Calculate fee amount based on transaction amount and default fee rate (5%)
+  // Calculate fee amount based on transaction amount and selected payment source fee rate
   const calculateFeeAmount = (transaction: Transaction): number => {
-    const feeRate = 0.05; // 5% default fee rate
+    const selectedPaymentSource = state.paymentSources.find(
+      (ps) => ps.id === selectedPaymentSourceId,
+    );
+
+    // Use selected payment source fee rate, return 0 if no fee rate set
+    const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+    if (!feeRatePermille) {
+      return 0; // No fee applied
+    }
+
+    const feeRate = feeRatePermille / 1000; // Convert permille to decimal
+
     let amount = 0;
 
     if (transaction.type === 'payment' && transaction.RequestedFunds?.[0]) {
@@ -460,6 +471,32 @@ export default function Transactions() {
                   Learn more
                 </a>
               </p>
+              {(() => {
+                const selectedPaymentSource = state.paymentSources.find(
+                  (ps) => ps.id === selectedPaymentSourceId,
+                );
+                const feeRate = selectedPaymentSource?.feeRatePermille;
+
+                if (!feeRate) {
+                  return (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Fee rate: none applied
+                      {selectedPaymentSource
+                        ? ` (${selectedPaymentSource.network})`
+                        : ' (default)'}
+                    </p>
+                  );
+                }
+
+                return (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Fee rate: {(feeRate / 10).toFixed(1)}%
+                    {selectedPaymentSource
+                      ? ` (${selectedPaymentSource.network})`
+                      : ' (default)'}
+                  </p>
+                );
+              })()}
             </div>
             <Button
               onClick={() =>
