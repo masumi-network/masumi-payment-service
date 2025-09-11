@@ -206,7 +206,7 @@ export default function Transactions() {
               network: state.network,
               cursorId: purchaseCursorId || undefined,
               includeHistory: 'true',
-              limit: 10,
+              limit: 100,
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
@@ -220,7 +220,7 @@ export default function Transactions() {
             if (purchases.length > 0) {
               newPurchaseCursor = purchases[purchases.length - 1].id;
             }
-            morePurchases = purchases.length === 10;
+            morePurchases = purchases.length === 100;
           } else {
             morePurchases = false;
           }
@@ -237,7 +237,7 @@ export default function Transactions() {
               network: state.network,
               cursorId: paymentCursorId || undefined,
               includeHistory: 'true',
-              limit: 10,
+              limit: 100,
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
@@ -251,7 +251,7 @@ export default function Transactions() {
             if (payments.length > 0) {
               newPaymentCursor = payments[payments.length - 1].id;
             }
-            morePayments = payments.length === 10;
+            morePayments = payments.length === 100;
           } else {
             morePayments = false;
           }
