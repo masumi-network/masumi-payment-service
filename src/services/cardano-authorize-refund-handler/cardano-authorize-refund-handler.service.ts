@@ -200,19 +200,20 @@ export async function authorizeRefundV1() {
               ) + 5;
 
             //sort by biggest lovelace first
-            const sortedUtxosByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
+            // Extract lovelace amounts once for better performance
+            const utxosWithLovelace = utxos.map((utxo) => ({
+              utxo,
+              lovelace: parseInt(
+                utxo.output.amount.find(
+                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
                 )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
+              ),
+            }));
+
+            // Sort by lovelace amount (descending)
+            const sortedUtxosByLovelaceDesc = utxosWithLovelace
+              .sort((a, b) => b.lovelace - a.lovelace)
+              .map((item) => item.utxo);
             const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
               0,
               Math.min(4, sortedUtxosByLovelaceDesc.length),
