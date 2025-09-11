@@ -2169,7 +2169,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         feeRatePermille: 50,
                         syncInProgress: true,
                         policyId: 'policy_id',
@@ -2297,7 +2296,6 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
                     syncInProgress: true,
                     smartContractAddress: 'address_of_the_smart_contract',
                     AdminWallets: [
@@ -2417,7 +2415,6 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
                     syncInProgress: true,
                     smartContractAddress: 'address_of_the_smart_contract',
                     AdminWallets: [

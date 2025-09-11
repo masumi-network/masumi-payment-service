@@ -41,7 +41,6 @@ export const paymentSourceExtendedSchemaOutput = z.object({
       network: z.nativeEnum(Network),
       policyId: z.string().nullable(),
       smartContractAddress: z.string(),
-      paymentType: z.nativeEnum(PaymentType),
       PaymentSourceConfig: z.object({
         rpcProviderApiKey: z.string(),
         rpcProvider: z.nativeEnum(RPCProvider),
@@ -219,7 +218,6 @@ export const paymentSourceExtendedCreateSchemaOutput = z.object({
   updatedAt: z.date(),
   network: z.nativeEnum(Network),
   smartContractAddress: z.string(),
-  paymentType: z.nativeEnum(PaymentType),
   PaymentSourceConfig: z.object({
     rpcProviderApiKey: z.string(),
     rpcProvider: z.nativeEnum(RPCProvider),
@@ -366,7 +364,6 @@ export const paymentSourceExtendedEndpointPost =
             network: input.network,
             smartContractAddress: smartContractAddress,
             policyId: policyId,
-            paymentType: input.paymentType,
             PaymentSourceConfig: {
               create: {
                 rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
@@ -507,7 +504,6 @@ export const paymentSourceExtendedUpdateSchemaOutput = z.object({
   updatedAt: z.date(),
   network: z.nativeEnum(Network),
   smartContractAddress: z.string(),
-  paymentType: z.nativeEnum(PaymentType),
   PaymentSourceConfig: z.object({
     rpcProviderApiKey: z.string(),
     rpcProvider: z.nativeEnum(RPCProvider),

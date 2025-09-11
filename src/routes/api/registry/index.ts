@@ -4,6 +4,7 @@ import {
   $Enums,
   HotWalletType,
   Network,
+  PaymentType,
   PricingType,
   RegistrationState,
   TransactionStatus,
@@ -266,15 +267,21 @@ export const registerAgentSchemaOutput = z.object({
       }),
     )
     .max(25),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z.array(
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+    })
+    .or(
       z.object({
-        unit: z.string(),
-        amount: z.string(),
+        pricingType: z.enum([PricingType.Free]),
       }),
     ),
-  }),
 });
 
 export const registerAgentPost = payAuthenticatedEndpointFactory.build({
@@ -421,6 +428,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           terms: input.Legal?.terms,
           privacyPolicy: input.Legal?.privacyPolicy,
           authorName: input.Author.name,
+          paymentType:
+            input.AgentPricing.pricingType == PricingType.Fixed
+              ? PaymentType.None
+              : PaymentType.Web3CardanoV1,
           authorContactEmail: input.Author.contactEmail,
           authorContactOther: input.Author.contactOther,
           authorOrganization: input.Author.organization,
@@ -448,24 +459,29 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
           tags: input.Tags,
           Pricing: {
-            create: {
-              pricingType: input.AgentPricing.pricingType,
-              FixedPricing: {
-                create: {
-                  Amounts: {
-                    createMany: {
-                      data: input.AgentPricing.Pricing.map((price) => ({
-                        unit:
-                          price.unit.toLowerCase() == 'lovelace'
-                            ? ''
-                            : price.unit,
-                        amount: BigInt(price.amount),
-                      })),
+            create:
+              input.AgentPricing.pricingType == PricingType.Fixed
+                ? {
+                    pricingType: input.AgentPricing.pricingType,
+                    FixedPricing: {
+                      create: {
+                        Amounts: {
+                          createMany: {
+                            data: input.AgentPricing.Pricing.map((price) => ({
+                              unit:
+                                price.unit.toLowerCase() == 'lovelace'
+                                  ? ''
+                                  : price.unit,
+                              amount: BigInt(price.amount),
+                            })),
+                          },
+                        },
+                      },
                     },
+                  }
+                : {
+                    pricingType: input.AgentPricing.pricingType,
                   },
-                },
-              },
-            },
           },
         },
         include: {
