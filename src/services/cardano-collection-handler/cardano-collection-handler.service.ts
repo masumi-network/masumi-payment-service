@@ -90,12 +90,6 @@ export async function collectOutstandingPaymentsV1() {
             if (request.SmartContractWallet == null)
               throw new Error('Smart contract wallet not found');
 
-            if (request.collateralReturnLovelace == null) {
-              throw new Error(
-                'Collateral return lovelace is null, this is deprecated',
-              );
-            }
-
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentContract.network,
               paymentContract.PaymentSourceConfig.rpcProviderApiKey,
@@ -274,19 +268,20 @@ export async function collectOutstandingPaymentsV1() {
             if (collectionAddress == null || collectionAddress == '') {
               collectionAddress = request.SmartContractWallet.walletAddress;
             }
-            const utxosSortedByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
+            // Extract lovelace amounts once for better performance
+            const utxosWithLovelace = utxos.map((utxo) => ({
+              utxo,
+              lovelace: parseInt(
+                utxo.output.amount.find(
+                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
                 )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
+              ),
+            }));
+
+            // Sort by lovelace amount (descending)
+            const utxosSortedByLovelaceDesc = utxosWithLovelace
+              .sort((a, b) => b.lovelace - a.lovelace)
+              .map((item) => item.utxo);
 
             const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
               0,
