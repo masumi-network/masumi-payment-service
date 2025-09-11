@@ -1588,7 +1588,8 @@
                                                                     "paymentType": {
                                                                         "type": "string",
                                                                         "enum": [
-                                                                            "Web3CardanoV1"
+                                                                            "Web3CardanoV1",
+                                                                            "None"
                                                                         ]
                                                                     }
                                                                 },
@@ -1809,7 +1810,8 @@
                                     "paymentType": {
                                         "type": "string",
                                         "enum": [
-                                            "Web3CardanoV1"
+                                            "Web3CardanoV1",
+                                            "None"
                                         ],
                                         "description": "The type of payment contract used"
                                     },
@@ -2096,7 +2098,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -2473,7 +2476,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -2843,7 +2847,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -3331,7 +3336,8 @@
                                                                     "paymentType": {
                                                                         "type": "string",
                                                                         "enum": [
-                                                                            "Web3CardanoV1"
+                                                                            "Web3CardanoV1",
+                                                                            "None"
                                                                         ]
                                                                     }
                                                                 },
@@ -3557,7 +3563,8 @@
                                     "paymentType": {
                                         "type": "string",
                                         "enum": [
-                                            "Web3CardanoV1"
+                                            "Web3CardanoV1",
+                                            "None"
                                         ],
                                         "description": "The payment type of smart contract used"
                                     },
@@ -3832,7 +3839,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -4200,7 +4208,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -4597,7 +4606,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -4995,7 +5005,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -5440,7 +5451,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -5915,7 +5927,8 @@
                                                         "paymentType": {
                                                             "type": "string",
                                                             "enum": [
-                                                                "Web3CardanoV1"
+                                                                "Web3CardanoV1",
+                                                                "None"
                                                             ]
                                                         }
                                                     },
@@ -7157,36 +7170,54 @@
                                                     "maxItems": 25
                                                 },
                                                 "AgentPricing": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "pricingType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Fixed"
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Fixed"
+                                                                    ]
+                                                                },
+                                                                "Pricing": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "amount": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "amount"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType",
+                                                                "Pricing"
                                                             ]
                                                         },
-                                                        "Pricing": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "unit": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "amount": {
-                                                                        "type": "string"
-                                                                    }
-                                                                },
-                                                                "required": [
-                                                                    "unit",
-                                                                    "amount"
-                                                                ]
-                                                            }
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Free"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType"
+                                                            ]
                                                         }
-                                                    },
-                                                    "required": [
-                                                        "pricingType",
-                                                        "Pricing"
                                                     ]
                                                 }
                                             },
@@ -7807,7 +7838,8 @@
                                                             "paymentType": {
                                                                 "type": "string",
                                                                 "enum": [
-                                                                    "Web3CardanoV1"
+                                                                    "Web3CardanoV1",
+                                                                    "None"
                                                                 ]
                                                             },
                                                             "lastIdentifierChecked": {
@@ -8100,12 +8132,6 @@
                                                             "smartContractAddress": {
                                                                 "type": "string"
                                                             },
-                                                            "paymentType": {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "Web3CardanoV1"
-                                                                ]
-                                                            },
                                                             "PaymentSourceConfig": {
                                                                 "type": "object",
                                                                 "properties": {
@@ -8241,7 +8267,6 @@
                                                             "network",
                                                             "policyId",
                                                             "smartContractAddress",
-                                                            "paymentType",
                                                             "PaymentSourceConfig",
                                                             "lastIdentifierChecked",
                                                             "syncInProgress",
@@ -8273,7 +8298,6 @@
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "network": "Mainnet",
-                                                    "paymentType": "Web3CardanoV1",
                                                     "feeRatePermille": 50,
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
@@ -8372,7 +8396,8 @@
                                     "paymentType": {
                                         "type": "string",
                                         "enum": [
-                                            "Web3CardanoV1"
+                                            "Web3CardanoV1",
+                                            "None"
                                         ],
                                         "description": "The type of payment source used"
                                     },
@@ -8586,12 +8611,6 @@
                                                 "smartContractAddress": {
                                                     "type": "string"
                                                 },
-                                                "paymentType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1"
-                                                    ]
-                                                },
                                                 "PaymentSourceConfig": {
                                                     "type": "object",
                                                     "properties": {
@@ -8726,7 +8745,6 @@
                                                 "updatedAt",
                                                 "network",
                                                 "smartContractAddress",
-                                                "paymentType",
                                                 "PaymentSourceConfig",
                                                 "lastIdentifierChecked",
                                                 "syncInProgress",
@@ -8750,7 +8768,6 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
-                                            "paymentType": "Web3CardanoV1",
                                             "syncInProgress": true,
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "AdminWallets": [
@@ -9032,12 +9049,6 @@
                                                 "smartContractAddress": {
                                                     "type": "string"
                                                 },
-                                                "paymentType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1"
-                                                    ]
-                                                },
                                                 "PaymentSourceConfig": {
                                                     "type": "object",
                                                     "properties": {
@@ -9172,7 +9183,6 @@
                                                 "updatedAt",
                                                 "network",
                                                 "smartContractAddress",
-                                                "paymentType",
                                                 "PaymentSourceConfig",
                                                 "lastIdentifierChecked",
                                                 "syncInProgress",
@@ -9196,7 +9206,6 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
-                                            "paymentType": "Web3CardanoV1",
                                             "syncInProgress": true,
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "AdminWallets": [
