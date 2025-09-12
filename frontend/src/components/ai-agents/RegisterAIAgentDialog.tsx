@@ -44,8 +44,11 @@ interface SellingWallet {
 }
 
 const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM'], { required_error: 'Token is required' }),
-  amount: z.string().min(1, 'Amount is required'),
+  unit: z.enum(['lovelace', 'USDM', 'free'], { required_error: 'Token is required' }),
+  amount: z.string().refine((val) => {
+    if (val === 'free' || val === '0' || val === '0.0' || val === '0.00') return true;
+    return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+  }, 'Amount must be a valid number >= 0'),
 });
 
 const exampleOutputSchema = z.object({
@@ -75,6 +78,7 @@ const agentSchema = z.object({
     .max(250, 'Description must be less than 250 characters'),
   selectedWallet: z.string().min(1, 'Wallet is required'),
   prices: z.array(priceSchema).min(1, 'At least one price is required'),
+  isFree: z.boolean().optional(),
   tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
 
   // Additional Fields
@@ -160,6 +164,7 @@ export function RegisterAIAgentDialog({
       description: '',
       selectedWallet: '',
       prices: [{ unit: 'lovelace', amount: '' }],
+      isFree: false,
       tags: [],
       authorName: '',
       authorEmail: '',
@@ -285,10 +290,14 @@ export function RegisterAIAgentDialog({
                 const unit =
                   price.unit === 'USDM'
                     ? getUsdmConfig(state.network).fullAssetId
+                    : price.unit === 'free'
+                    ? 'lovelace' // Use lovelace for free agents
                     : price.unit;
                 return {
                   unit,
-                  amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  amount: price.unit === 'free' 
+                    ? '0' 
+                    : (parseFloat(price.amount) * 1_000_000).toString(),
                 };
               }),
             },
@@ -434,6 +443,37 @@ export function RegisterAIAgentDialog({
             )}
           </div>
 
+          {/* Free Agent Toggle */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Controller
+                control={control}
+                name="isFree"
+                render={({ field }) => (
+                  <input
+                    type="checkbox"
+                    id="isFree"
+                    checked={field.value || false}
+                    onChange={(e) => {
+                      field.onChange(e.target.checked);
+                      if (e.target.checked) {
+                        // Set to free pricing when checked
+                        setValue('prices', [{ unit: 'free', amount: '0' }]);
+                      } else {
+                        // Reset to default pricing when unchecked
+                        setValue('prices', [{ unit: 'lovelace', amount: '' }]);
+                      }
+                    }}
+                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                )}
+              />
+              <label htmlFor="isFree" className="text-sm font-medium">
+                This is a free agent (no cost for interactions)
+              </label>
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
@@ -444,6 +484,7 @@ export function RegisterAIAgentDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
+                disabled={watch('isFree')}
               >
                 Add Price
               </Button>
@@ -465,6 +506,7 @@ export function RegisterAIAgentDialog({
                         <SelectContent>
                           <SelectItem value="lovelace">ADA</SelectItem>
                           <SelectItem value="USDM">USDM</SelectItem>
+                          <SelectItem value="free">Free</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -473,10 +515,12 @@ export function RegisterAIAgentDialog({
                 <div className="flex-1 space-y-2">
                   <Input
                     type="number"
-                    placeholder="0.00"
+                    placeholder={watch(`prices.${index}.unit`) === 'free' ? '0' : '0.00'}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"
                     step="0.000001"
+                    disabled={watch(`prices.${index}.unit`) === 'free'}
+                    value={watch(`prices.${index}.unit`) === 'free' ? '0' : watch(`prices.${index}.amount`) || ''}
                   />
                   {errors.prices &&
                     Array.isArray(errors.prices) &&
