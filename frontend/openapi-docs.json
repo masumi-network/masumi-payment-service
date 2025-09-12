@@ -6878,41 +6878,59 @@
                                         "description": "Provide information about the used AI model and version"
                                     },
                                     "AgentPricing": {
-                                        "type": "object",
-                                        "properties": {
-                                            "pricingType": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "Fixed"
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Fixed"
+                                                        ]
+                                                    },
+                                                    "Pricing": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "unit": {
+                                                                    "type": "string",
+                                                                    "maxLength": 250
+                                                                },
+                                                                "amount": {
+                                                                    "type": "string",
+                                                                    "maxLength": 25
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "unit",
+                                                                "amount"
+                                                            ]
+                                                        },
+                                                        "minItems": 1,
+                                                        "maxItems": 5,
+                                                        "description": "Price for a default interaction"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType",
+                                                    "Pricing"
                                                 ]
                                             },
-                                            "Pricing": {
-                                                "type": "array",
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "unit": {
-                                                            "type": "string",
-                                                            "maxLength": 250
-                                                        },
-                                                        "amount": {
-                                                            "type": "string",
-                                                            "maxLength": 25
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "unit",
-                                                        "amount"
-                                                    ]
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Free"
+                                                        ]
+                                                    }
                                                 },
-                                                "minItems": 1,
-                                                "maxItems": 5,
-                                                "description": "Price for a default interaction"
+                                                "required": [
+                                                    "pricingType"
+                                                ]
                                             }
-                                        },
-                                        "required": [
-                                            "pricingType",
-                                            "Pricing"
                                         ]
                                     },
                                     "Legal": {

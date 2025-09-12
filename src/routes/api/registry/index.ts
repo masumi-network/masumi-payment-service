@@ -201,19 +201,25 @@ export const registerAgentSchemaInput = z.object({
   Capability: z
     .object({ name: z.string().max(250), version: z.string().max(250) })
     .describe('Provide information about the used AI model and version'),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z
-      .array(
-        z.object({
-          unit: z.string().max(250),
-          amount: z.string().max(25),
-        }),
-      )
-      .min(1)
-      .max(5)
-      .describe('Price for a default interaction'),
-  }),
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z
+        .array(
+          z.object({
+            unit: z.string().max(250),
+            amount: z.string().max(25),
+          }),
+        )
+        .min(1)
+        .max(5)
+        .describe('Price for a default interaction'),
+    })
+    .or(
+      z.object({
+        pricingType: z.enum([PricingType.Free]),
+      }),
+    ),
   Legal: z
     .object({
       privacyPolicy: z.string().max(250).optional(),
