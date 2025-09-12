@@ -4,7 +4,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, ExternalLink } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -75,6 +75,9 @@ export default function AIAgentsPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
+  const [initialDialogTab, setInitialDialogTab] = useState<
+    'Details' | 'Earnings'
+  >('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -548,17 +551,32 @@ export default function AIAgentsPage() {
                       </td>
                       <td className="p-4">
                         {['RegistrationConfirmed'].includes(agent.state) ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(agent);
-                            }}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInitialDialogTab('Earnings');
+                                handleAgentClick(agent);
+                              }}
+                              className="text-white hover:text-gray-200 hover:bg-gray-600"
+                              title="View Details & Earnings"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(agent);
+                              }}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         ) : agent.state === 'RegistrationInitiated' ||
                           agent.state === 'DeregistrationInitiated' ? (
                           <div className="flex items-center justify-center w-8 h-8">
@@ -603,12 +621,16 @@ export default function AIAgentsPage() {
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
-          onClose={() => setSelectedAgentForDetails(null)}
+          onClose={() => {
+            setSelectedAgentForDetails(null);
+            setInitialDialogTab('Details'); // Reset to default tab
+          }}
           onSuccess={() => {
             setTimeout(() => {
               fetchAgents();
             }, 2000);
           }}
+          initialTab={initialDialogTab}
         />
 
         <ConfirmDialog
