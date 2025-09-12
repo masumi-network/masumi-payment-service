@@ -12,6 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -135,67 +136,96 @@ export const resolvePurchaseRequestPost =
         usageLimited: boolean;
       };
     }) => {
-      await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
-        input.network,
-        options.permission,
-      );
+      const startTime = Date.now();
+      try {
+        await checkIsAllowedNetworkOrThrowUnauthorized(
+          options.networkLimit,
+          input.network,
+          options.permission,
+        );
 
-      const result = await prisma.purchaseRequest.findUnique({
-        where: {
-          PaymentSource: {
-            deletedAt: null,
+        const result = await prisma.purchaseRequest.findUnique({
+          where: {
+            PaymentSource: {
+              deletedAt: null,
+              network: input.network,
+              smartContractAddress:
+                input.filterSmartContractAddress ?? undefined,
+            },
+            blockchainIdentifier: input.blockchainIdentifier,
+          },
+          include: {
+            SellerWallet: true,
+            SmartContractWallet: { where: { deletedAt: null } },
+            PaidFunds: true,
+            NextAction: true,
+            PaymentSource: true,
+            CurrentTransaction: true,
+            WithdrawnForSeller: true,
+            WithdrawnForBuyer: true,
+            TransactionHistory: {
+              orderBy: { createdAt: 'desc' },
+              take: input.includeHistory == true ? undefined : 0,
+            },
+          },
+        });
+        if (result == null) {
+          throw createHttpError(404, 'Purchase not found');
+        }
+        return {
+          ...result,
+          PaidFunds: (
+            result.PaidFunds as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            ...amount,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForSeller: (
+            result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            unit: amount.unit,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForBuyer: (
+            result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            unit: amount.unit,
+            amount: amount.amount.toString(),
+          })),
+          collateralReturnLovelace:
+            result.collateralReturnLovelace?.toString() ?? null,
+          payByTime: result.payByTime?.toString() ?? null,
+          submitResultTime: result.submitResultTime.toString(),
+          unlockTime: result.unlockTime.toString(),
+          externalDisputeUnlockTime:
+            result.externalDisputeUnlockTime.toString(),
+          cooldownTime: Number(result.buyerCoolDownTime),
+          cooldownTimeOtherParty: Number(result.sellerCoolDownTime),
+        };
+      } catch (error: unknown) {
+        // Record the business-specific error with context
+        const errorInstance =
+          error instanceof Error ? error : new Error(String(error));
+        const statusCode =
+          (errorInstance as { statusCode?: number; status?: number })
+            .statusCode ||
+          (errorInstance as { statusCode?: number; status?: number }).status ||
+          500;
+        recordBusinessEndpointError(
+          '/api/v1/purchases/resolve-blockchain-identifier',
+          'POST',
+          statusCode,
+          errorInstance,
+          {
+            user_id: options.id,
+            blockchain_identifier: input.blockchainIdentifier,
             network: input.network,
-            smartContractAddress: input.filterSmartContractAddress ?? undefined,
+            operation: 'resolve_purchase_blockchain_identifier',
+            duration: Date.now() - startTime,
           },
-          blockchainIdentifier: input.blockchainIdentifier,
-        },
-        include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaidFunds: true,
-          NextAction: true,
-          PaymentSource: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-          TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
-            take: input.includeHistory == true ? undefined : 0,
-          },
-        },
-      });
-      if (result == null) {
-        throw createHttpError(404, 'Purchase not found');
+        );
+
+        throw error;
       }
-      return {
-        ...result,
-        PaidFunds: (
-          result.PaidFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        collateralReturnLovelace:
-          result.collateralReturnLovelace?.toString() ?? null,
-        payByTime: result.payByTime?.toString() ?? null,
-        submitResultTime: result.submitResultTime.toString(),
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        cooldownTime: Number(result.buyerCoolDownTime),
-        cooldownTimeOtherParty: Number(result.sellerCoolDownTime),
-      };
     },
   });
