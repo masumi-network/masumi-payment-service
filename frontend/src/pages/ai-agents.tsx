@@ -527,9 +527,7 @@ export default function AIAgentsPage() {
                           return (
                             <div key={index} className="whitespace-nowrap">
                               {isFree ? (
-                                <span className="font-semibold text-green-600">
-                                  FREE
-                                </span>
+                                <span className="font-semibold">FREE</span>
                               ) : price.unit === 'lovelace' || !price.unit ? (
                                 `${useFormatPrice(price.amount)} ADA`
                               ) : (

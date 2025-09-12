@@ -464,9 +464,7 @@ export default function Overview() {
 
                                 if (amount === 0) {
                                   return (
-                                    <span className="font-semibold text-green-600">
-                                      FREE
-                                    </span>
+                                    <span className="font-semibold">FREE</span>
                                   );
                                 }
 
