@@ -12,6 +12,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const submitPaymentResultSchemaInput = z.object({
   network: z
@@ -107,112 +108,139 @@ export const submitPaymentResultEndpointPost =
         usageLimited: boolean;
       };
     }) => {
-      await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
-        input.network,
-        options.permission,
-      );
-
-      const payment = await prisma.paymentRequest.findUnique({
-        where: {
-          onChainState: {
-            in: [
-              OnChainState.RefundRequested,
-              OnChainState.Disputed,
-              OnChainState.FundsLocked,
-            ],
-          },
-          blockchainIdentifier: input.blockchainIdentifier,
-          NextAction: {
-            requestedAction: {
-              in: [PaymentAction.WaitingForExternalAction],
-            },
-          },
-        },
-        include: {
-          PaymentSource: {
-            include: {
-              HotWallets: { where: { deletedAt: null } },
-              PaymentSourceConfig: true,
-            },
-          },
-          NextAction: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-        },
-      });
-      if (payment == null) {
-        throw createHttpError(404, 'Payment not found or in invalid state');
-      }
-      if (payment.PaymentSource == null) {
-        throw createHttpError(404, 'Payment has no payment source');
-      }
-      if (payment.PaymentSource.deletedAt != null) {
-        throw createHttpError(404, 'Payment source is deleted');
-      }
-      if (payment.PaymentSource.network != input.network) {
-        throw createHttpError(
-          400,
-          'Payment was not made on the requested network',
+      const startTime = Date.now();
+      try {
+        await checkIsAllowedNetworkOrThrowUnauthorized(
+          options.networkLimit,
+          input.network,
+          options.permission,
         );
-      }
-      if (
-        payment.requestedById != options.id &&
-        options.permission != Permission.Admin
-      ) {
-        throw createHttpError(
-          403,
-          'You are not authorized to submit results for this payment',
-        );
-      }
-      if (payment.SmartContractWallet == null) {
-        throw createHttpError(404, 'Smart contract wallet not found');
-      }
 
-      const result = await prisma.paymentRequest.update({
-        where: { id: payment.id },
-        data: {
-          NextAction: {
-            update: {
-              requestedAction: PaymentAction.SubmitResultRequested,
-              resultHash: input.submitResultHash,
+        const payment = await prisma.paymentRequest.findUnique({
+          where: {
+            onChainState: {
+              in: [
+                OnChainState.RefundRequested,
+                OnChainState.Disputed,
+                OnChainState.FundsLocked,
+              ],
+            },
+            blockchainIdentifier: input.blockchainIdentifier,
+            NextAction: {
+              requestedAction: {
+                in: [PaymentAction.WaitingForExternalAction],
+              },
             },
           },
-        },
-        include: {
-          NextAction: true,
-          BuyerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          RequestedFunds: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-        },
-      });
+          include: {
+            PaymentSource: {
+              include: {
+                HotWallets: { where: { deletedAt: null } },
+                PaymentSourceConfig: true,
+              },
+            },
+            NextAction: true,
+            SmartContractWallet: { where: { deletedAt: null } },
+          },
+        });
+        if (payment == null) {
+          throw createHttpError(404, 'Payment not found or in invalid state');
+        }
+        if (payment.PaymentSource == null) {
+          throw createHttpError(400, 'Payment has no payment source');
+        }
+        if (payment.PaymentSource.deletedAt != null) {
+          throw createHttpError(400, 'Payment source is deleted');
+        }
+        if (payment.PaymentSource.network != input.network) {
+          throw createHttpError(
+            400,
+            'Payment was not made on the requested network',
+          );
+        }
+        if (
+          payment.requestedById != options.id &&
+          options.permission != Permission.Admin
+        ) {
+          throw createHttpError(
+            403,
+            'You are not authorized to submit results for this payment',
+          );
+        }
+        if (payment.SmartContractWallet == null) {
+          throw createHttpError(500, 'Smart contract wallet not found');
+        }
 
-      return {
-        ...result,
-        payByTime: result.payByTime?.toString() ?? null,
-        submitResultTime: result.submitResultTime.toString(),
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        RequestedFunds: (
-          result.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-      };
+        const result = await prisma.paymentRequest.update({
+          where: { id: payment.id },
+          data: {
+            NextAction: {
+              update: {
+                requestedAction: PaymentAction.SubmitResultRequested,
+                resultHash: input.submitResultHash,
+              },
+            },
+          },
+          include: {
+            NextAction: true,
+            BuyerWallet: true,
+            SmartContractWallet: { where: { deletedAt: null } },
+            PaymentSource: true,
+            RequestedFunds: true,
+            WithdrawnForSeller: true,
+            WithdrawnForBuyer: true,
+          },
+        });
+
+        return {
+          ...result,
+          payByTime: result.payByTime?.toString() ?? null,
+          submitResultTime: result.submitResultTime.toString(),
+          unlockTime: result.unlockTime.toString(),
+          externalDisputeUnlockTime:
+            result.externalDisputeUnlockTime.toString(),
+          RequestedFunds: (
+            result.RequestedFunds as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            ...amount,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForSeller: (
+            result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            unit: amount.unit,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForBuyer: (
+            result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
+          ).map((amount) => ({
+            unit: amount.unit,
+            amount: amount.amount.toString(),
+          })),
+        };
+      } catch (error: unknown) {
+        const errorInstance =
+          error instanceof Error ? error : new Error(String(error));
+        const statusCode =
+          (errorInstance as { statusCode?: number; status?: number })
+            .statusCode ||
+          (errorInstance as { statusCode?: number; status?: number }).status ||
+          500;
+        recordBusinessEndpointError(
+          '/api/v1/payments/submit-result',
+          'POST',
+          statusCode,
+          errorInstance,
+          {
+            user_id: options.id,
+            blockchain_identifier: input.blockchainIdentifier,
+            network: input.network,
+            operation: 'submit_payment_result',
+            duration: Date.now() - startTime,
+          },
+        );
+
+        throw error;
+      }
     },
   });
