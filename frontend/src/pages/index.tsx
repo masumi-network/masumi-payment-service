@@ -460,17 +460,9 @@ export default function Overview() {
                               {(() => {
                                 const price = agent.AgentPricing.Pricing[0];
                                 const unit = price.unit;
-                                const amount = parseInt(price.amount);
-
-                                if (amount === 0) {
-                                  return (
-                                    <span className="font-semibold">FREE</span>
-                                  );
-                                }
-
-                                const formatted = (amount / 1_000_000).toFixed(
-                                  2,
-                                );
+                                const formatted = (
+                                  parseInt(price.amount) / 1_000_000
+                                ).toFixed(2);
                                 if (unit === 'lovelace' || !unit)
                                   return `${formatted} ADA`;
                                 if (
