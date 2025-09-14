@@ -454,7 +454,15 @@ export default function Overview() {
                         </div>
                       </div>
                       <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing?.Pricing?.[0] ? (
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <span className="text-xs font-normal text-muted-foreground">
+                              Free
+                            </span>
+                          )}
+                        {agent.AgentPricing &&
+                        agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {

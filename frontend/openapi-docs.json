@@ -6154,38 +6154,56 @@
                                                                         }
                                                                     },
                                                                     "AgentPricing": {
-                                                                        "type": "object",
-                                                                        "properties": {
-                                                                            "pricingType": {
-                                                                                "type": "string",
-                                                                                "enum": [
-                                                                                    "Fixed"
+                                                                        "anyOf": [
+                                                                            {
+                                                                                "type": "object",
+                                                                                "properties": {
+                                                                                    "pricingType": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "Fixed"
+                                                                                        ]
+                                                                                    },
+                                                                                    "Pricing": {
+                                                                                        "type": "array",
+                                                                                        "items": {
+                                                                                            "type": "object",
+                                                                                            "properties": {
+                                                                                                "amount": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "unit": {
+                                                                                                    "type": "string",
+                                                                                                    "maxLength": 250
+                                                                                                }
+                                                                                            },
+                                                                                            "required": [
+                                                                                                "amount",
+                                                                                                "unit"
+                                                                                            ]
+                                                                                        },
+                                                                                        "minItems": 1
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "pricingType",
+                                                                                    "Pricing"
                                                                                 ]
                                                                             },
-                                                                            "Pricing": {
-                                                                                "type": "array",
-                                                                                "items": {
-                                                                                    "type": "object",
-                                                                                    "properties": {
-                                                                                        "amount": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "unit": {
-                                                                                            "type": "string",
-                                                                                            "maxLength": 250
-                                                                                        }
-                                                                                    },
-                                                                                    "required": [
-                                                                                        "amount",
-                                                                                        "unit"
-                                                                                    ]
+                                                                            {
+                                                                                "type": "object",
+                                                                                "properties": {
+                                                                                    "pricingType": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "Free"
+                                                                                        ]
+                                                                                    }
                                                                                 },
-                                                                                "minItems": 1
+                                                                                "required": [
+                                                                                    "pricingType"
+                                                                                ]
                                                                             }
-                                                                        },
-                                                                        "required": [
-                                                                            "pricingType",
-                                                                            "Pricing"
                                                                         ]
                                                                     },
                                                                     "image": {
@@ -6495,38 +6513,56 @@
                                                                 "maxLength": 250
                                                             },
                                                             "AgentPricing": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "pricingType": {
-                                                                        "type": "string",
-                                                                        "enum": [
-                                                                            "Fixed"
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "pricingType": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "Fixed"
+                                                                                ]
+                                                                            },
+                                                                            "Pricing": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "amount": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "unit": {
+                                                                                            "type": "string",
+                                                                                            "maxLength": 250
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "amount",
+                                                                                        "unit"
+                                                                                    ]
+                                                                                },
+                                                                                "minItems": 1
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "pricingType",
+                                                                            "Pricing"
                                                                         ]
                                                                     },
-                                                                    "Pricing": {
-                                                                        "type": "array",
-                                                                        "items": {
-                                                                            "type": "object",
-                                                                            "properties": {
-                                                                                "amount": {
-                                                                                    "type": "string"
-                                                                                },
-                                                                                "unit": {
-                                                                                    "type": "string",
-                                                                                    "maxLength": 250
-                                                                                }
-                                                                            },
-                                                                            "required": [
-                                                                                "amount",
-                                                                                "unit"
-                                                                            ]
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "pricingType": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "Free"
+                                                                                ]
+                                                                            }
                                                                         },
-                                                                        "minItems": 1
+                                                                        "required": [
+                                                                            "pricingType"
+                                                                        ]
                                                                     }
-                                                                },
-                                                                "required": [
-                                                                    "pricingType",
-                                                                    "Pricing"
                                                                 ]
                                                             },
                                                             "SmartContractWallet": {
@@ -7545,36 +7581,54 @@
                                                     "maxItems": 25
                                                 },
                                                 "AgentPricing": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "pricingType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Fixed"
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Fixed"
+                                                                    ]
+                                                                },
+                                                                "Pricing": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "amount": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "amount"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType",
+                                                                "Pricing"
                                                             ]
                                                         },
-                                                        "Pricing": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "unit": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "amount": {
-                                                                        "type": "string"
-                                                                    }
-                                                                },
-                                                                "required": [
-                                                                    "unit",
-                                                                    "amount"
-                                                                ]
-                                                            }
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Free"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType"
+                                                            ]
                                                         }
-                                                    },
-                                                    "required": [
-                                                        "pricingType",
-                                                        "Pricing"
                                                     ]
                                                 }
                                             },
