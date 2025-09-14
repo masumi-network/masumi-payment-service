@@ -1,5 +1,4 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -454,7 +453,15 @@ export default function Overview() {
                         </div>
                       </div>
                       <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing?.Pricing?.[0] ? (
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <span className="text-xs font-normal text-muted-foreground">
+                              Free
+                            </span>
+                          )}
+                        {agent.AgentPricing &&
+                        agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {

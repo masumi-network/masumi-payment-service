@@ -1,7 +1,7 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { logger } from '@/utils/logger';
-import { Network, PaymentType } from '@prisma/client';
+import { Network } from '@prisma/client';
 import createHttpError from 'http-errors';
 export async function handlePurchaseCreditInit({
   id,
@@ -9,7 +9,6 @@ export async function handlePurchaseCreditInit({
   metadata,
   network,
   blockchainIdentifier,
-  paymentType,
   contractAddress,
   sellerVkey,
   sellerAddress,
@@ -24,7 +23,6 @@ export async function handlePurchaseCreditInit({
   metadata: string | null | undefined;
   network: Network;
   blockchainIdentifier: string;
-  paymentType: PaymentType;
   contractAddress: string;
   sellerVkey: string;
   sellerAddress: string;
@@ -41,7 +39,6 @@ export async function handlePurchaseCreditInit({
       metadata,
       network,
       blockchainIdentifier,
-      paymentType,
       contractAddress,
       sellerVkey,
       sellerAddress,
