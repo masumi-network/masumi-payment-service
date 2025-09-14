@@ -69,17 +69,23 @@ export const queryRegistryRequestSchemaOutput = z.object({
         )
         .max(25),
       agentIdentifier: z.string().min(57).max(250).nullable(),
-      AgentPricing: z.object({
-        pricingType: z.enum([PricingType.Fixed]),
-        Pricing: z
-          .array(
-            z.object({
-              amount: z.string(),
-              unit: z.string().max(250),
-            }),
-          )
-          .min(1),
-      }),
+      AgentPricing: z
+        .object({
+          pricingType: z.enum([PricingType.Fixed]),
+          Pricing: z
+            .array(
+              z.object({
+                amount: z.string(),
+                unit: z.string().max(250),
+              }),
+            )
+            .min(1),
+        })
+        .or(
+          z.object({
+            pricingType: z.enum([PricingType.Free]),
+          }),
+        ),
       SmartContractWallet: z.object({
         walletVkey: z.string(),
         walletAddress: z.string(),
