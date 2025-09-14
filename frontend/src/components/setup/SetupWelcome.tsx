@@ -403,7 +403,6 @@ function PaymentSourceSetupScreen({
         client: apiClient,
         body: {
           network: state.network,
-          paymentType: 'Web3CardanoV1',
           PaymentSourceConfig: {
             rpcProviderApiKey: data.blockfrostApiKey,
             rpcProvider: 'Blockfrost',

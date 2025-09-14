@@ -6,7 +6,6 @@ import {
   OnChainState,
   PaymentAction,
   PaymentErrorType,
-  PaymentType,
   Permission,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
@@ -72,7 +71,6 @@ export const submitPaymentResultSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     policyId: z.string().nullable(),
     smartContractAddress: z.string(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   BuyerWallet: z
     .object({
