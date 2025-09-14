@@ -467,6 +467,7 @@ export default function Overview() {
                               {(() => {
                                 const price = agent.AgentPricing.Pricing[0];
                                 const unit = price.unit;
+                                if (unit === 'free') return 'Free';
                                 const formatted = (
                                   parseInt(price.amount) / 1_000_000
                                 ).toFixed(2);
