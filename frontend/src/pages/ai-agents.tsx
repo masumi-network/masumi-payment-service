@@ -520,22 +520,13 @@ export default function AIAgentsPage() {
                         </div>
                       </td>
                       <td className="p-4 text-sm truncate max-w-[100px]">
-                        {agent.AgentPricing?.Pricing?.map((price, index) => {
-                          const amount = parseInt(price.amount);
-                          const isFree = amount === 0;
-
-                          return (
-                            <div key={index} className="whitespace-nowrap">
-                              {isFree ? (
-                                <span className="font-semibold">FREE</span>
-                              ) : price.unit === 'lovelace' || !price.unit ? (
-                                `${useFormatPrice(price.amount)} ADA`
-                              ) : (
-                                `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`
-                              )}
-                            </div>
-                          );
-                        })}
+                        {agent.AgentPricing?.Pricing?.map((price, index) => (
+                          <div key={index} className="whitespace-nowrap">
+                            {price.unit === 'lovelace' || !price.unit
+                              ? `${useFormatPrice(price.amount)} ADA`
+                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                          </div>
+                        ))}
                       </td>
                       <td className="p-4">
                         {agent.Tags.length > 0 && (
