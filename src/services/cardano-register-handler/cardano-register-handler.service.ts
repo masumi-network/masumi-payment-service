@@ -17,6 +17,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { stringToMetadata } from '@/utils/converter/metadata-string-convert';
@@ -87,28 +88,7 @@ export async function registerAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            // Extract lovelace amounts once for better performance O(n) instead of O(n²)
-            const utxosWithLovelace = utxos.map((utxo) => ({
-              utxo,
-              lovelace: parseInt(
-                utxo.output.amount.find(
-                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
-                )?.quantity ?? '0',
-              ),
-            }));
-
-            // Sort by lovelace amount (descending)
-            const utxosSortedByLovelaceDesc = utxosWithLovelace
-              .sort((a, b) => b.lovelace - a.lovelace)
-              .map((item) => item.utxo);
-
-            const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
-              0,
-              Math.min(
-                SERVICE_CONSTANTS.TRANSACTION.maxUtxos,
-                utxosSortedByLovelaceDesc.length,
-              ),
-            );
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
 
             const firstUtxo = limitedFilteredUtxos[0];
             const collateralUtxo = limitedFilteredUtxos[0];

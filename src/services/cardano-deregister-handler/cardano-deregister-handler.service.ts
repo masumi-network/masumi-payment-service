@@ -17,6 +17,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { SERVICE_CONSTANTS } from '@/utils/config';
+import { sortAndLimitUtxos, getHighestLovelaceUtxo } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -87,30 +88,8 @@ export async function deRegisterAgentV1() {
               throw new Error('No token UTXO found');
             }
 
-            // Extract lovelace amounts once for better performance
-            const utxosWithLovelace = utxos.map((utxo) => ({
-              utxo,
-              lovelace: parseInt(
-                utxo.output.amount.find(
-                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
-                )?.quantity ?? '0',
-              ),
-            }));
-
-            // Sort by lovelace amount (descending)
-            const filteredUtxos = utxosWithLovelace
-              .sort((a, b) => b.lovelace - a.lovelace)
-              .map((item) => item.utxo);
-
-            const collateralUtxo = filteredUtxos[0];
-
-            const limitedFilteredUtxos = filteredUtxos.slice(
-              0,
-              Math.min(
-                SERVICE_CONSTANTS.TRANSACTION.maxUtxos,
-                filteredUtxos.length,
-              ),
-            );
+            const collateralUtxo = getHighestLovelaceUtxo(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
 
             const evaluationTx = await generateDeregisterAgentTransaction({
               blockchainProvider,

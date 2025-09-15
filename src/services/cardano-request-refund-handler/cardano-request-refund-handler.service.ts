@@ -29,6 +29,7 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
 import { SERVICE_CONSTANTS } from '@/utils/config';
+import { sortAndLimitUtxos, getHighestLovelaceUtxo } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -212,24 +213,8 @@ export async function requestRefundsV1() {
               ) + 3;
             const invalidAfter = Math.min(initialInvalid, secondaryInvalid);
 
-            // Extract lovelace amounts once for better performance
-            const utxosWithLovelace = utxos.map((utxo) => ({
-              utxo,
-              lovelace: parseInt(
-                utxo.output.amount.find(
-                  (asset) => asset.unit === 'lovelace' || asset.unit === '',
-                )?.quantity ?? '0',
-              ),
-            }));
-
-            // Sort by lovelace amount (descending)
-            const sortedUtxosByLovelaceDesc = utxosWithLovelace
-              .sort((a, b) => b.lovelace - a.lovelace)
-              .map((item) => item.utxo);
-            const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
-              0,
-              Math.min(4, sortedUtxosByLovelaceDesc.length),
-            );
+            const limitedUtxos = sortAndLimitUtxos(utxos);
+            const highestLovelaceUtxo = getHighestLovelaceUtxo(utxos);
 
             const evaluationTx =
               await generateMasumiSmartContractInteractionTransaction(
@@ -239,7 +224,7 @@ export async function requestRefundsV1() {
                 script,
                 address,
                 utxo,
-                sortedUtxosByLovelaceDesc[0],
+                highestLovelaceUtxo,
                 limitedUtxos,
                 datum.value,
                 invalidBefore,
@@ -256,7 +241,7 @@ export async function requestRefundsV1() {
                 script,
                 address,
                 utxo,
-                sortedUtxosByLovelaceDesc[0],
+                highestLovelaceUtxo,
                 limitedUtxos,
                 datum.value,
                 invalidBefore,
