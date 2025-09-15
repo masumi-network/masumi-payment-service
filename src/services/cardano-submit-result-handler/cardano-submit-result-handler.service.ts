@@ -30,25 +30,9 @@ import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
-
-// Configuration constants for maintainability
-const SUBMIT_RESULT_CONFIG = {
-  RETRY: {
-    maxRetries: 5,
-    backoffMultiplier: 5,
-    initialDelayMs: 500,
-    maxDelayMs: 7500,
-  },
-  TRANSACTION: {
-    maxUtxos: 4,
-    timeBufferMs: 150000, // 2.5 minutes
-    blockTimeBufferMs: 60000, // 1 minute
-    validitySlotBuffer: 5,
-    resultTimeSlotBuffer: 3,
-  },
-} as const;
 
 export async function submitResultV1() {
   let release: MutexInterface.Releaser | null;
@@ -64,7 +48,7 @@ export async function submitResultV1() {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.SubmitResultRequested,
       submitResultTime: {
-        gte: Date.now() + SUBMIT_RESULT_CONFIG.TRANSACTION.blockTimeBufferMs, //remove 1 minute for block time
+        gte: Date.now() + SERVICE_CONSTANTS.TRANSACTION.blockTimeBufferMs, //remove 1 minute for block time
       },
       requestedResultHash: { not: null },
     });
@@ -89,7 +73,7 @@ export async function submitResultV1() {
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: SUBMIT_RESULT_CONFIG.RETRY,
+              configuration: SERVICE_CONSTANTS.RETRY,
             }),
           ],
           operations: paymentRequests.map((request) => async () => {
@@ -213,20 +197,20 @@ export async function submitResultV1() {
 
             const invalidBefore =
               unixTimeToEnclosingSlot(
-                Date.now() - SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, // 150000
+                Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs, // 150000
                 SLOT_CONFIG_NETWORK[network],
               ) - 1;
 
             const invalidAfter = Math.min(
               unixTimeToEnclosingSlot(
-                Date.now() + SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, // 150000
+                Date.now() + SERVICE_CONSTANTS.TRANSACTION.timeBufferMs, // 150000
                 SLOT_CONFIG_NETWORK[network],
-              ) + SUBMIT_RESULT_CONFIG.TRANSACTION.validitySlotBuffer,
+              ) + SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer,
               unixTimeToEnclosingSlot(
                 Number(decodedContract.resultTime) +
-                  SUBMIT_RESULT_CONFIG.TRANSACTION.timeBufferMs, //150000
+                  SERVICE_CONSTANTS.TRANSACTION.timeBufferMs, //150000
                 SLOT_CONFIG_NETWORK[network],
-              ) + SUBMIT_RESULT_CONFIG.TRANSACTION.resultTimeSlotBuffer, // 3
+              ) + SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer, // 3
             );
 
             // Extract lovelace amounts once for better performance
@@ -246,7 +230,7 @@ export async function submitResultV1() {
             const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
               0,
               Math.min(
-                SUBMIT_RESULT_CONFIG.TRANSACTION.maxUtxos,
+                SERVICE_CONSTANTS.TRANSACTION.maxUtxos,
                 sortedUtxosByLovelaceDesc.length,
               ),
             );

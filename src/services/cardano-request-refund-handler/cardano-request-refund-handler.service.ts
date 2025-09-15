@@ -28,6 +28,7 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
 
@@ -194,18 +195,19 @@ export async function requestRefundsV1() {
 
             const invalidBefore =
               unixTimeToEnclosingSlot(
-                Date.now() - 150000,
+                Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) - 1;
 
             const initialInvalid =
               unixTimeToEnclosingSlot(
-                Date.now() + 150000,
+                Date.now() + SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) + 5;
             const secondaryInvalid =
               unixTimeToEnclosingSlot(
-                Number(decodedContract.unlockTime) + 150000,
+                Number(decodedContract.unlockTime) +
+                  SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) + 3;
             const invalidAfter = Math.min(initialInvalid, secondaryInvalid);

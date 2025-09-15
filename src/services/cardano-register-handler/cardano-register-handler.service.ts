@@ -16,7 +16,7 @@ import { logger } from '@/utils/logger';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
-import { DEFAULTS } from '@/utils/config';
+import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { blake2b } from 'ethereum-cryptography/blake2b';
 import { stringToMetadata } from '@/utils/converter/metadata-string-convert';
@@ -25,25 +25,6 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 
 const mutex = new Mutex();
-
-// Constants for better maintainability
-const TRANSACTION_CONSTANTS = {
-  MAX_UTXOS: 4,
-  COLLATERAL_AMOUNT: '5000000',
-  MINT_QUANTITY: '1',
-  METADATA_LABEL_NFT: 721,
-  METADATA_LABEL_MASUMI: 674,
-  DEFAULT_EX_UNITS: {
-    mem: 7e6,
-    steps: 3e9,
-  },
-  RETRY_CONFIG: {
-    maxRetries: 5,
-    backoffMultiplier: 5,
-    initialDelayMs: 500,
-    maxDelayMs: 7500,
-  },
-} as const;
 
 export async function registerAgentV1() {
   let release: MutexInterface.Releaser | null;
@@ -81,7 +62,7 @@ export async function registerAgentV1() {
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: TRANSACTION_CONSTANTS.RETRY_CONFIG,
+              configuration: SERVICE_CONSTANTS.RETRY,
             }),
           ],
           operations: registryRequests.map((request) => async () => {
@@ -124,7 +105,7 @@ export async function registerAgentV1() {
             const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
               0,
               Math.min(
-                TRANSACTION_CONSTANTS.MAX_UTXOS,
+                SERVICE_CONSTANTS.TRANSACTION.maxUtxos,
                 utxosSortedByLovelaceDesc.length,
               ),
             );
@@ -312,7 +293,7 @@ async function generateRegisterAgentTransaction(
   exUnits: {
     mem: number;
     steps: number;
-  } = TRANSACTION_CONSTANTS.DEFAULT_EX_UNITS,
+  } = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
 ) {
   const txBuilder = new MeshTxBuilder({
     fetcher: blockchainProvider,
@@ -326,7 +307,7 @@ async function generateRegisterAgentTransaction(
     .mint('1', policyId, assetName)
     .mintingScript(script.code)
     .mintRedeemerValue({ alternative: 0, fields: [] }, 'Mesh', exUnits)
-    .metadataValue(TRANSACTION_CONSTANTS.METADATA_LABEL_NFT, {
+    .metadataValue(SERVICE_CONSTANTS.METADATA.nftLabel, {
       [policyId]: {
         [assetName]: metadata,
       },
@@ -337,13 +318,16 @@ async function generateRegisterAgentTransaction(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral(TRANSACTION_CONSTANTS.COLLATERAL_AMOUNT)
+    .setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
     .txOut(walletAddress, [
       {
         unit: policyId + assetName,
-        quantity: TRANSACTION_CONSTANTS.MINT_QUANTITY,
+        quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
       },
-      { unit: 'lovelace', quantity: TRANSACTION_CONSTANTS.COLLATERAL_AMOUNT },
+      {
+        unit: 'lovelace',
+        quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
+      },
     ]);
   for (const utxo of utxos) {
     txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
@@ -351,7 +335,7 @@ async function generateRegisterAgentTransaction(
   return await txBuilder
     .requiredSignerHash(deserializedAddress.pubKeyHash)
     .setNetwork(network)
-    .metadataValue(TRANSACTION_CONSTANTS.METADATA_LABEL_MASUMI, {
+    .metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
       msg: ['Masumi', 'RegisterAgent'],
     })
     .changeAddress(walletAddress)

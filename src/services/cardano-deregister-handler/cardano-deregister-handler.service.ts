@@ -16,24 +16,9 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
-
-// Constants for  maintainability
-const DEREGISTER_CONFIG = {
-  RETRY: {
-    maxRetries: 5,
-    backoffMultiplier: 5,
-    initialDelayMs: 500,
-    maxDelayMs: 7500,
-  },
-  TRANSACTION: {
-    maxUtxos: 4,
-    collateralAmount: '5000000', // 5 ADA collateral
-    defaultExUnits: { mem: 7e6, steps: 3e9 },
-    metadataLabel: 674, // Standard NFT metadata label
-  },
-} as const;
 
 export async function deRegisterAgentV1() {
   let release: MutexInterface.Releaser | null;
@@ -70,7 +55,7 @@ export async function deRegisterAgentV1() {
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: DEREGISTER_CONFIG.RETRY,
+              configuration: SERVICE_CONSTANTS.RETRY,
             }),
           ],
           operations: registryRequests.map((request) => async () => {
@@ -122,7 +107,7 @@ export async function deRegisterAgentV1() {
             const limitedFilteredUtxos = filteredUtxos.slice(
               0,
               Math.min(
-                DEREGISTER_CONFIG.TRANSACTION.maxUtxos,
+                SERVICE_CONSTANTS.TRANSACTION.maxUtxos,
                 filteredUtxos.length,
               ),
             );
@@ -260,7 +245,7 @@ async function generateDeregisterAgentTransaction(
     assetUtxo,
     collateralUtxo,
     utxos,
-    exUnits = DEREGISTER_CONFIG.TRANSACTION.defaultExUnits,
+    exUnits = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
   } = params;
   const txBuilder = new MeshTxBuilder({
     fetcher: blockchainProvider,
@@ -279,14 +264,14 @@ async function generateDeregisterAgentTransaction(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral(DEREGISTER_CONFIG.TRANSACTION.collateralAmount);
+    .setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
   for (const utxo of utxos) {
     txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
   }
   return await txBuilder
     .requiredSignerHash(deserializedAddress.pubKeyHash)
     .setNetwork(network)
-    .metadataValue(DEREGISTER_CONFIG.TRANSACTION.metadataLabel, {
+    .metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
       msg: ['Masumi', 'DeregisterAgent'],
     })
     .changeAddress(walletAddress)
