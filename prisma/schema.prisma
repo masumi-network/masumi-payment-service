@@ -202,6 +202,8 @@ model RegistryRequest {
   CurrentTransaction   Transaction? @relation(fields: [currentTransactionId], references: [id])
   currentTransactionId String?
 
+  paymentType PaymentType @default(Web3CardanoV1)
+
   error String?
 }
 
@@ -230,6 +232,7 @@ model AgentPricing {
 
 enum PricingType {
   Fixed
+  Free
 }
 
 model AgentFixedPricing {
@@ -375,6 +378,7 @@ enum PurchaseErrorType {
 
 enum PaymentType {
   Web3CardanoV1
+  None
 }
 
 enum TransactionStatus {
@@ -465,8 +469,6 @@ model PaymentSource {
 
   PaymentRequests  PaymentRequest[]  @relation("PaymentRequestPaymentSource")
   PurchaseRequests PurchaseRequest[] @relation("PurchaseRequestPaymentSource")
-
-  paymentType PaymentType
 
   HotWallets       HotWallet[]
   WalletBases      WalletBase[]

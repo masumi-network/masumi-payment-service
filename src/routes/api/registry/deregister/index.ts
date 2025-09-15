@@ -68,15 +68,21 @@ export const unregisterAgentSchemaOutput = z.object({
       }),
     )
     .max(25),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z.array(
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+    })
+    .or(
       z.object({
-        unit: z.string(),
-        amount: z.string(),
+        pricingType: z.enum([PricingType.Free]),
       }),
     ),
-  }),
 });
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({

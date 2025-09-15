@@ -208,7 +208,6 @@ export function AddPaymentSourceDialog({
         client: apiClient,
         body: {
           network: data.network,
-          paymentType: data.paymentType,
           PaymentSourceConfig: {
             rpcProviderApiKey: data.blockfrostApiKey,
             rpcProvider: 'Blockfrost',
@@ -348,7 +347,8 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key <span className="text-destructive">*</span>
+                    Blockfrost API Key{' '}
+                    <span className="text-destructive">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>

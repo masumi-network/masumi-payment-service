@@ -59,7 +59,6 @@ import {
 } from '@/routes/api/payment-source';
 import {
   Network,
-  PaymentType,
   PurchasingAction,
   PaymentAction,
   Permission,
@@ -105,6 +104,10 @@ import {
   postPurchaseRequestSchemaInput,
   postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
+import {
+  postRevealDataSchemaOutput,
+  postVerifyDataRevealSchemaInput,
+} from '@/routes/api/reveal-data';
 import {
   registerWebhookSchemaInput,
   registerWebhookSchemaOutput,
@@ -299,6 +302,50 @@ export function generateOpenAPI() {
                 walletVkey: 'wallet_vkey',
                 walletAddress: 'wallet_address',
                 note: 'note',
+              },
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  /********************* REVEAL DATA *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/reveal-data/',
+    description: 'Verifies the reveal data signature is valid.',
+    summary:
+      'Verifies the reveal data signature is valid. (read access required)',
+    tags: ['reveal-data'],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postVerifyDataRevealSchemaInput.openapi({
+              example: {
+                action: 'reveal_data',
+                blockchainIdentifier: 'blockchain_identifier',
+                signature: 'signature',
+                key: 'key',
+                walletAddress: 'wallet_address',
+                validUntil: 1713636260,
+              },
+            }),
+          },
+        },
+      },
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Revealed data',
+        content: {
+          'application/json': {
+            schema: postRevealDataSchemaOutput.openapi({
+              example: {
+                isValid: true,
               },
             }),
           },
@@ -608,7 +655,6 @@ export function generateOpenAPI() {
                           network: Network.Preprod,
                           smartContractAddress: 'address',
                           policyId: 'policy_id',
-                          paymentType: PaymentType.Web3CardanoV1,
                         },
                         WithdrawnForSeller: [],
                         WithdrawnForBuyer: [],
@@ -656,7 +702,6 @@ export function generateOpenAPI() {
                 payByTime: new Date(1713626260).toISOString(),
                 metadata:
                   '(private) metadata to be stored with the payment request',
-                paymentType: PaymentType.Web3CardanoV1,
                 submitResultTime: new Date(1713636260).toISOString(),
                 identifierFromPurchaser: 'aabbaabb11221122aabb',
               },
@@ -707,7 +752,6 @@ export function generateOpenAPI() {
                       policyId: 'policy_id',
                       network: Network.Preprod,
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
@@ -802,7 +846,6 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       policyId: 'policy_id',
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
@@ -894,7 +937,6 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       policyId: 'policy_id',
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
@@ -984,7 +1026,6 @@ export function generateOpenAPI() {
                           network: Network.Preprod,
                           policyId: 'policy_id',
                           smartContractAddress: 'address',
-                          paymentType: PaymentType.Web3CardanoV1,
                         },
                         SellerWallet: null,
                         SmartContractWallet: null,
@@ -1029,7 +1070,6 @@ export function generateOpenAPI() {
                 identifierFromPurchaser: 'aabbaabb11221122aabb',
                 network: Network.Preprod,
                 sellerVkey: 'seller_vkey',
-                paymentType: PaymentType.Web3CardanoV1,
                 blockchainIdentifier: 'blockchain_identifier',
                 payByTime: (1713626260).toString(),
                 submitResultTime: (1713636260).toString(),
@@ -1089,7 +1129,6 @@ export function generateOpenAPI() {
                       policyId: 'policy_id',
                       network: Network.Preprod,
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     SellerWallet: null,
                     SmartContractWallet: null,
@@ -1153,7 +1192,6 @@ export function generateOpenAPI() {
                   policyId: 'policy_id',
                   network: Network.Preprod,
                   smartContractAddress: 'address',
-                  paymentType: PaymentType.Web3CardanoV1,
                 },
                 SellerWallet: null,
                 SmartContractWallet: null,
@@ -1238,7 +1276,6 @@ export function generateOpenAPI() {
                       policyId: 'policy_id',
                       network: Network.Preprod,
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     SellerWallet: null,
                     SmartContractWallet: null,
@@ -1329,7 +1366,6 @@ export function generateOpenAPI() {
                       policyId: 'policy_id',
                       network: Network.Preprod,
                       smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     SellerWallet: null,
                     SmartContractWallet: null,
@@ -1427,7 +1463,6 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       smartContractAddress: 'address',
                       policyId: 'policy_id',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
@@ -1528,7 +1563,6 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       smartContractAddress: 'address',
                       policyId: 'policy_id',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     SellerWallet: null,
                     SmartContractWallet: null,
@@ -2034,7 +2068,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         smartContractAddress: 'address_of_the_smart_contract',
                         policyId: 'policy_id',
                         AdminWallets: [
@@ -2129,7 +2162,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         feeRatePermille: 50,
                         syncInProgress: true,
                         policyId: 'policy_id',
@@ -2211,7 +2243,6 @@ export function generateOpenAPI() {
                   rpcProviderApiKey: 'rpc_provider_api_key',
                   rpcProvider: RPCProvider.Blockfrost,
                 },
-                paymentType: PaymentType.Web3CardanoV1,
                 AdminWallets: [
                   { walletAddress: 'wallet_address_1' },
                   { walletAddress: 'wallet_address_2' },
@@ -2257,7 +2288,6 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
                     syncInProgress: true,
                     smartContractAddress: 'address_of_the_smart_contract',
                     AdminWallets: [
@@ -2377,7 +2407,6 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
                     syncInProgress: true,
                     smartContractAddress: 'address_of_the_smart_contract',
                     AdminWallets: [

@@ -6,13 +6,7 @@ import { prisma } from '@/utils/db';
 import { encrypt } from '@/utils/security/encryption';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import {
-  HotWalletType,
-  RPCProvider,
-  PaymentType,
-  Network,
-  $Enums,
-} from '@prisma/client';
+import { HotWalletType, RPCProvider, Network, $Enums } from '@prisma/client';
 import createHttpError from 'http-errors';
 import { z } from 'zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -41,7 +35,6 @@ export const paymentSourceExtendedSchemaOutput = z.object({
       network: z.nativeEnum(Network),
       policyId: z.string().nullable(),
       smartContractAddress: z.string(),
-      paymentType: z.nativeEnum(PaymentType),
       PaymentSourceConfig: z.object({
         rpcProviderApiKey: z.string(),
         rpcProvider: z.nativeEnum(RPCProvider),
@@ -136,9 +129,6 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
   network: z
     .nativeEnum(Network)
     .describe('The network the payment source will be used on'),
-  paymentType: z
-    .nativeEnum(PaymentType)
-    .describe('The type of payment source used'),
   PaymentSourceConfig: z.object({
     rpcProviderApiKey: z
       .string()
@@ -219,7 +209,6 @@ export const paymentSourceExtendedCreateSchemaOutput = z.object({
   updatedAt: z.date(),
   network: z.nativeEnum(Network),
   smartContractAddress: z.string(),
-  paymentType: z.nativeEnum(PaymentType),
   PaymentSourceConfig: z.object({
     rpcProviderApiKey: z.string(),
     rpcProvider: z.nativeEnum(RPCProvider),
@@ -366,7 +355,6 @@ export const paymentSourceExtendedEndpointPost =
             network: input.network,
             smartContractAddress: smartContractAddress,
             policyId: policyId,
-            paymentType: input.paymentType,
             PaymentSourceConfig: {
               create: {
                 rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
@@ -507,7 +495,6 @@ export const paymentSourceExtendedUpdateSchemaOutput = z.object({
   updatedAt: z.date(),
   network: z.nativeEnum(Network),
   smartContractAddress: z.string(),
-  paymentType: z.nativeEnum(PaymentType),
   PaymentSourceConfig: z.object({
     rpcProviderApiKey: z.string(),
     rpcProvider: z.nativeEnum(RPCProvider),
