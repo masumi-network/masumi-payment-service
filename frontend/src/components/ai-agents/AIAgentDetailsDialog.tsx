@@ -199,35 +199,43 @@ export function AIAgentDetailsDialog({
                 <div>
                   <h3 className="font-medium mb-2">Pricing Details</h3>
                   <div className="space-y-2 p-2 bg-muted/40 rounded-md">
-                    {agent.AgentPricing?.Pricing?.map((price, index, arr) => (
-                      <div
-                        key={index}
-                        className={cn(
-                          'flex items-center justify-between py-2',
-                          index < arr.length - 1 && 'border-b',
-                        )}
-                      >
-                        <span className="text-sm text-muted-foreground">
-                          Price (
-                          {price.unit === 'lovelace' || !price.unit
-                            ? 'ADA'
-                            : price.unit ===
-                                getUsdmConfig(state.network).fullAssetId
-                              ? 'USDM'
-                              : price.unit === TESTUSDM_CONFIG.unit
-                                ? 'tUSDM'
-                                : price.unit}
-                          )
-                        </span>
-                        <span className="font-medium">
-                          {price.unit === 'lovelace' || !price.unit
-                            ? `${useFormatPrice(price.amount)} ADA`
-                            : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                        </span>
+                    {agent.AgentPricing?.pricingType == 'Free' && (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-medium">Free</span>
                       </div>
-                    ))}
-                    {(!agent.AgentPricing?.Pricing ||
-                      agent.AgentPricing.Pricing.length === 0) && (
+                    )}
+                    {agent.AgentPricing &&
+                      agent.AgentPricing?.pricingType == 'Fixed' &&
+                      agent.AgentPricing?.Pricing?.map((price, index, arr) => (
+                        <div
+                          key={index}
+                          className={cn(
+                            'flex items-center justify-between py-2',
+                            index < arr.length - 1 && 'border-b',
+                          )}
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            Price (
+                            {price.unit === 'lovelace' || !price.unit
+                              ? 'ADA'
+                              : price.unit ===
+                                  getUsdmConfig(state.network).fullAssetId
+                                ? 'USDM'
+                                : price.unit === TESTUSDM_CONFIG.unit
+                                  ? 'tUSDM'
+                                  : price.unit}
+                            )
+                          </span>
+                          <span className="font-medium">
+                            {price.unit === 'lovelace' || !price.unit
+                              ? `${useFormatPrice(price.amount)} ADA`
+                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                          </span>
+                        </div>
+                      ))}
+                    {(!agent.AgentPricing ||
+                      (agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing.length === 0)) && (
                       <div className="text-sm text-muted-foreground">
                         No pricing information available
                       </div>

@@ -2,7 +2,6 @@ import {
   ApiKeyStatus,
   HotWalletType,
   Network,
-  PaymentType,
   Permission,
   PrismaClient,
   RPCProvider,
@@ -237,7 +236,6 @@ export const seed = async (prisma: PrismaClient) => {
               rpcProvider: RPCProvider.Blockfrost,
             },
           },
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           lastIdentifierChecked:
             latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
@@ -424,7 +422,6 @@ export const seed = async (prisma: PrismaClient) => {
               rpcProvider: RPCProvider.Blockfrost,
             },
           },
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           FeeReceiverNetworkWallet: {
             create: {

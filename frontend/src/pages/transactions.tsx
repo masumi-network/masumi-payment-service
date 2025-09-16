@@ -383,8 +383,9 @@ export default function Transactions() {
       case 'resultsubmitted':
         return 'text-green-500';
       case 'refundrequested':
-      case 'refundwithdrawn':
         return 'text-orange-500';
+      case 'refundwithdrawn':
+        return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
         return 'text-red-500';

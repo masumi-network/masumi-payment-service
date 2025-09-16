@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { $Enums, HotWalletType, Network, PaymentType } from '@prisma/client';
+import { $Enums, HotWalletType, Network } from '@prisma/client';
 import { z } from 'zod';
 
 export const paymentSourceSchemaInput = z.object({
@@ -25,7 +25,6 @@ export const paymentSourceSchemaOutput = z.object({
       network: z.nativeEnum(Network),
       policyId: z.string().nullable(),
       smartContractAddress: z.string(),
-      paymentType: z.nativeEnum(PaymentType),
       lastIdentifierChecked: z.string().nullable(),
       lastCheckedAt: z.date().nullable(),
       AdminWallets: z.array(

@@ -199,33 +199,18 @@ export function AddPaymentSourceDialog({
 
   const onSubmit = async (data: FormSchema) => {
     setError('');
-    const adminWallets = data.useCustomAdminWallets
-      ? data.customAdminWallets
-      : DEFAULT_ADMIN_WALLETS[data.network];
-    await handleApiCall(
-      () =>
-        postPaymentSourceExtended({
-          client: apiClient,
-          body: {
-            network: data.network,
-            paymentType: data.paymentType,
-            PaymentSourceConfig: {
-              rpcProviderApiKey: data.blockfrostApiKey,
-              rpcProvider: 'Blockfrost',
-            },
-            feeRatePermille: data.feePermille,
-            AdminWallets: adminWallets,
-            FeeReceiverNetworkWallet: data.feeReceiverWallet,
-            PurchasingWallets: data.purchasingWallets.map((w) => ({
-              walletMnemonic: w.walletMnemonic,
-              collectionAddress: w.collectionAddress?.trim() || null,
-              note: w.note || '',
-            })),
-            SellingWallets: data.sellingWallets.map((w) => ({
-              walletMnemonic: w.walletMnemonic,
-              collectionAddress: w.collectionAddress?.trim() || null,
-              note: w.note || '',
-            })),
+    setIsLoading(true);
+    try {
+      const adminWallets = data.useCustomAdminWallets
+        ? data.customAdminWallets
+        : DEFAULT_ADMIN_WALLETS[data.network];
+      const response = await postPaymentSourceExtended({
+        client: apiClient,
+        body: {
+          network: data.network,
+          PaymentSourceConfig: {
+            rpcProviderApiKey: data.blockfrostApiKey,
+            rpcProvider: 'Blockfrost',
           },
         }),
       {
@@ -361,7 +346,8 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key <span className="text-red-500">*</span>
+                    Blockfrost API Key{' '}
+                    <span className="text-destructive">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>

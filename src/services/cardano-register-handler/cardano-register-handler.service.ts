@@ -154,14 +154,21 @@ export async function registerAgentV1() {
                 other: stringToMetadata(request.other),
               },
               tags: request.tags,
-              agentPricing: {
-                pricingType: request.Pricing.pricingType,
-                fixedPricing:
-                  request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                    unit: stringToMetadata(pricing.unit),
-                    amount: pricing.amount.toString(),
-                  })) ?? [],
-              },
+              agentPricing:
+                request.Pricing.pricingType == PricingType.Fixed
+                  ? {
+                      pricingType: PricingType.Fixed,
+                      fixedPricing:
+                        request.Pricing.FixedPricing?.Amounts.map(
+                          (pricing) => ({
+                            unit: stringToMetadata(pricing.unit),
+                            amount: pricing.amount.toString(),
+                          }),
+                        ) ?? [],
+                    }
+                  : {
+                      pricingType: PricingType.Free,
+                    },
               image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
               metadata_version: request.metadataVersion.toString(),
             };

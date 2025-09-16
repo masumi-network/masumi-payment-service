@@ -419,16 +419,39 @@ function PaymentSourceSetupScreen({
       return;
     }
 
-    await handleApiCall(
-      () =>
-        postPaymentSourceExtended({
-          client: apiClient,
-          body: {
-            network: state.network,
-            paymentType: 'Web3CardanoV1',
-            PaymentSourceConfig: {
-              rpcProviderApiKey: data.blockfrostApiKey,
-              rpcProvider: 'Blockfrost',
+    try {
+      setIsLoading(true);
+      setError('');
+
+      const response = await postPaymentSourceExtended({
+        client: apiClient,
+        body: {
+          network: state.network,
+          PaymentSourceConfig: {
+            rpcProviderApiKey: data.blockfrostApiKey,
+            rpcProvider: 'Blockfrost',
+          },
+          feeRatePermille: data.feePermille,
+          AdminWallets: adminWallets.map((w) => ({
+            walletAddress: w.walletAddress,
+          })) as [
+            { walletAddress: string },
+            { walletAddress: string },
+            { walletAddress: string },
+          ],
+          FeeReceiverNetworkWallet: data.feeReceiverWallet,
+          PurchasingWallets: [
+            {
+              walletMnemonic: buyingWallet.mnemonic,
+              collectionAddress: null,
+              note: 'Setup Buying Wallet',
+            },
+          ],
+          SellingWallets: [
+            {
+              walletMnemonic: sellingWallet.mnemonic,
+              collectionAddress: null,
+              note: 'Setup Selling Wallet',
             },
             feeRatePermille: data.feePermille,
             AdminWallets: adminWallets.map((w) => ({

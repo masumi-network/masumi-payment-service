@@ -120,11 +120,16 @@ export default function AIAgentsPage() {
             ?.toLowerCase()
             .includes(query) || false;
         const matchState = agent.state?.toLowerCase().includes(query) || false;
-        const matchPrice = agent.AgentPricing?.Pricing?.[0]?.amount
-          ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-              .toFixed(2)
-              .includes(query)
-          : false;
+        const matchPrice =
+          agent.AgentPricing &&
+          agent.AgentPricing.pricingType == 'Fixed' &&
+          agent.AgentPricing.Pricing?.[0]?.amount
+            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
+                .toFixed(2)
+                .includes(query)
+            : agent.AgentPricing &&
+              agent.AgentPricing.pricingType == 'Free' &&
+              'free'.includes(query);
 
         return (
           matchName ||
@@ -562,13 +567,19 @@ export default function AIAgentsPage() {
                         </div>
                       </td>
                       <td className="p-4 text-sm truncate max-w-[100px]">
-                        {agent.AgentPricing?.Pricing?.map((price, index) => (
-                          <div key={index} className="whitespace-nowrap">
-                            {price.unit === 'lovelace' || !price.unit
-                              ? `${useFormatPrice(price.amount)} ADA`
-                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                          </div>
-                        ))}
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <div className="whitespace-nowrap">Free</div>
+                          )}
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Fixed' &&
+                          agent.AgentPricing.Pricing?.map((price, index) => (
+                            <div key={index} className="whitespace-nowrap">
+                              {price.unit === 'lovelace' || !price.unit
+                                ? `${useFormatPrice(price.amount)} ADA`
+                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                            </div>
+                          ))}
                       </td>
                       <td className="p-4">
                         {agent.Tags.length > 0 && (

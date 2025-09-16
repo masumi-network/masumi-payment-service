@@ -151,6 +151,37 @@ export type PostWalletResponses = {
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
 
+export type PostRevealDataData = {
+    body?: {
+        signature: string;
+        key: string;
+        walletAddress: string;
+        validUntil: number;
+        /**
+         * The blockchain identifier, for which the data should be revealed
+         */
+        blockchainIdentifier: string;
+        /**
+         * The action to perform
+         */
+        action: 'reveal_data';
+    };
+    path?: never;
+    query?: never;
+    url: '/reveal-data/';
+};
+
+export type PostRevealDataResponses = {
+    /**
+     * Revealed data
+     */
+    200: {
+        isValid: boolean;
+    };
+};
+
+export type PostRevealDataResponse = PostRevealDataResponses[keyof PostRevealDataResponses];
+
 export type DeleteApiKeyData = {
     body?: {
         /**
@@ -486,7 +517,6 @@ export type GetPaymentResponses = {
                     network: 'Preprod' | 'Mainnet';
                     smartContractAddress: string;
                     policyId: string | null;
-                    paymentType: 'Web3CardanoV1';
                 };
                 BuyerWallet: {
                     id: string;
@@ -526,10 +556,6 @@ export type PostPaymentData = {
             amount: string;
             unit: string;
         }>;
-        /**
-         * The type of payment contract used
-         */
-        paymentType: 'Web3CardanoV1';
         /**
          * The time after which the payment has to be submitted to the smart contract
          */
@@ -617,7 +643,6 @@ export type PostPaymentResponses = {
                 network: 'Preprod' | 'Mainnet';
                 smartContractAddress: string;
                 policyId: string | null;
-                paymentType: 'Web3CardanoV1';
             };
             BuyerWallet: {
                 id: string;
@@ -713,7 +738,6 @@ export type PostPaymentSubmitResultResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
             };
             BuyerWallet: {
                 id: string;
@@ -805,7 +829,6 @@ export type PostPaymentAuthorizeRefundResponses = {
                 network: 'Preprod' | 'Mainnet';
                 smartContractAddress: string;
                 policyId: string | null;
-                paymentType: 'Web3CardanoV1';
             };
             BuyerWallet: {
                 id: string;
@@ -928,7 +951,6 @@ export type GetPurchaseResponses = {
                     network: 'Preprod' | 'Mainnet';
                     smartContractAddress: string;
                     policyId: string | null;
-                    paymentType: 'Web3CardanoV1';
                 };
                 SellerWallet: {
                     id: string;
@@ -976,10 +998,6 @@ export type PostPurchaseData = {
             amount: string;
             unit: string;
         }>;
-        /**
-         * The payment type of smart contract used
-         */
-        paymentType: 'Web3CardanoV1';
         /**
          * The time after which the purchase will be unlocked. In unix time (number)
          */
@@ -1071,7 +1089,6 @@ export type PostPurchaseErrors = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
             };
             SellerWallet: {
                 id: string;
@@ -1141,7 +1158,6 @@ export type PostPurchaseResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
             };
             SellerWallet: {
                 id: string;
@@ -1238,7 +1254,6 @@ export type PostPurchaseRequestRefundResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
             };
             SellerWallet: {
                 id: string;
@@ -1335,7 +1350,6 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
             };
             SellerWallet: {
                 id: string;
@@ -1455,7 +1469,6 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
                 network: 'Preprod' | 'Mainnet';
                 smartContractAddress: string;
                 policyId: string | null;
-                paymentType: 'Web3CardanoV1';
             };
             BuyerWallet: {
                 id: string;
@@ -1576,7 +1589,6 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
                 network: 'Preprod' | 'Mainnet';
                 smartContractAddress: string;
                 policyId: string | null;
-                paymentType: 'Web3CardanoV1';
             };
             SellerWallet: {
                 id: string;
@@ -1656,6 +1668,8 @@ export type GetRegistryWalletResponses = {
                             amount: string;
                             unit: string;
                         }>;
+                    } | {
+                        pricingType: 'Free';
                     };
                     image: string;
                     metadataVersion: number;
@@ -1789,6 +1803,8 @@ export type GetRegistryResponses = {
                         amount: string;
                         unit: string;
                     }>;
+                } | {
+                    pricingType: 'Free';
                 };
                 SmartContractWallet: {
                     walletVkey: string;
@@ -1852,6 +1868,8 @@ export type PostRegistryData = {
                 unit: string;
                 amount: string;
             }>;
+        } | {
+            pricingType: 'Free';
         };
         /**
          * Legal information about the agent
@@ -1919,6 +1937,8 @@ export type PostRegistryResponses = {
                     unit: string;
                     amount: string;
                 }>;
+            } | {
+                pricingType: 'Free';
             };
         };
     };
@@ -1989,6 +2009,8 @@ export type PostRegistryDeregisterResponses = {
                     unit: string;
                     amount: string;
                 }>;
+            } | {
+                pricingType: 'Free';
             };
         };
     };
@@ -2026,7 +2048,6 @@ export type GetPaymentSourceResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
                 lastIdentifierChecked: string | null;
                 lastCheckedAt: string | null;
                 AdminWallets: Array<{
@@ -2114,7 +2135,6 @@ export type GetPaymentSourceExtendedResponses = {
                 network: 'Preprod' | 'Mainnet';
                 policyId: string | null;
                 smartContractAddress: string;
-                paymentType: 'Web3CardanoV1';
                 PaymentSourceConfig: {
                     rpcProviderApiKey: string;
                     rpcProvider: 'Blockfrost';
@@ -2223,7 +2243,6 @@ export type PatchPaymentSourceExtendedResponses = {
             updatedAt: string;
             network: 'Preprod' | 'Mainnet';
             smartContractAddress: string;
-            paymentType: 'Web3CardanoV1';
             PaymentSourceConfig: {
                 rpcProviderApiKey: string;
                 rpcProvider: 'Blockfrost';
@@ -2265,10 +2284,6 @@ export type PostPaymentSourceExtendedData = {
          * The network the payment source will be used on
          */
         network: 'Preprod' | 'Mainnet';
-        /**
-         * The type of payment source used
-         */
-        paymentType: 'Web3CardanoV1';
         PaymentSourceConfig: {
             /**
              * The rpc provider (blockfrost) api key to be used for the payment source
@@ -2347,7 +2362,6 @@ export type PostPaymentSourceExtendedResponses = {
             updatedAt: string;
             network: 'Preprod' | 'Mainnet';
             smartContractAddress: string;
-            paymentType: 'Web3CardanoV1';
             PaymentSourceConfig: {
                 rpcProviderApiKey: string;
                 rpcProvider: 'Blockfrost';
