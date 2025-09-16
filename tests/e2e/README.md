@@ -7,16 +7,18 @@ This directory contains comprehensive end-to-end tests for the Masumi Payment Se
 The E2E tests simulate real user workflows covering the complete payment service lifecycle:
 
 1. **Complete Payment Flow with Refund** - Full agent registration → payment → purchase → funds locked → submit result → refund process
-2. **Early Refund Flow** - Refund requested before result submission  
+2. **Early Refund Flow** - Refund requested before result submission
 3. **Cancel Refund Request** - Cancel a refund after it's been requested
 4. **Agent Deregistration** - Remove agents from the registry
 
 ## 📋 Available Tests
 
 ### Part 1: Complete Flow with Refund
+
 **Filename**: `complete-flow-with-refund.test.ts`
 
 **Command**:
+
 ```bash
 npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 ```
@@ -25,10 +27,12 @@ npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 
 ---
 
-### Part 2: Early Refund Complete Flow  
+### Part 2: Early Refund Complete Flow
+
 **Filename**: `early-refund-complete-flow.test.ts`
 
 **Command**:
+
 ```bash
 npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
 ```
@@ -38,9 +42,11 @@ npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
 ---
 
 ### Part 3: Cancel Refund Request Flow
+
 **Filename**: `cancel-refund-request-flow.test.ts`
 
 **Command**:
+
 ```bash
 npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
 ```
@@ -50,9 +56,11 @@ npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
 ---
 
 ### Part 4: Agent Deregister Flow
+
 **Filename**: `agent-deregister-delete-flow.test.ts`
 
 **Command**:
+
 ```bash
 npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 ```
@@ -62,6 +70,7 @@ npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 ---
 
 ### Run All Tests
+
 ```bash
 npm run test:e2e
 ```
@@ -76,7 +85,7 @@ tests/e2e/
 │   ├── cancel-refund-request-flow.test.ts     # Part 3
 │   └── agent-deregister-delete-flow.test.ts   # Part 4
 ├── utils/                 # Reusable testing utilities
-│   ├── apiClient.ts       # HTTP client wrapper  
+│   ├── apiClient.ts       # HTTP client wrapper
 │   ├── paymentSourceHelper.ts # Dynamic database queries
 │   └── waitFor.ts         # Polling utilities
 ├── fixtures/              # Static test data and generators
@@ -103,8 +112,6 @@ The tests use your main `.env` file. Ensure these variables are set:
 # Required
 TEST_API_KEY="your-test-api-key-here"
 
-# Database (can use temporary test database)
-DATABASE_URL="postgresql://user:pass@localhost:5432/your_test_db"
 
 # Optional (defaults shown)
 TEST_NETWORK="Preprod"
@@ -146,11 +153,10 @@ npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 npm run test:e2e
 ```
 
-
-
 ## 📊 Test Scenarios
 
 ### Part 1: Complete Flow with Refund
+
 - Agent registration and confirmation
 - Payment creation with custom timing
 - Purchase creation and funds locking
@@ -159,19 +165,20 @@ npm run test:e2e
 - Admin authorization and completion
 
 ### Part 2: Early Refund Flow
+
 - Same setup as Part 1
 - Refund requested **before** result submission
 - Result submission creates disputed state
 - Admin resolves the dispute
 
 ### Part 3: Cancel Refund Request
+
 - Same setup through disputed state
 - Cancel refund request instead of authorizing
 - Returns to normal completion flow
 
 ### Part 4: Agent Deregistration
+
 - Finds existing confirmed agents
 - Calls deregister endpoint
 - Verifies deregistration state
-
-

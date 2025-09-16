@@ -104,9 +104,6 @@ export function getTestEnvironment() {
     network: (process.env.TEST_NETWORK as Network) || Network.Preprod,
     apiUrl: process.env.TEST_API_URL || 'http://localhost:3001',
     apiKey: process.env.TEST_API_KEY || 'DefaultTestApiKey12345',
-    database:
-      process.env.DATABASE_URL ||
-      'postgresql://test@localhost:5432/masumi_payment_service_test',
     timeout: {
       api: 30000, // 30 seconds
       registration: 0, // 0 = infinite wait, change to milliseconds for custom timeout
