@@ -200,17 +200,40 @@ export function AddPaymentSourceDialog({
   const onSubmit = async (data: FormSchema) => {
     setError('');
     setIsLoading(true);
-    try {
-      const adminWallets = data.useCustomAdminWallets
-        ? data.customAdminWallets
-        : DEFAULT_ADMIN_WALLETS[data.network];
-      const response = await postPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          network: data.network,
-          PaymentSourceConfig: {
-            rpcProviderApiKey: data.blockfrostApiKey,
-            rpcProvider: 'Blockfrost',
+
+    const adminWallets = data.useCustomAdminWallets
+      ? data.customAdminWallets
+      : DEFAULT_ADMIN_WALLETS[data.network];
+
+    await handleApiCall(
+      () =>
+        postPaymentSourceExtended({
+          client: apiClient,
+          body: {
+            network: data.network,
+            PaymentSourceConfig: {
+              rpcProviderApiKey: data.blockfrostApiKey,
+              rpcProvider: 'Blockfrost',
+            },
+            feeRatePermille: data.feePermille,
+            AdminWallets: adminWallets.map((w) => ({
+              walletAddress: w.walletAddress,
+            })) as [
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
+            FeeReceiverNetworkWallet: data.feeReceiverWallet,
+            PurchasingWallets: data.purchasingWallets.map((wallet) => ({
+              walletMnemonic: wallet.walletMnemonic,
+              collectionAddress: wallet.collectionAddress || null,
+              note: wallet.note || '',
+            })),
+            SellingWallets: data.sellingWallets.map((wallet) => ({
+              walletMnemonic: wallet.walletMnemonic,
+              collectionAddress: wallet.collectionAddress || null,
+              note: wallet.note || '',
+            })),
           },
         }),
       {
