@@ -1,10 +1,11 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
-import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Button } from '../ui/button';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { parseFetchError } from '@/lib/utils';
 
 type UsageCredit = {
   unit: string;
@@ -46,7 +47,17 @@ export function ApiKeyGenerateModal({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate API key');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = parseFetchError(errorData, response);
+        throw new Error(errorMessage);
+      }
+
+      const result = await response.json();
+
+      if (result.error) {
+        throw new Error(
+          result.error.message || result.error || 'Failed to generate API key',
+        );
       }
 
       toast.success('API key generated successfully');
@@ -54,7 +65,9 @@ export function ApiKeyGenerateModal({
       onClose();
     } catch (error) {
       console.error('Error generating API key:', error);
-      toast.error('Failed to generate API key');
+      const errorMessage =
+        error instanceof Error ? error.message : 'Failed to generate API key';
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
