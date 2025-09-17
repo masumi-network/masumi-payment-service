@@ -29,6 +29,8 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
+import { SERVICE_CONSTANTS } from '@/utils/config';
+import { sortAndLimitUtxos, getHighestLovelaceUtxo } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -198,34 +200,19 @@ export async function cancelRefundsV1() {
 
             const invalidBefore =
               unixTimeToEnclosingSlot(
-                Date.now() - 150000,
+                Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) - 1;
 
             const invalidAfter =
               unixTimeToEnclosingSlot(
-                Date.now() + 150000,
+                Date.now() + SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) + 5;
 
             //sort by biggest lovelace first
-            const sortedUtxosByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
-            const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
-              0,
-              Math.min(4, sortedUtxosByLovelaceDesc.length),
-            );
+            const limitedUtxos = sortAndLimitUtxos(utxos);
+            const highestLovelaceUtxo = getHighestLovelaceUtxo(utxos);
 
             const evaluationTx =
               await generateMasumiSmartContractInteractionTransaction(
@@ -235,7 +222,7 @@ export async function cancelRefundsV1() {
                 script,
                 address,
                 utxo,
-                sortedUtxosByLovelaceDesc[0],
+                highestLovelaceUtxo,
                 limitedUtxos,
                 datum.value,
                 invalidBefore,
@@ -252,7 +239,7 @@ export async function cancelRefundsV1() {
                 script,
                 address,
                 utxo,
-                sortedUtxosByLovelaceDesc[0],
+                highestLovelaceUtxo,
                 limitedUtxos,
                 datum.value,
                 invalidBefore,

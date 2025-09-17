@@ -25,7 +25,8 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
-import { CONSTANTS } from '@/utils/config';
+import { CONSTANTS, SERVICE_CONSTANTS } from '@/utils/config';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -89,12 +90,6 @@ export async function collectOutstandingPaymentsV1() {
             }
             if (request.SmartContractWallet == null)
               throw new Error('Smart contract wallet not found');
-
-            if (request.collateralReturnLovelace == null) {
-              throw new Error(
-                'Collateral return lovelace is null, this is deprecated',
-              );
-            }
 
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentContract.network,
@@ -199,13 +194,13 @@ export async function collectOutstandingPaymentsV1() {
 
             const invalidBefore =
               unixTimeToEnclosingSlot(
-                Date.now() - 150000,
+                Date.now() - SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) - 1;
 
             const invalidAfter =
               unixTimeToEnclosingSlot(
-                Date.now() + 150000,
+                Date.now() + SERVICE_CONSTANTS.TRANSACTION.timeBufferMs,
                 SLOT_CONFIG_NETWORK[network],
               ) + 5;
 
@@ -274,24 +269,7 @@ export async function collectOutstandingPaymentsV1() {
             if (collectionAddress == null || collectionAddress == '') {
               collectionAddress = request.SmartContractWallet.walletAddress;
             }
-            const utxosSortedByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
-
-            const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
-              0,
-              Math.min(4, utxosSortedByLovelaceDesc.length),
-            );
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
 
             const collateralUtxo = limitedFilteredUtxos[0];
 
