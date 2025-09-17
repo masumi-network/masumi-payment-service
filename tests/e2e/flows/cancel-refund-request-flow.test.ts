@@ -25,6 +25,7 @@ import {
   submitResult,
   waitForDisputed,
   cancelRefundRequest,
+  deregisterAgent,
 } from '../helperFunctions';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
@@ -199,6 +200,14 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
         7. Waited for Disputed state
         8. 🚫 CANCELLED refund request → COMPLETE
       `);
+
+      // ============================
+      // CLEANUP: DEREGISTER AGENT (Fire and forget)
+      // ============================
+      console.log('Initiating agent deregistration');
+      deregisterAgent(testNetwork, agent.agentIdentifier).catch((error) => {
+        console.log(`Deregistration failed (non-critical): ${error.message}`);
+      });
     },
     // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
     (() => {

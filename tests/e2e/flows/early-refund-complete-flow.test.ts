@@ -22,9 +22,11 @@ import {
   createPurchase,
   waitForFundsLocked,
   requestRefund,
+  waitForRefundRequested,
   submitResult,
   waitForDisputed,
   authorizeRefund,
+  deregisterAgent,
 } from '../helperFunctions';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
@@ -132,6 +134,14 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       await waitForFundsLocked(payment.blockchainIdentifier, testNetwork);
 
       // ============================
+      // BLOCKCHAIN STABILIZATION WAIT
+      // ============================
+      console.log(
+        '⏳ Waiting 60 seconds for blockchain state to stabilize before refund request...',
+      );
+      await new Promise((resolve) => setTimeout(resolve, 60000)); // 60 seconds
+
+      // ============================
       // STEP 5: REQUEST REFUND (EARLY - WHILE FUNDS LOCKED) (Using Helper Function)
       // ============================
       console.log(
@@ -142,6 +152,14 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       console.log(
         '✅ Early refund request submitted while funds were still locked',
       );
+
+      // ============================
+      // WAIT FOR REFUND REQUESTED STATE (Using Helper Function)
+      // ============================
+      console.log(
+        '⏳ Waiting for refund request to be processed on blockchain...',
+      );
+      await waitForRefundRequested(payment.blockchainIdentifier, testNetwork);
 
       // ============================
       // STEP 6: SUBMIT RESULT (Using Helper Function)
@@ -201,6 +219,14 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
         7. Waited for Disputed state
         8. Admin authorized refund → COMPLETE
       `);
+
+      // ============================
+      // CLEANUP: DEREGISTER AGENT (Fire and forget)
+      // ============================
+      console.log('Initiating agent deregistration ');
+      deregisterAgent(testNetwork, agent.agentIdentifier).catch((error) => {
+        console.log(`Deregistration failed (non-critical): ${error.message}`);
+      });
     },
     // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
     (() => {

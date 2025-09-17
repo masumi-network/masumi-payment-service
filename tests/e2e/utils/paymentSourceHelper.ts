@@ -33,13 +33,8 @@ export async function getActiveSmartContractAddress(
       );
     }
 
-    console.log(
-      `✅ Found active PaymentSource for ${network}: ${activePaymentSource.smartContractAddress}`,
-    );
-
     return activePaymentSource.smartContractAddress;
   } catch (error) {
-    console.error('❌ Error querying active smart contract address:', error);
     throw error;
   } finally {
     await prisma.$disconnect();

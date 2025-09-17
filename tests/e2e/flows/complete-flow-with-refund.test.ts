@@ -21,6 +21,7 @@ import {
   requestRefund,
   waitForDisputed,
   authorizeRefund,
+  deregisterAgent,
   TimingConfig,
 } from '../helperFunctions';
 
@@ -220,6 +221,14 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
         
         🎯 Complete 9-step refund flow successfully executed using helper functions!
       `);
+
+      // ============================
+      // CLEANUP: DEREGISTER AGENT
+      // ============================
+      console.log('Initiating agent deregistration ');
+      deregisterAgent(testNetwork, agent.agentIdentifier).catch((error) => {
+        console.log(`Deregistration failed (non-critical): ${error.message}`);
+      });
     },
     // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
     (() => {
