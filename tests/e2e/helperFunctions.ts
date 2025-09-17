@@ -235,12 +235,7 @@ export async function deregisterAgent(
   network: Network,
   agentIdentifier: string,
 ): Promise<any> {
-  console.log('🔄 [Helper] Starting agent deregistration...');
-
   // Query the active smart contract address dynamically from database
-  console.log(
-    '🔍 [Helper] Querying active smart contract address from database...',
-  );
   const activeSmartContractAddress =
     await getActiveSmartContractAddress(network);
 
@@ -258,12 +253,6 @@ export async function deregisterAgent(
 
   expect(deregisterResponse.id).toBeDefined();
   expect(deregisterResponse.state).toBe('DeregistrationRequested');
-
-  console.log(`✅ [Helper] Deregistration initiated successfully:
-    - Agent ID: ${deregisterResponse.id}  
-    - State: ${deregisterResponse.state}
-    - Agent Identifier: ${agentIdentifier}
-  `);
 
   return deregisterResponse;
 }
@@ -448,7 +437,7 @@ export async function createPurchase(
 // ============================================================================
 
 /**
- * Wait for payment to reach FundsLocked state
+ * Wait for payment and purchase to reach FundsLocked state
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
@@ -456,7 +445,9 @@ export async function waitForFundsLocked(
   blockchainIdentifier: string,
   network: Network,
 ): Promise<void> {
-  console.log('⏳ [Helper] Waiting for payment to reach FundsLocked state...');
+  console.log(
+    '⏳ [Helper] Waiting for payment and purchase to reach FundsLocked state...',
+  );
   console.log(
     '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
   );
@@ -477,25 +468,47 @@ export async function waitForFundsLocked(
       (Date.now() - fundsLockedStartTime) / 60000,
     );
     console.log(
-      `⏱️ [Helper] Checking payment state... (${elapsedMinutes}m elapsed)`,
+      `⏱️ [Helper] Checking payment and purchase states... (${elapsedMinutes}m elapsed)`,
     );
 
-    const queryResponse = await (global as any).testApiClient.queryPayments({
-      network: network,
-    });
+    // Query both payment and purchase states in parallel
+    const [paymentResponse, purchaseResponse] = await Promise.all([
+      (global as any).testApiClient.queryPayments({
+        network: network,
+      }),
+      (global as any).testApiClient.queryPurchases({
+        network: network,
+      }),
+    ]);
 
-    const currentPayment = queryResponse.Payments.find(
+    const currentPayment = paymentResponse.Payments.find(
+      (p: any) => p.blockchainIdentifier === blockchainIdentifier,
+    );
+
+    const currentPurchase = purchaseResponse.Purchases.find(
       (p: any) => p.blockchainIdentifier === blockchainIdentifier,
     );
 
     expect(currentPayment).toBeDefined();
+    expect(currentPurchase).toBeDefined();
+
+    // Verify payment state
     expect(currentPayment.onChainState).toBe('FundsLocked');
     expect(currentPayment.NextAction.requestedAction).toBe(
       'WaitingForExternalAction',
     );
 
+    // Verify purchase state matches payment state
+    expect(currentPurchase.onChainState).toBe('FundsLocked');
+    expect(currentPurchase.NextAction.requestedAction).toBe(
+      'WaitingForExternalAction',
+    );
+
     console.log(
       `📊 [Helper] Payment state: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
+    );
+    console.log(
+      `📊 [Helper] Purchase state: ${currentPurchase.onChainState}, Action: ${currentPurchase.NextAction.requestedAction}`,
     );
   });
 
@@ -507,12 +520,12 @@ export async function waitForFundsLocked(
     (Date.now() - fundsLockedStartTime) / 60000,
   );
   console.log(
-    `✅ [Helper] Payment reached FundsLocked state after ${fundsLockedMinutes}m`,
+    `✅ [Helper] Payment and purchase reached FundsLocked state after ${fundsLockedMinutes}m`,
   );
 }
 
 /**
- * Wait for payment to reach ResultSubmitted state
+ * Wait for payment and purchase to reach ResultSubmitted state
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
@@ -521,7 +534,7 @@ export async function waitForResultSubmitted(
   network: Network,
 ): Promise<void> {
   console.log(
-    '⏳ [Helper] Waiting for result processing to ResultSubmitted state...',
+    '⏳ [Helper] Waiting for payment and purchase to reach ResultSubmitted state...',
   );
   console.log(
     '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
@@ -543,26 +556,46 @@ export async function waitForResultSubmitted(
       (Date.now() - resultSubmittedStartTime) / 60000,
     );
     console.log(
-      `⏱️ [Helper] Checking for ResultSubmitted state... (${elapsedMinutes}m elapsed)`,
+      `⏱️ [Helper] Checking payment and purchase for ResultSubmitted state... (${elapsedMinutes}m elapsed)`,
     );
 
-    const queryResponse = await (global as any).testApiClient.queryPayments({
-      network: network,
-    });
+    // Query both payment and purchase states in parallel
+    const [paymentResponse, purchaseResponse] = await Promise.all([
+      (global as any).testApiClient.queryPayments({
+        network: network,
+      }),
+      (global as any).testApiClient.queryPurchases({
+        network: network,
+      }),
+    ]);
 
-    const currentPayment = queryResponse.Payments.find(
+    const currentPayment = paymentResponse.Payments.find(
+      (p: any) => p.blockchainIdentifier === blockchainIdentifier,
+    );
+
+    const currentPurchase = purchaseResponse.Purchases.find(
       (p: any) => p.blockchainIdentifier === blockchainIdentifier,
     );
 
     expect(currentPayment).toBeDefined();
+    expect(currentPurchase).toBeDefined();
+
     console.log(
       `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
+    );
+    console.log(
+      `📊 [Helper] Purchase state check: ${currentPurchase.onChainState}, Action: ${currentPurchase.NextAction.requestedAction}`,
     );
 
     // Wait specifically for ResultSubmitted state after result submission
     expect(currentPayment.onChainState).toBe('ResultSubmitted');
+    expect(currentPurchase.onChainState).toBe('ResultSubmitted');
+
     console.log(
       `✅ [Helper] Payment reached ResultSubmitted state: ${currentPayment.onChainState}`,
+    );
+    console.log(
+      `✅ [Helper] Purchase reached ResultSubmitted state: ${currentPurchase.onChainState}`,
     );
   });
 
@@ -574,12 +607,12 @@ export async function waitForResultSubmitted(
     (Date.now() - resultSubmittedStartTime) / 60000,
   );
   console.log(
-    `✅ [Helper] Result processed to ResultSubmitted state after ${resultSubmittedMinutes}m`,
+    `✅ [Helper] Payment and purchase processed to ResultSubmitted state after ${resultSubmittedMinutes}m`,
   );
 }
 
 /**
- * Wait for payment to reach Disputed state
+ * Wait for payment and purchase to reach Disputed state
  * @param blockchainIdentifier - The blockchain identifier to monitor
  * @param network - The blockchain network
  */
@@ -587,7 +620,9 @@ export async function waitForDisputed(
   blockchainIdentifier: string,
   network: Network,
 ): Promise<void> {
-  console.log('⏳ [Helper] Waiting for payment to reach Disputed state...');
+  console.log(
+    '⏳ [Helper] Waiting for payment and purchase to reach Disputed state...',
+  );
   console.log(
     '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
   );
@@ -608,30 +643,53 @@ export async function waitForDisputed(
       (Date.now() - disputedWaitStartTime) / 60000,
     );
     console.log(
-      `⏱️ [Helper] Checking payment state... (${elapsedMinutes}m elapsed)`,
+      `⏱️ [Helper] Checking payment and purchase states... (${elapsedMinutes}m elapsed)`,
     );
 
-    const queryResponse = await (global as any).testApiClient.queryPayments({
-      network: network,
-    });
+    // Query both payment and purchase states in parallel
+    const [paymentResponse, purchaseResponse] = await Promise.all([
+      (global as any).testApiClient.queryPayments({
+        network: network,
+      }),
+      (global as any).testApiClient.queryPurchases({
+        network: network,
+      }),
+    ]);
 
-    const currentPayment = queryResponse.Payments.find(
+    const currentPayment = paymentResponse.Payments.find(
       (payment: any) => payment.blockchainIdentifier === blockchainIdentifier,
     );
 
+    const currentPurchase = purchaseResponse.Purchases.find(
+      (purchase: any) => purchase.blockchainIdentifier === blockchainIdentifier,
+    );
+
     expect(currentPayment).toBeDefined();
+    expect(currentPurchase).toBeDefined();
+
     console.log(
       `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
     );
+    console.log(
+      `📊 [Helper] Purchase state check: ${currentPurchase.onChainState}, Action: ${currentPurchase.NextAction.requestedAction}`,
+    );
 
-    // Wait until the payment reaches Disputed state after refund request
+    // Wait until both payment and purchase reach Disputed state after refund request
     expect(currentPayment.onChainState).toBe('Disputed');
     expect(currentPayment.NextAction.requestedAction).toBe(
       'WaitingForExternalAction',
     );
 
+    expect(currentPurchase.onChainState).toBe('Disputed');
+    expect(currentPurchase.NextAction.requestedAction).toBe(
+      'WaitingForExternalAction',
+    );
+
     console.log(
       `✅ [Helper] Payment now in Disputed state and ready for admin authorization`,
+    );
+    console.log(
+      `✅ [Helper] Purchase now in Disputed state and ready for admin authorization`,
     );
   });
 
@@ -643,7 +701,94 @@ export async function waitForDisputed(
     (Date.now() - disputedWaitStartTime) / 60000,
   );
   console.log(
-    `✅ [Helper] Payment reached Disputed state after ${refundStateMinutes}m`,
+    `✅ [Helper] Payment and purchase reached Disputed state after ${refundStateMinutes}m`,
+  );
+}
+
+/**
+ * Wait for payment and purchase to reach RefundRequested state
+ * @param blockchainIdentifier - The blockchain identifier to monitor
+ * @param network - The blockchain network
+ */
+export async function waitForRefundRequested(
+  blockchainIdentifier: string,
+  network: Network,
+): Promise<void> {
+  console.log(
+    '⏳ [Helper] Waiting for payment and purchase to reach RefundRequested state...',
+  );
+  console.log(
+    '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
+  );
+  console.log(
+    '⏳ [Helper] INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
+  );
+
+  const refundRequestedStartTime = Date.now();
+
+  // Configure infinite timeout for blockchain state transition
+  const originalTimeout = waitForExpect.defaults.timeout;
+  const originalInterval = waitForExpect.defaults.interval;
+  waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
+  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+
+  await waitForExpect(async () => {
+    const elapsedMinutes = Math.floor(
+      (Date.now() - refundRequestedStartTime) / 60000,
+    );
+    console.log(
+      `⏱️ [Helper] Checking payment and purchase states... (${elapsedMinutes}m elapsed)`,
+    );
+
+    // Query both payment and purchase states in parallel
+    const [paymentResponse, purchaseResponse] = await Promise.all([
+      (global as any).testApiClient.queryPayments({
+        network: network,
+      }),
+      (global as any).testApiClient.queryPurchases({
+        network: network,
+      }),
+    ]);
+
+    const currentPayment = paymentResponse.Payments.find(
+      (payment: any) => payment.blockchainIdentifier === blockchainIdentifier,
+    );
+
+    const currentPurchase = purchaseResponse.Purchases.find(
+      (purchase: any) => purchase.blockchainIdentifier === blockchainIdentifier,
+    );
+
+    expect(currentPayment).toBeDefined();
+    expect(currentPurchase).toBeDefined();
+
+    console.log(
+      `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
+    );
+    console.log(
+      `📊 [Helper] Purchase state check: ${currentPurchase.onChainState}, Action: ${currentPurchase.NextAction.requestedAction}`,
+    );
+
+    // Wait until both payment and purchase reach RefundRequested state
+    expect(currentPayment.onChainState).toBe('RefundRequested');
+    expect(currentPurchase.onChainState).toBe('RefundRequested');
+
+    console.log(
+      `✅ [Helper] Payment now in RefundRequested state and ready for result submission`,
+    );
+    console.log(
+      `✅ [Helper] Purchase now in RefundRequested state and ready for result submission`,
+    );
+  });
+
+  // Restore original timeout and interval
+  waitForExpect.defaults.timeout = originalTimeout;
+  waitForExpect.defaults.interval = originalInterval;
+
+  const refundRequestedMinutes = Math.floor(
+    (Date.now() - refundRequestedStartTime) / 60000,
+  );
+  console.log(
+    `✅ [Helper] Payment and purchase reached RefundRequested state after ${refundRequestedMinutes}m`,
   );
 }
 
