@@ -4,6 +4,7 @@ import {
   $Enums,
   HotWalletType,
   Network,
+  PaymentType,
   PricingType,
   RegistrationState,
   TransactionStatus,
@@ -68,17 +69,23 @@ export const queryRegistryRequestSchemaOutput = z.object({
         )
         .max(25),
       agentIdentifier: z.string().min(57).max(250).nullable(),
-      AgentPricing: z.object({
-        pricingType: z.enum([PricingType.Fixed]),
-        Pricing: z
-          .array(
-            z.object({
-              amount: z.string(),
-              unit: z.string().max(250),
-            }),
-          )
-          .min(1),
-      }),
+      AgentPricing: z
+        .object({
+          pricingType: z.enum([PricingType.Fixed]),
+          Pricing: z
+            .array(
+              z.object({
+                amount: z.string(),
+                unit: z.string().max(250),
+              }),
+            )
+            .min(1),
+        })
+        .or(
+          z.object({
+            pricingType: z.enum([PricingType.Free]),
+          }),
+        ),
       SmartContractWallet: z.object({
         walletVkey: z.string(),
         walletAddress: z.string(),
@@ -155,14 +162,19 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
           terms: item.terms,
           other: item.other,
         },
-        AgentPricing: {
-          pricingType: PricingType.Fixed,
-          Pricing:
-            item.Pricing.FixedPricing?.Amounts.map((price) => ({
-              unit: price.unit,
-              amount: price.amount.toString(),
-            })) ?? [],
-        },
+        AgentPricing:
+          item.Pricing.pricingType == PricingType.Fixed
+            ? {
+                pricingType: PricingType.Fixed,
+                Pricing:
+                  item.Pricing.FixedPricing?.Amounts.map((price) => ({
+                    unit: price.unit,
+                    amount: price.amount.toString(),
+                  })) ?? [],
+              }
+            : {
+                pricingType: PricingType.Free,
+              },
         Tags: item.tags,
       })),
     };
@@ -200,19 +212,25 @@ export const registerAgentSchemaInput = z.object({
   Capability: z
     .object({ name: z.string().max(250), version: z.string().max(250) })
     .describe('Provide information about the used AI model and version'),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z
-      .array(
-        z.object({
-          unit: z.string().max(250),
-          amount: z.string().max(25),
-        }),
-      )
-      .min(1)
-      .max(5)
-      .describe('Price for a default interaction'),
-  }),
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z
+        .array(
+          z.object({
+            unit: z.string().max(250),
+            amount: z.string().max(25),
+          }),
+        )
+        .min(1)
+        .max(5)
+        .describe('Price for a default interaction'),
+    })
+    .or(
+      z.object({
+        pricingType: z.enum([PricingType.Free]),
+      }),
+    ),
   Legal: z
     .object({
       privacyPolicy: z.string().max(250).optional(),
@@ -266,15 +284,21 @@ export const registerAgentSchemaOutput = z.object({
       }),
     )
     .max(25),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z.array(
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+    })
+    .or(
       z.object({
-        unit: z.string(),
-        amount: z.string(),
+        pricingType: z.enum([PricingType.Free]),
       }),
     ),
-  }),
 });
 
 export const registerAgentPost = payAuthenticatedEndpointFactory.build({
@@ -421,6 +445,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           terms: input.Legal?.terms,
           privacyPolicy: input.Legal?.privacyPolicy,
           authorName: input.Author.name,
+          paymentType:
+            input.AgentPricing.pricingType == PricingType.Fixed
+              ? PaymentType.None
+              : PaymentType.Web3CardanoV1,
           authorContactEmail: input.Author.contactEmail,
           authorContactOther: input.Author.contactOther,
           authorOrganization: input.Author.organization,
@@ -448,24 +476,29 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
           tags: input.Tags,
           Pricing: {
-            create: {
-              pricingType: input.AgentPricing.pricingType,
-              FixedPricing: {
-                create: {
-                  Amounts: {
-                    createMany: {
-                      data: input.AgentPricing.Pricing.map((price) => ({
-                        unit:
-                          price.unit.toLowerCase() == 'lovelace'
-                            ? ''
-                            : price.unit,
-                        amount: BigInt(price.amount),
-                      })),
+            create:
+              input.AgentPricing.pricingType == PricingType.Fixed
+                ? {
+                    pricingType: input.AgentPricing.pricingType,
+                    FixedPricing: {
+                      create: {
+                        Amounts: {
+                          createMany: {
+                            data: input.AgentPricing.Pricing.map((price) => ({
+                              unit:
+                                price.unit.toLowerCase() == 'lovelace'
+                                  ? ''
+                                  : price.unit,
+                              amount: BigInt(price.amount),
+                            })),
+                          },
+                        },
+                      },
                     },
+                  }
+                : {
+                    pricingType: input.AgentPricing.pricingType,
                   },
-                },
-              },
-            },
           },
         },
         include: {
@@ -494,14 +527,19 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           contactOther: result.authorContactOther,
           organization: result.authorOrganization,
         },
-        AgentPricing: {
-          pricingType: PricingType.Fixed,
-          Pricing:
-            result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-              unit: pricing.unit,
-              amount: pricing.amount.toString(),
-            })) ?? [],
-        },
+        AgentPricing:
+          input.AgentPricing.pricingType == PricingType.Fixed
+            ? {
+                pricingType: PricingType.Fixed,
+                Pricing:
+                  result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+                    unit: pricing.unit,
+                    amount: pricing.amount.toString(),
+                  })) ?? [],
+              }
+            : {
+                pricingType: PricingType.Free,
+              },
         Tags: result.tags,
       };
     } catch (error: unknown) {

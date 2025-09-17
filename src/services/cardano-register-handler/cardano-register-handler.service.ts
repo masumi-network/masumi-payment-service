@@ -71,14 +71,28 @@ export async function registerAgentV1() {
             }),
           ],
           operations: registryRequests.map((request) => async () => {
-            if (request.Pricing.pricingType != PricingType.Fixed) {
-              throw new Error('Other than fixed pricing is not supported yet');
+            if (
+              request.Pricing.pricingType != PricingType.Fixed &&
+              request.Pricing.pricingType != PricingType.Free
+            ) {
+              throw new Error(
+                'Other than fixed and free pricing is not supported yet',
+              );
             }
             if (
-              request.Pricing.FixedPricing == null ||
-              request.Pricing.FixedPricing.Amounts.length == 0
+              request.Pricing.pricingType == PricingType.Fixed &&
+              (request.Pricing.FixedPricing == null ||
+                request.Pricing.FixedPricing.Amounts.length == 0)
             ) {
               throw new Error('No fixed pricing found, this is likely a bug');
+            }
+            if (
+              request.Pricing.pricingType == PricingType.Free &&
+              request.Pricing.FixedPricing != null
+            ) {
+              throw new Error(
+                'Free pricing requires no fixed pricing to be set',
+              );
             }
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentSource.network,
@@ -154,14 +168,21 @@ export async function registerAgentV1() {
                 other: stringToMetadata(request.other),
               },
               tags: request.tags,
-              agentPricing: {
-                pricingType: request.Pricing.pricingType,
-                fixedPricing:
-                  request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                    unit: stringToMetadata(pricing.unit),
-                    amount: pricing.amount.toString(),
-                  })) ?? [],
-              },
+              agentPricing:
+                request.Pricing.pricingType == PricingType.Fixed
+                  ? {
+                      pricingType: PricingType.Fixed,
+                      fixedPricing:
+                        request.Pricing.FixedPricing?.Amounts.map(
+                          (pricing) => ({
+                            unit: stringToMetadata(pricing.unit),
+                            amount: pricing.amount.toString(),
+                          }),
+                        ) ?? [],
+                    }
+                  : {
+                      pricingType: PricingType.Free,
+                    },
               image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
               metadata_version: request.metadataVersion.toString(),
             };

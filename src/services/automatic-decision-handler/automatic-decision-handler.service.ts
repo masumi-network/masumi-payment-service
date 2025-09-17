@@ -1,7 +1,6 @@
 import {
   PaymentAction,
   PurchasingAction,
-  PaymentType,
   PaymentSource,
   OnChainState,
 } from '@prisma/client';
@@ -24,7 +23,6 @@ export async function handleAutomaticDecisions() {
   try {
     const paymentSources = await prisma.paymentSource.findMany({
       where: {
-        paymentType: PaymentType.Web3CardanoV1,
         syncInProgress: false,
         deletedAt: null,
       },

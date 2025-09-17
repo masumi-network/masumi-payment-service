@@ -2,7 +2,6 @@ import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import {
   Network,
-  PaymentType,
   Permission,
   PurchasingAction,
   WalletType,
@@ -14,7 +13,6 @@ async function handlePurchaseCreditInit({
   metadata,
   network,
   blockchainIdentifier,
-  paymentType,
   contractAddress,
   sellerVkey,
   sellerAddress,
@@ -29,7 +27,6 @@ async function handlePurchaseCreditInit({
   metadata: string | null | undefined;
   network: Network;
   blockchainIdentifier: string;
-  paymentType: PaymentType;
   contractAddress: string;
   sellerVkey: string;
   sellerAddress: string;
@@ -130,7 +127,6 @@ async function handlePurchaseCreditInit({
             network: network,
             smartContractAddress: contractAddress,
           },
-          paymentType: paymentType,
           deletedAt: null,
         },
       });

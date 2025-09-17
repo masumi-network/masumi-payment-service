@@ -1584,20 +1584,13 @@
                                                                     "policyId": {
                                                                         "type": "string",
                                                                         "nullable": true
-                                                                    },
-                                                                    "paymentType": {
-                                                                        "type": "string",
-                                                                        "enum": [
-                                                                            "Web3CardanoV1"
-                                                                        ]
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "id",
                                                                     "network",
                                                                     "smartContractAddress",
-                                                                    "policyId",
-                                                                    "paymentType"
+                                                                    "policyId"
                                                                 ]
                                                             },
                                                             "BuyerWallet": {
@@ -1720,8 +1713,7 @@
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
                                                         "smartContractAddress": "address",
-                                                        "policyId": "policy_id",
-                                                        "paymentType": "Web3CardanoV1"
+                                                        "policyId": "policy_id"
                                                     },
                                                     "WithdrawnForSeller": [],
                                                     "WithdrawnForBuyer": [],
@@ -1805,13 +1797,6 @@
                                         },
                                         "maxItems": 7,
                                         "description": "The amounts of the payment, should be null for fixed amount"
-                                    },
-                                    "paymentType": {
-                                        "type": "string",
-                                        "enum": [
-                                            "Web3CardanoV1"
-                                        ],
-                                        "description": "The type of payment contract used"
                                     },
                                     "payByTime": {
                                         "anyOf": [
@@ -1898,7 +1883,6 @@
                                     "inputHash",
                                     "network",
                                     "agentIdentifier",
-                                    "paymentType",
                                     "identifierFromPurchaser"
                                 ],
                                 "example": {
@@ -1907,7 +1891,6 @@
                                     "inputHash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
                                     "payByTime": "1970-01-20T20:00:26.260Z",
                                     "metadata": "(private) metadata to be stored with the payment request",
-                                    "paymentType": "Web3CardanoV1",
                                     "submitResultTime": "1970-01-20T20:00:36.260Z",
                                     "identifierFromPurchaser": "aabbaabb11221122aabb"
                                 }
@@ -2092,20 +2075,13 @@
                                                         "policyId": {
                                                             "type": "string",
                                                             "nullable": true
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "smartContractAddress",
-                                                        "policyId",
-                                                        "paymentType"
+                                                        "policyId"
                                                     ]
                                                 },
                                                 "BuyerWallet": {
@@ -2213,8 +2189,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
@@ -2469,20 +2444,13 @@
                                                         },
                                                         "smartContractAddress": {
                                                             "type": "string"
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "policyId",
-                                                        "smartContractAddress",
-                                                        "paymentType"
+                                                        "smartContractAddress"
                                                     ]
                                                 },
                                                 "BuyerWallet": {
@@ -2590,8 +2558,7 @@
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
                                                 "policyId": "policy_id",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
@@ -2839,20 +2806,13 @@
                                                         "policyId": {
                                                             "type": "string",
                                                             "nullable": true
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "smartContractAddress",
-                                                        "policyId",
-                                                        "paymentType"
+                                                        "policyId"
                                                     ]
                                                 },
                                                 "BuyerWallet": {
@@ -2960,8 +2920,7 @@
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
                                                 "policyId": "policy_id",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
@@ -3327,20 +3286,13 @@
                                                                     "policyId": {
                                                                         "type": "string",
                                                                         "nullable": true
-                                                                    },
-                                                                    "paymentType": {
-                                                                        "type": "string",
-                                                                        "enum": [
-                                                                            "Web3CardanoV1"
-                                                                        ]
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "id",
                                                                     "network",
                                                                     "smartContractAddress",
-                                                                    "policyId",
-                                                                    "paymentType"
+                                                                    "policyId"
                                                                 ]
                                                             },
                                                             "SellerWallet": {
@@ -3457,8 +3409,7 @@
                                                         "id": "payment_source_id",
                                                         "network": "Preprod",
                                                         "policyId": "policy_id",
-                                                        "smartContractAddress": "address",
-                                                        "paymentType": "Web3CardanoV1"
+                                                        "smartContractAddress": "address"
                                                     },
                                                     "SellerWallet": null,
                                                     "SmartContractWallet": null,
@@ -3554,13 +3505,6 @@
                                         "maxItems": 7,
                                         "description": "The amounts to be paid for the purchase"
                                     },
-                                    "paymentType": {
-                                        "type": "string",
-                                        "enum": [
-                                            "Web3CardanoV1"
-                                        ],
-                                        "description": "The payment type of smart contract used"
-                                    },
                                     "unlockTime": {
                                         "type": "string",
                                         "description": "The time after which the purchase will be unlocked. In unix time (number)"
@@ -3594,7 +3538,6 @@
                                     "inputHash",
                                     "sellerVkey",
                                     "agentIdentifier",
-                                    "paymentType",
                                     "unlockTime",
                                     "externalDisputeUnlockTime",
                                     "submitResultTime",
@@ -3605,7 +3548,6 @@
                                     "identifierFromPurchaser": "aabbaabb11221122aabb",
                                     "network": "Preprod",
                                     "sellerVkey": "seller_vkey",
-                                    "paymentType": "Web3CardanoV1",
                                     "blockchainIdentifier": "blockchain_identifier",
                                     "payByTime": "1713626260",
                                     "submitResultTime": "1713636260",
@@ -3828,20 +3770,13 @@
                                                         },
                                                         "smartContractAddress": {
                                                             "type": "string"
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "policyId",
-                                                        "smartContractAddress",
-                                                        "paymentType"
+                                                        "smartContractAddress"
                                                     ]
                                                 },
                                                 "SellerWallet": {
@@ -3950,8 +3885,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
                                             "SmartContractWallet": null,
@@ -4196,20 +4130,13 @@
                                                         },
                                                         "smartContractAddress": {
                                                             "type": "string"
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "policyId",
-                                                        "smartContractAddress",
-                                                        "paymentType"
+                                                        "smartContractAddress"
                                                     ]
                                                 },
                                                 "SellerWallet": {
@@ -4322,8 +4249,7 @@
                                             "id": "payment_source_id",
                                             "policyId": "policy_id",
                                             "network": "Preprod",
-                                            "smartContractAddress": "address",
-                                            "paymentType": "Web3CardanoV1"
+                                            "smartContractAddress": "address"
                                         },
                                         "SellerWallet": null,
                                         "SmartContractWallet": null,
@@ -4593,20 +4519,13 @@
                                                         },
                                                         "smartContractAddress": {
                                                             "type": "string"
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "policyId",
-                                                        "smartContractAddress",
-                                                        "paymentType"
+                                                        "smartContractAddress"
                                                     ]
                                                 },
                                                 "SellerWallet": {
@@ -4713,8 +4632,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
                                             "SmartContractWallet": null,
@@ -4991,20 +4909,13 @@
                                                         },
                                                         "smartContractAddress": {
                                                             "type": "string"
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "policyId",
-                                                        "smartContractAddress",
-                                                        "paymentType"
+                                                        "smartContractAddress"
                                                     ]
                                                 },
                                                 "SellerWallet": {
@@ -5111,8 +5022,7 @@
                                                 "id": "payment_source_id",
                                                 "policyId": "policy_id",
                                                 "network": "Preprod",
-                                                "smartContractAddress": "address",
-                                                "paymentType": "Web3CardanoV1"
+                                                "smartContractAddress": "address"
                                             },
                                             "SellerWallet": null,
                                             "SmartContractWallet": null,
@@ -5436,20 +5346,13 @@
                                                         "policyId": {
                                                             "type": "string",
                                                             "nullable": true
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "smartContractAddress",
-                                                        "policyId",
-                                                        "paymentType"
+                                                        "policyId"
                                                     ]
                                                 },
                                                 "BuyerWallet": {
@@ -5564,8 +5467,7 @@
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
                                                 "smartContractAddress": "address",
-                                                "policyId": "policy_id",
-                                                "paymentType": "Web3CardanoV1"
+                                                "policyId": "policy_id"
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
@@ -5911,20 +5813,13 @@
                                                         "policyId": {
                                                             "type": "string",
                                                             "nullable": true
-                                                        },
-                                                        "paymentType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Web3CardanoV1"
-                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "network",
                                                         "smartContractAddress",
-                                                        "policyId",
-                                                        "paymentType"
+                                                        "policyId"
                                                     ]
                                                 },
                                                 "SellerWallet": {
@@ -6039,8 +5934,7 @@
                                                 "id": "payment_source_id",
                                                 "network": "Preprod",
                                                 "smartContractAddress": "address",
-                                                "policyId": "policy_id",
-                                                "paymentType": "Web3CardanoV1"
+                                                "policyId": "policy_id"
                                             },
                                             "SellerWallet": null,
                                             "SmartContractWallet": null,
@@ -6260,38 +6154,56 @@
                                                                         }
                                                                     },
                                                                     "AgentPricing": {
-                                                                        "type": "object",
-                                                                        "properties": {
-                                                                            "pricingType": {
-                                                                                "type": "string",
-                                                                                "enum": [
-                                                                                    "Fixed"
+                                                                        "anyOf": [
+                                                                            {
+                                                                                "type": "object",
+                                                                                "properties": {
+                                                                                    "pricingType": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "Fixed"
+                                                                                        ]
+                                                                                    },
+                                                                                    "Pricing": {
+                                                                                        "type": "array",
+                                                                                        "items": {
+                                                                                            "type": "object",
+                                                                                            "properties": {
+                                                                                                "amount": {
+                                                                                                    "type": "string"
+                                                                                                },
+                                                                                                "unit": {
+                                                                                                    "type": "string",
+                                                                                                    "maxLength": 250
+                                                                                                }
+                                                                                            },
+                                                                                            "required": [
+                                                                                                "amount",
+                                                                                                "unit"
+                                                                                            ]
+                                                                                        },
+                                                                                        "minItems": 1
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "pricingType",
+                                                                                    "Pricing"
                                                                                 ]
                                                                             },
-                                                                            "Pricing": {
-                                                                                "type": "array",
-                                                                                "items": {
-                                                                                    "type": "object",
-                                                                                    "properties": {
-                                                                                        "amount": {
-                                                                                            "type": "string"
-                                                                                        },
-                                                                                        "unit": {
-                                                                                            "type": "string",
-                                                                                            "maxLength": 250
-                                                                                        }
-                                                                                    },
-                                                                                    "required": [
-                                                                                        "amount",
-                                                                                        "unit"
-                                                                                    ]
+                                                                            {
+                                                                                "type": "object",
+                                                                                "properties": {
+                                                                                    "pricingType": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "Free"
+                                                                                        ]
+                                                                                    }
                                                                                 },
-                                                                                "minItems": 1
+                                                                                "required": [
+                                                                                    "pricingType"
+                                                                                ]
                                                                             }
-                                                                        },
-                                                                        "required": [
-                                                                            "pricingType",
-                                                                            "Pricing"
                                                                         ]
                                                                     },
                                                                     "image": {
@@ -6601,38 +6513,56 @@
                                                                 "maxLength": 250
                                                             },
                                                             "AgentPricing": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "pricingType": {
-                                                                        "type": "string",
-                                                                        "enum": [
-                                                                            "Fixed"
+                                                                "anyOf": [
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "pricingType": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "Fixed"
+                                                                                ]
+                                                                            },
+                                                                            "Pricing": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "amount": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "unit": {
+                                                                                            "type": "string",
+                                                                                            "maxLength": 250
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "amount",
+                                                                                        "unit"
+                                                                                    ]
+                                                                                },
+                                                                                "minItems": 1
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "pricingType",
+                                                                            "Pricing"
                                                                         ]
                                                                     },
-                                                                    "Pricing": {
-                                                                        "type": "array",
-                                                                        "items": {
-                                                                            "type": "object",
-                                                                            "properties": {
-                                                                                "amount": {
-                                                                                    "type": "string"
-                                                                                },
-                                                                                "unit": {
-                                                                                    "type": "string",
-                                                                                    "maxLength": 250
-                                                                                }
-                                                                            },
-                                                                            "required": [
-                                                                                "amount",
-                                                                                "unit"
-                                                                            ]
+                                                                    {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "pricingType": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "Free"
+                                                                                ]
+                                                                            }
                                                                         },
-                                                                        "minItems": 1
+                                                                        "required": [
+                                                                            "pricingType"
+                                                                        ]
                                                                     }
-                                                                },
-                                                                "required": [
-                                                                    "pricingType",
-                                                                    "Pricing"
                                                                 ]
                                                             },
                                                             "SmartContractWallet": {
@@ -6865,41 +6795,59 @@
                                         "description": "Provide information about the used AI model and version"
                                     },
                                     "AgentPricing": {
-                                        "type": "object",
-                                        "properties": {
-                                            "pricingType": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "Fixed"
+                                        "anyOf": [
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Fixed"
+                                                        ]
+                                                    },
+                                                    "Pricing": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "unit": {
+                                                                    "type": "string",
+                                                                    "maxLength": 250
+                                                                },
+                                                                "amount": {
+                                                                    "type": "string",
+                                                                    "maxLength": 25
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "unit",
+                                                                "amount"
+                                                            ]
+                                                        },
+                                                        "minItems": 1,
+                                                        "maxItems": 5,
+                                                        "description": "Price for a default interaction"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "pricingType",
+                                                    "Pricing"
                                                 ]
                                             },
-                                            "Pricing": {
-                                                "type": "array",
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "unit": {
-                                                            "type": "string",
-                                                            "maxLength": 250
-                                                        },
-                                                        "amount": {
-                                                            "type": "string",
-                                                            "maxLength": 25
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "unit",
-                                                        "amount"
-                                                    ]
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "pricingType": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "Free"
+                                                        ]
+                                                    }
                                                 },
-                                                "minItems": 1,
-                                                "maxItems": 5,
-                                                "description": "Price for a default interaction"
+                                                "required": [
+                                                    "pricingType"
+                                                ]
                                             }
-                                        },
-                                        "required": [
-                                            "pricingType",
-                                            "Pricing"
                                         ]
                                     },
                                     "Legal": {
@@ -7157,36 +7105,54 @@
                                                     "maxItems": 25
                                                 },
                                                 "AgentPricing": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "pricingType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Fixed"
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Fixed"
+                                                                    ]
+                                                                },
+                                                                "Pricing": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "amount": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "amount"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType",
+                                                                "Pricing"
                                                             ]
                                                         },
-                                                        "Pricing": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "unit": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "amount": {
-                                                                        "type": "string"
-                                                                    }
-                                                                },
-                                                                "required": [
-                                                                    "unit",
-                                                                    "amount"
-                                                                ]
-                                                            }
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Free"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType"
+                                                            ]
                                                         }
-                                                    },
-                                                    "required": [
-                                                        "pricingType",
-                                                        "Pricing"
                                                     ]
                                                 }
                                             },
@@ -7615,36 +7581,54 @@
                                                     "maxItems": 25
                                                 },
                                                 "AgentPricing": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "pricingType": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "Fixed"
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Fixed"
+                                                                    ]
+                                                                },
+                                                                "Pricing": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "amount": {
+                                                                                "type": "string"
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "amount"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType",
+                                                                "Pricing"
                                                             ]
                                                         },
-                                                        "Pricing": {
-                                                            "type": "array",
-                                                            "items": {
-                                                                "type": "object",
-                                                                "properties": {
-                                                                    "unit": {
-                                                                        "type": "string"
-                                                                    },
-                                                                    "amount": {
-                                                                        "type": "string"
-                                                                    }
-                                                                },
-                                                                "required": [
-                                                                    "unit",
-                                                                    "amount"
-                                                                ]
-                                                            }
+                                                        {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "pricingType": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "Free"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "pricingType"
+                                                            ]
                                                         }
-                                                    },
-                                                    "required": [
-                                                        "pricingType",
-                                                        "Pricing"
                                                     ]
                                                 }
                                             },
@@ -7804,12 +7788,6 @@
                                                             "smartContractAddress": {
                                                                 "type": "string"
                                                             },
-                                                            "paymentType": {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "Web3CardanoV1"
-                                                                ]
-                                                            },
                                                             "lastIdentifierChecked": {
                                                                 "type": "string",
                                                                 "nullable": true
@@ -7924,7 +7902,6 @@
                                                             "network",
                                                             "policyId",
                                                             "smartContractAddress",
-                                                            "paymentType",
                                                             "lastIdentifierChecked",
                                                             "lastCheckedAt",
                                                             "AdminWallets",
@@ -7954,7 +7931,6 @@
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "network": "Mainnet",
-                                                    "paymentType": "Web3CardanoV1",
                                                     "smartContractAddress": "address_of_the_smart_contract",
                                                     "policyId": "policy_id",
                                                     "AdminWallets": [
@@ -8100,12 +8076,6 @@
                                                             "smartContractAddress": {
                                                                 "type": "string"
                                                             },
-                                                            "paymentType": {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "Web3CardanoV1"
-                                                                ]
-                                                            },
                                                             "PaymentSourceConfig": {
                                                                 "type": "object",
                                                                 "properties": {
@@ -8241,7 +8211,6 @@
                                                             "network",
                                                             "policyId",
                                                             "smartContractAddress",
-                                                            "paymentType",
                                                             "PaymentSourceConfig",
                                                             "lastIdentifierChecked",
                                                             "syncInProgress",
@@ -8273,7 +8242,6 @@
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "network": "Mainnet",
-                                                    "paymentType": "Web3CardanoV1",
                                                     "feeRatePermille": 50,
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
@@ -8368,13 +8336,6 @@
                                             "Mainnet"
                                         ],
                                         "description": "The network the payment source will be used on"
-                                    },
-                                    "paymentType": {
-                                        "type": "string",
-                                        "enum": [
-                                            "Web3CardanoV1"
-                                        ],
-                                        "description": "The type of payment source used"
                                     },
                                     "PaymentSourceConfig": {
                                         "type": "object",
@@ -8504,7 +8465,6 @@
                                 },
                                 "required": [
                                     "network",
-                                    "paymentType",
                                     "PaymentSourceConfig",
                                     "feeRatePermille",
                                     "AdminWallets",
@@ -8518,7 +8478,6 @@
                                         "rpcProviderApiKey": "rpc_provider_api_key",
                                         "rpcProvider": "Blockfrost"
                                     },
-                                    "paymentType": "Web3CardanoV1",
                                     "AdminWallets": [
                                         {
                                             "walletAddress": "wallet_address_1"
@@ -8585,12 +8544,6 @@
                                                 },
                                                 "smartContractAddress": {
                                                     "type": "string"
-                                                },
-                                                "paymentType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1"
-                                                    ]
                                                 },
                                                 "PaymentSourceConfig": {
                                                     "type": "object",
@@ -8726,7 +8679,6 @@
                                                 "updatedAt",
                                                 "network",
                                                 "smartContractAddress",
-                                                "paymentType",
                                                 "PaymentSourceConfig",
                                                 "lastIdentifierChecked",
                                                 "syncInProgress",
@@ -8750,7 +8702,6 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
-                                            "paymentType": "Web3CardanoV1",
                                             "syncInProgress": true,
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "AdminWallets": [
@@ -9032,12 +8983,6 @@
                                                 "smartContractAddress": {
                                                     "type": "string"
                                                 },
-                                                "paymentType": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Web3CardanoV1"
-                                                    ]
-                                                },
                                                 "PaymentSourceConfig": {
                                                     "type": "object",
                                                     "properties": {
@@ -9172,7 +9117,6 @@
                                                 "updatedAt",
                                                 "network",
                                                 "smartContractAddress",
-                                                "paymentType",
                                                 "PaymentSourceConfig",
                                                 "lastIdentifierChecked",
                                                 "syncInProgress",
@@ -9196,7 +9140,6 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "network": "Mainnet",
-                                            "paymentType": "Web3CardanoV1",
                                             "syncInProgress": true,
                                             "smartContractAddress": "address_of_the_smart_contract",
                                             "AdminWallets": [

@@ -22,7 +22,7 @@
         "prisma:migrate:dev": "npx prisma migrate dev",
         "prisma:seed": "npx prisma db seed",
         "dev": "tsx watch ./src/index.ts",
-        "build": "npx prisma generate && pkgroll",
+        "build": "npx prisma generate && tsc --noEmit && pkgroll",
         "start:trace": "tsx --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
         "dev:trace": "tsx watch --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
         "start": "NODE_ENV=production node ./dist/index.js",

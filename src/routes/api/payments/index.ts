@@ -7,7 +7,6 @@ import {
   OnChainState,
   PaymentAction,
   PaymentErrorType,
-  PaymentType,
   PricingType,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
@@ -124,7 +123,6 @@ export const queryPaymentsSchemaOutput = z.object({
         network: z.nativeEnum(Network),
         smartContractAddress: z.string(),
         policyId: z.string().nullable(),
-        paymentType: z.nativeEnum(PaymentType),
       }),
       BuyerWallet: z
         .object({
@@ -254,9 +252,6 @@ export const createPaymentsSchemaInput = z.object({
     .max(7)
     .optional()
     .describe('The amounts of the payment, should be null for fixed amount'),
-  paymentType: z
-    .nativeEnum(PaymentType)
-    .describe('The type of payment contract used'),
   payByTime: ez
     .dateIn()
     .default(new Date(1000 * 60 * 60 * 12).toISOString())
@@ -335,7 +330,6 @@ export const createPaymentSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     smartContractAddress: z.string(),
     policyId: z.string().nullable(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   BuyerWallet: z
     .object({
