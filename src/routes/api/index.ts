@@ -10,6 +10,7 @@ import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
 import {
   deleteAgentRegistration,
+  getAgentEarnings,
   queryRegistryRequestGet,
   registerAgentPost,
 } from './registry';
@@ -82,6 +83,9 @@ export const apiRouter: Routing = {
       }),
       deregister: new DependsOnMethod({
         post: unregisterAgentPost,
+      }),
+      earnings: new DependsOnMethod({
+        get: getAgentEarnings,
       }),
     }),
     'api-key-status': new DependsOnMethod({

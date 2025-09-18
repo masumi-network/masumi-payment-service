@@ -16,6 +16,11 @@ import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/aut
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
+type FundAmount = {
+  unit: string;
+  amount: bigint;
+};
+
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
     .string()
@@ -655,6 +660,504 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
         {
           registry_id: input.id,
           operation: 'delete_agent_registration',
+          duration: Date.now() - startTime,
+        },
+      );
+
+      throw error;
+    }
+  },
+});
+
+export const getAgentEarningsSchemaInput = z.object({
+  agentIdentifier: z
+    .string()
+    .min(57)
+    .max(250)
+    .describe('The unique identifier of the agent to get earnings for'),
+  timeframe: z
+    .enum(['1d', '7d', '30d', 'monthly', 'all'])
+    .default('30d')
+    .describe('The time period to calculate earnings for'),
+  network: z
+    .nativeEnum(Network)
+    .describe('The Cardano network to query earnings from'),
+});
+
+export const getAgentEarningsSchemaOutput = z.object({
+  agentIdentifier: z.string(),
+  timeframe: z.string(),
+  periodStart: z.date(),
+  periodEnd: z.date(),
+  totalTransactions: z.number(),
+  totalEarnings: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  totalFeesPaid: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  totalRevenue: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  monthlyBreakdown: z
+    .array(
+      z.object({
+        month: z.string(),
+        year: z.number(),
+        earnings: z.array(
+          z.object({
+            unit: z.string(),
+            amount: z.string(),
+          }),
+        ),
+        transactions: z.number(),
+      }),
+    )
+    .optional(),
+  dailyEarnings: z.array(
+    z.object({
+      date: z.string(),
+      earnings: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      revenue: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      fees: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      transactions: z.number(),
+    }),
+  ),
+});
+
+export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: getAgentEarningsSchemaInput,
+  output: getAgentEarningsSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof getAgentEarningsSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    const startTime = Date.now();
+    try {
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        options.networkLimit,
+        input.network,
+        options.permission,
+      );
+
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let periodStart: Date;
+      const periodEnd: Date = now;
+      let includeMonthlyBreakdown = false;
+
+      switch (input.timeframe) {
+        case '1d':
+          periodStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case '7d':
+          periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case '30d':
+          periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'monthly':
+          // Get data for the last 12 months
+          periodStart = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+          includeMonthlyBreakdown = true;
+          break;
+        case 'all':
+          periodStart = new Date('2020-01-01'); // Use a very early date
+          break;
+        default:
+          periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      // Import decodeBlockchainIdentifier utility
+      const { decodeBlockchainIdentifier } = await import(
+        '@/utils/generator/blockchain-identifier-generator'
+      );
+
+      // Query PurchaseRequests with the date filter
+      const purchaseRequests = await prisma.purchaseRequest.findMany({
+        where: {
+          createdAt: {
+            gte: periodStart,
+            lte: periodEnd,
+          },
+          PaymentSource: {
+            network: input.network,
+            deletedAt: null,
+          },
+        },
+        include: {
+          PaidFunds: true,
+          WithdrawnForSeller: true,
+          PaymentSource: true,
+        },
+      });
+
+      // Query PaymentRequests with the date filter
+      const paymentRequests = await prisma.paymentRequest.findMany({
+        where: {
+          createdAt: {
+            gte: periodStart,
+            lte: periodEnd,
+          },
+          PaymentSource: {
+            network: input.network,
+            deletedAt: null,
+          },
+        },
+        include: {
+          RequestedFunds: true,
+          WithdrawnForSeller: true,
+          PaymentSource: true,
+        },
+      });
+
+      // Filter and aggregate earnings for the specific agent
+      const agentPurchases = purchaseRequests.filter((purchase) => {
+        const decoded = decodeBlockchainIdentifier(
+          purchase.blockchainIdentifier,
+        );
+        return decoded?.agentIdentifier === input.agentIdentifier;
+      });
+
+      const agentPayments = paymentRequests.filter((payment) => {
+        const decoded = decodeBlockchainIdentifier(
+          payment.blockchainIdentifier,
+        );
+        return decoded?.agentIdentifier === input.agentIdentifier;
+      });
+
+      // Aggregate earnings by token unit
+      const earningsMap = new Map<string, bigint>();
+      const revenueMap = new Map<string, bigint>();
+      const feesMap = new Map<string, bigint>();
+
+      // Process purchase earnings
+      agentPurchases.forEach((purchase) => {
+        // Add to revenue (total paid by customers)
+        purchase.PaidFunds.forEach((fund: FundAmount) => {
+          const unit = fund.unit || 'lovelace';
+          revenueMap.set(
+            unit,
+            (revenueMap.get(unit) || BigInt(0)) + fund.amount,
+          );
+        });
+
+        // Add to earnings (what agent actually received)
+        purchase.WithdrawnForSeller.forEach((withdrawn: FundAmount) => {
+          const unit = withdrawn.unit || 'lovelace';
+          earningsMap.set(
+            unit,
+            (earningsMap.get(unit) || BigInt(0)) + withdrawn.amount,
+          );
+        });
+
+        // Quick fix: estimate earnings for withdrawn transactions with missing withdrawal data
+        if (
+          purchase.onChainState === 'Withdrawn' &&
+          purchase.WithdrawnForSeller.length === 0
+        ) {
+          purchase.PaidFunds.forEach((fund: FundAmount) => {
+            const unit = fund.unit || 'lovelace';
+            // Use actual fee rate: earnings = revenue * (1000 - feeRatePermille) / 1000
+            const feeRate = BigInt(purchase.PaymentSource.feeRatePermille);
+            const estimatedEarnings = (fund.amount * (1000n - feeRate)) / 1000n;
+            earningsMap.set(
+              unit,
+              (earningsMap.get(unit) || BigInt(0)) + estimatedEarnings,
+            );
+          });
+        }
+      });
+
+      // Process payment earnings
+      agentPayments.forEach((payment) => {
+        // Add to revenue (total requested by agent)
+        payment.RequestedFunds.forEach((fund: FundAmount) => {
+          const unit = fund.unit || 'lovelace';
+          revenueMap.set(
+            unit,
+            (revenueMap.get(unit) || BigInt(0)) + fund.amount,
+          );
+        });
+
+        // Add to earnings (what agent actually received)
+        payment.WithdrawnForSeller.forEach((withdrawn: FundAmount) => {
+          const unit = withdrawn.unit || 'lovelace';
+          earningsMap.set(
+            unit,
+            (earningsMap.get(unit) || BigInt(0)) + withdrawn.amount,
+          );
+        });
+
+        // Quick fix: estimate earnings for withdrawn transactions with missing withdrawal data
+        if (
+          payment.onChainState === 'Withdrawn' &&
+          payment.WithdrawnForSeller.length === 0
+        ) {
+          payment.RequestedFunds.forEach((fund: FundAmount) => {
+            const unit = fund.unit || 'lovelace';
+            // Use actual fee rate: earnings = revenue * (1000 - feeRatePermille) / 1000
+            const feeRate = BigInt(payment.PaymentSource.feeRatePermille);
+            const estimatedEarnings = (fund.amount * (1000n - feeRate)) / 1000n;
+            earningsMap.set(
+              unit,
+              (earningsMap.get(unit) || BigInt(0)) + estimatedEarnings,
+            );
+          });
+        }
+      });
+
+      // Calculate fees (revenue - earnings)
+      revenueMap.forEach((revenue, unit) => {
+        const earnings = earningsMap.get(unit) || BigInt(0);
+        const fees = revenue - earnings;
+        if (fees > 0) {
+          feesMap.set(unit, fees);
+        }
+      });
+
+      // Convert maps to arrays for response
+      const totalEarnings = Array.from(earningsMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      const totalRevenue = Array.from(revenueMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      const totalFeesPaid = Array.from(feesMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      // Calculate daily earnings for charts (30 days)
+      const dailyBuckets = Array.from({ length: 30 }, (_, i) => {
+        const date = new Date(periodEnd);
+        date.setDate(date.getDate() - i);
+        return {
+          date: date.toISOString().split('T')[0],
+          earnings: new Map<string, bigint>(),
+          revenue: new Map<string, bigint>(),
+          fees: new Map<string, bigint>(),
+          transactions: 0,
+        };
+      }).reverse(); // oldest first
+
+      // Group transactions by date
+      [...agentPurchases, ...agentPayments].forEach((transaction) => {
+        const transactionDate = transaction.createdAt
+          .toISOString()
+          .split('T')[0];
+        const dayBucket = dailyBuckets.find(
+          (bucket) => bucket.date === transactionDate,
+        );
+
+        if (dayBucket) {
+          dayBucket.transactions += 1;
+
+          // Add revenue
+          const funds =
+            'PaidFunds' in transaction
+              ? transaction.PaidFunds
+              : transaction.RequestedFunds;
+          funds.forEach((fund: FundAmount) => {
+            const unit = fund.unit || 'lovelace';
+            dayBucket.revenue.set(
+              unit,
+              (dayBucket.revenue.get(unit) || BigInt(0)) + fund.amount,
+            );
+          });
+
+          // Add earnings (actual withdrawals)
+          transaction.WithdrawnForSeller.forEach((withdrawn: FundAmount) => {
+            const unit = withdrawn.unit || 'lovelace';
+            dayBucket.earnings.set(
+              unit,
+              (dayBucket.earnings.get(unit) || BigInt(0)) + withdrawn.amount,
+            );
+          });
+
+          // Quick fix: estimate earnings for withdrawn transactions with missing withdrawal data
+          if (
+            transaction.onChainState === 'Withdrawn' &&
+            transaction.WithdrawnForSeller.length === 0
+          ) {
+            funds.forEach((fund: FundAmount) => {
+              const unit = fund.unit || 'lovelace';
+              const feeRate = BigInt(transaction.PaymentSource.feeRatePermille);
+              const estimatedEarnings =
+                (fund.amount * (1000n - feeRate)) / 1000n;
+              dayBucket.earnings.set(
+                unit,
+                (dayBucket.earnings.get(unit) || BigInt(0)) + estimatedEarnings,
+              );
+            });
+          }
+        }
+      });
+
+      // Calculate fees per day (revenue - earnings)
+      dailyBuckets.forEach((bucket) => {
+        bucket.revenue.forEach((revenue, unit) => {
+          const earnings = bucket.earnings.get(unit) || BigInt(0);
+          const fees = revenue - earnings;
+          if (fees > 0) {
+            bucket.fees.set(unit, fees);
+          }
+        });
+      });
+
+      // Format daily earnings for response (only show days with transactions)
+      const dailyEarnings = dailyBuckets
+        .filter((bucket) => bucket.transactions > 0)
+        .map((bucket) => ({
+          date: bucket.date,
+          earnings: Array.from(bucket.earnings.entries()).map(
+            ([unit, amount]) => ({
+              unit: unit === '' ? 'lovelace' : unit,
+              amount: amount.toString(),
+            }),
+          ),
+          revenue: Array.from(bucket.revenue.entries()).map(
+            ([unit, amount]) => ({
+              unit: unit === '' ? 'lovelace' : unit,
+              amount: amount.toString(),
+            }),
+          ),
+          fees: Array.from(bucket.fees.entries()).map(([unit, amount]) => ({
+            unit: unit === '' ? 'lovelace' : unit,
+            amount: amount.toString(),
+          })),
+          transactions: bucket.transactions,
+        }));
+
+      // Calculate monthly breakdown if requested
+      let monthlyBreakdown: any[] | undefined;
+      if (includeMonthlyBreakdown) {
+        const monthlyMap = new Map<
+          string,
+          { earnings: Map<string, bigint>; count: number }
+        >();
+
+        [...agentPurchases, ...agentPayments].forEach((transaction) => {
+          const date = new Date(transaction.createdAt);
+          const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+
+          if (!monthlyMap.has(monthKey)) {
+            monthlyMap.set(monthKey, {
+              earnings: new Map(),
+              count: 0,
+            });
+          }
+
+          const monthData = monthlyMap.get(monthKey)!;
+          monthData.count += 1;
+
+          // Add earnings for this month
+          transaction.WithdrawnForSeller.forEach((withdrawn: FundAmount) => {
+            const unit = withdrawn.unit || 'lovelace';
+            monthData.earnings.set(
+              unit,
+              (monthData.earnings.get(unit) || BigInt(0)) + withdrawn.amount,
+            );
+          });
+        });
+
+        monthlyBreakdown = Array.from(monthlyMap.entries()).map(
+          ([monthKey, data]) => {
+            const [year, month] = monthKey.split('-');
+            return {
+              year: parseInt(year),
+              month: new Date(
+                parseInt(year),
+                parseInt(month) - 1,
+              ).toLocaleString('default', {
+                month: 'long',
+              }),
+              earnings: Array.from(data.earnings.entries()).map(
+                ([unit, amount]) => ({
+                  unit: unit === '' ? 'lovelace' : unit,
+                  amount: amount.toString(),
+                }),
+              ),
+              transactions: data.count,
+            };
+          },
+        );
+      }
+
+      return {
+        agentIdentifier: input.agentIdentifier,
+        timeframe: input.timeframe,
+        periodStart,
+        periodEnd,
+        totalTransactions: agentPurchases.length + agentPayments.length,
+        totalEarnings,
+        totalFeesPaid,
+        totalRevenue,
+        dailyEarnings,
+        monthlyBreakdown,
+      };
+    } catch (error: unknown) {
+      const errorInstance =
+        error instanceof Error ? error : new Error(String(error));
+      const statusCode =
+        (errorInstance as { statusCode?: number; status?: number })
+          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).status ||
+        500;
+
+      recordBusinessEndpointError(
+        '/api/v1/registry/earnings',
+        'GET',
+        statusCode,
+        errorInstance,
+        {
+          agent_identifier: input.agentIdentifier,
+          timeframe: input.timeframe,
+          network: input.network,
+          user_id: options.id,
           duration: Date.now() - startTime,
         },
       );
