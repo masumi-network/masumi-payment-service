@@ -79,7 +79,7 @@ export function useTransactions() {
             network: 'Preprod',
             cursorId: cursor,
             includeHistory: 'true',
-            limit: 10,
+            limit: 100,
           },
         });
 
@@ -98,7 +98,7 @@ export function useTransactions() {
             network: 'Preprod',
             cursorId: cursor,
             includeHistory: 'true',
-            limit: 10,
+            limit: 100,
           },
         });
 
