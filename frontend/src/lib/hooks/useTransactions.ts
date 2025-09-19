@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase } from '@/lib/api/generated';
 
@@ -36,6 +37,7 @@ const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
 export function useTransactions() {
   const { apiClient } = useAppContext();
+  const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -173,6 +175,14 @@ export function useTransactions() {
 
     return () => clearInterval(interval);
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    if (router.pathname === '/transactions' && newTransactionsCount > 0) {
+      setNewTransactionsCount(0);
+      setNewTransactionsCountInStorage(0);
+      setLastVisitTimestamp(new Date().toISOString());
+    }
+  }, [router.pathname, newTransactionsCount]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
