@@ -35,6 +35,7 @@ import {
 import { useSearch, SearchableItem } from '@/lib/hooks/useSearch';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
+import { formatCount } from '@/lib/utils';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -123,7 +124,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       href: '/transactions',
       name: 'Transactions',
       icon: FileText,
-      badge: newTransactionsCount || null,
+      badge: formatCount(newTransactionsCount),
     },
     {
       href: '/payment-sources',
@@ -295,12 +296,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               <item.icon className="h-4 w-4" />
               {!collapsed && <span>{item.name}</span>}
               {!collapsed && item.badge && (
-                <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white">
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
               )}
               {collapsed && item.badge && (
-                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs text-white">
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
               )}
@@ -408,7 +409,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   onClick={handleOpenNotifications}
                 >
                   <Bell className="h-4 w-4" />
-                  {newTransactionsCount ? newTransactionsCount : null}
+                  {formatCount(newTransactionsCount)}
                 </Button>
               </div>
             </div>

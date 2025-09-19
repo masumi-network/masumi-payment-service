@@ -34,3 +34,23 @@ export function parseError(error: any): string {
   }
   return 'An error occurred';
 }
+
+/**
+ * Formats count for display
+ * Shows exact count up to maxValue, shows "maxValue+" for counts > maxValue
+ *
+ * @param count - The count to format
+ * @param maxValue - The maximum value to display before showing "maxValue+" (default: 999)
+ * @returns Formatted count string
+ */
+export function formatCount(count: number, maxValue: number = 999): string {
+  if (count <= 0) {
+    return '';
+  }
+
+  if (count > maxValue) {
+    return `${maxValue}+`;
+  }
+
+  return count.toString();
+}
