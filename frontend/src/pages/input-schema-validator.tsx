@@ -89,6 +89,20 @@ const EXAMPLES = [
 }`,
   },
   {
+    label: 'File Input',
+    value: `{
+  "id": "document-upload",
+  "type": "file",
+  "name": "Document Upload",
+  "data": {
+    "accept": ".pdf,.doc,.docx",
+    "maxSize": "10485760",
+    "description": "PDF or Word documents only (max 10MB)",
+    "outputFormat": "base64"
+  }
+}`,
+  },
+  {
     label: 'Multiple Fields',
     value: `[
   {
@@ -180,6 +194,15 @@ const EXAMPLES = [
       "validations": [
         { "validation": "max", "value": "500" }
       ]
+    },
+    {
+      "id": "document",
+      "type": "file",
+      "name": "Project Document",
+      "data": {
+        "description": "Upload project documentation (PDF/Word, max 4.5MB)",
+        "outputFormat": "string"
+      }
     },
     {
       "id": "priority",
