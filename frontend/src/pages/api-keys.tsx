@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -292,6 +293,10 @@ export default function ApiKeys() {
               />
             </div>
             <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => fetchApiKeys()}
+                isRefreshing={isLoading}
+              />
               <Button onClick={() => setIsAddDialogOpen(true)}>
                 Add API key
               </Button>
