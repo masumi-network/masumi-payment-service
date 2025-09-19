@@ -27,9 +27,11 @@ import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
 } from '@/lib/constants/defaultWallets';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { postRegistry } from '@/lib/api/generated';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 function WelcomeScreen({
   onStart,
@@ -353,6 +355,37 @@ const paymentSourceSchema = z.object({
 
 type PaymentSourceFormValues = z.infer<typeof paymentSourceSchema>;
 
+const priceSchema = z.object({
+  unit: z.enum(['lovelace', 'USDM', 'free'], {
+    required_error: 'Token is required',
+  }),
+  amount: z.string().refine((val) => {
+    if (val === 'free' || val === '0' || val === '0.0' || val === '0.00')
+      return true;
+    return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+  }, 'Amount must be a valid number >= 0'),
+});
+
+const agentSchema = z.object({
+  apiUrl: z
+    .string()
+    .url('API URL must be a valid URL')
+    .min(1, 'API URL is required')
+    .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+      message: 'API URL must start with http:// or https://',
+    }),
+  name: z.string().min(1, 'Name is required'),
+  description: z
+    .string()
+    .min(1, 'Description is required')
+    .max(250, 'Description must be less than 250 characters'),
+  prices: z.array(priceSchema).min(1, 'At least one price is required'),
+  tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+  isFree: z.boolean().optional(),
+});
+
+type AgentFormValues = z.infer<typeof agentSchema>;
+
 function PaymentSourceSetupScreen({
   onNext,
   buyingWallet,
@@ -572,22 +605,132 @@ function PaymentSourceSetupScreen({
   );
 }
 
-function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
-  const [tags, setTags] = useState<string[]>([]);
-  const [newTag, setNewTag] = useState('');
-  const [sellingWallet] = useState(
-    '126f48bb1824c271b64c8716bc2478b1624c781266b4cb716b24c7216b',
-  );
+function AddAiAgentScreen({
+  onNext,
+  sellingWallet,
+}: {
+  onNext: () => void;
+  sellingWallet: { address: string; mnemonic: string } | null;
+}) {
+  const { apiClient, state } = useAppContext();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+
+  const {
+    register,
+    handleSubmit,
+    control,
+    setValue,
+    formState: { errors },
+    watch,
+  } = useForm<AgentFormValues>({
+    resolver: zodResolver(agentSchema),
+    defaultValues: {
+      apiUrl: '',
+      name: '',
+      description: '',
+      prices: [{ unit: 'lovelace', amount: '' }],
+      tags: [],
+      isFree: false,
+    },
+  });
+
+  const {
+    fields: priceFields,
+    append: appendPrice,
+    remove: removePrice,
+  } = useFieldArray({
+    control,
+    name: 'prices',
+  });
+
+  const tags = watch('tags');
+  const [tagInput, setTagInput] = useState('');
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard');
+  };
 
   const handleAddTag = () => {
-    if (newTag && !tags.includes(newTag)) {
-      setTags([...tags, newTag]);
-      setNewTag('');
+    const tag = tagInput.trim();
+    if (tag && !tags.includes(tag)) {
+      setValue('tags', [...tags, tag]);
     }
+    setTagInput('');
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setTags(tags.filter((tag) => tag !== tagToRemove));
+    setValue(
+      'tags',
+      tags.filter((tag) => tag !== tagToRemove),
+    );
+  };
+
+  const onSubmit = async (data: AgentFormValues) => {
+    if (!sellingWallet) {
+      setError('Selling wallet is required');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError('');
+
+      const response = await postRegistry({
+        client: apiClient,
+        body: {
+          network: state.network,
+          sellingWalletVkey: sellingWallet.mnemonic,
+          name: data.name,
+          description: data.description,
+          apiBaseUrl: data.apiUrl,
+          Tags: data.tags,
+          Capability: { name: 'Custom Agent', version: '1.0.0' },
+          AgentPricing: (() => {
+            const isFreeAgent = data.isFree;
+
+            if (isFreeAgent) {
+              return {
+                pricingType: 'Free',
+                Pricing: [],
+              };
+            }
+
+            return {
+              pricingType: 'Fixed',
+              Pricing: data.prices.map((price) => {
+                const unit =
+                  price.unit === 'USDM'
+                    ? getUsdmConfig(state.network).fullAssetId
+                    : price.unit;
+                return {
+                  unit,
+                  amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                };
+              }),
+            };
+          })(),
+          Author: { name: 'Setup Agent' },
+          ExampleOutputs: [],
+        },
+      });
+
+      if (!response.data?.data?.id) {
+        throw new Error(
+          'Failed to register AI agent: Invalid response from server',
+        );
+      }
+
+      toast.success('AI agent registered successfully');
+      onNext();
+    } catch (error: any) {
+      console.error('Error registering AI agent:', error);
+      setError(error?.message ?? 'Failed to register AI agent');
+      toast.error('Failed to register AI agent');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -599,28 +742,60 @@ function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
           will be available for users to interact with and generate revenue
           through your payment system.
         </p>
-        <button className="text-sm text-primary hover:underline">
-          Learn more
-        </button>
       </div>
 
-      <div className="space-y-6">
+      {error && (
+        <div className="text-sm text-destructive text-center">{error}</div>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="space-y-2">
-          <label className="text-sm font-medium">API URL</label>
-          <Input placeholder="Enter API URL" />
-          <p className="text-sm text-muted-foreground">
-            This is an input description.
-          </p>
+          <label className="text-sm font-medium">
+            API URL <span className="text-red-500">*</span>
+          </label>
+          <Input
+            {...register('apiUrl')}
+            placeholder="Enter the API URL for your agent"
+            className={errors.apiUrl ? 'border-red-500' : ''}
+          />
+          {errors.apiUrl && (
+            <p className="text-sm text-red-500">{errors.apiUrl.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Name</label>
-          <Input placeholder="Enter name" />
+          <label className="text-sm font-medium">
+            Name <span className="text-red-500">*</span>
+          </label>
+          <Input
+            {...register('name')}
+            placeholder="Enter a name for your agent"
+            className={errors.name ? 'border-red-500' : ''}
+          />
+          {errors.name && (
+            <p className="text-sm text-red-500">{errors.name.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Description</label>
-          <Textarea placeholder="Enter description" className="min-h-[100px]" />
+          <label className="text-sm font-medium">
+            Description <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <Textarea
+              {...register('description')}
+              placeholder="Describe what your agent does"
+              rows={3}
+              className={errors.description ? 'border-red-500' : ''}
+              maxLength={250}
+            />
+            <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+              {watch('description')?.length || 0}/250
+            </div>
+          </div>
+          {errors.description && (
+            <p className="text-sm text-red-500">{errors.description.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -633,10 +808,20 @@ function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
               <span className="text-sm font-medium">Selling wallet</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                type="button"
+                onClick={() =>
+                  sellingWallet && handleCopy(sellingWallet.address)
+                }
+              >
                 <Copy className="h-4 w-4" />
               </Button>
-              {sellingWallet}
+              {sellingWallet
+                ? shortenAddress(sellingWallet.address)
+                : 'No wallet available'}
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -644,67 +829,175 @@ function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
           </p>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Price, ADA</label>
-          <Input type="number" placeholder="0.00" />
-          <p className="text-sm text-muted-foreground">
-            This is an input description.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Tags</label>
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <div
-                key={tag}
-                className="flex items-center gap-1 bg-secondary px-2 py-1 rounded-full"
-              >
-                <span className="text-sm">{tag}</span>
-                <button onClick={() => handleRemoveTag(tag)}>
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            <div className="flex gap-2">
-              <Input
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
-                placeholder="Add tag..."
-                className="w-24"
-              />
-            </div>
+        {/* Free Agent Toggle */}
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <Controller
+              control={control}
+              name="isFree"
+              render={({ field }) => (
+                <input
+                  type="checkbox"
+                  id="isFree"
+                  checked={field.value || false}
+                  onChange={(e) => {
+                    field.onChange(e.target.checked);
+                    if (e.target.checked) {
+                      // Set to free pricing when checked
+                      setValue('prices', [{ unit: 'free', amount: '0' }]);
+                    } else {
+                      // Reset to default pricing when unchecked
+                      setValue('prices', [{ unit: 'lovelace', amount: '' }]);
+                    }
+                  }}
+                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                />
+              )}
+            />
+            <label htmlFor="isFree" className="text-sm font-medium">
+              This is a free agent (no cost for interactions)
+            </label>
           </div>
         </div>
 
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">
+              Prices <span className="text-red-500">*</span>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={watch('isFree')}
+              onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
+            >
+              Add Price
+            </Button>
+          </div>
+          {priceFields.map((field, index) => (
+            <div key={field.id} className="flex gap-2 items-start">
+              <div className="flex-1 space-y-2">
+                <Controller
+                  control={control}
+                  name={`prices.${index}.unit` as const}
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={watch('isFree')}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select token" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lovelace">ADA</SelectItem>
+                        <SelectItem value="USDM">USDM</SelectItem>
+                        <SelectItem value="free">Free</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
+              <div className="flex-1 space-y-2">
+                <Input
+                  type="number"
+                  placeholder={
+                    watch(`prices.${index}.unit`) === 'free' ? '0' : '0.00'
+                  }
+                  disabled={watch(`prices.${index}.unit`) === 'free'}
+                  value={
+                    watch(`prices.${index}.unit`) === 'free'
+                      ? '0'
+                      : watch(`prices.${index}.amount`) || ''
+                  }
+                  {...register(`prices.${index}.amount` as const)}
+                  min="0"
+                  step="0.000001"
+                />
+                {errors.prices &&
+                  Array.isArray(errors.prices) &&
+                  errors.prices[index]?.amount && (
+                    <p className="text-xs text-red-500">
+                      {errors.prices[index]?.amount?.message}
+                    </p>
+                  )}
+              </div>
+              {index > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removePrice(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          ))}
+          {errors.prices && typeof errors.prices.message === 'string' && (
+            <p className="text-sm text-red-500">{errors.prices.message}</p>
+          )}
+        </div>
+
         <div className="space-y-2">
-          <label className="text-sm font-medium">Status</label>
-          <Select defaultValue="active">
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-sm text-muted-foreground">
-            This is a select description.
-          </p>
+          <label className="text-sm font-medium">
+            Tags <span className="text-red-500">*</span>
+          </label>
+          <div>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add a tag"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+                className={errors.tags ? 'border-red-500' : ''}
+              />
+              <Button type="button" variant="outline" onClick={handleAddTag}>
+                Add
+              </Button>
+            </div>
+            {errors.tags && (
+              <p className="text-sm text-red-500">{errors.tags.message}</p>
+            )}
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {tags.map((tag: string) => (
+                  <div
+                    key={tag}
+                    className="flex items-center gap-1 bg-secondary px-2 py-1 rounded-full"
+                  >
+                    <span className="text-sm">{tag}</span>
+                    <button type="button" onClick={() => handleRemoveTag(tag)}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm">
+          <Button variant="secondary" className="text-sm" type="button">
             <Link href={'/'} replace>
               Skip for now
             </Link>
           </Button>
-          <Button className="text-sm" onClick={onNext}>
-            Add
+          <Button
+            className="text-sm"
+            type="submit"
+            disabled={isLoading || !sellingWallet}
+          >
+            {isLoading ? 'Registering...' : 'Register Agent'}
           </Button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }
@@ -777,7 +1070,11 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       buyingWallet={wallets.buying}
       sellingWallet={wallets.selling}
     />,
-    <AddAiAgentScreen key="ai" onNext={() => setCurrentStep(4)} />,
+    <AddAiAgentScreen
+      key="ai"
+      onNext={() => setCurrentStep(4)}
+      sellingWallet={wallets.selling}
+    />,
     <SuccessScreen
       key="success"
       onComplete={handleComplete}
