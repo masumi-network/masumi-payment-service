@@ -2018,6 +2018,100 @@ export type PostRegistryDeregisterResponses = {
 
 export type PostRegistryDeregisterResponse = PostRegistryDeregisterResponses[keyof PostRegistryDeregisterResponses];
 
+export type GetRegistryEarningsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The unique identifier of the agent to get earnings for
+         */
+        agentIdentifier: string;
+        /**
+         * The time period to calculate earnings for
+         */
+        timeframe?: '1d' | '7d' | '30d' | 'monthly' | 'all';
+        /**
+         * The Cardano network to query earnings from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/registry/earnings';
+};
+
+export type GetRegistryEarningsErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no earnings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetRegistryEarningsResponses = {
+    /**
+     * Agent earnings analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string;
+            timeframe: string;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalEarnings: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalFeesPaid: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalRevenue: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            monthlyBreakdown?: Array<{
+                month: string;
+                year: number;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+            dailyEarnings: Array<{
+                date: string;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                revenue: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                fees: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+        };
+    };
+};
+
+export type GetRegistryEarningsResponse = GetRegistryEarningsResponses[keyof GetRegistryEarningsResponses];
+
 export type GetPaymentSourceData = {
     body?: never;
     path?: never;
