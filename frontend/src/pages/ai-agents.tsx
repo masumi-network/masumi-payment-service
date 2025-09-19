@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2 } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -384,13 +385,19 @@ export default function AIAgentsPage() {
               </a>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2"
-            onClick={() => setIsRegisterDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Register AI Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => fetchAgents()}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2"
+              onClick={() => setIsRegisterDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Register AI Agent
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">

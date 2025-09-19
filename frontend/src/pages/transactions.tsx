@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -405,6 +406,12 @@ export default function Transactions() {
                 className="max-w-xs pl-10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => fetchTransactions(true)}
+                isRefreshing={isLoading}
               />
             </div>
           </div>
