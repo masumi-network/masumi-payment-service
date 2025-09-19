@@ -37,6 +37,11 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import {
+  registerWebhookPost,
+  listWebhooksGet,
+  deleteWebhookDelete,
+} from './webhooks';
 
 export const apiRouter: Routing = {
   v1: {
@@ -112,6 +117,11 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    webhooks: new DependsOnMethod({
+      get: listWebhooksGet,
+      post: registerWebhookPost,
+      delete: deleteWebhookDelete,
     }),
   },
 };
