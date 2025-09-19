@@ -110,7 +110,6 @@ export function AddPaymentSourceDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       network: state.network,
-      paymentType: 'Web3CardanoV1',
       blockfrostApiKey: '',
       feeReceiverWallet: {
         walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
@@ -157,10 +156,9 @@ export function AddPaymentSourceDialog({
     if (open) {
       reset({
         network: state.network,
-        paymentType: 'Web3CardanoV1',
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+          walletAddress: '',
         },
         feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
         purchasingWallets: [
