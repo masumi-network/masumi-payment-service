@@ -20,6 +20,6 @@
       "@/repositories/*": ["src/repositories/*"]
     }
   },
-  "include": ["src/**/*.spec.ts"],
+  "include": ["src/**/*.spec.ts", "tests/**/*.ts", "jest.e2e.config.ts"],
   "exclude": ["node_modules"]
 }

@@ -61,7 +61,7 @@ export default [
   },
   // Add Jest environment for test files
   {
-    files: ['src/**/*.spec.ts', 'src/**/*.test.ts'],
+    files: ['src/**/*.spec.ts', 'src/**/*.test.ts', 'tests/**/*.ts', 'jest.e2e.config.ts'],
     languageOptions: {
       globals: {
         ...globals.jest,
@@ -69,14 +69,21 @@ export default [
         it: 'readonly',
         expect: 'readonly',
         jest: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        global: 'readonly',
       },
     },
   },
   // Ignores
   {
     ignores: [
-      '**/*.spec.ts',
-      '**/*.test.ts',
+      'src/**/*.spec.ts',
+      'src/**/*.test.ts',
+      'tests/**/*.ts',
+      'jest.e2e.config.ts',
       '**/node_modules/**',
       'dist/*',
       'smart-contracts/*',
