@@ -378,7 +378,7 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
+        walletAddress: '',
       },
       feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
     },
