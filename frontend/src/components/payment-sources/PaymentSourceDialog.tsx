@@ -7,8 +7,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useState } from 'react';
+import { useAppContext } from '@/lib/contexts/AppContext';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 
@@ -23,6 +24,7 @@ export function PaymentSourceDialog({
   onClose,
   paymentSource,
 }: PaymentSourceDialogProps) {
+  const { state } = useAppContext();
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
@@ -90,9 +92,17 @@ export function PaymentSourceDialog({
               Smart Contract Address
             </label>
             <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
-              <span className="text-sm font-mono flex-1">
+              <a
+                href={getExplorerUrl(
+                  paymentSource.smartContractAddress,
+                  state.network,
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-mono flex-1 hover:underline text-primary"
+              >
                 {paymentSource.smartContractAddress}
-              </span>
+              </a>
               <CopyButton value={paymentSource.smartContractAddress} />
             </div>
           </div>
@@ -132,7 +142,18 @@ export function PaymentSourceDialog({
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono flex-1">
-                          Address: {shortenAddress(wallet.walletAddress, 10)}
+                          Address:{' '}
+                          <a
+                            href={getExplorerUrl(
+                              wallet.walletAddress,
+                              state.network,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline text-primary"
+                          >
+                            {shortenAddress(wallet.walletAddress, 10)}
+                          </a>
                         </span>
                         <CopyButton value={wallet.walletAddress} />
                       </div>
@@ -188,9 +209,17 @@ export function PaymentSourceDialog({
                           <span className="text-xs text-muted-foreground">
                             Address:
                           </span>
-                          <span className="text-sm font-mono flex-1">
+                          <a
+                            href={getExplorerUrl(
+                              wallet.walletAddress,
+                              state.network,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-mono flex-1 hover:underline text-primary"
+                          >
                             {shortenAddress(wallet.walletAddress, 10)}
-                          </span>
+                          </a>
                           <CopyButton value={wallet.walletAddress} />
                         </div>
                         {wallet.collectionAddress && (
@@ -198,9 +227,17 @@ export function PaymentSourceDialog({
                             <span className="text-xs text-muted-foreground">
                               Collection:
                             </span>
-                            <span className="text-sm font-mono flex-1">
+                            <a
+                              href={getExplorerUrl(
+                                wallet.collectionAddress,
+                                state.network,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-mono flex-1 hover:underline text-primary"
+                            >
                               {shortenAddress(wallet.collectionAddress, 10)}
-                            </span>
+                            </a>
                             <CopyButton value={wallet.collectionAddress} />
                           </div>
                         )}
@@ -265,9 +302,17 @@ export function PaymentSourceDialog({
                           <span className="text-xs text-muted-foreground">
                             Address:
                           </span>
-                          <span className="text-sm font-mono flex-1">
+                          <a
+                            href={getExplorerUrl(
+                              wallet.walletAddress,
+                              state.network,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-mono flex-1 hover:underline text-primary"
+                          >
                             {shortenAddress(wallet.walletAddress, 10)}
-                          </span>
+                          </a>
                           <CopyButton value={wallet.walletAddress} />
                         </div>
                         {wallet.collectionAddress && (
@@ -275,9 +320,17 @@ export function PaymentSourceDialog({
                             <span className="text-xs text-muted-foreground">
                               Collection:
                             </span>
-                            <span className="text-sm font-mono flex-1">
+                            <a
+                              href={getExplorerUrl(
+                                wallet.collectionAddress,
+                                state.network,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-mono flex-1 hover:underline text-primary"
+                            >
                               {shortenAddress(wallet.collectionAddress, 10)}
-                            </span>
+                            </a>
                             <CopyButton value={wallet.collectionAddress} />
                           </div>
                         )}
@@ -322,12 +375,20 @@ export function PaymentSourceDialog({
                 {paymentSource.FeeReceiverNetworkWallet ? (
                   <div className="p-3 border rounded-md space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono flex-1">
+                      <a
+                        href={getExplorerUrl(
+                          paymentSource.FeeReceiverNetworkWallet.walletAddress,
+                          state.network,
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-mono flex-1 hover:underline text-primary"
+                      >
                         {shortenAddress(
                           paymentSource.FeeReceiverNetworkWallet.walletAddress,
                           10,
                         )}
-                      </span>
+                      </a>
                       <CopyButton
                         value={
                           paymentSource.FeeReceiverNetworkWallet.walletAddress

@@ -34,3 +34,15 @@ export function parseError(error: any): string {
   }
   return 'An error occurred';
 }
+
+export function getExplorerUrl(
+  address: string,
+  network: string,
+  type: 'address' | 'transaction' = 'address',
+): string {
+  const baseUrl =
+    network === 'Mainnet'
+      ? 'https://cardanoscan.io'
+      : 'https://preprod.cardanoscan.io';
+  return `${baseUrl}/${type}/${address}`;
+}
