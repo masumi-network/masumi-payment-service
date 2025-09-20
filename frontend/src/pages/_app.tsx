@@ -178,6 +178,23 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     }
   }, [isHealthy, state.apiKey, fetchRpcApiKeys]);
 
+  // Redirect to payment sources if no payment sources exist and user is trying to access pages that require payment sources
+  useEffect(() => {
+    if (state.apiKey && isHealthy && state.paymentSources.length === 0) {
+      const protectedPages = [
+        '/',
+        '/ai-agents',
+        '/wallets',
+        '/transactions',
+        '/api-keys',
+      ];
+      if (protectedPages.includes(router.pathname)) {
+        console.log('Redirecting to payment sources');
+        router.replace('/payment-sources');
+      }
+    }
+  }, [state.apiKey, isHealthy, state.paymentSources, router.pathname]);
+
   if (isHealthy === null) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">

@@ -115,31 +115,45 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const navItems = [
-    { href: '/', name: 'Dashboard', icon: LayoutDashboard, badge: null },
-    { href: '/ai-agents', name: 'AI Agents', icon: Bot, badge: null },
-    { href: '/wallets', name: 'Wallets', icon: Wallet, badge: null },
-    {
-      href: '/transactions',
-      name: 'Transactions',
-      icon: FileText,
-      badge: newTransactionsCount || null,
-    },
-    {
-      href: '/payment-sources',
-      name: 'Payment sources',
-      icon: FileInput,
-      badge: null,
-    },
-    {
-      href: '/input-schema-validator',
-      name: 'Input Schema Validator',
-      icon: NotebookPen,
-      badge: null,
-    },
-    { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
-    { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-  ];
+  // Check if user has payment sources
+  const hasPaymentSources =
+    state.paymentSources && state.paymentSources.length > 0;
+
+  const navItems = hasPaymentSources
+    ? [
+        { href: '/', name: 'Dashboard', icon: LayoutDashboard, badge: null },
+        { href: '/ai-agents', name: 'AI Agents', icon: Bot, badge: null },
+        { href: '/wallets', name: 'Wallets', icon: Wallet, badge: null },
+        {
+          href: '/transactions',
+          name: 'Transactions',
+          icon: FileText,
+          badge: newTransactionsCount || null,
+        },
+        {
+          href: '/payment-sources',
+          name: 'Payment sources',
+          icon: FileInput,
+          badge: null,
+        },
+        {
+          href: '/input-schema-validator',
+          name: 'Input Schema Validator',
+          icon: NotebookPen,
+          badge: null,
+        },
+        { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
+        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
+      ]
+    : [
+        {
+          href: '/payment-sources',
+          name: 'Payment sources',
+          icon: FileInput,
+          badge: null,
+        },
+        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
+      ];
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
