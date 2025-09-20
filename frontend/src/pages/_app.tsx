@@ -85,6 +85,10 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       // If no payment sources, redirect to setup
       if (reversedBack.length === 0 && isHealthy && state.apiKey) {
         if (router.pathname !== '/setup') {
+          const userIgnored = localStorage.getItem('userIgnoredSetup');
+          if (userIgnored) {
+            return;
+          }
           router.push(`/setup?network=${encodeURIComponent(state.network)}`);
         }
       }
@@ -93,7 +97,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       toast.error('Error fetching payment sources. Please try again later.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiClient, dispatch, isHealthy, state.apiKey, state.network, router]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
+  }, [
+    apiClient,
+    dispatch,
+    isHealthy,
+    state.apiKey,
+    state.network,
+    router.pathname,
+  ]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
 
   const fetchRpcApiKeys = useCallback(async () => {
     try {
@@ -111,6 +122,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   const signOut = () => {
     localStorage.removeItem('payment_api_key');
+    localStorage.removeItem('userIgnoredSetup');
 
     dispatch({ type: 'SET_API_KEY', payload: '' });
 
