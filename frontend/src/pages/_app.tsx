@@ -201,7 +201,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         '/api-keys',
       ];
       if (protectedPages.includes(router.pathname)) {
-        console.log('Redirecting to payment sources');
         router.replace('/payment-sources');
       }
     }
