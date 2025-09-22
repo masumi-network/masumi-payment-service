@@ -182,7 +182,7 @@ export default function Transactions() {
       try {
         if (reset) {
           setIsLoading(true);
-          setAllTransactions([]);
+          // Don't clear transactions immediately - let the new data replace them
           setPurchaseCursorId(null);
           setPaymentCursorId(null);
           setHasMorePurchases(true);
@@ -261,7 +261,7 @@ export default function Transactions() {
         const combined = [
           ...purchases,
           ...payments,
-          //fixes ordering for updates
+          //fixes ordering for updates - only include existing transactions if not resetting
           ...(reset ? [] : allTransactions),
         ];
         const seen = new Set();
