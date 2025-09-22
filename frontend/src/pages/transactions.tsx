@@ -199,7 +199,7 @@ export default function Transactions() {
         let purchases: Transaction[] = [];
         let newPurchaseCursor: string | null = purchaseCursorId;
         let morePurchases = hasMorePurchases;
-        if (hasMorePurchases) {
+        if (hasMorePurchases || reset) {
           const purchaseRes = await getPurchase({
             client: apiClient,
             query: {
@@ -230,7 +230,7 @@ export default function Transactions() {
         let payments: Transaction[] = [];
         let newPaymentCursor: string | null = paymentCursorId;
         let morePayments = hasMorePayments;
-        if (hasMorePayments) {
+        if (hasMorePayments || reset) {
           const paymentRes = await getPayment({
             client: apiClient,
             query: {
