@@ -336,7 +336,9 @@ export default function AIAgentsPage() {
               adaBalance = (
                 parseInt(adaBalance) + (amount.quantity || 0)
               ).toString();
-            } else if (amount.unit === 'USDM') {
+            } else if (
+              amount.unit === getUsdmConfig(state.network).fullAssetId
+            ) {
               usdmBalance = (
                 parseInt(usdmBalance) + (amount.quantity || 0)
               ).toString();
