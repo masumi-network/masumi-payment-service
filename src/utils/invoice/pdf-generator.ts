@@ -1,16 +1,26 @@
 import html_to_pdf from 'html-pdf-node';
-import { generateInvoiceHTML } from './template';
+import {
+  generateInvoiceHTML,
+  ResolvedInvoiceConfig,
+  InvoiceGroup,
+} from './template';
 import { z } from 'zod';
 import { postGenerateInvoiceSchemaInput } from '@/routes/api/invoice/index';
 
 type InvoiceData = z.infer<typeof postGenerateInvoiceSchemaInput>;
 
 export async function generateInvoicePDF(
+  invoiceGroups: InvoiceGroup[],
   invoiceData: InvoiceData,
+  invoiceConfig: ResolvedInvoiceConfig,
 ): Promise<Buffer> {
   try {
-    // Generate HTML content
-    const htmlContent = generateInvoiceHTML(invoiceData);
+    const htmlContent = generateInvoiceHTML(
+      invoiceConfig,
+      invoiceData.seller,
+      invoiceData.buyer,
+      invoiceGroups,
+    );
 
     // Default PDF options - always A4 format
     const defaultOptions: html_to_pdf.Options = {
@@ -46,8 +56,14 @@ export async function generateInvoicePDF(
 }
 
 export async function generateInvoicePDFBase64(
+  invoiceGroups: InvoiceGroup[],
   invoiceData: InvoiceData,
+  invoiceConfig: ResolvedInvoiceConfig,
 ): Promise<string> {
-  const pdfBuffer = await generateInvoicePDF(invoiceData);
+  const pdfBuffer = await generateInvoicePDF(
+    invoiceGroups,
+    invoiceData,
+    invoiceConfig,
+  );
   return pdfBuffer.toString('base64');
 }

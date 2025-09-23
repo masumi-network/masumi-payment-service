@@ -4,141 +4,18 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { $Enums } from '@prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import stringify from 'canonical-json';
 import { checkSignature } from '@meshsdk/core';
 import { generateInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
-
-export const getSignatureSchemaInput = z.object({
-  blockchainIdentifier: z
-    .string()
-    .min(1)
-    .max(500)
-    .describe(
-      'The blockchain identifier, for which the invoice should be created',
-    ),
-  country: z.string().min(1).max(100),
-  city: z.string().min(1).max(100),
-  zipCode: z.string().min(1).max(20),
-  street: z.string().min(1).max(100),
-  streetNumber: z.string().min(1).max(20),
-  email: z.string().email().min(1).max(100).nullable(),
-  phone: z.string().min(1).max(100).nullable(),
-  name: z.string().min(1).max(100).nullable(),
-  companyName: z.string().min(1).max(100).nullable(),
-  vatNumber: z.string().min(1).max(100).nullable(),
-});
-
-export const getSignatureSchemaOutput = z.object({
-  signature: z.string(),
-  key: z.string(),
-  walletAddress: z.string(),
-  data: z.string(),
-});
-
-export const getSignatureEndpoint = payAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: getSignatureSchemaInput,
-  output: getSignatureSchemaOutput,
-  handler: async ({
-    input,
-    options,
-  }: {
-    input: z.infer<typeof getSignatureSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
-  }) => {
-    const startTime = Date.now();
-    try {
-      if (input.companyName == null && input.name == null) {
-        throw createHttpError(400, 'Company name or name is required');
-      }
-
-      const purchase = await prisma.purchaseRequest.findFirst({
-        where: {
-          blockchainIdentifier: input.blockchainIdentifier,
-        },
-        include: {
-          PaymentSource: {
-            include: {
-              PaymentSourceConfig: true,
-            },
-          },
-          SmartContractWallet: {
-            include: {
-              Secret: true,
-            },
-          },
-        },
-      });
-
-      if (purchase == null) {
-        throw createHttpError(404, 'Purchase not found');
-      }
-
-      if (purchase.onChainState == 'RefundWithdrawn') {
-        throw createHttpError(400, 'Purchase is refunded');
-      }
-
-      const paymentContract = purchase.PaymentSource;
-      const wallet = purchase.SmartContractWallet;
-
-      if (wallet == null) {
-        throw createHttpError(404, 'Wallet not found');
-      }
-
-      const { wallet: meshWallet } = await generateWalletExtended(
-        paymentContract.network,
-        paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-        wallet.Secret.encryptedMnemonic,
-      );
-
-      const message = stringify({
-        action: 'request_invoice',
-        validUntil: Date.now() + 1000 * 60 * 60,
-        ...input,
-      });
-
-      const signature = await meshWallet.signData(
-        message,
-        wallet.walletAddress,
-      );
-
-      return {
-        signature: signature.signature,
-        key: signature.key,
-        walletAddress: wallet.walletAddress,
-        data: message,
-      };
-    } catch (error) {
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
-      const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
-        (errorInstance as { statusCode?: number; status?: number }).status ||
-        500;
-      recordBusinessEndpointError(
-        '/api/v1/signature',
-        'GET',
-        statusCode,
-        errorInstance,
-        {
-          user_id: options.id,
-          blockchain_identifier: input.blockchainIdentifier,
-          operation: 'get_signature',
-          duration: Date.now() - startTime,
-        },
-      );
-      throw error;
-    }
-  },
-});
+import { generateHash } from '@/utils/crypto';
+import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
+import {
+  generateInvoiceGroups,
+  resolveInvoiceConfig,
+} from '@/utils/invoice/template';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
+import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 
 export const postGenerateInvoiceSchemaInput = z
   .object({
@@ -154,203 +31,191 @@ export const postGenerateInvoiceSchemaInput = z
       .describe(
         'The blockchain identifier, for which the invoice should be created',
       ),
-    action: z.literal('generate_invoice').describe('The action to perform'),
-    invoiceTitle: z
-      .string()
-      .min(1)
-      .max(100)
-      .optional()
-      .describe('The title of the invoice'),
-    invoiceDescription: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The description of the invoice'),
-    invoiceNumber: z
-      .string()
-      .min(1)
-      .max(100)
-      .optional()
-      .describe('The number of the invoice'),
-    invoiceDate: z
-      .string()
-      .min(1)
-      .max(100)
-      .optional()
-      .describe('The date of the invoice'),
-    invoiceGreetings: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The greetings of the invoice'),
-    invoiceClosing: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The closing of the invoice'),
-    invoiceSignature: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The signature of the invoice'),
-    invoiceLogo: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The logo of the invoice'),
-    invoiceFooter: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The footer of the invoice'),
-    invoiceTerms: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The terms of the invoice'),
-    invoicePrivacy: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The privacy of the invoice'),
-    invoiceDisclaimer: z
-      .string()
-      .min(1)
-      .max(1000)
-      .optional()
-      .describe('The disclaimer of the invoice'),
-    correctionInvoiceReference: z
+    signatureData: z.string().describe('The data to verify the signature'),
+    action: z.enum(['retrieve_invoice']).describe('The action to perform'),
+    currencySettings: z
       .object({
-        originalInvoiceNumber: z
+        currencyId: z
           .string()
           .min(1)
-          .max(100)
-          .describe('The number of the original invoice being corrected'),
-        originalInvoiceDate: z
+          .max(10)
+          .describe('The currency ID of the item'),
+        currencySymbol: z
           .string()
           .min(1)
-          .max(100)
-          .describe('The date of the original invoice being corrected'),
-        correctionReason: z
-          .string()
-          .min(1)
-          .max(500)
-          .optional()
-          .describe('Reason for the correction (optional)'),
-        correctionTitle: z
-          .string()
-          .min(1)
-          .max(100)
-          .optional()
-          .describe(
-            'Custom title for the correction notice (default: "CORRECTION INVOICE")',
-          ),
-        correctionDescription: z
-          .string()
-          .min(1)
-          .max(500)
-          .optional()
-          .describe(
-            'Custom description text for the correction notice (default: "This invoice corrects the original invoice...")',
-          ),
+          .max(10)
+          .describe('The currency symbol of the item'),
+        currencyDecimals: z
+          .number()
+          .int()
+          .min(0)
+          .max(4)
+          .describe('Number of decimal places for this item (0-4)'),
+        currencySymbolPosition: z
+          .nativeEnum($Enums.SymbolPosition)
+          .describe('The position of the currency symbol (before or after)'),
       })
       .optional()
-      .describe(
-        'Reference to the original invoice if this is a correction invoice',
-      ),
-    invoiceItems: z
-      .array(
-        z.object({
-          name: z.string().min(1).max(100).describe('The name of the item'),
-          quantity: z.number().min(1).describe('The quantity of the item'),
-          price: z.number().describe('The price of the item'),
-          currency: z
-            .string()
-            .min(1)
-            .max(100)
-            .describe('The currency of the item'),
-          vatRateOverride: z
-            .number()
-            .min(0)
-            .max(1)
-            .optional()
-            .describe('The VAT rate as decimal (e.g., 0.19 for 19%)'),
-          vatIsIncludedInThePriceOverride: z
-            .boolean()
-            .optional()
-            .describe('Whether the VAT is included in the price'),
-          decimalsOverride: z
-            .number()
-            .int()
-            .min(0)
-            .max(4)
-            .optional()
-            .describe('Number of decimal places for this item (0-4)'),
-          currencyOverride: z
-            .string()
-            .min(1)
-            .max(10)
-            .optional()
-            .describe('Currency override for this item'),
-        }),
-      )
+      .describe('Currency settings for this item'),
+
+    currencyConversion: z
+      .map(z.string(), z.number())
       .optional()
-      .describe('The items of the invoice'),
-    decimals: z
-      .number()
-      .int()
-      .min(0)
-      .max(4)
-      .optional()
-      .describe('Global number of decimal places (0-4, default: 2)'),
-    currency: z
-      .string()
-      .min(1)
-      .max(10)
-      .optional()
-      .describe('Global currency (e.g., EUR, USD, GBP)'),
-    thousandDelimiter: z
-      .enum([',', '.', ' ', "'"])
-      .optional()
-      .describe(
-        "Thousand separator: comma (1,000), period (1.000), space (1 000), or apostrophe (1'000). Default: Node.js default",
-      ),
-    decimalDelimiter: z
-      .enum(['.', ','])
-      .optional()
-      .describe(
-        'Decimal separator: period (1234.56) or comma (1234,56). Default: period',
-      ),
-    language: z
-      .enum(['en-us', 'en-uk', 'de'])
-      .optional()
-      .describe(
-        'Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us',
-      ),
-    dateFormat: z
-      .string()
-      .optional()
-      .describe(
-        'Date format override (e.g., "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"). If not specified, uses language default',
-      ),
+      .describe('Currency conversion settings for this item'),
+    invoice: z
+      .object({
+        itemNamePrefix: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The prefix of the item name'),
+        itemNameSuffix: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The suffix of the item name'),
+        title: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The title of the invoice'),
+        description: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The description of the invoice'),
+        idPrefix: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The prefix of the invoice number'),
+        id: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The number of the invoice'),
+        date: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe('The date of the invoice'),
+        greeting: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The greetings of the invoice'),
+        closing: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The closing of the invoice'),
+        signature: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The signature of the invoice'),
+        logo: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The logo of the invoice'),
+        footer: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The footer of the invoice'),
+        terms: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The terms of the invoice'),
+        privacy: z
+          .string()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe('The privacy of the invoice'),
+        correctionInvoiceReference: z
+          .object({
+            correctionReason: z
+              .string()
+              .min(1)
+              .max(500)
+              .optional()
+              .describe('Reason for the correction (optional)'),
+            correctionTitle: z
+              .string()
+              .min(1)
+              .max(100)
+              .optional()
+              .describe(
+                'Custom title for the correction notice (default: "CORRECTION INVOICE")',
+              ),
+            correctionDescription: z
+              .string()
+              .min(1)
+              .max(500)
+              .optional()
+              .describe(
+                'Custom description text for the correction notice (default: "This invoice corrects the original invoice...")',
+              ),
+          })
+          .optional()
+          .describe(
+            'Reference to the original invoice if this is a correction invoice',
+          ),
+        decimals: z
+          .number()
+          .int()
+          .min(0)
+          .max(4)
+          .optional()
+          .describe('Global number of decimal places (0-4, default: 2)'),
+        thousandDelimiter: z
+          .enum([',', '.', ' ', "'"])
+          .optional()
+          .describe(
+            "Thousand separator: comma (1,000), period (1.000), space (1 000), or apostrophe (1'000). Default: Node.js default",
+          ),
+        decimalDelimiter: z
+          .enum(['.', ','])
+          .optional()
+          .describe(
+            'Decimal separator: period (1234.56) or comma (1234,56). Default: period',
+          ),
+        language: z
+          .enum(['en-us', 'en-uk', 'de'])
+          .optional()
+          .describe(
+            'Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us',
+          ),
+        dateFormat: z
+          .string()
+          .optional()
+          .describe(
+            'Date format override (e.g., "DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"). If not specified, uses language default',
+          ),
+      })
+      .optional(),
     vatRate: z
       .number()
       .min(0)
       .max(1)
       .optional()
       .describe('The VAT rate as decimal (e.g., 0.19 for 19%)'),
-    vatIsIncludedInThePrice: z
-      .boolean()
-      .optional()
-      .describe('Whether the VAT is included in the price'),
     seller: z.object({
       country: z
         .string()
@@ -455,8 +320,44 @@ export const postGenerateInvoiceSchemaInput = z
   .refine(
     (data) => {
       // Ensure thousand and decimal delimiters are different when both are specified
-      if (data.thousandDelimiter && data.decimalDelimiter) {
-        return data.thousandDelimiter !== data.decimalDelimiter;
+      if (!data.invoice) return true;
+      if (data.invoice.thousandDelimiter && data.invoice.decimalDelimiter) {
+        return data.invoice.thousandDelimiter !== data.invoice.decimalDelimiter;
+      }
+      return true;
+    },
+    {
+      message: 'Thousand delimiter and decimal delimiter must be different',
+      path: ['thousandDelimiter'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.seller.companyName == null && data.seller.name == null) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Company name or name is required',
+      path: ['seller', 'companyName'],
+    },
+  )
+  .refine((data) => {
+    if (data.buyer.companyName == null && data.buyer.name == null) {
+      return false;
+    }
+    return true;
+  })
+  .refine(
+    (data) => {
+      if (!data.invoice) return true;
+      if (
+        data.invoice.thousandDelimiter &&
+        data.invoice.decimalDelimiter &&
+        data.invoice.thousandDelimiter === data.invoice.decimalDelimiter
+      ) {
+        return false;
       }
       return true;
     },
@@ -469,6 +370,196 @@ export const postGenerateInvoiceSchemaInput = z
 export const postGenerateInvoiceSchemaOutput = z.object({
   invoice: z.string(),
 });
+
+interface ExistingInvoiceItem {
+  id?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  name: string;
+  quantity: number | { toString(): string };
+  pricePerUnitWithoutVat: number | { toString(): string };
+  vatRate: number | { toString(): string };
+  currencyShortId?: string;
+  currency?: string;
+  currencySymbol?: string;
+  decimals: number;
+  currencySymbolPosition?: $Enums.SymbolPosition;
+  invoiceRevisionId?: string;
+}
+
+interface ExistingInvoiceBase {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  buyer?: InvoiceParty;
+  seller?: InvoiceParty;
+  title?: string | null;
+  date?: string | null;
+  greeting?: string | null;
+  closing?: string | null;
+  signature?: string | null;
+  logo?: string | null;
+  footer?: string | null;
+  terms?: string | null;
+  privacy?: string | null;
+  invoiceNumber?: string | null;
+  correctionInvoiceReference?: unknown;
+  decimals?: number | null;
+  thousandDelimiter?: string | null;
+  decimalDelimiter?: string | null;
+  language?: string | null;
+  dateFormat?: string | null;
+}
+
+interface ExistingInvoiceRevision {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  revisionNumber: number;
+  vatRate?: number | { toString(): string };
+  buyer?: InvoiceParty;
+  seller?: InvoiceParty;
+  title?: string | null;
+  date?: string | null;
+  greeting?: string | null;
+  closing?: string | null;
+  signature?: string | null;
+  logo?: string | null;
+  footer?: string | null;
+  terms?: string | null;
+  privacy?: string | null;
+  invoiceNumber?: string | null;
+  correctionInvoiceReference?: unknown;
+  decimals?: number | null;
+  thousandDelimiter?: string | null;
+  decimalDelimiter?: string | null;
+  language?: string | null;
+  dateFormat?: string | null;
+  invoiceItems: ExistingInvoiceItem[];
+  InvoiceBase?: ExistingInvoiceBase;
+}
+
+interface InvoiceParty {
+  name: string | null;
+  country: string;
+  city: string;
+  zipCode: string;
+  street: string;
+  streetNumber: string;
+  email: string | null;
+  phone: string | null;
+  companyName: string | null;
+  vatNumber: string | null;
+}
+
+function compareInvoiceParty(
+  party1: InvoiceParty,
+  party2: InvoiceParty,
+): boolean {
+  return (
+    party1.name === party2.name &&
+    party1.country === party2.country &&
+    party1.city === party2.city &&
+    party1.zipCode === party2.zipCode &&
+    party1.street === party2.street &&
+    party1.streetNumber === party2.streetNumber &&
+    party1.email === party2.email &&
+    party1.phone === party2.phone &&
+    party1.companyName === party2.companyName &&
+    party1.vatNumber === party2.vatNumber
+  );
+}
+
+function invoiceDataMatches(
+  input: z.infer<typeof postGenerateInvoiceSchemaInput>,
+  existingInvoiceItems: ExistingInvoiceItem[],
+  existingBuyer: InvoiceParty,
+  existingSeller: InvoiceParty,
+  existingInvoiceMetadata: {
+    title?: string | null;
+    date?: string | null;
+    greeting?: string | null;
+    closing?: string | null;
+    signature?: string | null;
+    logo?: string | null;
+    footer?: string | null;
+    terms?: string | null;
+    privacy?: string | null;
+    invoiceNumber?: string | null;
+    correctionInvoiceReference?: unknown;
+    decimals?: number | null;
+    thousandDelimiter?: string | null;
+    decimalDelimiter?: string | null;
+    language?: string | null;
+    dateFormat?: string | null;
+  },
+): boolean {
+  // Generate invoice groups for input data to compare
+  const inputGroups = generateInvoiceGroups(input.items, input.vatRate ?? 0);
+
+  // Generate invoice groups for existing invoice data
+  const existingItems = existingInvoiceItems?.map((item) => ({
+    name: item.name,
+    quantity: Number(item.quantity),
+    price: Number(item.pricePerUnitWithoutVat),
+    vatRateOverride: Number(item.vatRate),
+    currencyOverride:
+      item.currencyShortId || item.currency
+        ? {
+            currencyId: item.currencyShortId || item.currency || 'USD',
+            currencySymbol:
+              item.currencySymbol ||
+              item.currencyShortId ||
+              item.currency ||
+              'USD',
+            currencyDecimals: item.decimals,
+            currencySymbolPosition:
+              item.currencySymbolPosition || $Enums.SymbolPosition.Before,
+          }
+        : undefined,
+  }));
+
+  const existingGroups = generateInvoiceGroups(existingItems, 0);
+
+  // Compare invoice groups
+  const groupsMatch = stringify(inputGroups) === stringify(existingGroups);
+
+  if (!groupsMatch) return false;
+
+  // Compare buyer data using the dedicated function
+  const buyerMatches = compareInvoiceParty(input.buyer, existingBuyer);
+
+  // Compare seller data using the dedicated function
+  const sellerMatches = compareInvoiceParty(input.seller, existingSeller);
+
+  // Compare invoice metadata
+  if (!existingInvoiceMetadata) {
+    return buyerMatches && sellerMatches;
+  }
+
+  const invoiceMatches =
+    input.invoice?.title === existingInvoiceMetadata.title &&
+    input.invoice?.date === existingInvoiceMetadata.date &&
+    input.invoice?.greeting === existingInvoiceMetadata.greeting &&
+    input.invoice?.closing === existingInvoiceMetadata.closing &&
+    input.invoice?.signature === existingInvoiceMetadata.signature &&
+    input.invoice?.logo === existingInvoiceMetadata.logo &&
+    input.invoice?.footer === existingInvoiceMetadata.footer &&
+    input.invoice?.terms === existingInvoiceMetadata.terms &&
+    input.invoice?.privacy === existingInvoiceMetadata.privacy &&
+    input.invoice?.id === existingInvoiceMetadata.invoiceNumber &&
+    stringify(input.invoice?.correctionInvoiceReference) ===
+      stringify(existingInvoiceMetadata.correctionInvoiceReference) &&
+    input.invoice?.decimals === existingInvoiceMetadata.decimals &&
+    input.invoice?.thousandDelimiter ===
+      existingInvoiceMetadata.thousandDelimiter &&
+    input.invoice?.decimalDelimiter ===
+      existingInvoiceMetadata.decimalDelimiter &&
+    input.invoice?.language === existingInvoiceMetadata.language &&
+    input.invoice?.dateFormat === existingInvoiceMetadata.dateFormat;
+
+  return buyerMatches && sellerMatches && invoiceMatches;
+}
 
 export const postGenerateInvoiceEndpoint =
   adminAuthenticatedEndpointFactory.build({
@@ -489,18 +580,14 @@ export const postGenerateInvoiceEndpoint =
     }) => {
       const startTime = Date.now();
       try {
-        if (input.seller.companyName == null && input.seller.name == null) {
-          throw createHttpError(400, 'Company name or name is required');
-        }
-        if (input.buyer.companyName == null && input.buyer.name == null) {
-          throw createHttpError(400, 'Company name or name is required');
-        }
         const payment = await prisma.paymentRequest.findFirst({
           where: {
             blockchainIdentifier: input.blockchainIdentifier,
           },
           include: {
             BuyerWallet: true,
+            RequestedFunds: true,
+            PaymentSource: { include: { PaymentSourceConfig: true } },
           },
         });
 
@@ -529,11 +616,19 @@ export const postGenerateInvoiceEndpoint =
         }
 
         const message = stringify({
-          ...input,
+          buyer: input.buyer,
+          blockchainIdentifier: input.blockchainIdentifier,
+        });
+        const hash = generateHash(message);
+
+        const signedData = stringify({
+          action: input.action,
+          validUntil: input.validUntil,
+          hash: hash,
         });
 
         const isValid = await checkSignature(
-          message,
+          signedData,
           {
             signature: input.signature,
             key: input.key,
@@ -545,7 +640,82 @@ export const postGenerateInvoiceEndpoint =
           throw createHttpError(400, 'Signature is not valid');
         }
 
-        const pdfBase64 = await generateInvoicePDFBase64(input);
+        if (
+          resolvePaymentKeyHash(input.walletAddress) !==
+          resolvePaymentKeyHash(payment.BuyerWallet.walletAddress)
+        ) {
+          throw createHttpError(400, 'Wallet is not the buyer wallet');
+        }
+
+        const existingInvoice = await prisma.invoiceRevision.findFirst({
+          where: {
+            invoiceItems: {
+              some: {
+                referencedPayment: {
+                  blockchainIdentifier: input.blockchainIdentifier,
+                },
+              },
+            },
+          },
+          take: 1,
+          orderBy: {
+            revisionNumber: 'desc',
+          },
+          include: {
+            InvoiceBase: true,
+            invoiceItems: true,
+          },
+        });
+        const decidedIdentifier = decodeBlockchainIdentifier(
+          input.blockchainIdentifier,
+        );
+        const agentIdentifier = decidedIdentifier?.agentIdentifier;
+        if (!agentIdentifier) {
+          throw createHttpError(404, 'Agent identifier not found');
+        }
+        const blockfrost = new BlockFrostAPI({
+          projectId:
+            payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+        });
+        const agentName = await fetchAssetInWalletAndMetadata(
+          blockfrost,
+          agentIdentifier,
+        );
+        if ('error' in agentName) {
+          throw createHttpError(404, 'Agent not found');
+        }
+        const { assetInWallet, parsedMetadata } = agentName.data;
+        const resolved = resolveInvoiceConfig(input.invoice);
+        const invoiceItems =
+          existingInvoice?.invoiceItems != undefined
+            ? existingInvoice.invoiceItems
+            : calculateInvoiceItemsForPayment(
+                input.itemNamePrefix +
+                  parsedMetadata.agentName +
+                  input.itemNameSuffix,
+                payment.RequestedFunds,
+                input.vatRate ?? 0,
+              );
+
+        const allDataMatches = existingInvoice
+          ? invoiceDataMatches(
+              input,
+              invoiceItems,
+              existingInvoice.buyer,
+              existingInvoice.seller,
+              existingInvoice,
+            )
+          : false;
+
+        let pdfBase64 = '';
+
+        if (existingInvoice == null) {
+          //generate new invoice
+          pdfBase64 = await generateInvoicePDFBase64(input);
+        }
+        if (!allDataMatches) {
+          pdfBase64 = await generateInvoicePDFBase64(input);
+        }
 
         return {
           invoice: pdfBase64,
@@ -574,3 +744,13 @@ export const postGenerateInvoiceEndpoint =
       }
     },
   });
+function calculateInvoiceItemsForPayment(
+  itemName: string,
+  Funds: Array<{
+    unit: string;
+    amount: bigint;
+  }>,
+  vatRate: number,
+) {
+  throw new Error('Function not implemented.');
+}

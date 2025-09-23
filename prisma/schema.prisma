@@ -503,6 +503,16 @@ model InvoiceRevision {
   @@unique([invoiceBaseId, revisionNumber])
 }
 
+enum SymbolPosition {
+  Before
+  After
+}
+
+model InvoicePrefix {
+  id    String @id
+  count Int    @default(0)
+}
+
 model InvoiceItem {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -511,11 +521,13 @@ model InvoiceItem {
   name                   String
   quantity               Decimal
   pricePerUnitWithoutVat Decimal
-  currency               String
+  currencySymbol         String
+  currencySymbolPosition SymbolPosition
+  currencyShortId        String
+  decimals               Int
   vatRate                Decimal
   vatAmount              Decimal
   totalAmount            Decimal
-  decimals               Int
 
   referencedPayment   PaymentRequest? @relation(fields: [referencedPaymentId], references: [id])
   referencedPaymentId String?

@@ -13,10 +13,67 @@ function generateInvoiceId(): string {
   const randomHashShort = `${numberHash.slice(0, 4)}-${numberHash.slice(4, 8)}-${numberHash.slice(8, 12)}-${numberHash.slice(12, 16)}`;
   return randomHashShort;
 }
-interface VATGroup {
+
+// Currency type definition
+type Currency = {
+  id: string; // Short ID like 'EUR', 'USD', 'ADA'
+  symbol: string;
+  decimals: number;
+  symbolPosition: 'before' | 'after';
+};
+
+// Currency configuration with defaults
+const CURRENCY_CONFIG: Record<string, Omit<Currency, 'id'>> = {
+  USD: {
+    symbol: '$',
+    decimals: 2,
+    symbolPosition: 'before',
+  },
+  EUR: {
+    symbol: '€',
+    decimals: 2,
+    symbolPosition: 'after',
+  },
+  ADA: {
+    symbol: '₳',
+    decimals: 6,
+    symbolPosition: 'before',
+  },
+};
+
+function getCurrencyConfig(currencyId: string): Currency {
+  const config = CURRENCY_CONFIG[currencyId];
+  if (config) {
+    return {
+      id: currencyId,
+      ...config,
+    };
+  }
+  // Default fallback for unknown currencies
+  return {
+    id: currencyId,
+    symbol: currencyId,
+    decimals: 2,
+    symbolPosition: 'after',
+  };
+}
+
+type InvoiceItem = {
+  name: string;
+  quantity: number;
+  price: number; // Base price
+  priceWithoutVat?: number; // Calculated net price
+  priceWithVat?: number; // Calculated gross price
   vatRate: number;
-  vatIsIncluded: boolean;
-  items: Array<NonNullable<InvoiceData['invoiceItems']>[0]>;
+  vatAmount?: number; // VAT amount for this item
+  currency: Currency; // Required currency object
+  decimals?: number; // Item-specific decimal override
+};
+
+export interface InvoiceGroup {
+  vatRate: number;
+  currency: Currency; // Currency object for the group
+  items: InvoiceItem[];
   netTotal: number;
   vatAmount: number;
   grossTotal: number;
@@ -119,58 +176,185 @@ const LOCALE_CONFIG = {
   },
 } as const;
 
-export function generateInvoiceHTML(data: InvoiceData): string {
-  const {
-    seller,
-    buyer,
-    invoiceTitle,
-    invoiceDate = new Date().toLocaleDateString(),
-    invoiceItems = [],
-    invoiceGreetings,
-    invoiceClosing,
-    invoiceSignature,
-    invoiceLogo,
-    invoiceFooter,
-    invoiceTerms,
-    invoicePrivacy,
-    correctionInvoiceReference,
-    vatRate = 0,
-    vatIsIncludedInThePrice = false,
-    decimals = 2,
-    currency: globalCurrency,
-    thousandDelimiter,
-    decimalDelimiter = '.',
-    language = 'en-us',
-    dateFormat,
-  } = data;
+export type LanguageKey = keyof typeof LOCALE_CONFIG;
 
-  // Get locale configuration
-  const locale = LOCALE_CONFIG[language];
+export type InvoiceTexts = {
+  invoice: string;
+  correction: string;
+  correctionInvoice: string;
+  correctionDefault: (invoiceNumber: string, invoiceDate: string) => string;
+  reason: string;
+  from: string;
+  to: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  totalNet: string;
+  vatRate: string;
+  netTotal: string;
+  totalVat: string;
+  totalAmount: string;
+  subtotal: string;
+  vat: string;
+  date: string;
+  invoiceNumber: string;
+  email: string;
+  phone: string;
+  termsAndConditions: string;
+  privacyPolicy: string;
+};
+
+function isLanguageKey(value: unknown): value is keyof typeof LOCALE_CONFIG {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(LOCALE_CONFIG, value)
+  );
+}
+
+function resolveLanguageKey(value?: string): keyof typeof LOCALE_CONFIG {
+  return isLanguageKey(value) ? value : 'en-us';
+}
+
+// Extracts the localized texts based on the invoice's language field
+export function extractInvoiceTexts(
+  invoice?: InvoiceData['invoice'],
+): InvoiceTexts {
+  const languageKey = resolveLanguageKey(invoice?.language);
+  const locale = LOCALE_CONFIG[languageKey];
   const t = locale.texts;
-  const defaultInvoiceTitle = invoiceTitle || t.invoice;
+  return {
+    invoice: t.invoice,
+    correction: t.correction,
+    correctionInvoice: t.correctionInvoice,
+    correctionDefault: t.correctionDefault,
+    reason: t.reason,
+    from: t.from,
+    to: t.to,
+    description: t.description,
+    quantity: t.quantity,
+    unitPrice: t.unitPrice,
+    totalNet: t.totalNet,
+    vatRate: t.vatRate,
+    netTotal: t.netTotal,
+    totalVat: t.totalVat,
+    totalAmount: t.totalAmount,
+    subtotal: t.subtotal,
+    vat: t.vat,
+    date: t.date,
+    invoiceNumber: t.invoiceNumber,
+    email: t.email,
+    phone: t.phone,
+    termsAndConditions: t.termsAndConditions,
+    privacyPolicy: t.privacyPolicy,
+  };
+}
 
-  // Determine delimiters with language defaults
-  const useThousandDelimiter =
-    thousandDelimiter ?? locale.defaultThousandDelimiter;
-  const useDecimalDelimiter =
-    decimalDelimiter ?? locale.defaultDecimalDelimiter;
-  const useDateFormat = dateFormat ?? locale.defaultDateFormat;
+export type ResolvedInvoiceConfig = {
+  // Display fields (fully resolved)
+  title: string;
+  date: string;
+  greeting: string;
+  closing: string;
+  signature: string;
+  logo: string;
+  footer: string;
+  terms: string;
+  privacy: string;
+  id: string;
+  correctionInvoiceReference: {
+    correctionReason: string;
+    correctionTitle: string;
+    correctionDescription: string;
+  } | null;
+  itemNamePrefix: string;
+  itemNameSuffix: string;
+  currencyShortId: string;
+  currencySymbol: string;
+  currencySymbolPosition: 'before' | 'after';
+  currencyDecimals: number;
 
-  const usedInvoiceNumber = data.invoiceNumber ?? generateInvoiceId();
+  // Resolved formatting
+  decimals: number;
+  thousandDelimiter: ',' | '.' | ' ' | "'";
+  decimalDelimiter: '.' | ',';
+  language: LanguageKey;
+  dateFormat: string;
 
-  // Group items by VAT rate and inclusion setting
-  const vatGroups = new Map<string, VATGroup>();
+  // Resolved localized texts
+  texts: InvoiceTexts;
+};
 
-  invoiceItems.forEach((item) => {
+export function resolveInvoiceConfig(
+  invoice?: InvoiceData['invoice'],
+): ResolvedInvoiceConfig {
+  const languageKey = resolveLanguageKey(invoice?.language);
+  const locale = LOCALE_CONFIG[languageKey];
+  const resolvedId = invoice?.id ?? generateInvoiceId();
+  const resolvedDate = invoice?.date ?? new Date().toLocaleDateString();
+  const hasCorrection =
+    invoice?.correctionInvoiceReference != null &&
+    (invoice.correctionInvoiceReference.correctionReason != null ||
+      invoice.correctionInvoiceReference.correctionTitle != null ||
+      invoice.correctionInvoiceReference.correctionDescription != null);
+  return {
+    itemNamePrefix: invoice?.itemNamePrefix ?? '',
+    itemNameSuffix: invoice?.itemNameSuffix ?? '',
+    currencyShortId: invoice?.currencyShortId ?? '',
+    currencySymbol: invoice?.currencySymbol ?? '',
+    currencySymbolPosition: invoice?.currencySymbolPosition ?? 'before',
+    currencyDecimals: invoice?.currencyDecimals ?? 2,
+    title: invoice?.title?.trim() || locale.texts.invoice,
+    date: resolvedDate,
+    greeting: invoice?.greeting ?? '',
+    closing: invoice?.closing ?? '',
+    signature: invoice?.signature ?? '',
+    logo: invoice?.logo ?? '',
+    footer: invoice?.footer ?? '',
+    terms: invoice?.terms ?? '',
+    privacy: invoice?.privacy ?? '',
+    id: resolvedId,
+    correctionInvoiceReference: hasCorrection
+      ? {
+          correctionReason:
+            invoice?.correctionInvoiceReference?.correctionReason ?? '',
+          correctionTitle:
+            invoice?.correctionInvoiceReference?.correctionTitle?.trim() ||
+            locale.texts.correctionInvoice,
+          correctionDescription:
+            invoice?.correctionInvoiceReference?.correctionDescription?.trim() ||
+            locale.texts.correctionDefault(resolvedId, resolvedDate),
+        }
+      : null,
+
+    decimals: invoice?.decimals ?? 2,
+    thousandDelimiter:
+      invoice?.thousandDelimiter ?? locale.defaultThousandDelimiter,
+    decimalDelimiter:
+      invoice?.decimalDelimiter ?? locale.defaultDecimalDelimiter,
+    language: languageKey,
+    dateFormat: invoice?.dateFormat ?? locale.defaultDateFormat,
+
+    texts: extractInvoiceTexts(invoice),
+  };
+}
+
+export function generateInvoiceGroups(
+  items: InvoiceData['items'],
+  vatRate: number,
+): InvoiceGroup[] {
+  const invoiceGroups = new Map<string, InvoiceGroup>();
+  if (!items) return [];
+
+  items.forEach((item) => {
     const itemVatRate = item.vatRateOverride ?? vatRate;
-    const itemVatIsIncluded =
-      item.vatIsIncludedInThePriceOverride ?? vatIsIncludedInThePrice;
-    const groupKey = `${itemVatRate}`; // Group only by VAT rate
+    const itemCurrencyId = item.currencyOverride?.currencyId ?? 'USD';
+    const itemCurrency = getCurrencyConfig(itemCurrencyId);
+    const groupKey = `${itemCurrencyId}-${itemVatRate}`; // Group by currency ID AND VAT rate
 
-    if (!vatGroups.has(groupKey)) {
-      vatGroups.set(groupKey, {
+    if (!invoiceGroups.has(groupKey)) {
+      invoiceGroups.set(groupKey, {
         vatRate: itemVatRate,
-        vatIsIncluded: false, // Always treat as net prices in display
+        currency: itemCurrency,
         items: [],
         netTotal: 0,
         vatAmount: 0,
@@ -178,46 +362,75 @@ export function generateInvoiceHTML(data: InvoiceData): string {
       });
     }
 
-    const group = vatGroups.get(groupKey)!;
+    const group = invoiceGroups.get(groupKey)!;
 
-    // Store the original item with its inclusion setting for display logic
-    const itemWithInclusion = {
-      ...item,
-      vatIsIncludedInThePriceOverride: itemVatIsIncluded,
-    };
-    group.items.push(itemWithInclusion);
-
+    // Calculate item-level VAT and prices
     const itemTotal = item.quantity * item.price;
+    // Always treat prices as net (without VAT)
+    const netAmount = itemTotal;
+    const vatAmount = itemTotal * itemVatRate;
+    const grossAmount = itemTotal + vatAmount;
 
-    if (itemVatIsIncluded) {
-      // VAT is included in price - extract net amount
-      const netAmount = itemTotal / (1 + itemVatRate);
-      const vatAmount = itemTotal - netAmount;
-      group.netTotal += netAmount;
-      group.vatAmount += vatAmount;
-      group.grossTotal += itemTotal;
-    } else {
-      // VAT is not included - price is net amount
-      const vatAmount = itemTotal * itemVatRate;
-      group.netTotal += itemTotal;
-      group.vatAmount += vatAmount;
-      group.grossTotal += itemTotal + vatAmount;
-    }
+    // Create enhanced item with calculated values
+    const enhancedItem: InvoiceItem = {
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      priceWithoutVat: netAmount,
+      priceWithVat: grossAmount,
+      vatRate: itemVatRate,
+      vatAmount: vatAmount,
+      currency: itemCurrency,
+      decimals: item.currencyOverride?.currencyDecimals,
+    };
+
+    group.items.push(enhancedItem);
+
+    // Update group totals
+    group.netTotal += netAmount;
+    group.vatAmount += vatAmount;
+    group.grossTotal += grossAmount;
   });
 
-  // Calculate totals
-  let totalNet = 0;
-  let totalVat = 0;
-  let totalGross = 0;
+  return Array.from(invoiceGroups.values());
+}
 
-  vatGroups.forEach((group) => {
-    totalNet += group.netTotal;
-    totalVat += group.vatAmount;
-    totalGross += group.grossTotal;
-  });
+export function generateInvoiceHTML(
+  config: ResolvedInvoiceConfig,
+  seller: InvoiceData['seller'],
+  buyer: InvoiceData['buyer'],
+  invoiceGroups: InvoiceGroup[],
+): string {
+  const {
+    title,
+    date,
+    greeting,
+    closing,
+    signature,
+    logo,
+    footer,
+    terms,
+    privacy,
+    id,
+    correctionInvoiceReference,
+    decimals,
+    thousandDelimiter,
+    decimalDelimiter,
+    dateFormat,
+    texts,
+  } = config;
 
-  // Determine default currency
-  const defaultCurrency = globalCurrency || invoiceItems[0]?.currency || 'USD';
+  const t = texts;
+  const defaultInvoiceTitle = title || t.invoice;
+
+  // Determine delimiters (already resolved)
+  const useThousandDelimiter = thousandDelimiter;
+  const useDecimalDelimiter = decimalDelimiter;
+  const useDateFormat = dateFormat;
+
+  const usedInvoiceNumber = id ?? generateInvoiceId();
+
+  // Group items by VAT rate and inclusion setting
 
   // Helper function to format dates
   const formatDate = (dateString: string) => {
@@ -232,14 +445,13 @@ export function generateInvoiceHTML(data: InvoiceData): string {
       .replace('YYYY', year);
   };
 
-  // Helper function to format amounts
+  // Helper function to format amounts with currency-specific configuration
   const formatAmount = (
     amount: number,
+    currency: Currency,
     itemDecimals?: number,
-    itemCurrency?: string,
   ) => {
-    const useDecimals = itemDecimals ?? decimals;
-    const useCurrency = itemCurrency || defaultCurrency;
+    const useDecimals = itemDecimals ?? currency.decimals ?? decimals;
 
     // Custom delimiter formatting using language defaults
     const numStr = amount.toFixed(useDecimals);
@@ -256,7 +468,12 @@ export function generateInvoiceHTML(data: InvoiceData): string {
       ? `${formattedInteger}${useDecimalDelimiter}${decimalPart}`
       : formattedInteger;
 
-    return `${formattedNum} ${useCurrency}`;
+    // Format with currency symbol
+    if (currency.symbolPosition === 'before') {
+      return `${currency.symbol}${formattedNum}`;
+    } else {
+      return `${formattedNum} ${currency.symbol}`;
+    }
   };
 
   return `
@@ -265,7 +482,7 @@ export function generateInvoiceHTML(data: InvoiceData): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${invoiceTitle}</title>
+  <title>${title}</title>
   <style>
     * {
       margin: 0;
@@ -529,13 +746,13 @@ export function generateInvoiceHTML(data: InvoiceData): string {
     <!-- Header -->
     <div class="header">
       <div class="logo-section">
-        ${invoiceLogo ? `<img src="${invoiceLogo}" alt="Company Logo" class="logo">` : ''}
+        ${logo ? `<img src="${logo}" alt="Company Logo" class="logo">` : ''}
       </div>
       <div class="invoice-info">
         <div class="invoice-title">${correctionInvoiceReference ? `${t.correction} ` : ''}${defaultInvoiceTitle}</div>
         <div class="invoice-details">
           ${usedInvoiceNumber ? `<div><strong>${t.invoiceNumber}:</strong> ${usedInvoiceNumber}</div>` : ''}
-          <div><strong>${t.date}:</strong> ${formatDate(invoiceDate)}</div>
+          <div><strong>${t.date}:</strong> ${formatDate(date)}</div>
         </div>
       </div>
     </div>
@@ -578,9 +795,9 @@ export function generateInvoiceHTML(data: InvoiceData): string {
       correctionInvoiceReference
         ? `
     <div class="correction-notice">
-      <div class="correction-title">${correctionInvoiceReference.correctionTitle ?? t.correctionInvoice}</div>
+      <div class="correction-title">${correctionInvoiceReference.correctionTitle}</div>
       <div class="correction-details">
-        ${correctionInvoiceReference.correctionDescription ?? t.correctionDefault(correctionInvoiceReference.originalInvoiceNumber, correctionInvoiceReference.originalInvoiceDate)}
+        ${correctionInvoiceReference.correctionDescription}
         ${correctionInvoiceReference.correctionReason ? `<br><strong>${t.reason}:</strong> ${correctionInvoiceReference.correctionReason}` : ''}
       </div>
     </div>
@@ -589,11 +806,11 @@ export function generateInvoiceHTML(data: InvoiceData): string {
     }
 
     <!-- Greeting -->
-    ${invoiceGreetings ? `<div class="greeting">${invoiceGreetings}</div>` : ''}
+    ${greeting ? `<div class="greeting">${greeting}</div>` : ''}
 
     <!-- Items Table -->
     ${
-      invoiceItems.length > 0
+      invoiceGroups.length > 0
         ? `
     <table class="items-table">
       <thead>
@@ -605,42 +822,26 @@ export function generateInvoiceHTML(data: InvoiceData): string {
         </tr>
       </thead>
       <tbody>
-        ${Array.from(vatGroups.values())
+        ${Array.from(invoiceGroups.values())
           .map((group) => {
             const vatRateDisplay = (group.vatRate * 100).toFixed(1);
 
             return `
-        <!-- VAT Category Header -->
+        <!-- VAT Currency Category Header -->
         <tr class="vat-category-header">
-          <td colspan="4"><strong>${t.vatRate}: ${vatRateDisplay}%</strong></td>
+          <td colspan="4"><strong>${group.currency.id} - ${t.vatRate}: ${vatRateDisplay}%</strong></td>
         </tr>
         ${group.items
           .map((item) => {
-            const itemTotal = item.quantity * item.price;
-            const itemVatRate = item.vatRateOverride ?? vatRate;
-            const itemVatIsIncluded =
-              item.vatIsIncludedInThePriceOverride ?? vatIsIncludedInThePrice;
-            const itemDecimals = item.decimalsOverride ?? decimals;
-            const itemCurrency =
-              item.currencyOverride || item.currency || defaultCurrency;
-            let netUnitPrice, netAmount;
-
-            if (itemVatIsIncluded) {
-              // Convert gross price to net price
-              netUnitPrice = item.price / (1 + itemVatRate);
-              netAmount = itemTotal / (1 + itemVatRate);
-            } else {
-              // Price is already net
-              netUnitPrice = item.price;
-              netAmount = itemTotal;
-            }
+            const netUnitPrice = item.price; // Show the base price per unit
+            const netAmount = item.priceWithoutVat || 0;
 
             return `
         <tr>
           <td>${item.name}</td>
           <td class="text-center">${item.quantity}</td>
-          <td class="text-right">${formatAmount(netUnitPrice, itemDecimals, itemCurrency)}</td>
-          <td class="text-right">${formatAmount(netAmount, itemDecimals, itemCurrency)}</td>
+          <td class="text-right">${formatAmount(netUnitPrice, item.currency, item.decimals)}</td>
+          <td class="text-right">${formatAmount(netAmount, item.currency, item.decimals)}</td>
         </tr>
         `;
           })
@@ -651,15 +852,15 @@ export function generateInvoiceHTML(data: InvoiceData): string {
             ? `
         <tr class="vat-row">
           <td colspan="3"><strong>${t.vat} (${vatRateDisplay}%)</strong></td>
-          <td class="text-right"><strong>${formatAmount(group.vatAmount)}</strong></td>
+          <td class="text-right"><strong>${formatAmount(group.vatAmount, group.currency)}</strong></td>
         </tr>
         `
             : ''
         }
         <!-- Category Subtotal -->
         <tr class="vat-category-subtotal">
-          <td colspan="3"><strong>${t.subtotal} (${vatRateDisplay}%)</strong></td>
-          <td class="text-right"><strong>${formatAmount(group.grossTotal)}</strong></td>
+          <td colspan="3"><strong>${t.subtotal} ${group.currency.id} (${vatRateDisplay}%)</strong></td>
+          <td class="text-right"><strong>${formatAmount(group.grossTotal, group.currency)}</strong></td>
         </tr>
         `;
           })
@@ -669,57 +870,80 @@ export function generateInvoiceHTML(data: InvoiceData): string {
 
     <!-- Total Section -->
     <div class="total-section">
-      <div class="total-row">
-        <span>${t.netTotal}:</span>
-        <span>${formatAmount(totalNet)}</span>
-      </div>
-      ${Array.from(vatGroups.values())
-        .filter((group) => group.vatAmount > 0)
-        .map(
-          (group) => `
-      <div class="total-row">
-        <span>${t.vat} (${(group.vatRate * 100).toFixed(1)}%):</span>
-        <span>${formatAmount(group.vatAmount)}</span>
-      </div>
-      `,
-        )
-        .join('')}
+      <!-- Group totals by currency -->
       ${
-        totalVat > 0
+        // Group totals by currency
+        (() => {
+          const currencyTotals = new Map<
+            string,
+            { net: number; vat: number; gross: number; currency: Currency }
+          >();
+
+          invoiceGroups.forEach((group) => {
+            const currencyId = group.currency.id;
+            if (!currencyTotals.has(currencyId)) {
+              currencyTotals.set(currencyId, {
+                net: 0,
+                vat: 0,
+                gross: 0,
+                currency: group.currency,
+              });
+            }
+            const totals = currencyTotals.get(currencyId)!;
+            totals.net += group.netTotal;
+            totals.vat += group.vatAmount;
+            totals.gross += group.grossTotal;
+          });
+
+          // Display totals for each currency
+          return Array.from(currencyTotals.entries())
+            .map(
+              ([currencyId, totals]) => `
+      <!-- ${currencyId} Totals -->
+      <div class="total-row">
+        <span>${t.netTotal} (${currencyId}):</span>
+        <span>${formatAmount(totals.net, totals.currency)}</span>
+      </div>
+      ${
+        totals.vat > 0
           ? `
       <div class="total-row">
-        <span>${t.totalVat}:</span>
-        <span>${formatAmount(totalVat)}</span>
+        <span>${t.totalVat} (${currencyId}):</span>
+        <span>${formatAmount(totals.vat, totals.currency)}</span>
       </div>
       `
           : ''
       }
       <div class="total-row final">
-        <span>${t.totalAmount}:</span>
-        <span>${formatAmount(totalGross)}</span>
+        <span>${t.totalAmount} (${currencyId}):</span>
+        <span>${formatAmount(totals.gross, totals.currency)}</span>
       </div>
+      `,
+            )
+            .join('');
+        })()
+      }
     </div>
     `
         : ''
     }
 
     <!-- Closing -->
-    ${invoiceClosing ? `<div class="closing">${invoiceClosing}</div>` : ''}
+    ${closing ? `<div class="closing">${closing}</div>` : ''}
 
     <!-- Signature -->
-    ${invoiceSignature ? `<div class="signature">${invoiceSignature}</div>` : ''}
+    ${signature ? `<div class="signature">${signature}</div>` : ''}
 
     <!-- Terms and Conditions -->
     ${
-      (invoiceTerms && invoiceTerms.trim()) ||
-      (invoicePrivacy && invoicePrivacy.trim())
+      (terms && terms.trim()) || (privacy && privacy.trim())
         ? `
     <div class="terms-section">
       <div class="terms-title">${t.termsAndConditions}</div>
       <div class="terms-content">
-        ${invoiceTerms && invoiceTerms.trim() ? invoiceTerms : ''}
-        ${invoiceTerms && invoiceTerms.trim() && invoicePrivacy && invoicePrivacy.trim() ? `<br><br><strong>${t.privacyPolicy}:</strong><br>` : ''}
-        ${invoicePrivacy && invoicePrivacy.trim() ? invoicePrivacy : ''}
+        ${terms && terms.trim() ? terms : ''}
+        ${terms && terms.trim() && privacy && privacy.trim() ? `<br><br><strong>${t.privacyPolicy}:</strong><br>` : ''}
+        ${privacy && privacy.trim() ? privacy : ''}
       </div>
     </div>
     `
@@ -727,7 +951,7 @@ export function generateInvoiceHTML(data: InvoiceData): string {
     }
 
     <!-- Footer -->
-    ${invoiceFooter ? `<div class="footer">${invoiceFooter}</div>` : ''}
+    ${footer ? `<div class="footer">${footer}</div>` : ''}
   </div>
 </body>
 </html>

@@ -19,12 +19,12 @@ import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
-import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateHash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -476,34 +476,18 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         'The agentIdentifier is not of the specified payment source',
       );
     }
-    let assetInWallet = [];
-    try {
-      assetInWallet = await provider.assetsAddresses(input.agentIdentifier, {
-        order: 'desc',
-        count: 1,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('404')) {
-        throw createHttpError(404, 'Agent identifier not found');
-      }
-      throw createHttpError(500, 'Error fetching asset in wallet');
-    }
-
-    if (assetInWallet.length == 0) {
-      throw createHttpError(404, 'Agent identifier not found');
-    }
-
-    const assetMetadata = await provider.assetsById(input.agentIdentifier);
-    if (!assetMetadata || !assetMetadata.onchain_metadata) {
-      throw createHttpError(404, 'Agent registry metadata not found');
-    }
-    const parsedMetadata = metadataSchema.safeParse(
-      assetMetadata.onchain_metadata,
+    const fetchResult = await fetchAssetInWalletAndMetadata(
+      provider,
+      input.agentIdentifier,
     );
-    if (!parsedMetadata.success) {
-      throw createHttpError(404, 'Agent registry metadata not valid');
+    if ('error' in fetchResult) {
+      throw createHttpError(
+        fetchResult.error.code,
+        fetchResult.error.description,
+      );
     }
-    const pricing = parsedMetadata.data.agentPricing;
+    const { assetInWallet, parsedMetadata } = fetchResult.data;
+    const pricing = parsedMetadata.agentPricing;
     if (
       pricing.pricingType == PricingType.Fixed &&
       input.RequestedFunds != null
