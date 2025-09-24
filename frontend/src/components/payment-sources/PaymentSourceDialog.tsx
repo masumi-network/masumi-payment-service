@@ -63,12 +63,6 @@ export function PaymentSourceDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">
-                  Payment Type
-                </label>
-                <div className="text-sm">{paymentSource.paymentType}</div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
                   Fee Rate
                 </label>
                 <div className="text-sm">

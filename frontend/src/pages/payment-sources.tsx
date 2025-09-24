@@ -187,7 +187,6 @@ export default function PaymentSourcesPage() {
           source.smartContractAddress?.toLowerCase().includes(query) || false;
         const matchNetwork =
           source.network?.toLowerCase().includes(query) || false;
-
         return matchAddress || matchNetwork;
       });
     }
@@ -379,9 +378,6 @@ export default function PaymentSourcesPage() {
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Payment type
-                  </th>
                   <th className="p-4 text-left text-sm font-medium truncate">
                     Fee rate
                   </th>
@@ -415,13 +411,13 @@ export default function PaymentSourcesPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       No payment sources found
                     </td>
                   </tr>
