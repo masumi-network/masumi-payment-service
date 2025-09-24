@@ -203,8 +203,6 @@ export function AppProvider({
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
-    localStorage.removeItem('dialogPosition');
-    localStorage.removeItem('theme');
 
     // Reset all app state
     dispatch({ type: 'SET_API_KEY', payload: '' });
