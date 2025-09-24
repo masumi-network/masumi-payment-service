@@ -34,9 +34,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 function WelcomeScreen({
   onStart,
   networkType,
+  ignoreSetup,
 }: {
   onStart: () => void;
   networkType: string;
+  ignoreSetup: () => void;
 }) {
   const networkDisplay =
     networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -57,10 +59,13 @@ function WelcomeScreen({
       </p>
 
       <div className="flex items-center justify-center gap-4 mt-8">
-        <Button variant="secondary" className="text-sm">
-          <Link href={'/'} replace>
-            Skip for now
-          </Link>
+        <Button
+          variant="secondary"
+          className="text-sm"
+          type="button"
+          onClick={ignoreSetup}
+        >
+          Skip for now
         </Button>
         <Button className="text-sm" onClick={onStart}>
           Start setup
@@ -72,11 +77,13 @@ function WelcomeScreen({
 
 function SeedPhrasesScreen({
   onNext,
+  ignoreSetup,
 }: {
   onNext: (
     buyingWallet: { address: string; mnemonic: string },
     sellingWallet: { address: string; mnemonic: string },
   ) => void;
+  ignoreSetup: () => void;
 }) {
   const { apiClient, state } = useAppContext();
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -320,7 +327,7 @@ function SeedPhrasesScreen({
 
         <div className="flex items-center justify-center gap-4 pt-4">
           <Button variant="secondary" className="text-sm">
-            <Link href={'/settings'} replace>
+            <Link href={'/settings'} replace onClick={ignoreSetup}>
               Skip for now
             </Link>
           </Button>
@@ -357,10 +364,12 @@ function PaymentSourceSetupScreen({
   onNext,
   buyingWallet,
   sellingWallet,
+  ignoreSetup,
 }: {
   onNext: () => void;
   buyingWallet: { address: string; mnemonic: string } | null;
   sellingWallet: { address: string; mnemonic: string } | null;
+  ignoreSetup: () => void;
 }) {
   const { apiClient, state } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
@@ -378,7 +387,7 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
+        walletAddress: '',
       },
       feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
     },
@@ -556,10 +565,13 @@ function PaymentSourceSetupScreen({
             </div>
 
             <div className="flex items-center justify-center gap-4 pt-4">
-              <Button variant="secondary" className="text-sm" type="button">
-                <Link href={'/settings'} replace>
-                  Skip for now
-                </Link>
+              <Button
+                variant="secondary"
+                className="text-sm"
+                type="button"
+                onClick={ignoreSetup}
+              >
+                Skip for now
               </Button>
               <Button className="text-sm" disabled={isLoading} type="submit">
                 {isLoading ? 'Creating...' : 'Create Payment Source'}
@@ -758,11 +770,17 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     router.push('/');
   };
 
+  const handleIgnoreSetup = () => {
+    handleComplete();
+    localStorage.setItem('userIgnoredSetup', 'true');
+  };
+
   const steps = [
     <WelcomeScreen
       key="welcome"
       onStart={() => setCurrentStep(1)}
       networkType={networkType}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <SeedPhrasesScreen
       key="seed"
@@ -770,12 +788,14 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         setWallets({ buying, selling });
         setCurrentStep(2);
       }}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <PaymentSourceSetupScreen
       key="payment-source"
       onNext={() => setCurrentStep(3)}
       buyingWallet={wallets.buying}
       sellingWallet={wallets.selling}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <AddAiAgentScreen key="ai" onNext={() => setCurrentStep(4)} />,
     <SuccessScreen
