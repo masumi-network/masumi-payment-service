@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -253,7 +253,7 @@ export default function TransactionDetailsDialog({
         <DialogHeader>
           <DialogTitle>Transaction Details</DialogTitle>
         </DialogHeader>
-        <div className="space-y-6">
+        <div className="space-y-6 w-full">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <h4 className="font-semibold mb-1">Transaction ID</h4>
@@ -272,10 +272,10 @@ export default function TransactionDetailsDialog({
 
             <div className="col-span-2 w-full mb-4">
               <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
-              <p className="text-sm font-mono break-all flex gap-2 items-center">
-                {shortenAddress(transaction.blockchainIdentifier)}
+              <div className="text-sm font-mono break-all flex gap-2 items-center">
+                <span>{shortenAddress(transaction.blockchainIdentifier)}</span>
                 <CopyButton value={transaction.blockchainIdentifier} />
-              </p>
+              </div>
             </div>
 
             <div>
@@ -414,9 +414,18 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Transaction Hash</h5>
                 {transaction.CurrentTransaction?.txHash ? (
                   <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                    <p className="text-sm font-mono break-all">
+                    <a
+                      href={getExplorerUrl(
+                        transaction.CurrentTransaction.txHash,
+                        state.network,
+                        'transaction',
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono break-all hover:underline text-primary"
+                    >
                       {transaction.CurrentTransaction.txHash}
-                    </p>
+                    </a>
                     <CopyButton
                       value={transaction.CurrentTransaction?.txHash}
                     />
@@ -484,9 +493,18 @@ export default function TransactionDetailsDialog({
                       Collection Wallet
                     </h5>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-mono break-all">
+                      <a
+                        href={getExplorerUrl(
+                          transaction.SmartContractWallet.walletAddress,
+                          state.network,
+                          'address',
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-mono break-all hover:underline text-primary"
+                      >
                         {transaction.SmartContractWallet.walletAddress}
-                      </p>
+                      </a>
                       <CopyButton
                         value={transaction.SmartContractWallet?.walletAddress}
                       />
@@ -497,7 +515,7 @@ export default function TransactionDetailsDialog({
             )}
 
           {transaction.NextAction?.errorType && (
-            <div className="space-y-2">
+            <div className="space-y-2 break-all">
               <h4 className="font-semibold">Error Details</h4>
               <div className="space-y-2 rounded-md bg-destructive/20 p-4">
                 <div className="space-y-1">
