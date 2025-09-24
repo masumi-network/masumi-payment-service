@@ -45,6 +45,8 @@ export function getExplorerUrl(
       ? 'https://cardanoscan.io'
       : 'https://preprod.cardanoscan.io';
   return `${baseUrl}/${type}/${address}`;
+}
+
 /**
  * Formats count for display
  * Shows exact count up to maxValue, shows "maxValue+" for counts > maxValue
