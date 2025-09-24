@@ -109,7 +109,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     }
   }, [apiClient, dispatch]);
 
-  const signOut = () => {
+  const signOut = useCallback(() => {
     // Clear all localStorage items
     localStorage.removeItem('payment_api_key');
     localStorage.removeItem('selectedPaymentSourceId');
@@ -132,7 +132,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
     // Force redirect to login page
     window.location.href = '/';
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     const init = async () => {
@@ -181,7 +181,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     };
 
     init();
-  }, [apiClient, dispatch]);
+  }, [apiClient, dispatch, signOut]);
 
   useEffect(() => {
     if (isHealthy && state.apiKey) {

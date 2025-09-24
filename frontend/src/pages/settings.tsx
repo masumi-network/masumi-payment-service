@@ -5,13 +5,11 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { LuEye, LuEyeOff, LuSun, LuMoon, LuMonitor } from 'react-icons/lu';
 import { cn } from '@/lib/utils';
-import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
 import { CopyButton } from '@/components/ui/copy-button';
 
 export default function Settings() {
-  const router = useRouter();
   const { dispatch, state } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
