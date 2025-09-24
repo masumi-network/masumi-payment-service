@@ -39,7 +39,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { state, dispatch, setSelectedPaymentSourceId, apiClient } =
+  const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
 
   useEffect(() => {
@@ -119,32 +119,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       toast.error('Error fetching RPC API keys. Please try again later.');
     }
   }, [apiClient, dispatch]);
-
-  const signOut = useCallback(() => {
-    // Clear all localStorage items
-    localStorage.removeItem('payment_api_key');
-    localStorage.removeItem('selectedPaymentSourceId');
-    localStorage.removeItem('userIgnoredSetup');
-    localStorage.removeItem('masumi_last_transactions_visit');
-    localStorage.removeItem('masumi_new_transactions_count');
-    localStorage.removeItem('dialogPosition');
-    localStorage.removeItem('theme');
-    localStorage.removeItem('userIgnoredSetup');
-
-    // Reset all app state
-    dispatch({ type: 'SET_API_KEY', payload: '' });
-    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
-    dispatch({ type: 'SET_CONTRACTS', payload: [] });
-    dispatch({ type: 'SET_WALLETS', payload: [] });
-    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
-
-    // Reset component state
-    setIsUnauthorized(false);
-    setIsHealthy(null);
-
-    // Force redirect to login page
-    window.location.href = '/';
-  }, [dispatch]);
 
   useEffect(() => {
     const init = async () => {

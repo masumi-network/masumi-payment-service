@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
+import { useRouter } from 'next/router';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -135,6 +136,7 @@ export const AppContext = createContext<
       setApiClient: React.Dispatch<React.SetStateAction<Client>>;
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
     }
   | undefined
 >(undefined);
@@ -147,6 +149,7 @@ export function AppProvider({
   initialState: AppState;
 }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const router = useRouter();
   const [error, setError] = useState<{
     code?: number;
     message: string;
@@ -193,6 +196,26 @@ export function AppProvider({
     [],
   );
 
+  const signOut = useCallback(() => {
+    // Clear all localStorage items
+    localStorage.removeItem('payment_api_key');
+    localStorage.removeItem('selectedPaymentSourceId');
+    localStorage.removeItem('userIgnoredSetup');
+    localStorage.removeItem('masumi_last_transactions_visit');
+    localStorage.removeItem('masumi_new_transactions_count');
+    localStorage.removeItem('dialogPosition');
+    localStorage.removeItem('theme');
+
+    // Reset all app state
+    dispatch({ type: 'SET_API_KEY', payload: '' });
+    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
+    dispatch({ type: 'SET_CONTRACTS', payload: [] });
+    dispatch({ type: 'SET_WALLETS', payload: [] });
+    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
+    router.push('/');
+    window.location.reload();
+  }, [dispatch]);
+
   return (
     <AppContext.Provider
       value={{
@@ -203,6 +226,7 @@ export function AppProvider({
         setApiClient,
         selectedPaymentSourceId,
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
+        signOut,
       }}
     >
       {children}
