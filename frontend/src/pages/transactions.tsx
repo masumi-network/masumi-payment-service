@@ -92,9 +92,9 @@ export default function Transactions() {
     ).length;
 
     return [
-      { name: 'All', count: null },
-      { name: 'Payments', count: null },
-      { name: 'Purchases', count: null },
+    { name: 'All', count: null },
+    { name: 'Payments', count: null },
+    { name: 'Purchases', count: null },
       {
         name: 'Refund Requests',
         count: refundCount || null,
@@ -178,18 +178,9 @@ export default function Transactions() {
   }, [allTransactions, searchQuery, activeTab]);
 
   const fetchTransactions = useCallback(
-    async (reset = false) => {
+    async (forceFetchPurchases = false, forceFetchPayments = false) => {
       try {
-        if (reset) {
-          setIsLoading(true);
-          // Don't clear transactions immediately - let the new data replace them
-          setPurchaseCursorId(null);
-          setPaymentCursorId(null);
-          setHasMorePurchases(true);
-          setHasMorePayments(true);
-        } else {
           setIsLoadingMore(true);
-        }
         const selectedPaymentSource = state.paymentSources.find(
           (ps) => ps.id === selectedPaymentSourceId,
         );
@@ -198,8 +189,8 @@ export default function Transactions() {
         // Fetch purchases
         let purchases: Transaction[] = [];
         let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = hasMorePurchases;
-        if (hasMorePurchases || reset) {
+        let morePurchases = forceFetchPurchases || hasMorePurchases;
+        if (morePurchases) {
           const purchaseRes = await getPurchase({
             client: apiClient,
             query: {
@@ -229,8 +220,8 @@ export default function Transactions() {
         // Fetch payments
         let payments: Transaction[] = [];
         let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = hasMorePayments;
-        if (hasMorePayments || reset) {
+        let morePayments = forceFetchPayments || hasMorePayments;
+        if (morePayments) {
           const paymentRes = await getPayment({
             client: apiClient,
             query: {
@@ -261,8 +252,8 @@ export default function Transactions() {
         const combined = [
           ...purchases,
           ...payments,
-          //fixes ordering for updates - only include existing transactions if not resetting
-          ...(reset ? [] : allTransactions),
+          //fixes ordering for updates
+          ...allTransactions,
         ];
         const seen = new Set();
         const deduped = combined.filter((tx) => {
@@ -304,8 +295,19 @@ export default function Transactions() {
     ],
   );
 
+  const refreshTransactions = () => {
+    setPurchaseCursorId(null);
+    setPaymentCursorId(null);
+    setHasMorePurchases(true);
+    setHasMorePayments(true);
+    setIsLoading(true);
+    setAllTransactions([]);
+    // Force fetch both purchases and payments
+    fetchTransactions(true, true);
+  };
+
   useEffect(() => {
-    fetchTransactions(true);
+    fetchTransactions();
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
       localStorage.setItem(
@@ -410,7 +412,7 @@ export default function Transactions() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton
-                onRefresh={() => fetchTransactions(true)}
+                onRefresh={() => refreshTransactions()}
                 isRefreshing={isLoading}
               />
             </div>
@@ -516,7 +518,7 @@ export default function Transactions() {
                           {transaction.onChainState === 'Disputed' ? (
                             <span className="flex items-center gap-1">
                               <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                              {formatStatus(transaction.onChainState)}
+                          {formatStatus(transaction.onChainState)}
                             </span>
                           ) : (
                             formatStatus(transaction.onChainState)
@@ -561,7 +563,7 @@ export default function Transactions() {
       <TransactionDetailsDialog
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
-        onRefresh={() => fetchTransactions(true)}
+        onRefresh={() => fetchTransactions()}
         apiClient={apiClient}
         state={state}
       />
