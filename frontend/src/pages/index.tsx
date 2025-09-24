@@ -159,7 +159,9 @@ export default function Overview() {
             utxo.Amounts.forEach((amount) => {
               if (amount.unit === 'lovelace' || amount.unit == '') {
                 adaBalance += amount.quantity || 0;
-              } else if (amount.unit === 'USDM') {
+              } else if (
+                amount.unit === getUsdmConfig(state.network).fullAssetId
+              ) {
                 usdmBalance += amount.quantity || 0;
               }
             });
