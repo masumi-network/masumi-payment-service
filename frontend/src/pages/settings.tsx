@@ -19,11 +19,24 @@ export default function Settings() {
   const adminApiKey = state.apiKey || '';
 
   const signOut = () => {
+    // Clear all localStorage items
     localStorage.removeItem('payment_api_key');
+    localStorage.removeItem('selectedPaymentSourceId');
+    localStorage.removeItem('userIgnoredSetup');
+    localStorage.removeItem('masumi_last_transactions_visit');
+    localStorage.removeItem('masumi_new_transactions_count');
+    localStorage.removeItem('dialogPosition');
+    localStorage.removeItem('theme');
 
+    // Reset all app state
     dispatch({ type: 'SET_API_KEY', payload: '' });
+    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
+    dispatch({ type: 'SET_CONTRACTS', payload: [] });
+    dispatch({ type: 'SET_WALLETS', payload: [] });
+    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
 
-    router.push('/');
+    // Force redirect to login page
+    window.location.href = '/';
   };
 
   return (
