@@ -92,9 +92,9 @@ export default function Transactions() {
     ).length;
 
     return [
-    { name: 'All', count: null },
-    { name: 'Payments', count: null },
-    { name: 'Purchases', count: null },
+      { name: 'All', count: null },
+      { name: 'Payments', count: null },
+      { name: 'Purchases', count: null },
       {
         name: 'Refund Requests',
         count: refundCount || null,
@@ -180,7 +180,7 @@ export default function Transactions() {
   const fetchTransactions = useCallback(
     async (forceFetchPurchases = false, forceFetchPayments = false) => {
       try {
-          setIsLoadingMore(true);
+        setIsLoadingMore(true);
         const selectedPaymentSource = state.paymentSources.find(
           (ps) => ps.id === selectedPaymentSourceId,
         );
@@ -518,7 +518,7 @@ export default function Transactions() {
                           {transaction.onChainState === 'Disputed' ? (
                             <span className="flex items-center gap-1">
                               <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                          {formatStatus(transaction.onChainState)}
+                              {formatStatus(transaction.onChainState)}
                             </span>
                           ) : (
                             formatStatus(transaction.onChainState)
