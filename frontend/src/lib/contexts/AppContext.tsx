@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
-import { useRouter } from 'next/router';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -157,7 +156,6 @@ export function AppProvider({
   initialState: AppState;
 }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const router = useRouter();
   const [error, setError] = useState<{
     code?: number;
     message: string;
