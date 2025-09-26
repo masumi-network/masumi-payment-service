@@ -53,6 +53,7 @@ interface AppState {
   }[];
   apiKey: string | null;
   network: NetworkType;
+  isUnauthorized: boolean;
   rpcProviderApiKeys: {
     id: string;
     rpcProviderApiKey: string;
@@ -69,6 +70,7 @@ type AppAction =
   | { type: 'SET_WALLETS'; payload: any[] }
   | { type: 'SET_API_KEY'; payload: string }
   | { type: 'SET_NETWORK'; payload: NetworkType }
+  | { type: 'SET_UNAUTHORIZED'; payload: boolean }
   | { type: 'SET_RPC_API_KEYS'; payload: any[] };
 
 const initialAppState: AppState = {
@@ -81,6 +83,7 @@ const initialAppState: AppState = {
     (typeof window !== 'undefined' &&
       (localStorage.getItem('network') as NetworkType)) ||
     'Preprod',
+  isUnauthorized: false,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -112,6 +115,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         network: action.payload,
+      };
+    case 'SET_UNAUTHORIZED':
+      return {
+        ...state,
+        isUnauthorized: action.payload,
       };
     case 'SET_RPC_API_KEYS':
       return {
@@ -210,8 +218,7 @@ export function AppProvider({
     dispatch({ type: 'SET_CONTRACTS', payload: [] });
     dispatch({ type: 'SET_WALLETS', payload: [] });
     dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
-    router.push('/');
-    window.location.reload();
+    dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
   }, [dispatch]);
 
   return (

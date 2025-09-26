@@ -37,7 +37,6 @@ function App({ Component, pageProps, router }: AppProps) {
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(false);
   const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
@@ -123,7 +122,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   useEffect(() => {
     const init = async () => {
       try {
-        setIsUnauthorized(false);
+        dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
         const response = await getHealth({ client: apiClient });
 
         if (response.status !== 200) {
@@ -146,7 +145,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
         if (apiKeyStatus.status !== 200) {
           setIsHealthy(true);
-          setIsUnauthorized(true);
+          dispatch({ type: 'SET_UNAUTHORIZED', payload: true });
           return;
         }
 
@@ -207,7 +206,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     );
   }
 
-  if (isUnauthorized) {
+  if (state.isUnauthorized) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">
