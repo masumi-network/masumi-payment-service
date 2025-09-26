@@ -27,6 +27,117 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
+function validateRegistrationPricing(request: {
+  Pricing: {
+    pricingType: PricingType;
+    FixedPricing: { Amounts: Array<{ [key: string]: unknown }> } | null;
+  };
+}): void {
+  if (
+    request.Pricing.pricingType != PricingType.Fixed &&
+    request.Pricing.pricingType != PricingType.Free
+  ) {
+    throw new Error('Other than fixed and free pricing is not supported yet');
+  }
+
+  if (
+    request.Pricing.pricingType == PricingType.Fixed &&
+    (request.Pricing.FixedPricing == null ||
+      request.Pricing.FixedPricing.Amounts.length == 0)
+  ) {
+    throw new Error('No fixed pricing found, this is likely a bug');
+  }
+
+  if (
+    request.Pricing.pricingType == PricingType.Free &&
+    request.Pricing.FixedPricing != null
+  ) {
+    throw new Error('Free pricing requires no fixed pricing to be set');
+  }
+}
+
+function generateAssetName(firstUtxo: UTxO): string {
+  const txId = firstUtxo.input.txHash;
+  const txIndex = firstUtxo.input.outputIndex;
+  const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
+
+  const serializedOutputUint8Array = new Uint8Array(
+    Buffer.from(serializedOutput.toString(), 'hex'),
+  );
+  // Hash the serialized output using blake2b_256
+  const blake2b256 = blake2b(serializedOutputUint8Array, 32);
+  return Buffer.from(blake2b256).toString('hex');
+}
+
+function buildAgentMetadata(request: {
+  name: string;
+  description: string | null;
+  apiBaseUrl: string | null;
+  ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
+  capabilityName?: string | null;
+  capabilityVersion?: string | null;
+  authorName: string | null;
+  authorContactEmail: string | null;
+  authorContactOther: string | null;
+  authorOrganization: string | null;
+  privacyPolicy: string | null;
+  terms: string | null;
+  other: string | null;
+  tags: string[];
+  Pricing: {
+    pricingType: PricingType;
+    FixedPricing?: {
+      Amounts: Array<{ unit: string; amount: bigint; [key: string]: unknown }>;
+    } | null;
+  };
+  metadataVersion: number;
+}): AgentMetadata {
+  return {
+    name: stringToMetadata(request.name),
+    description: stringToMetadata(request.description),
+    api_base_url: stringToMetadata(request.apiBaseUrl),
+    example_output: request.ExampleOutputs.map((exampleOutput) => ({
+      name: stringToMetadata(exampleOutput.name),
+      mime_type: stringToMetadata(exampleOutput.mimeType),
+      url: stringToMetadata(exampleOutput.url),
+    })),
+    capability:
+      request.capabilityName && request.capabilityVersion
+        ? {
+            name: stringToMetadata(request.capabilityName),
+            version: stringToMetadata(request.capabilityVersion),
+          }
+        : undefined,
+    author: {
+      name: stringToMetadata(request.authorName),
+      contact_email: stringToMetadata(request.authorContactEmail),
+      contact_other: stringToMetadata(request.authorContactOther),
+      organization: stringToMetadata(request.authorOrganization),
+    },
+    legal: {
+      privacy_policy: stringToMetadata(request.privacyPolicy),
+      terms: stringToMetadata(request.terms),
+      other: stringToMetadata(request.other),
+    },
+    tags: request.tags,
+    agentPricing:
+      request.Pricing.pricingType == PricingType.Fixed
+        ? {
+            pricingType: PricingType.Fixed,
+            fixedPricing:
+              request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+                unit: stringToMetadata(pricing.unit),
+                amount: pricing.amount.toString(),
+              })) ?? [],
+          }
+        : {
+            pricingType: PricingType.Free,
+          },
+    image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
+    metadata_version: request.metadataVersion.toString(),
+  };
+}
+
 export async function registerAgentV1() {
   let release: MutexInterface.Releaser | null;
   try {
@@ -67,29 +178,7 @@ export async function registerAgentV1() {
             }),
           ],
           operations: registryRequests.map((request) => async () => {
-            if (
-              request.Pricing.pricingType != PricingType.Fixed &&
-              request.Pricing.pricingType != PricingType.Free
-            ) {
-              throw new Error(
-                'Other than fixed and free pricing is not supported yet',
-              );
-            }
-            if (
-              request.Pricing.pricingType == PricingType.Fixed &&
-              (request.Pricing.FixedPricing == null ||
-                request.Pricing.FixedPricing.Amounts.length == 0)
-            ) {
-              throw new Error('No fixed pricing found, this is likely a bug');
-            }
-            if (
-              request.Pricing.pricingType == PricingType.Free &&
-              request.Pricing.FixedPricing != null
-            ) {
-              throw new Error(
-                'Free pricing requires no fixed pricing to be set',
-              );
-            }
+            validateRegistrationPricing(request);
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentSource.network,
               paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -107,63 +196,8 @@ export async function registerAgentV1() {
             const firstUtxo = limitedFilteredUtxos[0];
             const collateralUtxo = limitedFilteredUtxos[0];
 
-            const txId = firstUtxo.input.txHash;
-            const txIndex = firstUtxo.input.outputIndex;
-            const serializedOutput =
-              txId + txIndex.toString(16).padStart(8, '0');
-
-            const serializedOutputUint8Array = new Uint8Array(
-              Buffer.from(serializedOutput.toString(), 'hex'),
-            );
-            // Hash the serialized output using blake2b_256
-            const blake2b256 = blake2b(serializedOutputUint8Array, 32);
-            const assetName = Buffer.from(blake2b256).toString('hex');
-            const metadata: AgentMetadata = {
-              name: stringToMetadata(request.name),
-              description: stringToMetadata(request.description),
-              api_base_url: stringToMetadata(request.apiBaseUrl),
-              example_output: request.ExampleOutputs.map((exampleOutput) => ({
-                name: stringToMetadata(exampleOutput.name),
-                mime_type: stringToMetadata(exampleOutput.mimeType),
-                url: stringToMetadata(exampleOutput.url),
-              })),
-              capability:
-                request.capabilityName && request.capabilityVersion
-                  ? {
-                      name: stringToMetadata(request.capabilityName),
-                      version: stringToMetadata(request.capabilityVersion),
-                    }
-                  : undefined,
-              author: {
-                name: stringToMetadata(request.authorName),
-                contact_email: stringToMetadata(request.authorContactEmail),
-                contact_other: stringToMetadata(request.authorContactOther),
-                organization: stringToMetadata(request.authorOrganization),
-              },
-              legal: {
-                privacy_policy: stringToMetadata(request.privacyPolicy),
-                terms: stringToMetadata(request.terms),
-                other: stringToMetadata(request.other),
-              },
-              tags: request.tags,
-              agentPricing:
-                request.Pricing.pricingType == PricingType.Fixed
-                  ? {
-                      pricingType: PricingType.Fixed,
-                      fixedPricing:
-                        request.Pricing.FixedPricing?.Amounts.map(
-                          (pricing) => ({
-                            unit: stringToMetadata(pricing.unit),
-                            amount: pricing.amount.toString(),
-                          }),
-                        ) ?? [],
-                    }
-                  : {
-                      pricingType: PricingType.Free,
-                    },
-              image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
-              metadata_version: request.metadataVersion.toString(),
-            };
+            const assetName = generateAssetName(firstUtxo);
+            const metadata = buildAgentMetadata(request);
             const evaluationTx = await generateRegisterAgentTransaction(
               blockchainProvider,
               network,
