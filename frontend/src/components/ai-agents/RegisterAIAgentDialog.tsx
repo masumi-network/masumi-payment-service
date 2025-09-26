@@ -286,22 +286,30 @@ export function RegisterAIAgentDialog({
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
             Capability: capability,
-            AgentPricing: {
-              pricingType: 'Fixed',
-              Pricing: data.prices.map((price) => {
-                const unit =
-                  price.unit === 'USDM'
-                    ? getUsdmConfig(state.network).fullAssetId
-                    : price.unit;
+            AgentPricing: (() => {
+              const isFreeAgent = data.isFree;
+
+              if (isFreeAgent) {
                 return {
-                  unit,
-                  amount:
-                    price.unit === 'free'
-                      ? '0'
-                      : (parseFloat(price.amount) * 1_000_000).toString(),
+                  pricingType: 'Free',
+                  Pricing: [],
                 };
-              }),
-            },
+              }
+
+              return {
+                pricingType: 'Fixed',
+                Pricing: data.prices.map((price) => {
+                  const unit =
+                    price.unit === 'USDM'
+                      ? getUsdmConfig(state.network).fullAssetId
+                      : price.unit;
+                  return {
+                    unit,
+                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  };
+                }),
+              };
+            })(),
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs:

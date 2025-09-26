@@ -162,14 +162,19 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
           terms: item.terms,
           other: item.other,
         },
-        AgentPricing: {
-          pricingType: PricingType.Fixed,
-          Pricing:
-            item.Pricing.FixedPricing?.Amounts.map((price) => ({
-              unit: price.unit,
-              amount: price.amount.toString(),
-            })) ?? [],
-        },
+        AgentPricing:
+          item.Pricing.pricingType == PricingType.Fixed
+            ? {
+                pricingType: PricingType.Fixed,
+                Pricing:
+                  item.Pricing.FixedPricing?.Amounts.map((price) => ({
+                    unit: price.unit,
+                    amount: price.amount.toString(),
+                  })) ?? [],
+              }
+            : {
+                pricingType: PricingType.Free,
+              },
         Tags: item.tags,
       })),
     };
@@ -522,14 +527,19 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           contactOther: result.authorContactOther,
           organization: result.authorOrganization,
         },
-        AgentPricing: {
-          pricingType: PricingType.Fixed,
-          Pricing:
-            result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-              unit: pricing.unit,
-              amount: pricing.amount.toString(),
-            })) ?? [],
-        },
+        AgentPricing:
+          input.AgentPricing.pricingType == PricingType.Fixed
+            ? {
+                pricingType: PricingType.Fixed,
+                Pricing:
+                  result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+                    unit: pricing.unit,
+                    amount: pricing.amount.toString(),
+                  })) ?? [],
+              }
+            : {
+                pricingType: PricingType.Free,
+              },
         Tags: result.tags,
       };
     } catch (error: unknown) {
