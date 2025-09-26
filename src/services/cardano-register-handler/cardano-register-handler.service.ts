@@ -326,7 +326,7 @@ async function generateRegisterAgentTransaction(
         quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
       },
       {
-        unit: 'lovelace',
+        unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
         quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
       },
     ]);

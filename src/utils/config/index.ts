@@ -185,6 +185,11 @@ export const SERVICE_CONSTANTS = {
     nftLabel: 721, // Standard NFT metadata
     masumiLabel: 674, // Masumi-specific metadata
   },
+
+  // Cardano native token identifier
+  CARDANO: {
+    NATIVE_TOKEN: 'lovelace', // ADA's smallest unit identifier
+  },
 } as const;
 
 export const DEFAULTS = {
