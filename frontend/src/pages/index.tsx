@@ -294,7 +294,7 @@ export default function Overview() {
     selectedPaymentSourceId,
   ]);
 
-  const formatUsdValue = (adaAmount: string, usdmAmount: string) => {
+  const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
     return `≈ $${(ada * rate).toFixed(2)}`;
@@ -389,7 +389,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance, totalUsdmBalance))}`}
+                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}
