@@ -11,14 +11,15 @@ type InvoiceData = z.infer<typeof postGenerateInvoiceSchemaInput>;
 
 export async function generateInvoicePDF(
   invoiceGroups: InvoiceGroup[],
-  invoiceData: InvoiceData,
+  seller: InvoiceData['seller'],
+  buyer: InvoiceData['buyer'],
   invoiceConfig: ResolvedInvoiceConfig,
 ): Promise<Buffer> {
   try {
     const htmlContent = generateInvoiceHTML(
       invoiceConfig,
-      invoiceData.seller,
-      invoiceData.buyer,
+      seller,
+      buyer,
       invoiceGroups,
     );
 
@@ -57,12 +58,14 @@ export async function generateInvoicePDF(
 
 export async function generateInvoicePDFBase64(
   invoiceGroups: InvoiceGroup[],
-  invoiceData: InvoiceData,
+  seller: InvoiceData['seller'],
+  buyer: InvoiceData['buyer'],
   invoiceConfig: ResolvedInvoiceConfig,
 ): Promise<string> {
   const pdfBuffer = await generateInvoicePDF(
     invoiceGroups,
-    invoiceData,
+    seller,
+    buyer,
     invoiceConfig,
   );
   return pdfBuffer.toString('base64');

@@ -7,15 +7,19 @@ import { recordBusinessEndpointError } from '@/utils/metrics';
 import stringify from 'canonical-json';
 import { checkSignature } from '@meshsdk/core';
 import { generateInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
-import { generateHash } from '@/utils/crypto';
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import {
   generateInvoiceGroups,
   resolveInvoiceConfig,
+  InvoiceGroupItemInput,
+  InvoiceGroup,
 } from '@/utils/invoice/template';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
+import { generateHash } from '@/utils/crypto';
+import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
+import { metadataToString } from '@/utils/converter/metadata-string-convert';
+// Template helpers are used inside the PDF generator
 
 export const postGenerateInvoiceSchemaInput = z
   .object({
@@ -59,7 +63,7 @@ export const postGenerateInvoiceSchemaInput = z
       .describe('Currency settings for this item'),
 
     currencyConversion: z
-      .map(z.string(), z.number())
+      .map(z.string(), z.number().gt(0))
       .optional()
       .describe('Currency conversion settings for this item'),
     invoice: z
@@ -148,35 +152,6 @@ export const postGenerateInvoiceSchemaInput = z
           .max(1000)
           .optional()
           .describe('The privacy of the invoice'),
-        correctionInvoiceReference: z
-          .object({
-            correctionReason: z
-              .string()
-              .min(1)
-              .max(500)
-              .optional()
-              .describe('Reason for the correction (optional)'),
-            correctionTitle: z
-              .string()
-              .min(1)
-              .max(100)
-              .optional()
-              .describe(
-                'Custom title for the correction notice (default: "CORRECTION INVOICE")',
-              ),
-            correctionDescription: z
-              .string()
-              .min(1)
-              .max(500)
-              .optional()
-              .describe(
-                'Custom description text for the correction notice (default: "This invoice corrects the original invoice...")',
-              ),
-          })
-          .optional()
-          .describe(
-            'Reference to the original invoice if this is a correction invoice',
-          ),
         decimals: z
           .number()
           .int()
@@ -371,195 +346,259 @@ export const postGenerateInvoiceSchemaOutput = z.object({
   invoice: z.string(),
 });
 
-interface ExistingInvoiceItem {
-  id?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-  name: string;
-  quantity: number | { toString(): string };
-  pricePerUnitWithoutVat: number | { toString(): string };
-  vatRate: number | { toString(): string };
-  currencyShortId?: string;
-  currency?: string;
-  currencySymbol?: string;
-  decimals: number;
-  currencySymbolPosition?: $Enums.SymbolPosition;
-  invoiceRevisionId?: string;
-}
-
-interface ExistingInvoiceBase {
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-  buyer?: InvoiceParty;
-  seller?: InvoiceParty;
-  title?: string | null;
-  date?: string | null;
-  greeting?: string | null;
-  closing?: string | null;
-  signature?: string | null;
-  logo?: string | null;
-  footer?: string | null;
-  terms?: string | null;
-  privacy?: string | null;
-  invoiceNumber?: string | null;
-  correctionInvoiceReference?: unknown;
-  decimals?: number | null;
-  thousandDelimiter?: string | null;
-  decimalDelimiter?: string | null;
-  language?: string | null;
-  dateFormat?: string | null;
-}
-
-interface ExistingInvoiceRevision {
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-  revisionNumber: number;
-  vatRate?: number | { toString(): string };
-  buyer?: InvoiceParty;
-  seller?: InvoiceParty;
-  title?: string | null;
-  date?: string | null;
-  greeting?: string | null;
-  closing?: string | null;
-  signature?: string | null;
-  logo?: string | null;
-  footer?: string | null;
-  terms?: string | null;
-  privacy?: string | null;
-  invoiceNumber?: string | null;
-  correctionInvoiceReference?: unknown;
-  decimals?: number | null;
-  thousandDelimiter?: string | null;
-  decimalDelimiter?: string | null;
-  language?: string | null;
-  dateFormat?: string | null;
-  invoiceItems: ExistingInvoiceItem[];
-  InvoiceBase?: ExistingInvoiceBase;
-}
-
-interface InvoiceParty {
-  name: string | null;
-  country: string;
-  city: string;
-  zipCode: string;
-  street: string;
-  streetNumber: string;
-  email: string | null;
-  phone: string | null;
-  companyName: string | null;
-  vatNumber: string | null;
-}
-
-function compareInvoiceParty(
-  party1: InvoiceParty,
-  party2: InvoiceParty,
+function partiesEqual(
+  a: {
+    name: string | null;
+    companyName: string | null;
+    vatNumber: string | null;
+    country: string;
+    city: string;
+    zipCode: string;
+    street: string;
+    streetNumber: string;
+    email: string | null;
+    phone: string | null;
+  },
+  b: {
+    name: string | null;
+    companyName: string | null;
+    vatNumber: string | null;
+    country: string;
+    city: string;
+    zipCode: string;
+    street: string;
+    streetNumber: string;
+    email: string | null;
+    phone: string | null;
+  },
 ): boolean {
   return (
-    party1.name === party2.name &&
-    party1.country === party2.country &&
-    party1.city === party2.city &&
-    party1.zipCode === party2.zipCode &&
-    party1.street === party2.street &&
-    party1.streetNumber === party2.streetNumber &&
-    party1.email === party2.email &&
-    party1.phone === party2.phone &&
-    party1.companyName === party2.companyName &&
-    party1.vatNumber === party2.vatNumber
+    a.name === b.name &&
+    a.companyName === b.companyName &&
+    a.vatNumber === b.vatNumber &&
+    a.country === b.country &&
+    a.city === b.city &&
+    a.zipCode === b.zipCode &&
+    a.street === b.street &&
+    a.streetNumber === b.streetNumber &&
+    a.email === b.email &&
+    a.phone === b.phone
   );
 }
 
-function invoiceDataMatches(
-  input: z.infer<typeof postGenerateInvoiceSchemaInput>,
-  existingInvoiceItems: ExistingInvoiceItem[],
-  existingBuyer: InvoiceParty,
-  existingSeller: InvoiceParty,
-  existingInvoiceMetadata: {
-    title?: string | null;
-    date?: string | null;
-    greeting?: string | null;
-    closing?: string | null;
-    signature?: string | null;
-    logo?: string | null;
-    footer?: string | null;
-    terms?: string | null;
-    privacy?: string | null;
+export function checkIfCorrectionInvoice(
+  existingInvoice: {
+    invoiceItems: Array<{
+      name: string;
+      quantity: { toString(): string } | number;
+      pricePerUnitWithoutVat: { toString(): string } | number;
+      vatRate: { toString(): string } | number;
+    }>;
+    sellerName?: string | null;
+    sellerCompanyName?: string | null;
+    sellerVatNumber?: string | null;
+    sellerCountry?: string;
+    sellerCity?: string;
+    sellerZipCode?: string;
+    sellerStreet?: string;
+    sellerStreetNumber?: string;
+    sellerEmail?: string | null;
+    sellerPhone?: string | null;
+    buyerName?: string | null;
+    buyerCompanyName?: string | null;
+    buyerVatNumber?: string | null;
+    buyerCountry?: string;
+    buyerCity?: string;
+    buyerZipCode?: string;
+    buyerStreet?: string;
+    buyerStreetNumber?: string;
+    buyerEmail?: string | null;
+    buyerPhone?: string | null;
+    invoiceTitle?: string | null;
+    invoiceDate?: string | Date | null;
+    invoiceGreetings?: string | null;
+    invoiceClosing?: string | null;
+    invoiceSignature?: string | null;
+    invoiceLogo?: string | null;
+    invoiceFooter?: string | null;
+    invoiceTerms?: string | null;
+    invoicePrivacy?: string | null;
+    thousandDelimiter?: string | null;
+    decimalDelimiter?: string | null;
+    dateFormat?: string | null;
     invoiceNumber?: string | null;
-    correctionInvoiceReference?: unknown;
-    decimals?: number | null;
+  } | null,
+  newGroups: InvoiceGroup[],
+  seller: z.infer<typeof postGenerateInvoiceSchemaInput>['seller'],
+  buyer: z.infer<typeof postGenerateInvoiceSchemaInput>['buyer'],
+  resolved: ReturnType<typeof resolveInvoiceConfig>,
+): {
+  isCorrectionInvoice: boolean;
+  correctionInvoice: {
+    correctionReason: string;
+    correctionTitle: string;
+    correctionDescription: string;
+  } | null;
+  correctionReasons: string[];
+} {
+  if (
+    existingInvoice == null ||
+    typeof existingInvoice !== 'object' ||
+    !('invoiceItems' in existingInvoice)
+  ) {
+    return {
+      isCorrectionInvoice: false,
+      correctionInvoice: null,
+      correctionReasons: [],
+    };
+  }
+
+  const inv = existingInvoice as {
+    invoiceItems: Array<{
+      name: string;
+      quantity: { toString(): string } | number;
+      pricePerUnitWithoutVat: { toString(): string } | number;
+      vatRate: { toString(): string } | number;
+    }>;
+    // flattened seller/buyer fields
+    sellerCountry?: string;
+    sellerCity?: string;
+    sellerZipCode?: string;
+    sellerStreet?: string;
+    sellerStreetNumber?: string;
+    sellerEmail?: string | null;
+    sellerPhone?: string | null;
+    sellerName?: string | null;
+    sellerCompanyName?: string | null;
+    sellerVatNumber?: string | null;
+
+    buyerCountry?: string;
+    buyerCity?: string;
+    buyerZipCode?: string;
+    buyerStreet?: string;
+    buyerStreetNumber?: string;
+    buyerEmail?: string | null;
+    buyerPhone?: string | null;
+    buyerName?: string | null;
+    buyerCompanyName?: string | null;
+    buyerVatNumber?: string | null;
+
+    invoiceTitle?: string | null;
+    invoiceDate?: string | Date | null;
+    invoiceGreetings?: string | null;
+    invoiceClosing?: string | null;
+    invoiceSignature?: string | null;
+    invoiceLogo?: string | null;
+    invoiceFooter?: string | null;
+    invoiceTerms?: string | null;
+    invoicePrivacy?: string | null;
     thousandDelimiter?: string | null;
     decimalDelimiter?: string | null;
     language?: string | null;
     dateFormat?: string | null;
-  },
-): boolean {
-  // Generate invoice groups for input data to compare
-  const inputGroups = generateInvoiceGroups(input.items, input.vatRate ?? 0);
+  };
 
-  // Generate invoice groups for existing invoice data
-  const existingItems = existingInvoiceItems?.map((item) => ({
-    name: item.name,
-    quantity: Number(item.quantity),
-    price: Number(item.pricePerUnitWithoutVat),
-    vatRateOverride: Number(item.vatRate),
-    currencyOverride:
-      item.currencyShortId || item.currency
-        ? {
-            currencyId: item.currencyShortId || item.currency || 'USD',
-            currencySymbol:
-              item.currencySymbol ||
-              item.currencyShortId ||
-              item.currency ||
-              'USD',
-            currencyDecimals: item.decimals,
-            currencySymbolPosition:
-              item.currencySymbolPosition || $Enums.SymbolPosition.Before,
-          }
-        : undefined,
+  // Compare groups
+  const existingItems = inv.invoiceItems.map((it) => ({
+    name: it.name,
+    quantity: Number(it.quantity.toString()),
+    price: Number(it.pricePerUnitWithoutVat.toString()),
+    vatRateOverride: Number(it.vatRate.toString()),
   }));
-
   const existingGroups = generateInvoiceGroups(existingItems, 0);
+  const itemsChanged = stringify(existingGroups) !== stringify(newGroups);
 
-  // Compare invoice groups
-  const groupsMatch = stringify(inputGroups) === stringify(existingGroups);
+  // Compare parties (existing invoice stores flattened fields)
+  const existingSeller = {
+    name: inv.sellerName ?? null,
+    companyName: inv.sellerCompanyName ?? null,
+    vatNumber: inv.sellerVatNumber ?? null,
+    country: inv.sellerCountry ?? '',
+    city: inv.sellerCity ?? '',
+    zipCode: inv.sellerZipCode ?? '',
+    street: inv.sellerStreet ?? '',
+    streetNumber: inv.sellerStreetNumber ?? '',
+    email: inv.sellerEmail ?? null,
+    phone: inv.sellerPhone ?? null,
+  };
+  const existingBuyer = {
+    name: inv.buyerName ?? null,
+    companyName: inv.buyerCompanyName ?? null,
+    vatNumber: inv.buyerVatNumber ?? null,
+    country: inv.buyerCountry ?? '',
+    city: inv.buyerCity ?? '',
+    zipCode: inv.buyerZipCode ?? '',
+    street: inv.buyerStreet ?? '',
+    streetNumber: inv.buyerStreetNumber ?? '',
+    email: inv.buyerEmail ?? null,
+    phone: inv.buyerPhone ?? null,
+  };
+  const sellerChanged = !partiesEqual(existingSeller, seller);
+  const buyerChanged = !partiesEqual(existingBuyer, buyer);
 
-  if (!groupsMatch) return false;
+  // Compare metadata subset
+  const dateStr =
+    typeof inv.invoiceDate === 'string'
+      ? inv.invoiceDate
+      : inv.invoiceDate instanceof Date
+        ? inv.invoiceDate.toISOString().slice(0, 10)
+        : '';
+  const metadataChanged =
+    !((resolved.title ?? '') === (inv.invoiceTitle ?? '')) ||
+    !((resolved.date ?? '') === dateStr) ||
+    !((resolved.greeting ?? '') === (inv.invoiceGreetings ?? '')) ||
+    !((resolved.closing ?? '') === (inv.invoiceClosing ?? '')) ||
+    !((resolved.signature ?? '') === (inv.invoiceSignature ?? '')) ||
+    !((resolved.logo ?? '') === (inv.invoiceLogo ?? '')) ||
+    !((resolved.footer ?? '') === (inv.invoiceFooter ?? '')) ||
+    !((resolved.terms ?? '') === (inv.invoiceTerms ?? '')) ||
+    !((resolved.privacy ?? '') === (inv.invoicePrivacy ?? '')) ||
+    !(
+      resolved.thousandDelimiter ===
+      (inv.thousandDelimiter ?? resolved.thousandDelimiter)
+    ) ||
+    !(
+      resolved.decimalDelimiter ===
+      (inv.decimalDelimiter ?? resolved.decimalDelimiter)
+    ) ||
+    !(resolved.dateFormat === (inv.dateFormat ?? resolved.dateFormat));
 
-  // Compare buyer data using the dedicated function
-  const buyerMatches = compareInvoiceParty(input.buyer, existingBuyer);
+  const reasons: string[] = [];
+  if (itemsChanged) reasons.push('Items changed');
+  if (sellerChanged) reasons.push('Seller data changed');
+  if (buyerChanged) reasons.push('Buyer data changed');
+  if (metadataChanged) reasons.push('Invoice metadata changed');
 
-  // Compare seller data using the dedicated function
-  const sellerMatches = compareInvoiceParty(input.seller, existingSeller);
-
-  // Compare invoice metadata
-  if (!existingInvoiceMetadata) {
-    return buyerMatches && sellerMatches;
-  }
-
-  const invoiceMatches =
-    input.invoice?.title === existingInvoiceMetadata.title &&
-    input.invoice?.date === existingInvoiceMetadata.date &&
-    input.invoice?.greeting === existingInvoiceMetadata.greeting &&
-    input.invoice?.closing === existingInvoiceMetadata.closing &&
-    input.invoice?.signature === existingInvoiceMetadata.signature &&
-    input.invoice?.logo === existingInvoiceMetadata.logo &&
-    input.invoice?.footer === existingInvoiceMetadata.footer &&
-    input.invoice?.terms === existingInvoiceMetadata.terms &&
-    input.invoice?.privacy === existingInvoiceMetadata.privacy &&
-    input.invoice?.id === existingInvoiceMetadata.invoiceNumber &&
-    stringify(input.invoice?.correctionInvoiceReference) ===
-      stringify(existingInvoiceMetadata.correctionInvoiceReference) &&
-    input.invoice?.decimals === existingInvoiceMetadata.decimals &&
-    input.invoice?.thousandDelimiter ===
-      existingInvoiceMetadata.thousandDelimiter &&
-    input.invoice?.decimalDelimiter ===
-      existingInvoiceMetadata.decimalDelimiter &&
-    input.invoice?.language === existingInvoiceMetadata.language &&
-    input.invoice?.dateFormat === existingInvoiceMetadata.dateFormat;
-
-  return buyerMatches && sellerMatches && invoiceMatches;
+  const isCorrection = reasons.length > 0;
+  return {
+    isCorrectionInvoice: isCorrection,
+    correctionInvoice: isCorrection
+      ? {
+          correctionReason: reasons.join('; '),
+          correctionTitle: resolved.texts.correctionInvoice,
+          correctionDescription: resolved.texts.correctionDefault(
+            resolved.id,
+            resolved.date,
+          ),
+        }
+      : null,
+    correctionReasons: reasons,
+  };
 }
+
+// Legacy types retained for reference – currently unused
+// interface ExistingInvoiceItem { /* omitted */ }
+
+// interface ExistingInvoiceBase { /* omitted */ }
+
+// Legacy type retained for reference – currently unused
+// interface ExistingInvoiceRevision { /* omitted */ }
+
+// interface InvoiceParty { /* omitted */ }
+
+// Legacy compare function removed in new flow
+
+// NOTE: Legacy comparison removed for the new flow
 
 export const postGenerateInvoiceEndpoint =
   adminAuthenticatedEndpointFactory.build({
@@ -647,25 +686,6 @@ export const postGenerateInvoiceEndpoint =
           throw createHttpError(400, 'Wallet is not the buyer wallet');
         }
 
-        const existingInvoice = await prisma.invoiceRevision.findFirst({
-          where: {
-            invoiceItems: {
-              some: {
-                referencedPayment: {
-                  blockchainIdentifier: input.blockchainIdentifier,
-                },
-              },
-            },
-          },
-          take: 1,
-          orderBy: {
-            revisionNumber: 'desc',
-          },
-          include: {
-            InvoiceBase: true,
-            invoiceItems: true,
-          },
-        });
         const decidedIdentifier = decodeBlockchainIdentifier(
           input.blockchainIdentifier,
         );
@@ -684,38 +704,59 @@ export const postGenerateInvoiceEndpoint =
         if ('error' in agentName) {
           throw createHttpError(404, 'Agent not found');
         }
-        const { assetInWallet, parsedMetadata } = agentName.data;
-        const resolved = resolveInvoiceConfig(input.invoice);
-        const invoiceItems =
-          existingInvoice?.invoiceItems != undefined
-            ? existingInvoice.invoiceItems
-            : calculateInvoiceItemsForPayment(
-                input.itemNamePrefix +
-                  parsedMetadata.agentName +
-                  input.itemNameSuffix,
-                payment.RequestedFunds,
-                input.vatRate ?? 0,
+        const { parsedMetadata } = agentName.data;
+        // Build invoice items from RequestedFunds using conversion mapping (required)
+
+        const conversion = input.currencyConversion;
+        if (!conversion || conversion.size === 0) {
+          throw createHttpError(400, 'Missing currency conversion mapping');
+        }
+        const resolved = resolveInvoiceConfig(
+          input.currencySettings,
+          input.invoice,
+        );
+
+        const items: InvoiceGroupItemInput[] = payment.RequestedFunds.map(
+          (fund) => {
+            const unit = fund.unit;
+            const factor = conversion.get(unit);
+            if (factor == null) {
+              throw createHttpError(
+                400,
+                `Missing conversion for unit: ${unit}`,
               );
+            }
+            const quantity = 1;
+            const price = Number(fund.amount) * factor;
+            const conversionFactor = 1 / factor;
+            const agentDisplayName = metadataToString(parsedMetadata.name);
+            const name = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
+            return {
+              name,
+              quantity,
+              price,
+              conversionFactor,
+              conversionPrefix: '',
+              conversionSuffix: ` ${unit}`,
+            };
+          },
+        );
 
-        const allDataMatches = existingInvoice
-          ? invoiceDataMatches(
-              input,
-              invoiceItems,
-              existingInvoice.buyer,
-              existingInvoice.seller,
-              existingInvoice,
-            )
-          : false;
+        const x = checkIfCorrectionInvoice(
+          existingInvoice,
+          groups,
+          input.seller,
+          input.buyer,
+          resolved,
+        );
 
-        let pdfBase64 = '';
-
-        if (existingInvoice == null) {
-          //generate new invoice
-          pdfBase64 = await generateInvoicePDFBase64(input);
-        }
-        if (!allDataMatches) {
-          pdfBase64 = await generateInvoicePDFBase64(input);
-        }
+        const groups = generateInvoiceGroups(items, input.vatRate ?? 0);
+        const pdfBase64 = await generateInvoicePDFBase64(
+          groups,
+          input.seller,
+          input.buyer,
+          resolved,
+        );
 
         return {
           invoice: pdfBase64,
@@ -744,13 +785,3 @@ export const postGenerateInvoiceEndpoint =
       }
     },
   });
-function calculateInvoiceItemsForPayment(
-  itemName: string,
-  Funds: Array<{
-    unit: string;
-    amount: bigint;
-  }>,
-  vatRate: number,
-) {
-  throw new Error('Function not implemented.');
-}
