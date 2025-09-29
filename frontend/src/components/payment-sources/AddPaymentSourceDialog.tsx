@@ -110,7 +110,6 @@ export function AddPaymentSourceDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       network: state.network,
-      paymentType: 'Web3CardanoV1',
       blockfrostApiKey: '',
       feeReceiverWallet: {
         walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
@@ -157,10 +156,9 @@ export function AddPaymentSourceDialog({
     if (open) {
       reset({
         network: state.network,
-        paymentType: 'Web3CardanoV1',
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+          walletAddress: '',
         },
         feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
         purchasingWallets: [
@@ -208,7 +206,6 @@ export function AddPaymentSourceDialog({
         client: apiClient,
         body: {
           network: data.network,
-          paymentType: data.paymentType,
           PaymentSourceConfig: {
             rpcProviderApiKey: data.blockfrostApiKey,
             rpcProvider: 'Blockfrost',
@@ -348,7 +345,8 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key <span className="text-destructive">*</span>
+                    Blockfrost API Key{' '}
+                    <span className="text-destructive">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>

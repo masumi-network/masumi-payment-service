@@ -5,6 +5,7 @@ import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateHash } from '@/utils/crypto';
+import { CONSTANTS } from '@/utils/config';
 
 export const getAPIKeySchemaInput = z.object({
   limit: z
@@ -263,7 +264,8 @@ export const updateAPIKeyEndpointPatch =
           return result;
         },
         {
-          timeout: 10000,
+          timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+          maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
           isolationLevel: 'Serializable',
         },
       );

@@ -1,5 +1,4 @@
 /* eslint-disable react-hooks/rules-of-hooks */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -160,7 +159,9 @@ export default function Overview() {
             utxo.Amounts.forEach((amount) => {
               if (amount.unit === 'lovelace' || amount.unit == '') {
                 adaBalance += amount.quantity || 0;
-              } else if (amount.unit === 'USDM') {
+              } else if (
+                amount.unit === getUsdmConfig(state.network).fullAssetId
+              ) {
                 usdmBalance += amount.quantity || 0;
               }
             });
@@ -293,11 +294,10 @@ export default function Overview() {
     selectedPaymentSourceId,
   ]);
 
-  const formatUsdValue = (adaAmount: string, usdmAmount: string) => {
+  const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
-    const usdm = parseInt(usdmAmount) / 1000000;
-    return `≈ $${(ada * rate + usdm).toFixed(2)}`;
+    return `≈ $${(ada * rate).toFixed(2)}`;
   };
 
   return (
@@ -389,7 +389,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance, totalUsdmBalance))}`}
+                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}
@@ -454,12 +454,21 @@ export default function Overview() {
                         </div>
                       </div>
                       <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing?.Pricing?.[0] ? (
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <span className="text-xs font-normal text-muted-foreground">
+                              Free
+                            </span>
+                          )}
+                        {agent.AgentPricing &&
+                        agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {
                                 const price = agent.AgentPricing.Pricing[0];
                                 const unit = price.unit;
+                                if (unit === 'free') return 'Free';
                                 const formatted = (
                                   parseInt(price.amount) / 1_000_000
                                 ).toFixed(2);
@@ -634,107 +643,8 @@ export default function Overview() {
                             </td>
                           </tr>
                         ))}
-
-                        {/* Collection Wallet Rows */}
-                        {wallets.map((wallet) => {
-                          if (!wallet.collectionAddress) return null;
-                          return (
-                            <tr
-                              key={`collection-${wallet.id}`}
-                              className="border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                              onClick={() =>
-                                setSelectedWalletForDetails({
-                                  ...wallet,
-                                  walletAddress: wallet.collectionAddress!,
-                                  type: 'Collection' as any,
-                                  balance: wallet.collectionBalance?.ada || '0',
-                                  usdmBalance:
-                                    wallet.collectionBalance?.usdm || '0',
-                                })
-                              }
-                            >
-                              <td className="py-3 px-2">
-                                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-600 dark:text-blue-400">
-                                  Collection
-                                </span>
-                              </td>
-                              <td className="py-3 px-2">
-                                <div className="text-sm font-medium truncate max-w-[100px]">
-                                  Collection wallet
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {wallet.note && `${wallet.note}`}
-                                </div>
-                              </td>
-                              <td className="py-3 px-2">
-                                <div className="flex items-center gap-2 max-w-[100px]">
-                                  <span className="font-mono text-xs text-muted-foreground truncate">
-                                    {wallet.collectionAddress!}
-                                  </span>
-                                  <CopyButton
-                                    value={wallet.collectionAddress!}
-                                  />
-                                </div>
-                              </td>
-                              <td className="py-3 px-2">
-                                <div className="text-xs flex items-center gap-1">
-                                  {useFormatBalance(
-                                    (
-                                      parseInt(
-                                        wallet.collectionBalance?.ada || '0',
-                                      ) / 1000000
-                                    )
-                                      .toFixed(2)
-                                      ?.toString(),
-                                  )}
-                                  <span className="text-xs text-muted-foreground">
-                                    ADA
-                                  </span>
-                                </div>
-                                <div className="text-xs flex items-center gap-1">
-                                  {useFormatBalance(
-                                    (
-                                      parseInt(
-                                        wallet.collectionBalance?.usdm || '0',
-                                      ) / 1000000
-                                    )
-                                      .toFixed(2)
-                                      ?.toString(),
-                                  )}
-                                  <span className="text-xs text-muted-foreground">
-                                    USDM
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="py-3 px-2 w-32">
-                                {/* No actions for collection wallets */}
-                              </td>
-                            </tr>
-                          );
-                        })}
                       </tbody>
                     </table>
-
-                    {/* Show add collection wallet message if no collection addresses exist */}
-                    {!wallets.some((w) => w.collectionAddress) && (
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-[#0002] dark:border-blue-500/20 p-4 my-4">
-                        <div className="flex items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-                            <div className="text-sm">
-                              Add a collection wallet to manage your funds more
-                              effectively.
-                            </div>
-                          </div>
-                          <Button
-                            variant="outline"
-                            className="border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/10"
-                            onClick={() => setAddWalletDialogOpen(true)}
-                          >
-                            Add collection wallet
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -750,9 +660,7 @@ export default function Overview() {
                 </Button>
                 <div className="flex items-center gap-4 text-sm">
                   <span className="text-muted-foreground">
-                    Total:{' '}
-                    {wallets.length +
-                      wallets.filter((w) => w.collectionAddress).length}
+                    Total: {wallets.length}
                   </span>
                 </div>
               </div>
@@ -764,19 +672,27 @@ export default function Overview() {
       <AddWalletDialog
         open={isAddWalletDialogOpen}
         onClose={() => setAddWalletDialogOpen(false)}
+        onSuccess={fetchWallets}
       />
 
       <RegisterAIAgentDialog
         open={isRegisterAgentDialogOpen}
         onClose={() => setRegisterAgentDialogOpen(false)}
         onSuccess={() => {
-          // TODO: we can refresh data here
+          setTimeout(() => {
+            fetchAgents();
+          }, 2000);
         }}
       />
 
       <AIAgentDetailsDialog
         agent={selectedAgentForDetails}
         onClose={() => setSelectedAgentForDetails(null)}
+        onSuccess={() => {
+          setTimeout(() => {
+            fetchAgents();
+          }, 2000);
+        }}
       />
 
       {/*<SwapDialog

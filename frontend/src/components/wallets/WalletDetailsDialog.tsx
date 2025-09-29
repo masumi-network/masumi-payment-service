@@ -1,12 +1,13 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { RefreshCw, Share, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, getWallet } from '@/lib/api/generated';
+import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { useRate } from '@/lib/hooks/useRate';
@@ -63,6 +64,9 @@ export function WalletDetailsDialog({
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isEditingCollectionAddress, setIsEditingCollectionAddress] =
+    useState(false);
+  const [newCollectionAddress, setNewCollectionAddress] = useState('');
 
   const fetchTokenBalances = async () => {
     if (!wallet) return;
@@ -233,6 +237,39 @@ export function WalletDetailsDialog({
     URL.revokeObjectURL(url);
   };
 
+  const handleEditCollectionAddress = () => {
+    setIsEditingCollectionAddress(true);
+    setNewCollectionAddress(wallet?.collectionAddress || '');
+  };
+
+  const handleSaveCollection = async () => {
+    if (!wallet) return;
+
+    try {
+      await patchWallet({
+        client: apiClient,
+        body: {
+          id: wallet.id,
+          newCollectionAddress: newCollectionAddress || null,
+        },
+      });
+
+      toast.success('Collection address updated successfully');
+      setIsEditingCollectionAddress(false);
+
+      // Update the wallet object with the new collection address
+      wallet.collectionAddress = newCollectionAddress || null;
+    } catch (error) {
+      console.error('Failed to update collection address:', error);
+      toast.error('Failed to update collection address');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingCollectionAddress(false);
+    setNewCollectionAddress('');
+  };
+
   if (!wallet) return null;
 
   return (
@@ -258,9 +295,14 @@ export function WalletDetailsDialog({
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-sm break-all">
+                <a
+                  href={getExplorerUrl(wallet.walletAddress, state.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-sm break-all hover:underline text-primary"
+                >
                   {wallet.walletAddress}
-                </span>
+                </a>
                 <CopyButton value={wallet.walletAddress} />
               </div>
             </div>
@@ -345,17 +387,79 @@ export function WalletDetailsDialog({
             )}
 
             {/* Linked Collection Wallet Section */}
-            {wallet.collectionAddress && wallet.type !== 'Collection' && (
+            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
               <div className="flex flex-col gap-1 mt-2 border-t pt-4">
                 <div className="text-xs text-muted-foreground">
-                  Linked Collection Wallet
+                  {wallet.type === 'Selling'
+                    ? 'Linked Revenue Collection Address'
+                    : 'Linked Refund Collection Address'}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm">
-                    {shortenAddress(wallet.collectionAddress, 15)}
-                  </span>
-                  <CopyButton value={wallet.collectionAddress} />
-                </div>
+                {isEditingCollectionAddress ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newCollectionAddress}
+                      onChange={(e) => setNewCollectionAddress(e.target.value)}
+                      placeholder="Enter collection wallet address"
+                      className="flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleSaveCollection}
+                      className="h-8"
+                    >
+                      Done
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCancelEdit}
+                      className="h-8"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {wallet.collectionAddress ? (
+                      <>
+                        <a
+                          href={getExplorerUrl(
+                            wallet.collectionAddress,
+                            state.network,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-sm hover:underline text-primary"
+                        >
+                          {shortenAddress(wallet.collectionAddress, 15)}
+                        </a>
+                        <CopyButton value={wallet.collectionAddress} />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEditCollectionAddress}
+                          className="h-8"
+                        >
+                          Update
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-sm italic text-muted-foreground">
+                          none
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEditCollectionAddress}
+                          className="h-8"
+                        >
+                          Add
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

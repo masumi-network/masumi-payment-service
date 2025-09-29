@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2 } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -120,11 +121,16 @@ export default function AIAgentsPage() {
             ?.toLowerCase()
             .includes(query) || false;
         const matchState = agent.state?.toLowerCase().includes(query) || false;
-        const matchPrice = agent.AgentPricing?.Pricing?.[0]?.amount
-          ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-              .toFixed(2)
-              .includes(query)
-          : false;
+        const matchPrice =
+          agent.AgentPricing &&
+          agent.AgentPricing.pricingType == 'Fixed' &&
+          agent.AgentPricing.Pricing?.[0]?.amount
+            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
+                .toFixed(2)
+                .includes(query)
+            : agent.AgentPricing &&
+              agent.AgentPricing.pricingType == 'Free' &&
+              'free'.includes(query);
 
         return (
           matchName ||
@@ -331,7 +337,9 @@ export default function AIAgentsPage() {
               adaBalance = (
                 parseInt(adaBalance) + (amount.quantity || 0)
               ).toString();
-            } else if (amount.unit === 'USDM') {
+            } else if (
+              amount.unit === getUsdmConfig(state.network).fullAssetId
+            ) {
               usdmBalance = (
                 parseInt(usdmBalance) + (amount.quantity || 0)
               ).toString();
@@ -379,13 +387,19 @@ export default function AIAgentsPage() {
               </a>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2"
-            onClick={() => setIsRegisterDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Register AI Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => fetchAgents()}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2"
+              onClick={() => setIsRegisterDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Register AI Agent
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -520,13 +534,19 @@ export default function AIAgentsPage() {
                         </div>
                       </td>
                       <td className="p-4 text-sm truncate max-w-[100px]">
-                        {agent.AgentPricing?.Pricing?.map((price, index) => (
-                          <div key={index} className="whitespace-nowrap">
-                            {price.unit === 'lovelace' || !price.unit
-                              ? `${useFormatPrice(price.amount)} ADA`
-                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                          </div>
-                        ))}
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <div className="whitespace-nowrap">Free</div>
+                          )}
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Fixed' &&
+                          agent.AgentPricing.Pricing?.map((price, index) => (
+                            <div key={index} className="whitespace-nowrap">
+                              {price.unit === 'lovelace' || !price.unit
+                                ? `${useFormatPrice(price.amount)} ADA`
+                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                            </div>
+                          ))}
                       </td>
                       <td className="p-4">
                         {agent.Tags.length > 0 && (
@@ -547,11 +567,7 @@ export default function AIAgentsPage() {
                         </Badge>
                       </td>
                       <td className="p-4">
-                        {[
-                          'RegistrationConfirmed',
-                          'RegistrationFailed',
-                          'DeregistrationFailed',
-                        ].includes(agent.state) ? (
+                        {['RegistrationConfirmed'].includes(agent.state) ? (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -598,12 +614,21 @@ export default function AIAgentsPage() {
         <RegisterAIAgentDialog
           open={isRegisterDialogOpen}
           onClose={() => setIsRegisterDialogOpen(false)}
-          onSuccess={fetchAgents}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
           onClose={() => setSelectedAgentForDetails(null)}
+          onSuccess={() => {
+            setTimeout(() => {
+              fetchAgents();
+            }, 2000);
+          }}
         />
 
         <ConfirmDialog

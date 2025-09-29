@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -15,7 +16,7 @@ import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Spinner } from '@/components/ui/spinner';
-import { Search } from 'lucide-react';
+import { Search, Plus } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import {
   Select,
@@ -215,7 +216,6 @@ export default function ApiKeys() {
 
     try {
       setIsDeleting(true);
-      console.log('Deleting API key:', keyToDelete);
 
       const response = await deleteApiKey({
         client: apiClient,
@@ -257,17 +257,31 @@ export default function ApiKeys() {
       </Head>
       <div>
         <div className="mb-6">
-          <h1 className="text-xl font-semibold mb-1">API keys</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your API keys for accessing the payment service.{' '}
-            <a
-              href="https://docs.masumi.network/technical-documentation/payment-service-api/api-keys"
-              target="_blank"
-              className="text-primary hover:underline"
-            >
-              Learn more
-            </a>
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold mb-1">API keys</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage your API keys for accessing the payment service.{' '}
+                <a
+                  href="https://docs.masumi.network/technical-documentation/payment-service-api/api-keys"
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  Learn more
+                </a>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => fetchApiKeys()}
+                isRefreshing={isLoading}
+              />
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Add API key
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -291,11 +305,6 @@ export default function ApiKeys() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="max-w-xs pl-10"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={() => setIsAddDialogOpen(true)}>
-                Add API key
-              </Button>
             </div>
           </div>
 
@@ -344,13 +353,7 @@ export default function ApiKeys() {
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr
-                      key={index}
-                      className="border-b"
-                      onClick={() => {
-                        console.log(key);
-                      }}
-                    >
+                    <tr key={index} className="border-b" onClick={() => {}}>
                       <td className="p-4">
                         <Checkbox
                           checked={selectedKeys.includes(key.token)}

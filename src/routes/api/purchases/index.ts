@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   HotWalletType,
   Network,
-  PaymentType,
   PurchasingAction,
   TransactionStatus,
   PurchaseErrorType,
@@ -126,7 +125,6 @@ export const queryPurchaseRequestSchemaOutput = z.object({
         network: z.nativeEnum(Network),
         smartContractAddress: z.string(),
         policyId: z.string().nullable(),
-        paymentType: z.nativeEnum(PaymentType),
       }),
       SellerWallet: z
         .object({
@@ -260,9 +258,6 @@ export const createPurchaseInitSchemaInput = z.object({
     .max(7)
     .optional()
     .describe('The amounts to be paid for the purchase'),
-  paymentType: z
-    .nativeEnum(PaymentType)
-    .describe('The payment type of smart contract used'),
   unlockTime: z
     .string()
     .describe(
@@ -347,7 +342,6 @@ export const createPurchaseInitSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     policyId: z.string().nullable(),
     smartContractAddress: z.string(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   SellerWallet: z
     .object({
@@ -769,7 +763,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         metadata: input.metadata,
         network: input.network,
         blockchainIdentifier: input.blockchainIdentifier,
-        paymentType: input.paymentType,
         contractAddress: smartContractAddress,
         sellerVkey: input.sellerVkey,
         sellerAddress: addressOfAsset,
@@ -815,9 +808,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         externalDisputeUnlockTime:
           initialPurchaseRequest.externalDisputeUnlockTime.toString(),
       };
-
-      // Success is automatically recorded by middleware via recordApiRequestDuration
-      // No need for separate success recording as middleware handles it
 
       return result;
     } catch (error: unknown) {
