@@ -11,7 +11,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { X, Copy, Check } from 'lucide-react';
-import { shortenAddress, copyToClipboard } from '@/lib/utils';
+import { shortenAddress, copyToClipboard, handleApiCall } from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
@@ -198,58 +198,61 @@ export function AddPaymentSourceDialog({
   const onSubmit = async (data: FormSchema) => {
     setError('');
     setIsLoading(true);
-    try {
-      const adminWallets = data.useCustomAdminWallets
-        ? data.customAdminWallets
-        : DEFAULT_ADMIN_WALLETS[data.network];
-      const response = await postPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          network: data.network,
-          PaymentSourceConfig: {
-            rpcProviderApiKey: data.blockfrostApiKey,
-            rpcProvider: 'Blockfrost',
+
+    const adminWallets = data.useCustomAdminWallets
+      ? data.customAdminWallets
+      : DEFAULT_ADMIN_WALLETS[data.network];
+
+    await handleApiCall(
+      () =>
+        postPaymentSourceExtended({
+          client: apiClient,
+          body: {
+            network: data.network,
+            PaymentSourceConfig: {
+              rpcProviderApiKey: data.blockfrostApiKey,
+              rpcProvider: 'Blockfrost',
+            },
+            feeRatePermille: data.feePermille,
+            AdminWallets: adminWallets.map((w) => ({
+              walletAddress: w.walletAddress,
+            })) as [
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
+            FeeReceiverNetworkWallet: data.feeReceiverWallet,
+            PurchasingWallets: data.purchasingWallets.map((wallet) => ({
+              walletMnemonic: wallet.walletMnemonic,
+              collectionAddress: wallet.collectionAddress || null,
+              note: wallet.note || '',
+            })),
+            SellingWallets: data.sellingWallets.map((wallet) => ({
+              walletMnemonic: wallet.walletMnemonic,
+              collectionAddress: wallet.collectionAddress || null,
+              note: wallet.note || '',
+            })),
           },
-          feeRatePermille: data.feePermille,
-          AdminWallets: adminWallets,
-          FeeReceiverNetworkWallet: data.feeReceiverWallet,
-          PurchasingWallets: data.purchasingWallets.map((w) => ({
-            walletMnemonic: w.walletMnemonic,
-            collectionAddress: w.collectionAddress?.trim() || null,
-            note: w.note || '',
-          })),
-          SellingWallets: data.sellingWallets.map((w) => ({
-            walletMnemonic: w.walletMnemonic,
-            collectionAddress: w.collectionAddress?.trim() || null,
-            note: w.note || '',
-          })),
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Payment source created successfully');
+          onSuccess();
+          onClose();
         },
-      });
-      if (response.error) {
-        const error = response.error as {
-          message: string;
-          error: { message: string };
-        };
-        setError(
-          error.message ||
-            error.error.message ||
-            'Failed to create payment source',
-        );
-        return;
-      }
-      toast.success('Payment source created successfully');
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error creating payment source:', error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to create payment source',
-      );
-    } finally {
-      setIsLoading(false);
-    }
+        onError: (error: any) => {
+          const errorMessage =
+            error.message ||
+            error.error?.message ||
+            'Failed to create payment source';
+          setError(errorMessage);
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to create payment source',
+      },
+    );
   };
 
   const useCustomAdminWallets = watch('useCustomAdminWallets');
@@ -259,46 +262,65 @@ export function AddPaymentSourceDialog({
   const handleGeneratePurchasingMnemonic = async (index: number) => {
     setWalletGenError('');
     setGeneratingPurchasing((prev) => ({ ...prev, [index]: true }));
-    try {
-      const response: any = await postWallet({
-        client: apiClient,
-        body: { network: watch('network') },
-      });
-      if (response.status === 200 && response.data?.data?.walletMnemonic) {
-        // Set the mnemonic in the form
-        const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
-        setValue(fieldName, response.data.data.walletMnemonic);
-      } else {
-        throw new Error('Failed to generate mnemonic phrase');
-      }
-    } catch (error: any) {
-      setWalletGenError(error?.message || 'Failed to generate mnemonic');
-      toast.error(error?.message || 'Failed to generate mnemonic');
-    } finally {
-      setGeneratingPurchasing((prev) => ({ ...prev, [index]: false }));
-    }
+    await handleApiCall(
+      () =>
+        postWallet({
+          client: apiClient,
+          body: { network: watch('network') },
+        }),
+      {
+        onSuccess: (response: any) => {
+          if (response.data?.data?.walletMnemonic) {
+            // Set the mnemonic in the form
+            const fieldName =
+              `purchasingWallets.${index}.walletMnemonic` as const;
+            setValue(fieldName, response.data.data.walletMnemonic);
+          } else {
+            setWalletGenError('Failed to generate mnemonic phrase');
+            toast.error('Failed to generate mnemonic phrase');
+          }
+        },
+        onError: (error: any) => {
+          setWalletGenError(error?.message || 'Failed to generate mnemonic');
+          toast.error(error?.message || 'Failed to generate mnemonic');
+        },
+        onFinally: () => {
+          setGeneratingPurchasing((prev) => ({ ...prev, [index]: false }));
+        },
+        errorMessage: 'Failed to generate mnemonic',
+      },
+    );
   };
   // Handler to generate mnemonic for a selling wallet
   const handleGenerateSellingMnemonic = async (index: number) => {
     setWalletGenError('');
     setGeneratingSelling((prev) => ({ ...prev, [index]: true }));
-    try {
-      const response: any = await postWallet({
-        client: apiClient,
-        body: { network: watch('network') },
-      });
-      if (response.status === 200 && response.data?.data?.walletMnemonic) {
-        const fieldName = `sellingWallets.${index}.walletMnemonic` as const;
-        setValue(fieldName, response.data.data.walletMnemonic);
-      } else {
-        throw new Error('Failed to generate mnemonic phrase');
-      }
-    } catch (error: any) {
-      setWalletGenError(error?.message || 'Failed to generate mnemonic');
-      toast.error(error?.message || 'Failed to generate mnemonic');
-    } finally {
-      setGeneratingSelling((prev) => ({ ...prev, [index]: false }));
-    }
+    await handleApiCall(
+      () =>
+        postWallet({
+          client: apiClient,
+          body: { network: watch('network') },
+        }),
+      {
+        onSuccess: (response: any) => {
+          if (response.data?.data?.walletMnemonic) {
+            const fieldName = `sellingWallets.${index}.walletMnemonic` as const;
+            setValue(fieldName, response.data.data.walletMnemonic);
+          } else {
+            setWalletGenError('Failed to generate mnemonic phrase');
+            toast.error('Failed to generate mnemonic phrase');
+          }
+        },
+        onError: (error: any) => {
+          setWalletGenError(error?.message || 'Failed to generate mnemonic');
+          toast.error(error?.message || 'Failed to generate mnemonic');
+        },
+        onFinally: () => {
+          setGeneratingSelling((prev) => ({ ...prev, [index]: false }));
+        },
+        errorMessage: 'Failed to generate mnemonic',
+      },
+    );
   };
 
   type AdminWalletPath = `customAdminWallets.${0 | 1 | 2}.walletAddress`;
@@ -316,7 +338,7 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Network <span className="text-destructive">*</span>
+                    Network <span className="text-red-500">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
@@ -374,7 +396,7 @@ export function AddPaymentSourceDialog({
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Fee Permille <span className="text-destructive">*</span>
+                    Fee Permille <span className="text-red-500">*</span>
                   </label>
                   <TooltipProvider>
                     <Tooltip>
@@ -419,7 +441,7 @@ export function AddPaymentSourceDialog({
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Wallet Address <span className="text-destructive">*</span>
+                Wallet Address <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"

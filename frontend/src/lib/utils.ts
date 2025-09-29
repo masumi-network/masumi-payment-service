@@ -2,6 +2,7 @@
 
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { toast } from 'react-toastify';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -33,6 +34,70 @@ export function parseError(error: any): string {
     return error.message;
   }
   return 'An error occurred';
+}
+
+export function parseFetchError(errorData: any, response: Response): string {
+  return (
+    errorData.message ||
+    errorData.error ||
+    `HTTP ${response.status}: ${response.statusText}`
+  );
+}
+
+export async function handleApiCall<T>(
+  apiCall: () => Promise<T>,
+  options: {
+    onSuccess?: (data: T) => void;
+    onError?: (error: any) => void;
+    onFinally?: () => void;
+    errorMessage?: string;
+  } = {},
+): Promise<T | null> {
+  try {
+    const response = await apiCall();
+
+    // Check for API errors (response.error pattern)
+    if (
+      response &&
+      typeof response === 'object' &&
+      'error' in response &&
+      response.error
+    ) {
+      const error = response.error as { message: string };
+      console.error('API Error:', error);
+
+      if (options.onError) {
+        options.onError(error);
+      } else {
+        toast.error(error.message || options.errorMessage || 'API call failed');
+      }
+
+      return null;
+    }
+
+    // Success case
+    if (options.onSuccess) {
+      options.onSuccess(response);
+    }
+
+    return response;
+  } catch (error) {
+    // Handle unexpected errors (network, etc.)
+    console.error('Unexpected error:', error);
+
+    if (options.onError) {
+      options.onError(error);
+    } else {
+      toast.error(options.errorMessage || 'An unexpected error occurred');
+    }
+
+    return null;
+  } finally {
+    // Always execute cleanup
+    if (options.onFinally) {
+      options.onFinally();
+    }
+  }
 }
 
 export function getExplorerUrl(

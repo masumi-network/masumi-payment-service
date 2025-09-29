@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
@@ -81,52 +81,66 @@ export function AIAgentDetailsDialog({
   };
 
   const handleDelete = async () => {
-    try {
-      if (
-        agent?.state === 'RegistrationFailed' ||
-        agent?.state === 'DeregistrationConfirmed'
-      ) {
-        await deleteRegistry({
-          client: apiClient,
-          body: {
-            id: agent.id,
+    if (
+      agent?.state === 'RegistrationFailed' ||
+      agent?.state === 'DeregistrationConfirmed'
+    ) {
+      await handleApiCall(
+        () =>
+          deleteRegistry({
+            client: apiClient,
+            body: {
+              id: agent.id,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deleted from the database successfully');
+            onClose();
+            onSuccess?.();
           },
-        });
-        toast.success('AI agent deleted from the database successfully');
-        onClose();
-        onSuccess?.();
-        return;
-      } else if (agent?.state === 'RegistrationConfirmed') {
-        if (!agent?.agentIdentifier) {
-          toast.error('Cannot delete agent: Missing identifier');
-          return;
-        }
-
-        setIsDeleting(true);
-        await postRegistryDeregister({
-          client: apiClient,
-          body: {
-            agentIdentifier: agent.agentIdentifier,
-            network: state.network,
-            smartContractAddress:
-              state.paymentSources?.[0]?.smartContractAddress,
+          onFinally: () => {
+            setIsDeleting(false);
+            setIsDeleteDialogOpen(false);
           },
-        });
-        toast.success('AI agent deregistration initiated successfully');
-        onClose();
-        onSuccess?.();
+          errorMessage: 'Failed to delete AI agent',
+        },
+      );
+    } else if (agent?.state === 'RegistrationConfirmed') {
+      if (!agent?.agentIdentifier) {
+        toast.error('Cannot delete agent: Missing identifier');
         return;
-      } else {
-        toast.error(
-          'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
-        );
       }
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      toast.error('Failed to deregister AI agent');
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
+
+      setIsDeleting(true);
+      await handleApiCall(
+        () =>
+          postRegistryDeregister({
+            client: apiClient,
+            body: {
+              agentIdentifier: agent.agentIdentifier!,
+              network: state.network,
+              smartContractAddress:
+                state.paymentSources?.[0]?.smartContractAddress,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deregistration initiated successfully');
+            onClose();
+            onSuccess?.();
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+            setIsDeleteDialogOpen(false);
+          },
+          errorMessage: 'Failed to deregister AI agent',
+        },
+      );
+    } else {
+      toast.error(
+        'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
+      );
     }
   };
 
