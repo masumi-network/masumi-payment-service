@@ -1669,6 +1669,7 @@ async function handlePaymentTransactionCardanoV1(
         },
         include: {
           CurrentTransaction: { include: { BlocksWallet: true } },
+          NextAction: true,
         },
       });
 
@@ -1688,7 +1689,15 @@ async function handlePaymentTransactionCardanoV1(
           NextAction: {
             create: {
               requestedAction: newAction.action,
-              errorNote: newAction.errorNote,
+              errorNote:
+                paymentRequest.NextAction.errorNote != null
+                  ? paymentRequest.NextAction.errorNote +
+                    '(' +
+                    paymentRequest.NextAction.requestedAction +
+                    ')' +
+                    ' -> ' +
+                    newAction.errorNote
+                  : newAction.errorNote,
               errorType: newAction.errorType,
             },
           },
@@ -1775,6 +1784,7 @@ async function handlePurchasingTransactionCardanoV1(
         },
         include: {
           CurrentTransaction: { include: { BlocksWallet: true } },
+          NextAction: true,
         },
       });
 
@@ -1795,7 +1805,15 @@ async function handlePurchasingTransactionCardanoV1(
             create: {
               inputHash: purchasingRequest.inputHash,
               requestedAction: newAction.action,
-              errorNote: newAction.errorNote,
+              errorNote:
+                purchasingRequest.NextAction.errorNote != null
+                  ? purchasingRequest.NextAction.errorNote +
+                    '(' +
+                    purchasingRequest.NextAction.requestedAction +
+                    ')' +
+                    ' -> ' +
+                    newAction.errorNote
+                  : newAction.errorNote,
               errorType: newAction.errorType,
             },
           },

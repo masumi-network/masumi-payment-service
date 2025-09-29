@@ -26,6 +26,7 @@ import {
   waitForDisputed,
   cancelRefundRequest,
   deregisterAgent,
+  waitForRefundRequested,
 } from '../helperFunctions';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
@@ -139,11 +140,13 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
       await requestRefund(payment.blockchainIdentifier, testNetwork);
 
       console.log('✅ Refund request submitted while funds were locked');
+      console.log('⏳ Step 6: Waiting for refund requested state...');
+      await waitForRefundRequested(payment.blockchainIdentifier, testNetwork);
 
       // ============================
       // STEP 6: SUBMIT RESULT (Using Helper Function)
       // ============================
-      console.log('📋 Step 6: Submitting result after refund request...');
+      console.log('📋 Step 7: Submitting result after refund request...');
       const result = await submitResult(
         payment.blockchainIdentifier,
         testNetwork,
@@ -159,13 +162,13 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
       // ============================
       // STEP 7: WAIT FOR DISPUTED STATE (Using Helper Function)
       // ============================
-      console.log('⏳ Step 7: Waiting for disputed state...');
+      console.log('⏳ Step 8: Waiting for disputed state...');
       await waitForDisputed(payment.blockchainIdentifier, testNetwork);
 
       // ============================
       // STEP 8: CANCEL REFUND REQUEST (Using Helper Function)
       // ============================
-      console.log('❌ Step 8: Cancelling refund request...');
+      console.log('❌ Step 9: Cancelling refund request...');
       await cancelRefundRequest(payment.blockchainIdentifier, testNetwork);
 
       // Track cancellation
@@ -196,9 +199,10 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
         3. Purchase created matching payment
         4. Waited for FundsLocked state
         5. Refund requested while funds locked
-        6. Result submitted after refund request
-        7. Waited for Disputed state
-        8. 🚫 CANCELLED refund request → COMPLETE
+        6. Waited for RefundRequested state
+        7. Result submitted after refund request
+        8. Waited for Disputed state
+        9. 🚫 CANCELLED refund request → COMPLETE
       `);
 
       // ============================

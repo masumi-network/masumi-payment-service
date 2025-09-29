@@ -134,14 +134,6 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       await waitForFundsLocked(payment.blockchainIdentifier, testNetwork);
 
       // ============================
-      // BLOCKCHAIN STABILIZATION WAIT
-      // ============================
-      console.log(
-        '⏳ Waiting 60 seconds for blockchain state to stabilize before refund request...',
-      );
-      await new Promise((resolve) => setTimeout(resolve, 60000)); // 60 seconds
-
-      // ============================
       // STEP 5: REQUEST REFUND (EARLY - WHILE FUNDS LOCKED) (Using Helper Function)
       // ============================
       console.log(

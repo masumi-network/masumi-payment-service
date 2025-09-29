@@ -136,7 +136,7 @@ export async function registerAndConfirmAgent(
     waitForExpect.defaults.timeout = registrationTimeout;
   }
 
-  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+  waitForExpect.defaults.interval = 5000; // Check every 5 seconds
 
   await waitForExpect(async () => {
     checkCount++;
@@ -449,9 +449,6 @@ export async function waitForFundsLocked(
     '⏳ [Helper] Waiting for payment and purchase to reach FundsLocked state...',
   );
   console.log(
-    '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
-  );
-  console.log(
     '⏳ [Helper] INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
   );
 
@@ -461,7 +458,7 @@ export async function waitForFundsLocked(
   const originalTimeout = waitForExpect.defaults.timeout;
   const originalInterval = waitForExpect.defaults.interval;
   waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
-  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+  waitForExpect.defaults.interval = 5000; // Check every 5 seconds
 
   await waitForExpect(async () => {
     const elapsedMinutes = Math.floor(
@@ -491,6 +488,16 @@ export async function waitForFundsLocked(
 
     expect(currentPayment).toBeDefined();
     expect(currentPurchase).toBeDefined();
+    if (
+      currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Payment is in waiting for manual action');
+    }
+    if (
+      currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Purchase is in waiting for manual action');
+    }
 
     // Verify payment state
     expect(currentPayment.onChainState).toBe('FundsLocked');
@@ -536,9 +543,7 @@ export async function waitForResultSubmitted(
   console.log(
     '⏳ [Helper] Waiting for payment and purchase to reach ResultSubmitted state...',
   );
-  console.log(
-    '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
-  );
+
   console.log(
     '⏳ [Helper] INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
   );
@@ -549,7 +554,7 @@ export async function waitForResultSubmitted(
   const originalTimeout = waitForExpect.defaults.timeout;
   const originalInterval = waitForExpect.defaults.interval;
   waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
-  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+  waitForExpect.defaults.interval = 5000; // Check every 5 seconds
 
   await waitForExpect(async () => {
     const elapsedMinutes = Math.floor(
@@ -579,7 +584,16 @@ export async function waitForResultSubmitted(
 
     expect(currentPayment).toBeDefined();
     expect(currentPurchase).toBeDefined();
-
+    if (
+      currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Payment is in waiting for manual action');
+    }
+    if (
+      currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Purchase is in waiting for manual action');
+    }
     console.log(
       `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
     );
@@ -624,9 +638,6 @@ export async function waitForDisputed(
     '⏳ [Helper] Waiting for payment and purchase to reach Disputed state...',
   );
   console.log(
-    '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
-  );
-  console.log(
     '⏳ [Helper] INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
   );
 
@@ -636,7 +647,7 @@ export async function waitForDisputed(
   const originalTimeout = waitForExpect.defaults.timeout;
   const originalInterval = waitForExpect.defaults.interval;
   waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
-  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+  waitForExpect.defaults.interval = 5000; // Check every 5 seconds
 
   await waitForExpect(async () => {
     const elapsedMinutes = Math.floor(
@@ -666,6 +677,17 @@ export async function waitForDisputed(
 
     expect(currentPayment).toBeDefined();
     expect(currentPurchase).toBeDefined();
+
+    if (
+      currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Payment is in waiting for manual action');
+    }
+    if (
+      currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Purchase is in waiting for manual action');
+    }
 
     console.log(
       `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
@@ -718,9 +740,6 @@ export async function waitForRefundRequested(
     '⏳ [Helper] Waiting for payment and purchase to reach RefundRequested state...',
   );
   console.log(
-    '💡 [Helper] Blockchain state transitions can be unpredictable on Preprod network',
-  );
-  console.log(
     '⏳ [Helper] INFINITE WAIT MODE: Will wait indefinitely until blockchain confirmation',
   );
 
@@ -730,7 +749,7 @@ export async function waitForRefundRequested(
   const originalTimeout = waitForExpect.defaults.timeout;
   const originalInterval = waitForExpect.defaults.interval;
   waitForExpect.defaults.timeout = Number.MAX_SAFE_INTEGER;
-  waitForExpect.defaults.interval = 15000; // Check every 15 seconds
+  waitForExpect.defaults.interval = 5000; // Check every 5 seconds
 
   await waitForExpect(async () => {
     const elapsedMinutes = Math.floor(
@@ -760,6 +779,17 @@ export async function waitForRefundRequested(
 
     expect(currentPayment).toBeDefined();
     expect(currentPurchase).toBeDefined();
+
+    if (
+      currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Payment is in waiting for manual action');
+    }
+    if (
+      currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
+    ) {
+      throw new Error('Purchase is in waiting for manual action');
+    }
 
     console.log(
       `📊 [Helper] Payment state check: ${currentPayment.onChainState}, Action: ${currentPayment.NextAction.requestedAction}`,
