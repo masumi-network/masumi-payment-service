@@ -4,9 +4,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
-import { useRouter } from 'next/router';
 import { formatDistanceToNow } from 'date-fns';
+import Link from 'next/link';
 
 interface NotificationsDialogProps {
   open: boolean;
@@ -17,14 +18,12 @@ export function NotificationsDialog({
   open,
   onClose,
 }: NotificationsDialogProps) {
-  const router = useRouter();
   const { transactions, newTransactionsCount, markAllAsRead } =
     useTransactions();
 
   const handleViewTransactions = () => {
     onClose();
     markAllAsRead();
-    router.push('/transactions');
   };
 
   const newTransactions = transactions
@@ -40,7 +39,7 @@ export function NotificationsDialog({
         <DialogHeader>
           <DialogTitle>Notifications</DialogTitle>
         </DialogHeader>
-        {newTransactions.length > 0 ? (
+        {newTransactions.length < 1 ? (
           <div className="space-y-4 max-h-96 overflow-y-auto">
             <div className="space-y-2">
               {newTransactions.map((transaction) => (
@@ -71,12 +70,13 @@ export function NotificationsDialog({
                 </div>
               ))}
             </div>
-            <button
-              onClick={handleViewTransactions}
-              className="w-full text-sm text-primary hover:underline"
-            >
-              View all transactions
-            </button>
+            <div className="flex justify-center">
+              <Button variant="ghost" asChild>
+                <Link href="/transactions" onClick={handleViewTransactions}>
+                  View all transactions
+                </Link>
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
