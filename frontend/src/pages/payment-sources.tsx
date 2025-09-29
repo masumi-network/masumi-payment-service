@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
@@ -179,7 +180,6 @@ export default function PaymentSourcesPage() {
           source.smartContractAddress?.toLowerCase().includes(query) || false;
         const matchNetwork =
           source.network?.toLowerCase().includes(query) || false;
-
         return matchAddress || matchNetwork;
       });
     }
@@ -327,13 +327,19 @@ export default function PaymentSourcesPage() {
               </Link>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Add payment source
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => fetchPaymentSources()}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
+              onClick={() => setIsAddDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add payment source
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -368,9 +374,6 @@ export default function PaymentSourcesPage() {
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Payment type
-                  </th>
                   <th className="p-4 text-left text-sm font-medium truncate">
                     Fee rate
                   </th>
@@ -404,13 +407,13 @@ export default function PaymentSourcesPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       No payment sources found
                     </td>
                   </tr>

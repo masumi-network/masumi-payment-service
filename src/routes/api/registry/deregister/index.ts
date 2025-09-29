@@ -201,14 +201,19 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         other: result.other,
       },
       Tags: result.tags,
-      AgentPricing: {
-        pricingType: PricingType.Fixed,
-        Pricing:
-          result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-            unit: pricing.unit,
-            amount: pricing.amount.toString(),
-          })) ?? [],
-      },
+      AgentPricing:
+        result.Pricing.pricingType == PricingType.Fixed
+          ? {
+              pricingType: PricingType.Fixed,
+              Pricing:
+                result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+                  unit: pricing.unit,
+                  amount: pricing.amount.toString(),
+                })) ?? [],
+            }
+          : {
+              pricingType: PricingType.Free,
+            },
     };
   },
 });

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, RefreshCw } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
@@ -428,13 +429,19 @@ export default function WalletsPage() {
               </Link>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Add wallet
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => fetchWallets()}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
+              onClick={() => setIsAddDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add wallet
+            </Button>
+          </div>
         </div>
 
         <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />

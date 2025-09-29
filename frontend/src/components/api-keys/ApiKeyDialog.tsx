@@ -1,16 +1,21 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getApiKeyStatus, getPaymentSource } from '@/lib/api/generated';
-import { Header } from '../Header';
-import { Footer } from '../Footer';
+import { Header } from './Header';
+import { Footer } from './Footer';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
-import { handleApiCall } from '@/lib/utils';
+
+interface ApiError {
+  message: string;
+  error?: {
+    message?: string;
+  };
+}
 
 export function ApiKeyDialog() {
   const router = useRouter();
@@ -23,73 +28,54 @@ export function ApiKeyDialog() {
     setError('');
     setIsLoading(true);
 
-    apiClient.setConfig({ headers: { token: key } });
+    try {
+      apiClient.setConfig({ headers: { token: key } });
 
-    const statusResponse = await handleApiCall(
-      () => getApiKeyStatus({ client: apiClient }),
-      {
-        onError: (error: any) => {
-          setError(error.message || 'Invalid Key, check the entered data');
-          localStorage.removeItem('payment_api_key');
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Invalid Key, check the entered data',
-      },
-    );
+      const statusResponse = await getApiKeyStatus({
+        client: apiClient,
+      });
 
-    if (!statusResponse) return;
+      if (statusResponse.data?.data.status !== 'Active') {
+        throw new Error('Invalid Key: Admin key is not active');
+      }
 
-    if (statusResponse.data?.data.status !== 'Active') {
-      setError('Invalid Key: Admin key is not active');
+      // Check if the API key has admin permission
+      const permission = statusResponse.data?.data?.permission;
+      if (!permission || permission !== 'Admin') {
+        throw new Error('Invalid Key: Admin permission required');
+      }
+
+      const hexKey = Buffer.from(key).toString('hex');
+      localStorage.setItem('payment_api_key', hexKey);
+
+      const sourcesResponse = await getPaymentSource({
+        client: apiClient,
+      });
+
+      const sources = sourcesResponse.data?.data?.PaymentSources ?? [];
+
+      if (sources.length === 0) {
+        const networkLimit = statusResponse.data?.data.networkLimit ?? [];
+        const setupType = networkLimit.includes('Mainnet')
+          ? 'mainnet'
+          : 'preprod';
+        router.push(`/setup?type=${setupType}`);
+      } else {
+        router.push('/');
+      }
+
+      dispatch({ type: 'SET_API_KEY', payload: key });
+    } catch (error: unknown) {
+      const apiError = error as ApiError;
+      const errorMessage =
+        apiError.error?.message ??
+        apiError.message ??
+        'Invalid Key, check the entered data';
+      setError(errorMessage);
       localStorage.removeItem('payment_api_key');
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    // Check if the API key has admin permission
-    const permission = statusResponse.data?.data?.permission;
-    if (!permission || permission !== 'Admin') {
-      setError('Invalid Key: Admin permission required');
-      localStorage.removeItem('payment_api_key');
-      setIsLoading(false);
-      return;
-    }
-
-    const hexKey = Buffer.from(key).toString('hex');
-    localStorage.setItem('payment_api_key', hexKey);
-    dispatch({ type: 'SET_API_KEY', payload: key });
-
-    const sourcesResponse = await handleApiCall(
-      () => getPaymentSource({ client: apiClient }),
-      {
-        onError: (error: any) => {
-          setError(error.message || 'Failed to fetch payment sources');
-          localStorage.removeItem('payment_api_key');
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Failed to fetch payment sources',
-      },
-    );
-
-    if (!sourcesResponse) return;
-
-    const sources = sourcesResponse.data?.data?.PaymentSources ?? [];
-
-    if (sources.length === 0) {
-      const networkLimit = statusResponse.data?.data.networkLimit ?? [];
-      const setupType = networkLimit.includes('Mainnet')
-        ? 'mainnet'
-        : 'preprod';
-      router.push(`/setup?type=${setupType}`);
-    } else {
-      router.push('/');
-    }
-
-    setIsLoading(false);
   };
 
   return (

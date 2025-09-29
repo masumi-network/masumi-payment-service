@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2 } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -376,13 +377,13 @@ export default function AIAgentsPage() {
     let usdmBalance = '0';
 
     if (response.data?.data?.Utxos) {
-      response.data.data.Utxos.forEach((utxo: any) => {
-        utxo.Amounts.forEach((amount: any) => {
+      response.data.data.Utxos.forEach((utxo) => {
+        utxo.Amounts.forEach((amount) => {
           if (amount.unit === 'lovelace' || amount.unit === '') {
             adaBalance = (
               parseInt(adaBalance) + (amount.quantity || 0)
             ).toString();
-          } else if (amount.unit === 'USDM') {
+          } else if (amount.unit === getUsdmConfig(state.network).fullAssetId) {
             usdmBalance = (
               parseInt(usdmBalance) + (amount.quantity || 0)
             ).toString();
@@ -426,13 +427,19 @@ export default function AIAgentsPage() {
               </a>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2"
-            onClick={() => setIsRegisterDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Register AI Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => fetchAgents()}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2"
+              onClick={() => setIsRegisterDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Register AI Agent
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">

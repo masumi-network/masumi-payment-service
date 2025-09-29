@@ -38,9 +38,8 @@ function App({ Component, pageProps, router }: AppProps) {
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { state, dispatch, setSelectedPaymentSourceId, apiClient } =
+  const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
 
   useEffect(() => {
@@ -100,7 +99,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiClient, dispatch, isHealthy, state.apiKey, state.network, router]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
+  }, [
+    apiClient,
+    dispatch,
+    isHealthy,
+    state.apiKey,
+    state.network,
+    router.pathname,
+  ]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
 
   const fetchRpcApiKeys = useCallback(async () => {
     const response = await getRpcApiKeys({
@@ -120,17 +126,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
   }, [apiClient, dispatch]);
 
-  const signOut = () => {
-    localStorage.removeItem('payment_api_key');
-
-    dispatch({ type: 'SET_API_KEY', payload: '' });
-
-    router.push('/');
-  };
-
   useEffect(() => {
     const init = async () => {
-      setIsUnauthorized(false);
+      dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
       const response = await handleApiCall(
         () => getHealth({ client: apiClient }),
         {
@@ -159,17 +157,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       const apiKeyStatus = await handleApiCall(
         () => getApiKeyStatus({ client: apiClient }),
         {
-          onError: () => {
+          onError: (error: any) => {
+            console.error('API key status check failed:', error);
             setIsHealthy(true);
-            setIsUnauthorized(true);
+            dispatch({ type: 'SET_UNAUTHORIZED', payload: true });
           },
-          errorMessage: 'API key status check failed',
+          errorMessage: 'API key validation failed',
         },
       );
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
-        setIsUnauthorized(true);
+        dispatch({ type: 'SET_UNAUTHORIZED', payload: true });
         return;
       }
 
@@ -186,7 +185,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     };
 
     init();
-  }, [apiClient, dispatch]);
+  }, [apiClient, dispatch, signOut]);
 
   useEffect(() => {
     if (isHealthy && state.apiKey) {
@@ -200,6 +199,22 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     }
   }, [isHealthy, state.apiKey, fetchRpcApiKeys]);
 
+  // Redirect to payment sources if no payment sources exist and user is trying to access pages that require payment sources
+  useEffect(() => {
+    if (state.apiKey && isHealthy && state.paymentSources.length === 0) {
+      const protectedPages = [
+        '/',
+        '/ai-agents',
+        '/wallets',
+        '/transactions',
+        '/api-keys',
+      ];
+      if (protectedPages.includes(router.pathname)) {
+        router.replace('/payment-sources');
+      }
+    }
+  }, [state.apiKey, isHealthy, state.paymentSources, router.pathname]);
+
   if (isHealthy === null) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
@@ -210,7 +225,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     );
   }
 
-  if (isUnauthorized) {
+  if (state.isUnauthorized) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">

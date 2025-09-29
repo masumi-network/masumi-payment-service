@@ -99,3 +99,35 @@ export async function handleApiCall<T>(
     }
   }
 }
+
+export function getExplorerUrl(
+  address: string,
+  network: string,
+  type: 'address' | 'transaction' = 'address',
+): string {
+  const baseUrl =
+    network === 'Mainnet'
+      ? 'https://cardanoscan.io'
+      : 'https://preprod.cardanoscan.io';
+  return `${baseUrl}/${type}/${address}`;
+}
+
+/**
+ * Formats count for display
+ * Shows exact count up to maxValue, shows "maxValue+" for counts > maxValue
+ *
+ * @param count - The count to format
+ * @param maxValue - The maximum value to display before showing "maxValue+" (default: 999)
+ * @returns Formatted count string
+ */
+export function formatCount(count: number, maxValue: number = 999): string {
+  if (count <= 0) {
+    return '';
+  }
+
+  if (count > maxValue) {
+    return `${maxValue}+`;
+  }
+
+  return count.toString();
+}

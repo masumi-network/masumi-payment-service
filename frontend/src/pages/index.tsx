@@ -175,28 +175,33 @@ export default function Overview() {
 
       if (!response) return { ada: '0', usdm: '0' };
 
-      if (response.data?.data?.Utxos) {
-        let adaBalance = 0;
-        let usdmBalance = 0;
+      try {
+        if (response.data?.data?.Utxos) {
+          let adaBalance = 0;
+          let usdmBalance = 0;
 
-        const usdmConfig = getUsdmConfig(state.network);
+          const usdmConfig = getUsdmConfig(state.network);
 
-        response.data.data.Utxos.forEach((utxo: any) => {
-          utxo.Amounts.forEach((amount: any) => {
-            if (amount.unit === 'lovelace' || amount.unit == '') {
-              adaBalance += amount.quantity || 0;
-            } else if (amount.unit === usdmConfig.fullAssetId) {
-              usdmBalance += amount.quantity || 0;
-            }
+          response.data.data.Utxos.forEach((utxo: any) => {
+            utxo.Amounts.forEach((amount: any) => {
+              if (amount.unit === 'lovelace' || amount.unit == '') {
+                adaBalance += amount.quantity || 0;
+              } else if (amount.unit === usdmConfig.fullAssetId) {
+                usdmBalance += amount.quantity || 0;
+              }
+            });
           });
-        });
 
-        return {
-          ada: adaBalance.toString(),
-          usdm: usdmBalance.toString(),
-        };
+          return {
+            ada: adaBalance.toString(),
+            usdm: usdmBalance.toString(),
+          };
+        }
+        return { ada: '0', usdm: '0' };
+      } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        return { ada: '0', usdm: '0' };
       }
-      return { ada: '0', usdm: '0' };
     },
     [apiClient, state.network],
   );
@@ -369,11 +374,10 @@ export default function Overview() {
     selectedPaymentSourceId,
   ]);
 
-  const formatUsdValue = (adaAmount: string, usdmAmount: string) => {
+  const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
-    const usdm = parseInt(usdmAmount) / 1000000;
-    return `≈ $${(ada * rate + usdm).toFixed(2)}`;
+    return `≈ $${(ada * rate).toFixed(2)}`;
   };
 
   return (
@@ -459,7 +463,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance, totalUsdmBalance))}`}
+                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}

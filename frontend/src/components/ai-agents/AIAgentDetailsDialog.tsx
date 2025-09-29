@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, shortenAddress, handleApiCall } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
@@ -419,9 +419,19 @@ export function AIAgentDetailsDialog({
                         Linked Wallet Address
                       </span>
                       <div className="font-mono text-sm flex items-center gap-2">
-                        {shortenAddress(
-                          agent.SmartContractWallet.walletAddress,
-                        )}
+                        <a
+                          href={getExplorerUrl(
+                            agent.SmartContractWallet.walletAddress,
+                            state.network,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline text-primary"
+                        >
+                          {shortenAddress(
+                            agent.SmartContractWallet.walletAddress,
+                          )}
+                        </a>
                         <CopyButton
                           value={agent.SmartContractWallet.walletAddress}
                         />

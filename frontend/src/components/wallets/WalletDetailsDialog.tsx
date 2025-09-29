@@ -7,8 +7,7 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
-import { shortenAddress } from '@/lib/utils';
+import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { useRate } from '@/lib/hooks/useRate';
@@ -321,9 +320,14 @@ export function WalletDetailsDialog({
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-sm break-all">
+                <a
+                  href={getExplorerUrl(wallet.walletAddress, state.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-sm break-all hover:underline text-primary"
+                >
                   {wallet.walletAddress}
-                </span>
+                </a>
                 <CopyButton value={wallet.walletAddress} />
               </div>
             </div>
@@ -443,9 +447,17 @@ export function WalletDetailsDialog({
                   <div className="flex items-center gap-2">
                     {wallet.collectionAddress ? (
                       <>
-                        <span className="font-mono text-sm">
+                        <a
+                          href={getExplorerUrl(
+                            wallet.collectionAddress,
+                            state.network,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-sm hover:underline text-primary"
+                        >
                           {shortenAddress(wallet.collectionAddress, 15)}
-                        </span>
+                        </a>
                         <CopyButton value={wallet.collectionAddress} />
                         <Button
                           variant="outline"
