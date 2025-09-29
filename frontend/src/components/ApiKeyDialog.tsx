@@ -47,7 +47,6 @@ export function ApiKeyDialog() {
 
       const hexKey = Buffer.from(key).toString('hex');
       localStorage.setItem('payment_api_key', hexKey);
-      dispatch({ type: 'SET_API_KEY', payload: key });
 
       const sourcesResponse = await getPaymentSource({
         client: apiClient,
@@ -64,6 +63,8 @@ export function ApiKeyDialog() {
       } else {
         router.push('/');
       }
+
+      dispatch({ type: 'SET_API_KEY', payload: key });
     } catch (error: unknown) {
       const apiError = error as ApiError;
       const errorMessage =

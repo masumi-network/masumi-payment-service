@@ -159,7 +159,9 @@ export default function Overview() {
             utxo.Amounts.forEach((amount) => {
               if (amount.unit === 'lovelace' || amount.unit == '') {
                 adaBalance += amount.quantity || 0;
-              } else if (amount.unit === 'USDM') {
+              } else if (
+                amount.unit === getUsdmConfig(state.network).fullAssetId
+              ) {
                 usdmBalance += amount.quantity || 0;
               }
             });
@@ -292,11 +294,10 @@ export default function Overview() {
     selectedPaymentSourceId,
   ]);
 
-  const formatUsdValue = (adaAmount: string, usdmAmount: string) => {
+  const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
-    const usdm = parseInt(usdmAmount) / 1000000;
-    return `≈ $${(ada * rate + usdm).toFixed(2)}`;
+    return `≈ $${(ada * rate).toFixed(2)}`;
   };
 
   return (
@@ -388,7 +389,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance, totalUsdmBalance))}`}
+                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}

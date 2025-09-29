@@ -5,26 +5,16 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { LuEye, LuEyeOff, LuSun, LuMoon, LuMonitor } from 'react-icons/lu';
 import { cn } from '@/lib/utils';
-import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
 import { CopyButton } from '@/components/ui/copy-button';
 
 export default function Settings() {
-  const router = useRouter();
-  const { dispatch, state } = useAppContext();
+  const { state, signOut } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
 
   const adminApiKey = state.apiKey || '';
-
-  const signOut = () => {
-    localStorage.removeItem('payment_api_key');
-
-    dispatch({ type: 'SET_API_KEY', payload: '' });
-
-    router.push('/');
-  };
 
   return (
     <MainLayout>
