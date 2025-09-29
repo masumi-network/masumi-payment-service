@@ -155,6 +155,43 @@ export const CONSTANTS = {
   },
 } as const;
 
+export const SERVICE_CONSTANTS = {
+  // Unified retry configuration for all services
+  RETRY: {
+    maxRetries: 5,
+    backoffMultiplier: 5,
+    initialDelayMs: 500,
+    maxDelayMs: 7500,
+  },
+
+  // Common transaction settings
+  TRANSACTION: {
+    timeBufferMs: 150000, // ±2.5 minutes buffer for all transactions
+    blockTimeBufferMs: 60000, // 1 minute block time buffer
+    validitySlotBuffer: 5,
+    resultTimeSlotBuffer: 3,
+    maxUtxos: 4, // Max UTXOs per transaction
+  },
+
+  // Smart contract constants
+  SMART_CONTRACT: {
+    collateralAmount: '5000000', // 5 ADA collateral
+    mintQuantity: '1',
+    defaultExUnits: { mem: 7000000, steps: 3000000000 },
+  },
+
+  // Metadata labels
+  METADATA: {
+    nftLabel: 721, // Standard NFT metadata
+    masumiLabel: 674, // Masumi-specific metadata
+  },
+
+  // Cardano native token identifier
+  CARDANO: {
+    NATIVE_TOKEN: 'lovelace', // ADA's smallest unit identifier
+  },
+} as const;
+
 export const DEFAULTS = {
   DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
   TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
