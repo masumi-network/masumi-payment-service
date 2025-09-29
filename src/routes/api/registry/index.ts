@@ -675,10 +675,22 @@ export const getAgentEarningsSchemaInput = z.object({
     .min(57)
     .max(250)
     .describe('The unique identifier of the agent to get earnings for'),
-  timeframe: z
-    .enum(['1d', '7d', '30d', 'monthly', 'all'])
-    .default('30d')
-    .describe('The time period to calculate earnings for'),
+  startDate: z
+    .string()
+    .date()
+    .optional()
+    .nullable()
+    .describe(
+      'Start date for earnings calculation (date format: 2024-01-01). If null, uses earliest available data',
+    ),
+  endDate: z
+    .string()
+    .date()
+    .optional()
+    .nullable()
+    .describe(
+      'End date for earnings calculation (date format: 2024-01-31). If null, uses current date',
+    ),
   network: z
     .nativeEnum(Network)
     .describe('The Cardano network to query earnings from'),
@@ -686,7 +698,7 @@ export const getAgentEarningsSchemaInput = z.object({
 
 export const getAgentEarningsSchemaOutput = z.object({
   agentIdentifier: z.string(),
-  timeframe: z.string(),
+  dateRange: z.string().describe('Actual date range used for calculation'),
   periodStart: z.date(),
   periodEnd: z.date(),
   totalTransactions: z.number(),
@@ -773,33 +785,54 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
         options.permission,
       );
 
-      // Calculate date range based on timeframe
-      const now = new Date();
+      // Parse and validate date parameters
       let periodStart: Date;
-      const periodEnd: Date = now;
-      let includeMonthlyBreakdown = false;
+      let periodEnd: Date;
 
-      switch (input.timeframe) {
-        case '1d':
-          periodStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-          break;
-        case '7d':
-          periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          break;
-        case '30d':
-          periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-          break;
-        case 'monthly':
-          // Get data for the last 12 months
-          periodStart = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-          includeMonthlyBreakdown = true;
-          break;
-        case 'all':
-          periodStart = new Date('2020-01-01'); // Use a very early date
-          break;
-        default:
-          periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (input.startDate && input.endDate) {
+        // Custom date range
+        periodStart = new Date(input.startDate);
+        periodEnd = new Date(input.endDate);
+      } else if (input.startDate && !input.endDate) {
+        // Start date to now
+        periodStart = new Date(input.startDate);
+        periodEnd = new Date();
+      } else if (!input.startDate && input.endDate) {
+        // Beginning of time to end date
+        periodStart = new Date('2020-01-01');
+        periodEnd = new Date(input.endDate);
+      } else {
+        // Both null = all time
+        periodStart = new Date('2020-01-01'); // All historical data
+        periodEnd = new Date();
       }
+
+      // Validate date range
+      if (periodStart > periodEnd) {
+        throw createHttpError(400, 'Start date must be before end date');
+      }
+
+      // Additional validations
+      const maxRangeMs = 365 * 24 * 60 * 60 * 1000; // 1 year max
+      const isAllTimeQuery = !input.startDate && !input.endDate;
+
+      // Skip year limit for all-time queries (when both dates are null)
+      if (
+        !isAllTimeQuery &&
+        periodEnd.getTime() - periodStart.getTime() > maxRangeMs
+      ) {
+        throw createHttpError(400, 'Date range cannot exceed 1 year');
+      }
+
+      if (periodStart > new Date()) {
+        throw createHttpError(400, 'Start date cannot be in the future');
+      }
+
+      // Determine if monthly breakdown should be included (for ranges > 60 days)
+      const daysDifference = Math.ceil(
+        (periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const includeMonthlyBreakdown = daysDifference > 60;
 
       // Import decodeBlockchainIdentifier utility
       const { decodeBlockchainIdentifier } = await import(
@@ -846,6 +879,11 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
 
       // Filter and aggregate earnings for the specific agent
       const agentPurchases = purchaseRequests.filter((purchase) => {
+        // Check if the blockchain identifier matches directly
+        if (purchase.blockchainIdentifier === input.agentIdentifier) {
+          return true;
+        }
+        // Or check if the decoded agent identifier matches
         const decoded = decodeBlockchainIdentifier(
           purchase.blockchainIdentifier,
         );
@@ -853,6 +891,11 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
       });
 
       const agentPayments = paymentRequests.filter((payment) => {
+        // Check if the blockchain identifier matches directly
+        if (payment.blockchainIdentifier === input.agentIdentifier) {
+          return true;
+        }
+        // Or check if the decoded agent identifier matches
         const decoded = decodeBlockchainIdentifier(
           payment.blockchainIdentifier,
         );
@@ -971,8 +1014,9 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
         }),
       );
 
-      // Calculate daily earnings for charts (30 days)
-      const dailyBuckets = Array.from({ length: 30 }, (_, i) => {
+      // Calculate daily earnings for charts (dynamic based on date range)
+      const maxDays = Math.min(daysDifference, 90); // Cap at 90 days for performance
+      const dailyBuckets = Array.from({ length: maxDays }, (_, i) => {
         const date = new Date(periodEnd);
         date.setDate(date.getDate() - i);
         return {
@@ -1129,7 +1173,7 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
 
       return {
         agentIdentifier: input.agentIdentifier,
-        timeframe: input.timeframe,
+        dateRange: `${periodStart.toISOString().split('T')[0]} to ${periodEnd.toISOString().split('T')[0]}`,
         periodStart,
         periodEnd,
         totalTransactions: agentPurchases.length + agentPayments.length,
@@ -1155,7 +1199,8 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
         errorInstance,
         {
           agent_identifier: input.agentIdentifier,
-          timeframe: input.timeframe,
+          start_date: input.startDate || 'null',
+          end_date: input.endDate || 'null',
           network: input.network,
           user_id: options.id,
           duration: Date.now() - startTime,

@@ -2040,7 +2040,8 @@ export function generateOpenAPI() {
       query: getAgentEarningsSchemaInput.openapi({
         example: {
           agentIdentifier: 'example_agent_identifier_asset_id',
-          timeframe: '30d',
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
           network: Network.Preprod,
         },
       }),
@@ -2060,9 +2061,9 @@ export function generateOpenAPI() {
                   status: 'success',
                   data: {
                     agentIdentifier: 'example_agent_identifier_asset_id',
-                    timeframe: '30d',
-                    periodStart: new Date('2024-08-17T00:00:00.000Z'),
-                    periodEnd: new Date('2024-09-17T00:00:00.000Z'),
+                    dateRange: '2024-01-01 to 2024-01-31',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
                     totalTransactions: 25,
                     totalEarnings: [
                       {
