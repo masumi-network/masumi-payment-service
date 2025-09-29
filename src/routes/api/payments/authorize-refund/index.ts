@@ -114,7 +114,7 @@ export const authorizePaymentRefundEndpointPost =
             },
           },
           onChainState: {
-            in: [OnChainState.Disputed],
+            in: [OnChainState.Disputed, OnChainState.RefundRequested],
           },
         },
         include: {
