@@ -14,17 +14,28 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
+interface Transaction {
+  id: string;
+  createdAt: string;
+  type: 'purchase' | 'payment';
+  [key: string]: unknown;
+}
+
 interface DownloadDetailsDialogProps {
   open: boolean;
   onClose: () => void;
-  onDownload: (startDate: Date, endDate: Date, transactions: any[]) => void;
+  onDownload: (
+    startDate: Date,
+    endDate: Date,
+    transactions: Transaction[],
+  ) => void;
 }
 
 type PresetOption = '24h' | '7d' | '30d' | '90d' | 'custom';
@@ -47,17 +58,11 @@ export function DownloadDetailsDialog({
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
 
-  useEffect(() => {
-    if (open) {
-      fetchAllTransactions();
-    }
-  }, [open]);
-
-  const fetchAllTransactions = async () => {
+  const fetchAllTransactions = useCallback(async () => {
     setIsLoading(true);
-    const allTx: any[] = [];
+    const allTx: Transaction[] = [];
     let purchaseCursor: string | null = null;
     let paymentCursor: string | null = null;
     let hasMorePurchases = true;
@@ -86,11 +91,11 @@ export function DownloadDetailsDialog({
         );
 
         if (purchases?.data?.data?.Purchases) {
-          purchases.data.data.Purchases.forEach((purchase: any) => {
+          purchases.data.data.Purchases.forEach((purchase: unknown) => {
             allTx.push({
-              ...purchase,
+              ...(purchase as Record<string, unknown>),
               type: 'purchase',
-            });
+            } as Transaction);
           });
           hasMorePurchases = purchases.data.data.Purchases.length === 100;
           purchaseCursor =
@@ -124,11 +129,11 @@ export function DownloadDetailsDialog({
         );
 
         if (payments?.data?.data?.Payments) {
-          payments.data.data.Payments.forEach((payment: any) => {
+          payments.data.data.Payments.forEach((payment: unknown) => {
             allTx.push({
-              ...payment,
+              ...(payment as Record<string, unknown>),
               type: 'payment',
-            });
+            } as Transaction);
           });
           hasMorePayments = payments.data.data.Payments.length === 100;
           paymentCursor =
@@ -145,7 +150,13 @@ export function DownloadDetailsDialog({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [apiClient]);
+
+  useEffect(() => {
+    if (open) {
+      fetchAllTransactions();
+    }
+  }, [open, fetchAllTransactions]);
 
   const handleDownload = () => {
     let startDate: Date;
