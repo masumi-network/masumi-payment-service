@@ -112,7 +112,7 @@ import {
 import {
   retryExternalActionSchemaInput,
   retryExternalActionSchemaOutput,
-} from '@/routes/api/retry-external-action';
+} from '@/routes/api/error-state-recovery';
 
 extendZodWithOpenApi(z);
 
@@ -966,7 +966,7 @@ export function generateOpenAPI() {
   /********************* ERROR RECOVERY *****************************/
   registry.registerPath({
     method: 'post',
-    path: '/retry-external-action/',
+    path: '/error-state-recovery/',
     description:
       'Clears error states for payment/purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
     summary:

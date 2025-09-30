@@ -37,11 +37,15 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import { retryExternalActionPost } from './error-state-recovery';
 
 export const apiRouter: Routing = {
   v1: {
     'reveal-data': new DependsOnMethod({
       post: revealDataEndpointPost,
+    }),
+    'error-state-recovery': new DependsOnMethod({
+      post: retryExternalActionPost,
     }),
     health: healthEndpointGet,
     purchase: new DependsOnMethod({
