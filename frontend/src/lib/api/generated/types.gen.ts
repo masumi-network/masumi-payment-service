@@ -855,13 +855,13 @@ export type PostPaymentAuthorizeRefundResponses = {
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
 
-export type PostRetryExternalActionData = {
+export type PostPaymentErrorStateRecoveryData = {
     /**
-     * Error recovery request details
+     * Payment error recovery request details
      */
     body?: {
         /**
-         * The blockchain identifier of the payment or purchase request
+         * The blockchain identifier of the payment request
          */
         blockchainIdentifier: string;
         /**
@@ -871,10 +871,10 @@ export type PostRetryExternalActionData = {
     };
     path?: never;
     query?: never;
-    url: '/retry-external-action/';
+    url: '/payment/error-state-recovery/';
 };
 
-export type PostRetryExternalActionErrors = {
+export type PostPaymentErrorStateRecoveryErrors = {
     /**
      * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
      */
@@ -889,7 +889,7 @@ export type PostRetryExternalActionErrors = {
      */
     401: unknown;
     /**
-     * Payment/purchase request not found
+     * Payment request not found
      */
     404: {
         status: string;
@@ -903,18 +903,17 @@ export type PostRetryExternalActionErrors = {
     500: unknown;
 };
 
-export type PostRetryExternalActionError = PostRetryExternalActionErrors[keyof PostRetryExternalActionErrors];
+export type PostPaymentErrorStateRecoveryError = PostPaymentErrorStateRecoveryErrors[keyof PostPaymentErrorStateRecoveryErrors];
 
-export type PostRetryExternalActionResponses = {
+export type PostPaymentErrorStateRecoveryResponses = {
     /**
-     * Error state cleared successfully
+     * Error state cleared successfully for payment request
      */
     200: {
         status: string;
         data: {
             success: boolean;
             message: string;
-            type: 'payment' | 'purchase';
             id: string;
             currentTransactionId: string | null;
             nextAction: {
@@ -926,7 +925,79 @@ export type PostRetryExternalActionResponses = {
     };
 };
 
-export type PostRetryExternalActionResponse = PostRetryExternalActionResponses[keyof PostRetryExternalActionResponses];
+export type PostPaymentErrorStateRecoveryResponse = PostPaymentErrorStateRecoveryResponses[keyof PostPaymentErrorStateRecoveryResponses];
+
+export type PostPurchaseErrorStateRecoveryData = {
+    /**
+     * Purchase error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the purchase request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/error-state-recovery/';
+};
+
+export type PostPurchaseErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Purchase request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseErrorStateRecoveryError = PostPurchaseErrorStateRecoveryErrors[keyof PostPurchaseErrorStateRecoveryErrors];
+
+export type PostPurchaseErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for purchase request
+     */
+    200: {
+        status: string;
+        data: {
+            success: boolean;
+            message: string;
+            id: string;
+            currentTransactionId: string | null;
+            nextAction: {
+                requestedAction: 'WaitingForExternalAction';
+                errorType: unknown;
+                errorNote: unknown;
+            };
+        };
+    };
+};
+
+export type PostPurchaseErrorStateRecoveryResponse = PostPurchaseErrorStateRecoveryResponses[keyof PostPurchaseErrorStateRecoveryResponses];
 
 export type GetPurchaseData = {
     body?: never;
