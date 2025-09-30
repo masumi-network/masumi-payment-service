@@ -254,6 +254,7 @@ export function DownloadDetailsDialog({
                   id="start-date"
                   type="date"
                   value={customStartDate}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setCustomStartDate(e.target.value)}
                 />
               </div>
@@ -263,6 +264,7 @@ export function DownloadDetailsDialog({
                   id="end-date"
                   type="date"
                   value={customEndDate}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setCustomEndDate(e.target.value)}
                 />
               </div>
