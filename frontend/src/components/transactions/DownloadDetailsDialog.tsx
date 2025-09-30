@@ -18,15 +18,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, getPurchase } from '@/lib/api/generated';
+import {
+  getPayment,
+  getPurchase,
+  GetPaymentResponses,
+  GetPurchaseResponses,
+} from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
-interface Transaction {
-  id: string;
-  createdAt: string;
-  type: 'purchase' | 'payment';
-  [key: string]: unknown;
-}
+type Transaction =
+  | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
+  | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
+      type: 'purchase';
+    });
 
 interface DownloadDetailsDialogProps {
   open: boolean;
@@ -91,9 +95,9 @@ export function DownloadDetailsDialog({
         );
 
         if (purchases?.data?.data?.Purchases) {
-          purchases.data.data.Purchases.forEach((purchase: unknown) => {
+          purchases.data.data.Purchases.forEach((purchase) => {
             allTx.push({
-              ...(purchase as Record<string, unknown>),
+              ...purchase,
               type: 'purchase',
             } as Transaction);
           });
@@ -129,9 +133,9 @@ export function DownloadDetailsDialog({
         );
 
         if (payments?.data?.data?.Payments) {
-          payments.data.data.Payments.forEach((payment: unknown) => {
+          payments.data.data.Payments.forEach((payment) => {
             allTx.push({
-              ...(payment as Record<string, unknown>),
+              ...payment,
               type: 'payment',
             } as Transaction);
           });
