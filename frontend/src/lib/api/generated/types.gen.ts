@@ -847,6 +847,150 @@ export type PostPaymentAuthorizeRefundResponses = {
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
 
+export type PostPaymentErrorStateRecoveryData = {
+    /**
+     * Payment error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the payment request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/error-state-recovery/';
+};
+
+export type PostPaymentErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentErrorStateRecoveryError = PostPaymentErrorStateRecoveryErrors[keyof PostPaymentErrorStateRecoveryErrors];
+
+export type PostPaymentErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for payment request
+     */
+    200: {
+        status: string;
+        data: {
+            success: boolean;
+            message: string;
+            id: string;
+            currentTransactionId: string | null;
+            nextAction: {
+                requestedAction: 'WaitingForExternalAction';
+                errorType: unknown;
+                errorNote: unknown;
+            };
+        };
+    };
+};
+
+export type PostPaymentErrorStateRecoveryResponse = PostPaymentErrorStateRecoveryResponses[keyof PostPaymentErrorStateRecoveryResponses];
+
+export type PostPurchaseErrorStateRecoveryData = {
+    /**
+     * Purchase error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the purchase request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/error-state-recovery/';
+};
+
+export type PostPurchaseErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Purchase request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseErrorStateRecoveryError = PostPurchaseErrorStateRecoveryErrors[keyof PostPurchaseErrorStateRecoveryErrors];
+
+export type PostPurchaseErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for purchase request
+     */
+    200: {
+        status: string;
+        data: {
+            success: boolean;
+            message: string;
+            id: string;
+            currentTransactionId: string | null;
+            nextAction: {
+                requestedAction: 'WaitingForExternalAction';
+                errorType: unknown;
+                errorNote: unknown;
+            };
+        };
+    };
+};
+
+export type PostPurchaseErrorStateRecoveryResponse = PostPurchaseErrorStateRecoveryResponses[keyof PostPurchaseErrorStateRecoveryResponses];
+
 export type GetPurchaseData = {
     body?: never;
     path?: never;
