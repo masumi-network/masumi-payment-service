@@ -275,6 +275,22 @@ export function DownloadDetailsDialog({
               <span className="font-medium">
                 {isLoading ? 'Loading...' : filteredTransactions?.length || 0}
               </span>
+              {!isLoading && filteredTransactions && (
+                <span className="text-muted-foreground">
+                  {' '}
+                  (payments:{' '}
+                  {
+                    filteredTransactions.filter((t) => t.type === 'payment')
+                      .length
+                  }
+                  , purchases:{' '}
+                  {
+                    filteredTransactions.filter((t) => t.type === 'purchase')
+                      .length
+                  }
+                  )
+                </span>
+              )}
             </p>
             <p>
               Selected range:{' '}
