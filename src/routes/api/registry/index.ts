@@ -4,6 +4,7 @@ import {
   $Enums,
   HotWalletType,
   Network,
+  OnChainState,
   PaymentType,
   PricingType,
   RegistrationState,
@@ -846,6 +847,10 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
             gte: periodStart,
             lte: periodEnd,
           },
+          unlockTime: {
+            lte: new Date().getTime(),
+          },
+          onChainState: OnChainState.Withdrawn,
           PaymentSource: {
             network: input.network,
             deletedAt: null,
@@ -865,6 +870,10 @@ export const getAgentEarnings = payAuthenticatedEndpointFactory.build({
             gte: periodStart,
             lte: periodEnd,
           },
+          unlockTime: {
+            lte: new Date().getTime(),
+          },
+          onChainState: OnChainState.Withdrawn,
           PaymentSource: {
             network: input.network,
             deletedAt: null,
