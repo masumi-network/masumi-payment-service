@@ -74,104 +74,109 @@ export function useTransactions() {
       try {
         const combined: Transaction[] = [];
 
-        const purchases = await getPurchase({
-          client: apiClient,
-          query: {
-            network: 'Preprod',
-            cursorId: cursor,
-            includeHistory: 'true',
-            limit: 100,
+        // Fetch purchases
+        const purchases = await handleApiCall(
+          () =>
+            getPurchase({
+              client: apiClient,
+              query: {
+                network: 'Preprod',
+                cursorId: cursor,
+                includeHistory: 'true',
+                limit: 10,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Failed to fetch purchases:', error);
+            },
+            errorMessage: 'Failed to fetch purchases',
           },
-          errorMessage: 'Failed to fetch purchases',
-        },
-      );
+        );
 
-      if (purchases?.data?.data?.Purchases) {
-        purchases.data.data.Purchases.forEach((purchase: any) => {
-          combined.push({
-            ...purchase,
-            type: 'purchase',
+        if (purchases?.data?.data?.Purchases) {
+          purchases.data.data.Purchases.forEach((purchase: any) => {
+            combined.push({
+              ...purchase,
+              type: 'purchase',
+            });
           });
         }
 
-        const payments = await getPayment({
-          client: apiClient,
-          query: {
-            network: 'Preprod',
-            cursorId: cursor,
-            includeHistory: 'true',
-            limit: 100,
-          },
-        });
-      }
-
-      const payments = await handleApiCall(
-        () =>
-          getPayment({
-            client: apiClient,
-            query: {
-              network: 'Preprod',
-              cursorId: cursor,
-              includeHistory: 'true',
-              limit: 10,
+        // Fetch payments
+        const payments = await handleApiCall(
+          () =>
+            getPayment({
+              client: apiClient,
+              query: {
+                network: 'Preprod',
+                cursorId: cursor,
+                includeHistory: 'true',
+                limit: 10,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Failed to fetch payments:', error);
             },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Failed to fetch payments:', error);
+            errorMessage: 'Failed to fetch payments',
           },
-          errorMessage: 'Failed to fetch payments',
-        },
-      );
+        );
 
-      if (payments?.data?.data?.Payments) {
-        payments.data.data.Payments.forEach((payment: any) => {
-          combined.push({
-            ...payment,
-            type: 'payment',
+        if (payments?.data?.data?.Payments) {
+          payments.data.data.Payments.forEach((payment: any) => {
+            combined.push({
+              ...payment,
+              type: 'payment',
+            });
           });
-        });
-      }
+        }
 
-      const newTransactions = combined.sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
+        const newTransactions = combined.sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        );
 
-      if (checkForNew) {
-        const lastVisitTimestamp = getLastVisitTimestamp();
-        if (lastVisitTimestamp) {
+        if (checkForNew) {
+          const lastVisitTimestamp = getLastVisitTimestamp();
+          if (lastVisitTimestamp) {
+            const existingIds = new Set(transactions.map((tx) => tx.id));
+            const trulyNewTransactions = newTransactions.filter(
+              (tx) =>
+                !existingIds.has(tx.id) &&
+                new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+            );
+
+            const currentCount = getNewTransactionsCount();
+            const newCount = currentCount + trulyNewTransactions.length;
+            setNewTransactionsCount(newCount);
+            setNewTransactionsCountInStorage(newCount);
+          }
+        }
+
+        if (!checkForNew) {
           const existingIds = new Set(transactions.map((tx) => tx.id));
-          const trulyNewTransactions = newTransactions.filter(
-            (tx) =>
-              !existingIds.has(tx.id) &&
-              new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+          const uniqueNewTransactions = newTransactions.filter(
+            (tx) => !existingIds.has(tx.id),
           );
 
-          const currentCount = getNewTransactionsCount();
-          const newCount = currentCount + trulyNewTransactions.length;
-          setNewTransactionsCount(newCount);
-          setNewTransactionsCountInStorage(newCount);
+          setTransactions((prev) =>
+            cursor
+              ? [...prev, ...uniqueNewTransactions]
+              : uniqueNewTransactions,
+          );
+          setHasMore(
+            purchases?.data?.data?.Purchases?.length === 10 ||
+              payments?.data?.data?.Payments?.length === 10,
+          );
+          setCursorId(newTransactions[newTransactions.length - 1]?.id ?? null);
         }
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error fetching transactions:', error);
+        setIsLoading(false);
       }
-
-      if (!checkForNew) {
-        const existingIds = new Set(transactions.map((tx) => tx.id));
-        const uniqueNewTransactions = newTransactions.filter(
-          (tx) => !existingIds.has(tx.id),
-        );
-
-        setTransactions((prev) =>
-          cursor ? [...prev, ...uniqueNewTransactions] : uniqueNewTransactions,
-        );
-        setHasMore(
-          purchases?.data?.data?.Purchases?.length === 10 ||
-            payments?.data?.data?.Payments?.length === 10,
-        );
-        setCursorId(newTransactions[newTransactions.length - 1]?.id ?? null);
-      }
-
-      setIsLoading(false);
     },
     [apiClient, transactions],
   );
