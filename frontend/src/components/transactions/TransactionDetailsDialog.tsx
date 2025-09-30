@@ -391,15 +391,35 @@ export default function TransactionDetailsDialog({
 
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
-                <p className="text-sm">
+                <div className="text-sm space-y-1">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds?.[0]
-                    ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                    : transaction.type === 'purchase' &&
-                        transaction.PaidFunds?.[0]
-                      ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                      : '—'}
-                </p>
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds.map((fund, index) => (
+                      <p key={index}>
+                        {fund.unit === 'lovelace' || !fund.unit
+                          ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                          : fund.unit === 'USDM' || fund.unit === 'tUSDM'
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`
+                            : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                      </p>
+                    ))
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
+                    transaction.PaidFunds.map((fund, index) => (
+                      <p key={index}>
+                        {fund.unit === 'lovelace' || !fund.unit
+                          ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                          : fund.unit === 'USDM' || fund.unit === 'tUSDM'
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`
+                            : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                      </p>
+                    ))
+                  ) : (
+                    <p>—</p>
+                  )}
+                </div>
               </div>
 
               <div className="col-span-2">
