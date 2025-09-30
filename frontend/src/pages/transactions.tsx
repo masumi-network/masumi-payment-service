@@ -22,7 +22,9 @@ import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { parseError } from '@/lib/utils';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
+import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
+import { dateRangeUtils } from '@/lib/utils';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -72,6 +74,7 @@ export default function Transactions() {
   const [paymentCursorId, setPaymentCursorId] = useState<string | null>(null);
   const [hasMorePurchases, setHasMorePurchases] = useState(true);
   const [hasMorePayments, setHasMorePayments] = useState(true);
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const tabs = useMemo(() => {
@@ -198,7 +201,7 @@ export default function Transactions() {
               network: state.network,
               cursorId: purchaseCursorId || undefined,
               includeHistory: 'true',
-              limit: 100,
+              limit: 10,
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
@@ -212,7 +215,7 @@ export default function Transactions() {
             if (purchases.length > 0) {
               newPurchaseCursor = purchases[purchases.length - 1].id;
             }
-            morePurchases = purchases.length === 100;
+            morePurchases = purchases.length === 10;
           } else {
             morePurchases = false;
           }
@@ -229,7 +232,7 @@ export default function Transactions() {
               network: state.network,
               cursorId: paymentCursorId || undefined,
               includeHistory: 'true',
-              limit: 100,
+              limit: 10,
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
@@ -243,7 +246,7 @@ export default function Transactions() {
             if (payments.length > 0) {
               newPaymentCursor = payments[payments.length - 1].id;
             }
-            morePayments = payments.length === 100;
+            morePayments = payments.length === 10;
           } else {
             morePayments = false;
           }
@@ -502,12 +505,7 @@ export default function Transactions() {
               })()}
             </div>
             <Button
-              onClick={() =>
-                downloadCSV(
-                  filteredTransactions,
-                  `transactions-${activeTab.toLowerCase()}.csv`,
-                )
-              }
+              onClick={() => setShowDownloadDialog(true)}
               disabled={filteredTransactions.length === 0}
               className="flex items-center gap-2"
             >
@@ -706,6 +704,17 @@ export default function Transactions() {
         onRefresh={() => fetchTransactions()}
         apiClient={apiClient}
         state={state}
+      />
+
+      <DownloadDetailsDialog
+        open={showDownloadDialog}
+        onClose={() => setShowDownloadDialog(false)}
+        onDownload={(startDate, endDate, filteredTransactions) => {
+          downloadCSV(
+            filteredTransactions,
+            `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
+          );
+        }}
       />
     </MainLayout>
   );

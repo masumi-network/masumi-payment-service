@@ -83,7 +83,7 @@ export function useTransactions() {
                 network: 'Preprod',
                 cursorId: cursor,
                 includeHistory: 'true',
-                limit: 10,
+                limit: 100,
               },
             }),
           {
@@ -112,7 +112,7 @@ export function useTransactions() {
                 network: 'Preprod',
                 cursorId: cursor,
                 includeHistory: 'true',
-                limit: 10,
+                limit: 100,
               },
             }),
           {
@@ -166,8 +166,8 @@ export function useTransactions() {
               : uniqueNewTransactions,
           );
           setHasMore(
-            purchases?.data?.data?.Purchases?.length === 10 ||
-              payments?.data?.data?.Payments?.length === 10,
+            purchases?.data?.data?.Purchases?.length === 100 ||
+              payments?.data?.data?.Payments?.length === 100,
           );
           setCursorId(newTransactions[newTransactions.length - 1]?.id ?? null);
         }
