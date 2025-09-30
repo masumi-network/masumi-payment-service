@@ -87,7 +87,7 @@ export function DownloadDetailsDialog({
               },
             }),
           {
-            onError: (error: any) => {
+            onError: (error: unknown) => {
               console.error('Failed to fetch purchases:', error);
             },
             errorMessage: 'Failed to fetch purchases',
@@ -125,7 +125,7 @@ export function DownloadDetailsDialog({
               },
             }),
           {
-            onError: (error: any) => {
+            onError: (error: unknown) => {
               console.error('Failed to fetch payments:', error);
             },
             errorMessage: 'Failed to fetch payments',
