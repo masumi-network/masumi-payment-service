@@ -24,6 +24,13 @@ import { generateHash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import {
+  parseDateRange,
+  filterByAgentIdentifier,
+  aggregateEarnings,
+  TransactionWithFunds,
+} from '../earnings-helpers';
+import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -638,5 +645,381 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         amount: BigInt(amount.amount).toString(),
       })),
     };
+  },
+});
+
+export const getPaymentEarningsSchemaInput = z.object({
+  agentIdentifier: z
+    .string()
+    .min(57)
+    .max(250)
+    .describe('The unique identifier of the agent to get payment earnings for'),
+  startDate: z
+    .string()
+    .date()
+    .optional()
+    .nullable()
+    .describe(
+      'Start date for earnings calculation (date format: 2024-01-01). If null, uses earliest available data',
+    ),
+  endDate: z
+    .string()
+    .date()
+    .optional()
+    .nullable()
+    .describe(
+      'End date for earnings calculation (date format: 2024-01-31). If null, uses current date',
+    ),
+  network: z
+    .nativeEnum(Network)
+    .describe('The Cardano network to query earnings from'),
+});
+
+export const getPaymentEarningsSchemaOutput = z.object({
+  agentIdentifier: z.string(),
+  dateRange: z.string().describe('Actual date range used for calculation'),
+  periodStart: z.date(),
+  periodEnd: z.date(),
+  totalTransactions: z.number(),
+  totalEarnings: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  totalFeesPaid: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  totalRevenue: z.array(
+    z.object({
+      unit: z.string(),
+      amount: z.string(),
+    }),
+  ),
+  monthlyBreakdown: z
+    .array(
+      z.object({
+        month: z.string(),
+        year: z.number(),
+        earnings: z.array(
+          z.object({
+            unit: z.string(),
+            amount: z.string(),
+          }),
+        ),
+        transactions: z.number(),
+      }),
+    )
+    .optional(),
+  dailyEarnings: z.array(
+    z.object({
+      date: z.string(),
+      earnings: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      revenue: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      fees: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      transactions: z.number(),
+    }),
+  ),
+});
+
+export const getPaymentEarnings = readAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: getPaymentEarningsSchemaInput,
+  output: getPaymentEarningsSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof getPaymentEarningsSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    const startTime = Date.now();
+    try {
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        options.networkLimit,
+        input.network,
+        options.permission,
+      );
+
+      const { periodStart, periodEnd } = parseDateRange(
+        input.startDate,
+        input.endDate,
+      );
+
+      const daysDifference = Math.ceil(
+        (periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      const includeMonthlyBreakdown = daysDifference > 60;
+
+      const paymentRequests = await prisma.paymentRequest.findMany({
+        where: {
+          createdAt: {
+            gte: periodStart,
+            lte: periodEnd,
+          },
+          unlockTime: {
+            lte: new Date().getTime(),
+          },
+          onChainState: OnChainState.Withdrawn,
+          PaymentSource: {
+            network: input.network,
+            deletedAt: null,
+          },
+        },
+        include: {
+          RequestedFunds: true,
+          WithdrawnForSeller: true,
+          PaymentSource: true,
+        },
+      });
+
+      const agentPayments = filterByAgentIdentifier(
+        paymentRequests,
+        input.agentIdentifier,
+      );
+
+      const { earningsMap, revenueMap, feesMap } = aggregateEarnings(
+        agentPayments as unknown as TransactionWithFunds[],
+        false,
+      );
+
+      const totalEarnings = Array.from(earningsMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      const totalFeesPaid = Array.from(feesMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      const totalRevenue = Array.from(revenueMap.entries()).map(
+        ([unit, amount]) => ({
+          unit: unit === '' ? 'lovelace' : unit,
+          amount: amount.toString(),
+        }),
+      );
+
+      const dailyMap = new Map<
+        string,
+        {
+          earnings: Map<string, bigint>;
+          revenue: Map<string, bigint>;
+          count: number;
+        }
+      >();
+
+      agentPayments.forEach((payment) => {
+        const dateKey = new Date(payment.createdAt).toISOString().split('T')[0];
+        if (!dailyMap.has(dateKey)) {
+          dailyMap.set(dateKey, {
+            earnings: new Map(),
+            revenue: new Map(),
+            count: 0,
+          });
+        }
+        const dayData = dailyMap.get(dateKey)!;
+        dayData.count++;
+
+        payment.RequestedFunds.forEach(
+          (fund: { unit: string; amount: bigint }) => {
+            const unit = fund.unit || 'lovelace';
+            dayData.revenue.set(
+              unit,
+              (dayData.revenue.get(unit) || BigInt(0)) + fund.amount,
+            );
+          },
+        );
+
+        payment.WithdrawnForSeller.forEach(
+          (withdrawn: { unit: string; amount: bigint }) => {
+            const unit = withdrawn.unit || 'lovelace';
+            dayData.earnings.set(
+              unit,
+              (dayData.earnings.get(unit) || BigInt(0)) + withdrawn.amount,
+            );
+          },
+        );
+
+        if (
+          payment.onChainState === 'Withdrawn' &&
+          payment.WithdrawnForSeller.length === 0
+        ) {
+          payment.RequestedFunds.forEach(
+            (fund: { unit: string; amount: bigint }) => {
+              const unit = fund.unit || 'lovelace';
+              const feeRate = BigInt(payment.PaymentSource.feeRatePermille);
+              const estimatedEarnings =
+                (fund.amount * (1000n - feeRate)) / 1000n;
+              dayData.earnings.set(
+                unit,
+                (dayData.earnings.get(unit) || BigInt(0)) + estimatedEarnings,
+              );
+            },
+          );
+        }
+      });
+
+      const dailyEarnings = Array.from(dailyMap.entries())
+        .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+        .map(([date, data]) => {
+          const earnings = Array.from(data.earnings.entries()).map(
+            ([unit, amount]) => ({
+              unit: unit === '' ? 'lovelace' : unit,
+              amount: amount.toString(),
+            }),
+          );
+
+          const revenue = Array.from(data.revenue.entries()).map(
+            ([unit, amount]) => ({
+              unit: unit === '' ? 'lovelace' : unit,
+              amount: amount.toString(),
+            }),
+          );
+
+          const dayFees = new Map<string, bigint>();
+          data.revenue.forEach((revAmount, unit) => {
+            const earnAmount = data.earnings.get(unit) || BigInt(0);
+            const fee = revAmount - earnAmount;
+            if (fee > 0) {
+              dayFees.set(unit, fee);
+            }
+          });
+
+          const fees = Array.from(dayFees.entries()).map(([unit, amount]) => ({
+            unit: unit === '' ? 'lovelace' : unit,
+            amount: amount.toString(),
+          }));
+
+          return {
+            date,
+            earnings,
+            revenue,
+            fees,
+            transactions: data.count,
+          };
+        });
+
+      let monthlyBreakdown: any[] | undefined = undefined;
+      if (includeMonthlyBreakdown) {
+        const monthlyMap = new Map<
+          string,
+          {
+            earnings: Map<string, bigint>;
+            count: number;
+            year: number;
+            month: string;
+          }
+        >();
+
+        dailyEarnings.forEach((day) => {
+          const date = new Date(day.date);
+          const year = date.getFullYear();
+          const month = date.toLocaleString('default', { month: 'long' });
+          const key = `${year}-${month}`;
+
+          if (!monthlyMap.has(key)) {
+            monthlyMap.set(key, {
+              earnings: new Map(),
+              count: 0,
+              year,
+              month,
+            });
+          }
+
+          const monthData = monthlyMap.get(key)!;
+          monthData.count += day.transactions;
+
+          day.earnings.forEach((earning) => {
+            const currentAmount =
+              monthData.earnings.get(earning.unit) || BigInt(0);
+            monthData.earnings.set(
+              earning.unit,
+              currentAmount + BigInt(earning.amount),
+            );
+          });
+        });
+
+        monthlyBreakdown = Array.from(monthlyMap.values()).map((data) => ({
+          month: data.month,
+          year: data.year,
+          earnings: Array.from(data.earnings.entries()).map(
+            ([unit, amount]) => ({
+              unit: unit === '' ? 'lovelace' : unit,
+              amount: amount.toString(),
+            }),
+          ),
+          transactions: data.count,
+        }));
+      }
+
+      const startDateString = periodStart.toISOString().split('T')[0];
+      const endDateString = periodEnd.toISOString().split('T')[0];
+
+      return {
+        agentIdentifier: input.agentIdentifier,
+        dateRange: `${startDateString} to ${endDateString}`,
+        periodStart,
+        periodEnd,
+        totalTransactions: agentPayments.length,
+        totalEarnings,
+        totalFeesPaid,
+        totalRevenue,
+        dailyEarnings,
+        monthlyBreakdown,
+      };
+    } catch (error: unknown) {
+      const errorInstance =
+        error instanceof Error ? error : new Error(String(error));
+      const statusCode =
+        (errorInstance as { statusCode?: number; status?: number })
+          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).status ||
+        500;
+
+      recordBusinessEndpointError(
+        '/api/v1/payment/payment-earnings',
+        'GET',
+        statusCode,
+        errorInstance,
+        {
+          agent_identifier: input.agentIdentifier,
+          start_date: input.startDate || 'null',
+          end_date: input.endDate || 'null',
+          network: input.network,
+          user_id: options.id,
+          duration: Date.now() - startTime,
+        },
+      );
+
+      throw error;
+    }
   },
 });
