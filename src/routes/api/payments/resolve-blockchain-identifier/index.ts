@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   Network,
-  PaymentType,
   OnChainState,
   $Enums,
   PaymentAction,
@@ -99,7 +98,6 @@ export const postPaymentRequestSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     smartContractAddress: z.string(),
     policyId: z.string().nullable(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   BuyerWallet: z
     .object({

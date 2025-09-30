@@ -53,6 +53,7 @@ interface AppState {
   }[];
   apiKey: string | null;
   network: NetworkType;
+  isUnauthorized: boolean;
   rpcProviderApiKeys: {
     id: string;
     rpcProviderApiKey: string;
@@ -69,6 +70,7 @@ type AppAction =
   | { type: 'SET_WALLETS'; payload: any[] }
   | { type: 'SET_API_KEY'; payload: string }
   | { type: 'SET_NETWORK'; payload: NetworkType }
+  | { type: 'SET_UNAUTHORIZED'; payload: boolean }
   | { type: 'SET_RPC_API_KEYS'; payload: any[] };
 
 const initialAppState: AppState = {
@@ -81,6 +83,7 @@ const initialAppState: AppState = {
     (typeof window !== 'undefined' &&
       (localStorage.getItem('network') as NetworkType)) ||
     'Preprod',
+  isUnauthorized: false,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -113,6 +116,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         network: action.payload,
       };
+    case 'SET_UNAUTHORIZED':
+      return {
+        ...state,
+        isUnauthorized: action.payload,
+      };
     case 'SET_RPC_API_KEYS':
       return {
         ...state,
@@ -136,6 +144,7 @@ export const AppContext = createContext<
       setApiClient: React.Dispatch<React.SetStateAction<Client>>;
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
     }
   | undefined
 >(undefined);
@@ -194,6 +203,23 @@ export function AppProvider({
     [],
   );
 
+  const signOut = useCallback(() => {
+    // Clear all localStorage items
+    localStorage.removeItem('payment_api_key');
+    localStorage.removeItem('selectedPaymentSourceId');
+    localStorage.removeItem('userIgnoredSetup');
+    localStorage.removeItem('masumi_last_transactions_visit');
+    localStorage.removeItem('masumi_new_transactions_count');
+
+    // Reset all app state
+    dispatch({ type: 'SET_API_KEY', payload: '' });
+    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
+    dispatch({ type: 'SET_CONTRACTS', payload: [] });
+    dispatch({ type: 'SET_WALLETS', payload: [] });
+    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
+    dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
+  }, [dispatch]);
+
   return (
     <AppContext.Provider
       value={{
@@ -204,6 +230,7 @@ export function AppProvider({
         setApiClient,
         selectedPaymentSourceId,
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
+        signOut,
       }}
     >
       {children}

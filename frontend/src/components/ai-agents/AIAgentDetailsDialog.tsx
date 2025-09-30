@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
@@ -81,52 +81,66 @@ export function AIAgentDetailsDialog({
   };
 
   const handleDelete = async () => {
-    try {
-      if (
-        agent?.state === 'RegistrationFailed' ||
-        agent?.state === 'DeregistrationConfirmed'
-      ) {
-        await deleteRegistry({
-          client: apiClient,
-          body: {
-            id: agent.id,
+    if (
+      agent?.state === 'RegistrationFailed' ||
+      agent?.state === 'DeregistrationConfirmed'
+    ) {
+      await handleApiCall(
+        () =>
+          deleteRegistry({
+            client: apiClient,
+            body: {
+              id: agent.id,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deleted from the database successfully');
+            onClose();
+            onSuccess?.();
           },
-        });
-        toast.success('AI agent deleted from the database successfully');
-        onClose();
-        onSuccess?.();
-        return;
-      } else if (agent?.state === 'RegistrationConfirmed') {
-        if (!agent?.agentIdentifier) {
-          toast.error('Cannot delete agent: Missing identifier');
-          return;
-        }
-
-        setIsDeleting(true);
-        await postRegistryDeregister({
-          client: apiClient,
-          body: {
-            agentIdentifier: agent.agentIdentifier,
-            network: state.network,
-            smartContractAddress:
-              state.paymentSources?.[0]?.smartContractAddress,
+          onFinally: () => {
+            setIsDeleting(false);
+            setIsDeleteDialogOpen(false);
           },
-        });
-        toast.success('AI agent deregistration initiated successfully');
-        onClose();
-        onSuccess?.();
+          errorMessage: 'Failed to delete AI agent',
+        },
+      );
+    } else if (agent?.state === 'RegistrationConfirmed') {
+      if (!agent?.agentIdentifier) {
+        toast.error('Cannot delete agent: Missing identifier');
         return;
-      } else {
-        toast.error(
-          'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
-        );
       }
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      toast.error('Failed to deregister AI agent');
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
+
+      setIsDeleting(true);
+      await handleApiCall(
+        () =>
+          postRegistryDeregister({
+            client: apiClient,
+            body: {
+              agentIdentifier: agent.agentIdentifier!,
+              network: state.network,
+              smartContractAddress:
+                state.paymentSources?.[0]?.smartContractAddress,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deregistration initiated successfully');
+            onClose();
+            onSuccess?.();
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+            setIsDeleteDialogOpen(false);
+          },
+          errorMessage: 'Failed to deregister AI agent',
+        },
+      );
+    } else {
+      toast.error(
+        'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
+      );
     }
   };
 
@@ -185,35 +199,43 @@ export function AIAgentDetailsDialog({
                 <div>
                   <h3 className="font-medium mb-2">Pricing Details</h3>
                   <div className="space-y-2 p-2 bg-muted/40 rounded-md">
-                    {agent.AgentPricing?.Pricing?.map((price, index, arr) => (
-                      <div
-                        key={index}
-                        className={cn(
-                          'flex items-center justify-between py-2',
-                          index < arr.length - 1 && 'border-b',
-                        )}
-                      >
-                        <span className="text-sm text-muted-foreground">
-                          Price (
-                          {price.unit === 'lovelace' || !price.unit
-                            ? 'ADA'
-                            : price.unit ===
-                                getUsdmConfig(state.network).fullAssetId
-                              ? 'USDM'
-                              : price.unit === TESTUSDM_CONFIG.unit
-                                ? 'tUSDM'
-                                : price.unit}
-                          )
-                        </span>
-                        <span className="font-medium">
-                          {price.unit === 'lovelace' || !price.unit
-                            ? `${useFormatPrice(price.amount)} ADA`
-                            : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                        </span>
+                    {agent.AgentPricing?.pricingType == 'Free' && (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-medium">Free</span>
                       </div>
-                    ))}
-                    {(!agent.AgentPricing?.Pricing ||
-                      agent.AgentPricing.Pricing.length === 0) && (
+                    )}
+                    {agent.AgentPricing &&
+                      agent.AgentPricing?.pricingType == 'Fixed' &&
+                      agent.AgentPricing?.Pricing?.map((price, index, arr) => (
+                        <div
+                          key={index}
+                          className={cn(
+                            'flex items-center justify-between py-2',
+                            index < arr.length - 1 && 'border-b',
+                          )}
+                        >
+                          <span className="text-sm text-muted-foreground">
+                            Price (
+                            {price.unit === 'lovelace' || !price.unit
+                              ? 'ADA'
+                              : price.unit ===
+                                  getUsdmConfig(state.network).fullAssetId
+                                ? 'USDM'
+                                : price.unit === TESTUSDM_CONFIG.unit
+                                  ? 'tUSDM'
+                                  : price.unit}
+                            )
+                          </span>
+                          <span className="font-medium">
+                            {price.unit === 'lovelace' || !price.unit
+                              ? `${useFormatPrice(price.amount)} ADA`
+                              : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                          </span>
+                        </div>
+                      ))}
+                    {(!agent.AgentPricing ||
+                      (agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing.length === 0)) && (
                       <div className="text-sm text-muted-foreground">
                         No pricing information available
                       </div>
@@ -397,9 +419,19 @@ export function AIAgentDetailsDialog({
                         Linked Wallet Address
                       </span>
                       <div className="font-mono text-sm flex items-center gap-2">
-                        {shortenAddress(
-                          agent.SmartContractWallet.walletAddress,
-                        )}
+                        <a
+                          href={getExplorerUrl(
+                            agent.SmartContractWallet.walletAddress,
+                            state.network,
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline text-primary"
+                        >
+                          {shortenAddress(
+                            agent.SmartContractWallet.walletAddress,
+                          )}
+                        </a>
                         <CopyButton
                           value={agent.SmartContractWallet.walletAddress}
                         />

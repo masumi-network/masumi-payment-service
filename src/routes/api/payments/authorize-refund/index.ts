@@ -6,7 +6,6 @@ import {
   OnChainState,
   PaymentAction,
   PaymentErrorType,
-  PaymentType,
   Permission,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
@@ -66,7 +65,6 @@ export const authorizePaymentRefundSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     smartContractAddress: z.string(),
     policyId: z.string().nullable(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   BuyerWallet: z
     .object({
@@ -116,7 +114,7 @@ export const authorizePaymentRefundEndpointPost =
             },
           },
           onChainState: {
-            in: [OnChainState.Disputed],
+            in: [OnChainState.Disputed, OnChainState.RefundRequested],
           },
         },
         include: {

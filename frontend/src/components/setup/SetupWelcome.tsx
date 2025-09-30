@@ -22,7 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postWallet, postPaymentSourceExtended } from '@/lib/api/generated';
-import { shortenAddress } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
@@ -34,9 +34,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 function WelcomeScreen({
   onStart,
   networkType,
+  ignoreSetup,
 }: {
   onStart: () => void;
   networkType: string;
+  ignoreSetup: () => void;
 }) {
   const networkDisplay =
     networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -57,10 +59,13 @@ function WelcomeScreen({
       </p>
 
       <div className="flex items-center justify-center gap-4 mt-8">
-        <Button variant="secondary" className="text-sm">
-          <Link href={'/'} replace>
-            Skip for now
-          </Link>
+        <Button
+          variant="secondary"
+          className="text-sm"
+          type="button"
+          onClick={ignoreSetup}
+        >
+          Skip for now
         </Button>
         <Button className="text-sm" onClick={onStart}>
           Start setup
@@ -72,11 +77,13 @@ function WelcomeScreen({
 
 function SeedPhrasesScreen({
   onNext,
+  ignoreSetup,
 }: {
   onNext: (
     buyingWallet: { address: string; mnemonic: string },
     sellingWallet: { address: string; mnemonic: string },
   ) => void;
+  ignoreSetup: () => void;
 }) {
   const { apiClient, state } = useAppContext();
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -98,56 +105,80 @@ function SeedPhrasesScreen({
 
   useEffect(() => {
     const generateWallets = async () => {
-      try {
-        setIsGenerating(true);
-        setError('');
+      setIsGenerating(true);
+      setError('');
 
-        const buyingResponse: any = await postWallet({
-          client: apiClient,
-          body: {
-            network: state.network,
+      const buyingResponse: any = await handleApiCall(
+        () =>
+          postWallet({
+            client: apiClient,
+            body: {
+              network: state.network,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            setError(error.message || 'Failed to generate buying wallet');
+            toast.error('Failed to generate buying wallet');
           },
-        });
-
-        if (
-          !buyingResponse?.data?.data?.walletMnemonic ||
-          !buyingResponse?.data?.data?.walletAddress
-        ) {
-          throw new Error('Failed to generate buying wallet');
-        }
-
-        setBuyingWallet({
-          address: buyingResponse.data.data.walletAddress,
-          mnemonic: buyingResponse.data.data.walletMnemonic,
-        });
-
-        const sellingResponse: any = await postWallet({
-          client: apiClient,
-          body: {
-            network: state.network,
+          onFinally: () => {
+            setIsGenerating(false);
           },
-        });
+          errorMessage: 'Failed to generate buying wallet',
+        },
+      );
 
-        if (
-          !sellingResponse?.data?.data?.walletMnemonic ||
-          !sellingResponse?.data?.data?.walletAddress
-        ) {
-          throw new Error('Failed to generate selling wallet');
-        }
+      if (!buyingResponse) return;
 
-        setSellingWallet({
-          address: sellingResponse.data.data.walletAddress,
-          mnemonic: sellingResponse.data.data.walletMnemonic,
-        });
-      } catch (error) {
-        console.error('Error generating wallets:', error);
-        setError(
-          error instanceof Error ? error.message : 'Failed to generate wallets',
-        );
-        toast.error('Failed to generate wallets');
-      } finally {
-        setIsGenerating(false);
+      if (
+        !buyingResponse?.data?.data?.walletMnemonic ||
+        !buyingResponse?.data?.data?.walletAddress
+      ) {
+        setError('Failed to generate buying wallet');
+        toast.error('Failed to generate buying wallet');
+        return;
       }
+
+      setBuyingWallet({
+        address: buyingResponse.data.data.walletAddress,
+        mnemonic: buyingResponse.data.data.walletMnemonic,
+      });
+
+      const sellingResponse: any = await handleApiCall(
+        () =>
+          postWallet({
+            client: apiClient,
+            body: {
+              network: state.network,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            setError(error.message || 'Failed to generate selling wallet');
+            toast.error('Failed to generate selling wallet');
+          },
+          onFinally: () => {
+            setIsGenerating(false);
+          },
+          errorMessage: 'Failed to generate selling wallet',
+        },
+      );
+
+      if (!sellingResponse) return;
+
+      if (
+        !sellingResponse?.data?.data?.walletMnemonic ||
+        !sellingResponse?.data?.data?.walletAddress
+      ) {
+        setError('Failed to generate selling wallet');
+        toast.error('Failed to generate selling wallet');
+        return;
+      }
+
+      setSellingWallet({
+        address: sellingResponse.data.data.walletAddress,
+        mnemonic: sellingResponse.data.data.walletMnemonic,
+      });
     };
 
     generateWallets();
@@ -320,7 +351,7 @@ function SeedPhrasesScreen({
 
         <div className="flex items-center justify-center gap-4 pt-4">
           <Button variant="secondary" className="text-sm">
-            <Link href={'/settings'} replace>
+            <Link href={'/settings'} replace onClick={ignoreSetup}>
               Skip for now
             </Link>
           </Button>
@@ -357,10 +388,12 @@ function PaymentSourceSetupScreen({
   onNext,
   buyingWallet,
   sellingWallet,
+  ignoreSetup,
 }: {
   onNext: () => void;
   buyingWallet: { address: string; mnemonic: string } | null;
   sellingWallet: { address: string; mnemonic: string } | null;
+  ignoreSetup: () => void;
 }) {
   const { apiClient, state } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
@@ -378,7 +411,7 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
+        walletAddress: '',
       },
       feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
     },
@@ -395,64 +428,59 @@ function PaymentSourceSetupScreen({
       return;
     }
 
-    try {
-      setIsLoading(true);
-      setError('');
+    setIsLoading(true);
+    setError('');
 
-      const response = await postPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          network: state.network,
-          paymentType: 'Web3CardanoV1',
-          PaymentSourceConfig: {
-            rpcProviderApiKey: data.blockfrostApiKey,
-            rpcProvider: 'Blockfrost',
+    await handleApiCall(
+      () =>
+        postPaymentSourceExtended({
+          client: apiClient,
+          body: {
+            network: state.network,
+            PaymentSourceConfig: {
+              rpcProviderApiKey: data.blockfrostApiKey,
+              rpcProvider: 'Blockfrost',
+            },
+            feeRatePermille: data.feePermille,
+            AdminWallets: adminWallets.map((w) => ({
+              walletAddress: w.walletAddress,
+            })) as [
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
+            FeeReceiverNetworkWallet: data.feeReceiverWallet,
+            PurchasingWallets: [
+              {
+                walletMnemonic: buyingWallet.mnemonic,
+                collectionAddress: null,
+                note: 'Setup Buying Wallet',
+              },
+            ],
+            SellingWallets: [
+              {
+                walletMnemonic: sellingWallet.mnemonic,
+                collectionAddress: null,
+                note: 'Setup Selling Wallet',
+              },
+            ],
           },
-          feeRatePermille: data.feePermille,
-          AdminWallets: adminWallets.map((w) => ({
-            walletAddress: w.walletAddress,
-          })) as [
-            { walletAddress: string },
-            { walletAddress: string },
-            { walletAddress: string },
-          ],
-          FeeReceiverNetworkWallet: data.feeReceiverWallet,
-          PurchasingWallets: [
-            {
-              walletMnemonic: buyingWallet.mnemonic,
-              collectionAddress: null,
-              note: 'Setup Buying Wallet',
-            },
-          ],
-          SellingWallets: [
-            {
-              walletMnemonic: sellingWallet.mnemonic,
-              collectionAddress: null,
-              note: 'Setup Selling Wallet',
-            },
-          ],
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Payment source created successfully');
+          onNext();
         },
-      });
-
-      if (response.status !== 200) {
-        setError('Failed to create payment source');
-        toast.error('Failed to create payment source');
-        return;
-      }
-
-      toast.success('Payment source created successfully');
-      onNext();
-    } catch (error) {
-      console.error('Error creating payment source:', error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Failed to create payment source',
-      );
-      toast.error('Failed to create payment source');
-    } finally {
-      setIsLoading(false);
-    }
+        onError: (error: any) => {
+          setError(error.message || 'Failed to create payment source');
+          toast.error(error.message || 'Failed to create payment source');
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to create payment source',
+      },
+    );
   };
 
   return (
@@ -557,10 +585,13 @@ function PaymentSourceSetupScreen({
             </div>
 
             <div className="flex items-center justify-center gap-4 pt-4">
-              <Button variant="secondary" className="text-sm" type="button">
-                <Link href={'/settings'} replace>
-                  Skip for now
-                </Link>
+              <Button
+                variant="secondary"
+                className="text-sm"
+                type="button"
+                onClick={ignoreSetup}
+              >
+                Skip for now
               </Button>
               <Button className="text-sm" disabled={isLoading} type="submit">
                 {isLoading ? 'Creating...' : 'Create Payment Source'}
@@ -759,11 +790,17 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     router.push('/');
   };
 
+  const handleIgnoreSetup = () => {
+    handleComplete();
+    localStorage.setItem('userIgnoredSetup', 'true');
+  };
+
   const steps = [
     <WelcomeScreen
       key="welcome"
       onStart={() => setCurrentStep(1)}
       networkType={networkType}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <SeedPhrasesScreen
       key="seed"
@@ -771,12 +808,14 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         setWallets({ buying, selling });
         setCurrentStep(2);
       }}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <PaymentSourceSetupScreen
       key="payment-source"
       onNext={() => setCurrentStep(3)}
       buyingWallet={wallets.buying}
       sellingWallet={wallets.selling}
+      ignoreSetup={handleIgnoreSetup}
     />,
     <AddAiAgentScreen key="ai" onNext={() => setCurrentStep(4)} />,
     <SuccessScreen

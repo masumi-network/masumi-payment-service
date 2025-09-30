@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
+import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -178,18 +179,9 @@ export default function Transactions() {
   }, [allTransactions, searchQuery, activeTab]);
 
   const fetchTransactions = useCallback(
-    async (reset = false) => {
+    async (forceFetchPurchases = false, forceFetchPayments = false) => {
       try {
-        if (reset) {
-          setIsLoading(true);
-          setAllTransactions([]);
-          setPurchaseCursorId(null);
-          setPaymentCursorId(null);
-          setHasMorePurchases(true);
-          setHasMorePayments(true);
-        } else {
-          setIsLoadingMore(true);
-        }
+        setIsLoadingMore(true);
         const selectedPaymentSource = state.paymentSources.find(
           (ps) => ps.id === selectedPaymentSourceId,
         );
@@ -198,8 +190,8 @@ export default function Transactions() {
         // Fetch purchases
         let purchases: Transaction[] = [];
         let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = hasMorePurchases;
-        if (hasMorePurchases) {
+        let morePurchases = forceFetchPurchases || hasMorePurchases;
+        if (morePurchases) {
           const purchaseRes = await getPurchase({
             client: apiClient,
             query: {
@@ -229,8 +221,8 @@ export default function Transactions() {
         // Fetch payments
         let payments: Transaction[] = [];
         let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = hasMorePayments;
-        if (hasMorePayments) {
+        let morePayments = forceFetchPayments || hasMorePayments;
+        if (morePayments) {
           const paymentRes = await getPayment({
             client: apiClient,
             query: {
@@ -262,7 +254,7 @@ export default function Transactions() {
           ...purchases,
           ...payments,
           //fixes ordering for updates
-          ...(reset ? [] : allTransactions),
+          ...allTransactions,
         ];
         const seen = new Set();
         const deduped = combined.filter((tx) => {
@@ -304,8 +296,19 @@ export default function Transactions() {
     ],
   );
 
+  const refreshTransactions = () => {
+    setPurchaseCursorId(null);
+    setPaymentCursorId(null);
+    setHasMorePurchases(true);
+    setHasMorePayments(true);
+    setIsLoading(true);
+    setAllTransactions([]);
+    // Force fetch both purchases and payments
+    fetchTransactions(true, true);
+  };
+
   useEffect(() => {
-    fetchTransactions(true);
+    fetchTransactions();
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
       localStorage.setItem(
@@ -535,6 +538,12 @@ export default function Transactions() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => refreshTransactions()}
+                isRefreshing={isLoading}
+              />
+            </div>
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
@@ -694,7 +703,7 @@ export default function Transactions() {
       <TransactionDetailsDialog
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
-        onRefresh={() => fetchTransactions(true)}
+        onRefresh={() => fetchTransactions()}
         apiClient={apiClient}
         state={state}
       />

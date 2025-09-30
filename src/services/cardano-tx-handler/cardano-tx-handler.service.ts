@@ -1,4 +1,4 @@
-import { PaymentType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -177,7 +177,6 @@ async function queryAndLockPaymentSourcesForSync() {
     async (prisma) => {
       const paymentContracts = await prisma.paymentSource.findMany({
         where: {
-          paymentType: PaymentType.Web3CardanoV1,
           deletedAt: null,
           disableSyncAt: null,
           OR: [

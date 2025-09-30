@@ -62,21 +62,27 @@ export const metadataSchema = z.object({
     })
     .optional(),
   tags: z.array(z.string().min(1)).min(1),
-  agentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    fixedPricing: z
-      .array(
-        z.object({
-          amount: z.number({ coerce: true }).int().min(1),
-          unit: z
-            .string()
-            .min(1)
-            .or(z.array(z.string().min(1))),
-        }),
-      )
-      .min(1)
-      .max(25),
-  }),
+  agentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      fixedPricing: z
+        .array(
+          z.object({
+            amount: z.number({ coerce: true }).int().min(1),
+            unit: z
+              .string()
+              .min(1)
+              .or(z.array(z.string().min(1))),
+          }),
+        )
+        .min(1)
+        .max(25),
+    })
+    .or(
+      z.object({
+        pricingType: z.enum([PricingType.Free]),
+      }),
+    ),
   image: z.string().or(z.array(z.string())),
   metadata_version: z.number({ coerce: true }).int().min(1).max(1),
 });
@@ -139,17 +145,23 @@ export const queryAgentFromWalletSchemaOutput = z.object({
           })
           .nullable()
           .optional(),
-        AgentPricing: z.object({
-          pricingType: z.enum([PricingType.Fixed]),
-          Pricing: z
-            .array(
-              z.object({
-                amount: z.string(),
-                unit: z.string().max(250),
-              }),
-            )
-            .min(1),
-        }),
+        AgentPricing: z
+          .object({
+            pricingType: z.enum([PricingType.Fixed]),
+            Pricing: z
+              .array(
+                z.object({
+                  amount: z.string(),
+                  unit: z.string().max(250),
+                }),
+              )
+              .min(1),
+          })
+          .or(
+            z.object({
+              pricingType: z.enum([PricingType.Free]),
+            }),
+          ),
         image: z.string().max(250),
         metadataVersion: z.number({ coerce: true }).int().min(1).max(1),
       }),
@@ -291,15 +303,20 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
                 }
               : undefined,
             Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-            AgentPricing: {
-              pricingType: parsedMetadata.data.agentPricing.pricingType,
-              Pricing: parsedMetadata.data.agentPricing.fixedPricing.map(
-                (price) => ({
-                  amount: price.amount.toString(),
-                  unit: metadataToString(price.unit)!,
-                }),
-              ),
-            },
+            AgentPricing:
+              parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
+                ? {
+                    pricingType: parsedMetadata.data.agentPricing.pricingType,
+                    Pricing: parsedMetadata.data.agentPricing.fixedPricing.map(
+                      (price) => ({
+                        amount: price.amount.toString(),
+                        unit: metadataToString(price.unit)!,
+                      }),
+                    ),
+                  }
+                : {
+                    pricingType: parsedMetadata.data.agentPricing.pricingType,
+                  },
             image: metadataToString(parsedMetadata.data.image)!,
             metadataVersion: parsedMetadata.data.metadata_version,
           },
