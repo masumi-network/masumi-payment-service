@@ -28,6 +28,10 @@ function validateDeregistrationRequest(request: {
   }
 }
 
+function extractAssetName(agentIdentifier: string, policyId: string): string {
+  return agentIdentifier.slice(policyId.length);
+}
+
 function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
   const tokenUtxo = utxos.find(
     (utxo) =>
@@ -70,6 +74,35 @@ function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
   );
 
   return { collateralUtxo, limitedFilteredUtxos };
+}
+
+async function handleDeregistrationResults(
+  results: Awaited<ReturnType<typeof advancedRetryAll>>,
+  registryRequests: Array<{ id: string }>,
+): Promise<void> {
+  let index = 0;
+  for (const result of results) {
+    const request = registryRequests[index];
+    if (result.success == false || result.result != true) {
+      const error = result.error;
+      logger.error(`Error deregistering agent ${request.id}`, {
+        error: error,
+      });
+      await prisma.registryRequest.update({
+        where: { id: request.id },
+        data: {
+          state: RegistrationState.DeregistrationFailed,
+          error: convertErrorString(error),
+          SmartContractWallet: {
+            update: {
+              lockedAt: null,
+            },
+          },
+        },
+      });
+    }
+    index++;
+  }
 }
 
 export async function deRegisterAgentV1() {
@@ -129,13 +162,18 @@ export async function deRegisterAgentV1() {
             const { collateralUtxo, limitedFilteredUtxos } =
               sortAndLimitUtxosForDeregistration(utxos);
 
+            const assetName = extractAssetName(
+              request.agentIdentifier!,
+              policyId,
+            );
+
             const evaluationTx = await generateDeregisterAgentTransaction(
               blockchainProvider,
               network,
               script,
               address,
               policyId,
-              request.agentIdentifier!.slice(policyId.length),
+              assetName,
               tokenUtxo,
               collateralUtxo,
               limitedFilteredUtxos,
@@ -149,7 +187,7 @@ export async function deRegisterAgentV1() {
               script,
               address,
               policyId,
-              request.agentIdentifier!.slice(policyId.length),
+              assetName,
               tokenUtxo,
               collateralUtxo,
               limitedFilteredUtxos,
@@ -198,29 +236,7 @@ export async function deRegisterAgentV1() {
             return true;
           }),
         });
-        let index = 0;
-        for (const result of results) {
-          const request = registryRequests[index];
-          if (result.success == false || result.result != true) {
-            const error = result.error;
-            logger.error(`Error deregistering agent ${request.id}`, {
-              error: error,
-            });
-            await prisma.registryRequest.update({
-              where: { id: request.id },
-              data: {
-                state: RegistrationState.DeregistrationFailed,
-                error: convertErrorString(error),
-                SmartContractWallet: {
-                  update: {
-                    lockedAt: null,
-                  },
-                },
-              },
-            });
-          }
-          index++;
-        }
+        await handleDeregistrationResults(results, registryRequests);
       }),
     );
   } catch (error) {
