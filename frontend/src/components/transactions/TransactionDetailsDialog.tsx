@@ -392,10 +392,13 @@ export default function TransactionDetailsDialog({
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm space-y-1">
-                  {transaction.type === 'payment' && transaction.RequestedFunds && transaction.RequestedFunds.length > 0 ? (
+                  {transaction.type === 'payment' &&
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
-                      const isUsdm = fund.unit === 'USDM' || fund.unit === 'tUSDM';
-                      
+                      const isUsdm =
+                        fund.unit === 'USDM' || fund.unit === 'tUSDM';
+
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
@@ -406,10 +409,13 @@ export default function TransactionDetailsDialog({
                         </p>
                       );
                     })
-                  ) : transaction.type === 'purchase' && transaction.PaidFunds && transaction.PaidFunds.length > 0 ? (
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
                     transaction.PaidFunds.map((fund, index) => {
-                      const isUsdm = fund.unit === 'USDM' || fund.unit === 'tUSDM';
-                      
+                      const isUsdm =
+                        fund.unit === 'USDM' || fund.unit === 'tUSDM';
+
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
