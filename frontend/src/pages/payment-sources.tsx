@@ -34,6 +34,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { handleApiCall } from '@/lib/utils';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -57,40 +58,31 @@ function UpdatePaymentSourceDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      setIsLoading(true);
+    setIsLoading(true);
 
-      await patchPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          id: paymentSourceId,
-          PaymentSourceConfig: {
-            rpcProviderApiKey: apiKey,
-            rpcProvider: 'Blockfrost',
-          },
+    const response = await patchPaymentSourceExtended({
+      client: apiClient,
+      body: {
+        id: paymentSourceId,
+        PaymentSourceConfig: {
+          rpcProviderApiKey: apiKey,
+          rpcProvider: 'Blockfrost',
         },
-      });
+      },
+    });
 
-      toast.success('Payment source updated successfully');
-      onSuccess();
-      onClose();
-    } catch (error: any) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error updating payment source:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
+      toast.error(error.message || 'Failed to update payment source');
       setIsLoading(false);
+      return;
     }
+
+    toast.success('Payment source updated successfully');
+    onSuccess();
+    onClose();
+    setIsLoading(false);
   };
 
   return (
@@ -196,48 +188,55 @@ export default function PaymentSourcesPage() {
   }, [paymentSources, searchQuery]);
 
   const fetchPaymentSources = async (cursor?: string | null) => {
-    try {
-      if (!cursor) {
-        setIsLoading(true);
-        setPaymentSources([]);
-      } else {
-        setIsLoadingMore(true);
-      }
+    if (!cursor) {
+      setIsLoading(true);
+      setPaymentSources([]);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-      const response = await getPaymentSourceExtended({
-        client: apiClient,
-        query: {
-          take: 10,
-          cursorId: cursor || undefined,
-        },
-      });
+    const response = await getPaymentSourceExtended({
+      client: apiClient,
+      query: {
+        take: 10,
+        cursorId: cursor || undefined,
+      },
+    });
 
-      if (response.data?.data?.ExtendedPaymentSources) {
-        const filteredSources =
-          response.data.data.ExtendedPaymentSources.filter(
-            (source) => source.network === state.network,
-          );
-
-        if (cursor) {
-          setPaymentSources((prev) => [...prev, ...filteredSources]);
-        } else {
-          setPaymentSources(filteredSources);
-        }
-
-        setHasMore(response.data.data.ExtendedPaymentSources.length === 10);
-      } else {
-        if (!cursor) {
-          setPaymentSources([]);
-        }
-        setHasMore(false);
-      }
-    } catch (error) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error fetching payment sources:', error);
-      toast.error('Failed to load payment sources');
-    } finally {
+      toast.error(error.message || 'Failed to load payment sources');
+      if (!cursor) {
+        setPaymentSources([]);
+      }
+      setHasMore(false);
       setIsLoading(false);
       setIsLoadingMore(false);
+      return;
     }
+
+    if (response.data?.data?.ExtendedPaymentSources) {
+      const filteredSources = response.data.data.ExtendedPaymentSources.filter(
+        (source) => source.network === state.network,
+      );
+
+      if (cursor) {
+        setPaymentSources((prev) => [...prev, ...filteredSources]);
+      } else {
+        setPaymentSources(filteredSources);
+      }
+
+      setHasMore(response.data.data.ExtendedPaymentSources.length === 10);
+    } else {
+      if (!cursor) {
+        setPaymentSources([]);
+      }
+      setHasMore(false);
+    }
+
+    setIsLoading(false);
+    setIsLoadingMore(false);
   };
 
   useEffect(() => {
@@ -267,40 +266,30 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
-    try {
-      setIsDeleting(true);
-
-      const response = await deletePaymentSourceExtended({
-        client: apiClient,
-        body: {
-          id: sourceToDelete.id,
+    await handleApiCall(
+      () =>
+        deletePaymentSourceExtended({
+          client: apiClient,
+          body: {
+            id: sourceToDelete.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Payment source deleted successfully');
+          fetchPaymentSources();
         },
-      });
-
-      if (!response.data?.data?.id) {
-        throw new Error('Failed to delete payment source');
-      }
-
-      toast.success('Payment source deleted successfully');
-      fetchPaymentSources();
-    } catch (error: any) {
-      console.error('Error deleting payment source:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
-      setSourceToDelete(null);
-    }
+        onError: (error: any) => {
+          console.error('Error deleting payment source:', error);
+          toast.error(error.message || 'Failed to delete payment source');
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+          setSourceToDelete(null);
+        },
+        errorMessage: 'Failed to delete payment source',
+      },
+    );
   };
 
   const handleLoadMore = () => {

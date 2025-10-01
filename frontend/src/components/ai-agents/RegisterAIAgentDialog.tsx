@@ -44,12 +44,11 @@ interface SellingWallet {
 }
 
 const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM', 'free'], {
+  unit: z.enum(['lovelace', 'USDM'], {
     required_error: 'Token is required',
   }),
   amount: z.string().refine((val) => {
-    if (val === 'free' || val === '0' || val === '0.0' || val === '0.00')
-      return true;
+    if (val === '0' || val === '0.0' || val === '0.00') return true;
     return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
   }, 'Amount must be a valid number >= 0'),
 });
@@ -464,13 +463,9 @@ export function RegisterAIAgentDialog({
                     checked={field.value || false}
                     onChange={(e) => {
                       field.onChange(e.target.checked);
-                      if (e.target.checked) {
-                        // Set to free pricing when checked
-                        setValue('prices', [{ unit: 'free', amount: '0' }]);
-                      } else {
-                        // Reset to default pricing when unchecked
-                        setValue('prices', [{ unit: 'lovelace', amount: '' }]);
-                      }
+                      setValue('prices', [
+                        { unit: 'lovelace', amount: '0.00' },
+                      ]);
                     }}
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
                   />
@@ -514,7 +509,6 @@ export function RegisterAIAgentDialog({
                         <SelectContent>
                           <SelectItem value="lovelace">ADA</SelectItem>
                           <SelectItem value="USDM">USDM</SelectItem>
-                          <SelectItem value="free">Free</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -523,15 +517,9 @@ export function RegisterAIAgentDialog({
                 <div className="flex-1 space-y-2">
                   <Input
                     type="number"
-                    placeholder={
-                      watch(`prices.${index}.unit`) === 'free' ? '0' : '0.00'
-                    }
-                    disabled={watch(`prices.${index}.unit`) === 'free'}
-                    value={
-                      watch(`prices.${index}.unit`) === 'free'
-                        ? '0'
-                        : watch(`prices.${index}.amount`) || ''
-                    }
+                    placeholder="0.00"
+                    disabled={watch('isFree')}
+                    value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"
                     step="0.000001"

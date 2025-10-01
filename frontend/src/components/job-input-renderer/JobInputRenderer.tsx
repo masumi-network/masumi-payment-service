@@ -163,6 +163,23 @@ export default function JobInputRenderer({
           );
         }
 
+      case ValidJobInputTypes.FILE:
+        return (
+          <Input
+            id={id}
+            type="file"
+            accept={data?.accept}
+            multiple={data?.multiple}
+            disabled={disabled}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                handleChange(file.name); // Store filename for demo purposes
+              }
+            }}
+          />
+        );
+
       case ValidJobInputTypes.NONE:
         return (
           <div className="text-sm text-muted-foreground italic">
