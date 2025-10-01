@@ -19,6 +19,7 @@ import {
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
 } from '@/lib/api/generated';
+import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -395,27 +396,51 @@ export default function TransactionDetailsDialog({
                   {transaction.type === 'payment' &&
                   transaction.RequestedFunds &&
                   transaction.RequestedFunds.length > 0 ? (
-                    transaction.RequestedFunds.map((fund, index) => (
-                      <p key={index}>
-                        {fund.unit === 'lovelace' || !fund.unit
-                          ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
-                          : fund.unit === 'USDM' || fund.unit === 'tUSDM'
-                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`
-                            : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                      </p>
-                    ))
+                    transaction.RequestedFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
                   ) : transaction.type === 'purchase' &&
                     transaction.PaidFunds &&
                     transaction.PaidFunds.length > 0 ? (
-                    transaction.PaidFunds.map((fund, index) => (
-                      <p key={index}>
-                        {fund.unit === 'lovelace' || !fund.unit
-                          ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
-                          : fund.unit === 'USDM' || fund.unit === 'tUSDM'
-                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`
-                            : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                      </p>
-                    ))
+                    transaction.PaidFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
                   ) : (
                     <p>—</p>
                   )}
