@@ -11,6 +11,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
+import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   GetPaymentResponses,
@@ -396,8 +397,12 @@ export default function TransactionDetailsDialog({
                   transaction.RequestedFunds &&
                   transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
-                      const isUsdm =
-                        fund.unit === 'USDM' || fund.unit === 'tUSDM';
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
+                                   fund.unit === usdmConfig.policyId ||
+                                   fund.unit === 'USDM' || 
+                                   fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
 
                       return (
                         <p key={index}>
@@ -405,7 +410,9 @@ export default function TransactionDetailsDialog({
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
-                              : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
@@ -413,8 +420,12 @@ export default function TransactionDetailsDialog({
                     transaction.PaidFunds &&
                     transaction.PaidFunds.length > 0 ? (
                     transaction.PaidFunds.map((fund, index) => {
-                      const isUsdm =
-                        fund.unit === 'USDM' || fund.unit === 'tUSDM';
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
+                                   fund.unit === usdmConfig.policyId ||
+                                   fund.unit === 'USDM' || 
+                                   fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
 
                       return (
                         <p key={index}>
@@ -422,7 +433,9 @@ export default function TransactionDetailsDialog({
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
-                              : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
