@@ -27,7 +27,6 @@ function validateDeregistrationRequest(request: {
     throw new Error('Agent identifier is not set');
   }
 }
-
 function extractAssetName(agentIdentifier: string, policyId: string): string {
   return agentIdentifier.slice(policyId.length);
 }
@@ -75,7 +74,6 @@ function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
 
   return { collateralUtxo, limitedFilteredUtxos };
 }
-
 async function handleDeregistrationResults(
   results: Awaited<ReturnType<typeof advancedRetryAll>>,
   registryRequests: Array<{ id: string }>,
