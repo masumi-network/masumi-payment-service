@@ -39,7 +39,7 @@ export function NotificationsDialog({
         <DialogHeader>
           <DialogTitle>Notifications</DialogTitle>
         </DialogHeader>
-        {newTransactions.length < 1 ? (
+        {newTransactions.length > 0 ? (
           <div className="space-y-4 max-h-96 overflow-y-auto">
             <div className="space-y-2">
               {newTransactions.map((transaction) => (
