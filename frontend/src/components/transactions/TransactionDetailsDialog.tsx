@@ -398,10 +398,11 @@ export default function TransactionDetailsDialog({
                   transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(state.network);
-                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
-                                   fund.unit === usdmConfig.policyId ||
-                                   fund.unit === 'USDM' || 
-                                   fund.unit === 'tUSDM';
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
                       const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
 
                       return (
@@ -421,10 +422,11 @@ export default function TransactionDetailsDialog({
                     transaction.PaidFunds.length > 0 ? (
                     transaction.PaidFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(state.network);
-                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
-                                   fund.unit === usdmConfig.policyId ||
-                                   fund.unit === 'USDM' || 
-                                   fund.unit === 'tUSDM';
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
                       const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
 
                       return (
