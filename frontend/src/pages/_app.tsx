@@ -21,6 +21,7 @@ import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { handleApiCall } from '@/lib/utils';
+import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -41,6 +42,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isMobile, setIsMobile] = useState(false);
   const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
+
+  // Add dynamic favicon functionality
+  useDynamicFavicon();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -98,7 +102,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.push(`/setup?network=${encodeURIComponent(state.network)}`);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     apiClient,
     dispatch,
