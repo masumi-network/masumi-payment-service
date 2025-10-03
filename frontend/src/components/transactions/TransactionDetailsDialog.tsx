@@ -410,7 +410,7 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
                                 : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
@@ -434,7 +434,7 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDM`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
                                 : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
