@@ -16,7 +16,7 @@ export function useDynamicFavicon() {
 
       // Use admin favicon for admin routes, swagger favicon for everything else
       const faviconPath = isAdminRoute
-        ? '/admin/admin_favicon.svg'
+        ? '/assets/admin_favicon.svg'
         : '/assets/swagger_favicon.svg';
 
       if (existingFavicon) {
