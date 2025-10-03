@@ -393,15 +393,18 @@ export default function TransactionDetailsDialog({
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
-                  {transaction.type === 'payment' && transaction.RequestedFunds && transaction.RequestedFunds.length > 0 ? (
+                  {transaction.type === 'payment' &&
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(state.network);
-                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
-                                   fund.unit === usdmConfig.policyId ||
-                                   fund.unit === 'USDM' || 
-                                   fund.unit === 'tUSDM';
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
                       const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-                      
+
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
@@ -414,15 +417,18 @@ export default function TransactionDetailsDialog({
                         </p>
                       );
                     })
-                  ) : transaction.type === 'purchase' && transaction.PaidFunds && transaction.PaidFunds.length > 0 ? (
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
                     transaction.PaidFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(state.network);
-                      const isUsdm = fund.unit === usdmConfig.fullAssetId || 
-                                   fund.unit === usdmConfig.policyId ||
-                                   fund.unit === 'USDM' || 
-                                   fund.unit === 'tUSDM';
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
                       const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-                      
+
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
