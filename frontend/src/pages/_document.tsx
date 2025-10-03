@@ -4,10 +4,6 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
-        <link
-          rel="icon"
-          href="https://cdn.prod.website-files.com/67879c5d48bf5ddaad9ec54f/678ee221782a258306985cd4_avatar_img.png"
-        />
         <meta
           property="og:title"
           content="Masumi - The Definitive Protocol for AI Agent Networks"
