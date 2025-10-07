@@ -606,11 +606,15 @@ export default function AIAgentsPage() {
                           >
                             {parseAgentStatus(agent.state)}
                           </Badge>
-                          {agent.state === 'RegistrationFailed' && agent.error && (
-                            <div className="text-xs text-destructive max-w-[200px] truncate" title={agent.error}>
-                              {agent.error}
-                            </div>
-                          )}
+                          {agent.state === 'RegistrationFailed' &&
+                            agent.error && (
+                              <div
+                                className="text-xs text-destructive max-w-[200px] truncate"
+                                title={agent.error}
+                              >
+                                {agent.error}
+                              </div>
+                            )}
                         </div>
                       </td>
                       <td className="p-4">
