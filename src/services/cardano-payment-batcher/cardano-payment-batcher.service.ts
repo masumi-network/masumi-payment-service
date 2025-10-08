@@ -380,13 +380,7 @@ export async function batchLatestPaymentEntriesV1() {
                   paymentRequest,
                   overpaidLovelace,
                 });
-                //deduct amounts from wallet
-                for (const paymentAmount of paymentRequest.PaidFunds) {
-                  const walletAmount = amounts.find(
-                    (amount) => amount.unit == paymentAmount.unit,
-                  );
-                  walletAmount!.quantity -= paymentAmount.amount;
-                }
+
                 paymentRequestsRemaining.splice(index, 1);
               } else {
                 index++;
