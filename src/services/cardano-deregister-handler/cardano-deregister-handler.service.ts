@@ -13,11 +13,95 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
+import { SERVICE_CONSTANTS } from '@/utils/config';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 
 const mutex = new Mutex();
+
+function validateDeregistrationRequest(request: {
+  agentIdentifier: string | null;
+}): void {
+  if (!request.agentIdentifier) {
+    throw new Error('Agent identifier is not set');
+  }
+}
+function extractAssetName(agentIdentifier: string, policyId: string): string {
+  return agentIdentifier.slice(policyId.length);
+}
+
+function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
+  const tokenUtxo = utxos.find(
+    (utxo) =>
+      utxo.output.amount.length > 1 &&
+      utxo.output.amount.some((asset) => asset.unit == agentIdentifier),
+  );
+  if (!tokenUtxo) {
+    throw new Error('No token UTXO found');
+  }
+  return tokenUtxo;
+}
+
+function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
+  collateralUtxo: UTxO;
+  limitedFilteredUtxos: UTxO[];
+} {
+  const filteredUtxos = utxos.sort((a, b) => {
+    const aLovelace = parseInt(
+      a.output.amount.find(
+        (asset) =>
+          asset.unit == SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN ||
+          asset.unit == '',
+      )?.quantity ?? '0',
+    );
+    const bLovelace = parseInt(
+      b.output.amount.find(
+        (asset) =>
+          asset.unit == SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN ||
+          asset.unit == '',
+      )?.quantity ?? '0',
+    );
+    return bLovelace - aLovelace;
+  });
+
+  const collateralUtxo = filteredUtxos[0];
+
+  const limitedFilteredUtxos = filteredUtxos.slice(
+    0,
+    Math.min(4, filteredUtxos.length),
+  );
+
+  return { collateralUtxo, limitedFilteredUtxos };
+}
+async function handleDeregistrationResults(
+  results: Awaited<ReturnType<typeof advancedRetryAll>>,
+  registryRequests: Array<{ id: string }>,
+): Promise<void> {
+  let index = 0;
+  for (const result of results) {
+    const request = registryRequests[index];
+    if (result.success == false || result.result != true) {
+      const error = result.error;
+      logger.error(`Error deregistering agent ${request.id}`, {
+        error: error,
+      });
+      await prisma.registryRequest.update({
+        where: { id: request.id },
+        data: {
+          state: RegistrationState.DeregistrationFailed,
+          error: convertErrorString(error),
+          SmartContractWallet: {
+            update: {
+              lockedAt: null,
+            },
+          },
+        },
+      });
+    }
+    index++;
+  }
+}
 
 export async function deRegisterAgentV1() {
   let release: MutexInterface.Releaser | null;
@@ -54,18 +138,11 @@ export async function deRegisterAgentV1() {
         const results = await advancedRetryAll({
           errorResolvers: [
             delayErrorResolver({
-              configuration: {
-                maxRetries: 5,
-                backoffMultiplier: 5,
-                initialDelayMs: 500,
-                maxDelayMs: 7500,
-              },
+              configuration: SERVICE_CONSTANTS.RETRY,
             }),
           ],
           operations: registryRequests.map((request) => async () => {
-            if (!request.agentIdentifier) {
-              throw new Error('Agent identifier is not set');
-            }
+            validateDeregistrationRequest(request);
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentSource.network,
               paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -78,37 +155,14 @@ export async function deRegisterAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const tokenUtxo = utxos.find(
-              (utxo) =>
-                utxo.output.amount.length > 1 &&
-                utxo.output.amount.some(
-                  (asset) => asset.unit == request.agentIdentifier,
-                ),
-            );
-            if (!tokenUtxo) {
-              throw new Error('No token UTXO found');
-            }
+            const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
 
-            const filteredUtxos = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              //sort by biggest lovelace
-              return bLovelace - aLovelace;
-            });
+            const { collateralUtxo, limitedFilteredUtxos } =
+              sortAndLimitUtxosForDeregistration(utxos);
 
-            const collateralUtxo = filteredUtxos[0];
-
-            const limitedFilteredUtxos = filteredUtxos.slice(
-              0,
-              Math.min(4, filteredUtxos.length),
+            const assetName = extractAssetName(
+              request.agentIdentifier!,
+              policyId,
             );
 
             const evaluationTx = await generateDeregisterAgentTransaction(
@@ -117,7 +171,7 @@ export async function deRegisterAgentV1() {
               script,
               address,
               policyId,
-              request.agentIdentifier.slice(policyId.length),
+              assetName,
               tokenUtxo,
               collateralUtxo,
               limitedFilteredUtxos,
@@ -131,7 +185,7 @@ export async function deRegisterAgentV1() {
               script,
               address,
               policyId,
-              request.agentIdentifier.slice(policyId.length),
+              assetName,
               tokenUtxo,
               collateralUtxo,
               limitedFilteredUtxos,
@@ -180,29 +234,7 @@ export async function deRegisterAgentV1() {
             return true;
           }),
         });
-        let index = 0;
-        for (const result of results) {
-          const request = registryRequests[index];
-          if (result.success == false || result.result != true) {
-            const error = result.error;
-            logger.error(`Error deregistering agent ${request.id}`, {
-              error: error,
-            });
-            await prisma.registryRequest.update({
-              where: { id: request.id },
-              data: {
-                state: RegistrationState.DeregistrationFailed,
-                error: convertErrorString(error),
-                SmartContractWallet: {
-                  update: {
-                    lockedAt: null,
-                  },
-                },
-              },
-            });
-          }
-          index++;
-        }
+        await handleDeregistrationResults(results, registryRequests);
       }),
     );
   } catch (error) {
