@@ -149,7 +149,7 @@ initialize()
       logger: logger,
     });
 
-    void createServer(serverConfig, router);
+    await createServer(serverConfig, router);
     logger.info(
       'Web server started successfully',
       { component: 'server' },

@@ -109,12 +109,21 @@ import {
   postRevealDataSchemaOutput,
   postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
+import {
+  postGenerateInvoiceSchemaInput,
+  postGenerateInvoiceSchemaOutput,
+} from '@/routes/api/invoice';
+import {
+  postSignatureSchemaInput,
+  postSignatureSchemaOutput,
+} from '@/routes/api/invoice/signature';
 
 extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
   /********************* HEALTH *****************************/
+
   registry.registerPath({
     method: 'get',
     path: '/health/',
@@ -1592,6 +1601,157 @@ export function generateOpenAPI() {
       },
       500: {
         description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* INVOICE *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/invoice/',
+    description:
+      'Generates an invoice PDF for a payment by blockchain identifier, validating a signed request from the buyer wallet. (admin access required)',
+    summary:
+      'Generate or retrieve an invoice PDF for a payment. (admin access required)',
+    tags: ['invoice'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postGenerateInvoiceSchemaInput.openapi({
+              example: {
+                signature: 'ed25519_signature',
+                key: 'ed25519_key',
+                walletAddress:
+                  'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
+                validUntil: 1736352000000,
+                blockchainIdentifier: 'blockchain_identifier',
+                signatureData:
+                  '{"action":"retrieve_invoice","validUntil":1736352000000,"hash":"..."}',
+                action: 'retrieve_invoice',
+                invoiceCurrency: 'usd',
+                invoice: {
+                  itemNamePrefix: 'Agent: ',
+                  title: 'Invoice',
+                  language: 'en-us',
+                  localizationFormat: 'en-us',
+                },
+                vatRate: 0.19,
+                seller: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Example Str.',
+                  streetNumber: '1',
+                  email: 'seller@example.com',
+                  phone: '+49 30 123456',
+                  name: 'Alice',
+                  companyName: 'Alice GmbH',
+                  vatNumber: 'DE123456789',
+                },
+                buyer: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Buyer Str.',
+                  streetNumber: '2',
+                  email: 'buyer@example.com',
+                  phone: '+49 30 987654',
+                  name: 'Bob',
+                  companyName: null,
+                  vatNumber: null,
+                },
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Invoice generated or existing invoice returned',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postGenerateInvoiceSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    invoice: 'BASE64_PDF_STRING',
+                  },
+                },
+              }),
+          },
+        },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/invoice/signature',
+    description:
+      'Provides a signed message from the smart contract wallet to authorize invoice retrieval for a purchase. (+PAY access required)',
+    summary:
+      'Get a signed message to request an invoice. (+PAY access required)',
+    tags: ['invoice'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postSignatureSchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                action: 'retrieve_invoice',
+                buyer: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Buyer Str.',
+                  streetNumber: '2',
+                  email: 'buyer@example.com',
+                  phone: '+49 30 987654',
+                  name: 'Bob',
+                  companyName: null,
+                  vatNumber: null,
+                },
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Signature generated',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postSignatureSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    signature: 'ed25519_signature',
+                    key: 'ed25519_key',
+                    walletAddress: 'addr1...',
+                    signatureData:
+                      '{"action":"retrieve_invoice","validUntil":1736352000000,"hash":"..."}',
+                  },
+                },
+              }),
+          },
+        },
       },
     },
   });

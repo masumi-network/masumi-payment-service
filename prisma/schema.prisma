@@ -437,6 +437,7 @@ model InvoiceBase {
   updatedAt DateTime @updatedAt
 
   InvoiceRevisions InvoiceRevision[]
+  invoiceId        String            @unique
 }
 
 model InvoiceRevision {
@@ -445,8 +446,10 @@ model InvoiceRevision {
   updatedAt      DateTime      @updatedAt
   invoiceBaseId  String
   InvoiceBase    InvoiceBase   @relation(fields: [invoiceBaseId], references: [id])
-  invoiceItems   InvoiceItem[]
+  InvoiceItems   InvoiceItem[]
   revisionNumber Int           @default(0)
+
+  currencyShortId String
 
   // Invoice metadata
   invoiceTitle       String
@@ -469,10 +472,8 @@ model InvoiceRevision {
   correctionInvoiceDescription    String?
 
   // Global formatting options
-  thousandDelimiter String
-  decimalDelimiter  String
-  language          String?
-  dateFormat        String
+  language           String?
+  localizationFormat String
 
   // Seller information
   sellerCountry      String
@@ -521,15 +522,15 @@ model InvoiceItem {
   name                   String
   quantity               Decimal
   pricePerUnitWithoutVat Decimal
-  currencySymbol         String
-  currencySymbolPosition SymbolPosition
-  currencyShortId        String
-  decimals               Int
   vatRate                Decimal
   vatAmount              Decimal
   totalAmount            Decimal
+  decimals               Int
+  conversionFactor       Decimal
+  convertedUnit          String
+  conversionDate         DateTime
 
-  referencedPayment   PaymentRequest? @relation(fields: [referencedPaymentId], references: [id])
+  ReferencedPayment   PaymentRequest? @relation(fields: [referencedPaymentId], references: [id])
   referencedPaymentId String?
 
   InvoiceRevision   InvoiceRevision @relation(fields: [invoiceRevisionId], references: [id])

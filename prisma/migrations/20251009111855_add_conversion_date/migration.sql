@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "InvoiceItem" ADD COLUMN     "conversionDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

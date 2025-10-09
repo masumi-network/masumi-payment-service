@@ -133,6 +133,8 @@ export const CONFIG = {
   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:
     process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
   SIGNOZ_INGESTION_KEY: process.env.SIGNOZ_INGESTION_KEY,
+  COINGECKO_API_KEY: process.env.COINGECKO_API_KEY,
+  IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
 };
 
 export const CONSTANTS = {

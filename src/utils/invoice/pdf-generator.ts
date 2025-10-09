@@ -14,13 +14,22 @@ export async function generateInvoicePDF(
   seller: InvoiceData['seller'],
   buyer: InvoiceData['buyer'],
   invoiceConfig: ResolvedInvoiceConfig,
-): Promise<Buffer> {
+  newInvoiceId: string,
+  correctionInvoiceReference: {
+    correctionTitle: string;
+    correctionDescription: string;
+  } | null,
+  includeCoingeckoAttribution: boolean = false,
+): Promise<{ pdfBase64: string }> {
   try {
-    const htmlContent = generateInvoiceHTML(
+    const invoiceHtml = generateInvoiceHTML(
       invoiceConfig,
       seller,
       buyer,
       invoiceGroups,
+      newInvoiceId,
+      correctionInvoiceReference,
+      includeCoingeckoAttribution,
     );
 
     // Default PDF options - always A4 format
@@ -32,11 +41,11 @@ export async function generateInvoicePDF(
 
     // Create PDF file object
     const file: html_to_pdf.File = {
-      content: htmlContent,
+      content: invoiceHtml,
     };
 
     // Generate PDF using callback-based API wrapped in Promise
-    return new Promise<Buffer>((resolve, reject) => {
+    return new Promise<{ pdfBase64: string }>((resolve, reject) => {
       html_to_pdf.generatePdf(
         file,
         defaultOptions,
@@ -44,7 +53,9 @@ export async function generateInvoicePDF(
           if (err) {
             reject(new Error(`PDF generation failed: ${err.message}`));
           } else {
-            resolve(buffer);
+            resolve({
+              pdfBase64: buffer.toString('base64'),
+            });
           }
         },
       );
@@ -61,12 +72,23 @@ export async function generateInvoicePDFBase64(
   seller: InvoiceData['seller'],
   buyer: InvoiceData['buyer'],
   invoiceConfig: ResolvedInvoiceConfig,
-): Promise<string> {
-  const pdfBuffer = await generateInvoicePDF(
+  newInvoiceId: string,
+  correctionInvoiceReference: {
+    correctionTitle: string;
+    correctionDescription: string;
+  } | null,
+  includeCoingeckoAttribution: boolean = false,
+): Promise<{ pdfBase64: string }> {
+  const invoice = await generateInvoicePDF(
     invoiceGroups,
     seller,
     buyer,
     invoiceConfig,
+    newInvoiceId,
+    correctionInvoiceReference,
+    includeCoingeckoAttribution,
   );
-  return pdfBuffer.toString('base64');
+  return {
+    pdfBase64: invoice.pdfBase64,
+  };
 }

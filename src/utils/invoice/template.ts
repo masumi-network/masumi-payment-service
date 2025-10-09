@@ -1,20 +1,25 @@
 import { z } from 'zod';
 import { postGenerateInvoiceSchemaInput } from '@/routes/api/invoice/index';
 import { generateHash } from '../crypto';
-import { $Enums } from '@prisma/client';
 
 type InvoiceData = z.infer<typeof postGenerateInvoiceSchemaInput>;
-function generateInvoiceId(): string {
+export function generateNewInvoiceBaseId(baseIdPrefix?: string): string {
   const randomData = crypto.randomUUID();
   const randomHash = generateHash(randomData);
   //replace all non-numbers with their ASCII code
   const numberHash = randomHash.replace(/[^0-9]/g, (char) =>
     (char.charCodeAt(0) % 10).toString(),
   );
-  const randomHashShort = `${numberHash.slice(0, 4)}-${numberHash.slice(4, 8)}-${numberHash.slice(8, 12)}-${numberHash.slice(12, 16)}`;
-  return randomHashShort;
+  const randomHashShort = `${numberHash.slice(0, 2)}-${numberHash.slice(2, 6)}`;
+  return `${baseIdPrefix ? `${baseIdPrefix}-` : ''}${randomHashShort}`;
 }
 
+export function generateInvoiceId(
+  revisionNumber: number,
+  baseId: string,
+): string {
+  return `${baseId}-${revisionNumber}`;
+}
 // Currency type definition
 type Currency = {
   id: string; // Short ID like 'EUR', 'USD', 'ADA'
@@ -22,32 +27,55 @@ type Currency = {
   decimals: number;
   symbolPosition: 'before' | 'after';
 };
-
+// Runtime-safe list of supported currencies for validation and typing
+export const supportedCurrencies = [
+  'usd',
+  'eur',
+  'gbp',
+  'jpy',
+  'chf',
+  'aed',
+] as const;
 // Currency configuration with defaults
-const CURRENCY_CONFIG: Record<string, Omit<Currency, 'id'>> = {
-  USD: {
+const CURRENCY_CONFIG: Record<
+  (typeof supportedCurrencies)[number],
+  Omit<Currency, 'id'>
+> = {
+  usd: {
     symbol: '$',
     decimals: 2,
     symbolPosition: 'before',
   },
-  GBP: {
+  gbp: {
     symbol: '£',
     decimals: 2,
     symbolPosition: 'before',
   },
-  EUR: {
+  eur: {
     symbol: '€',
     decimals: 2,
     symbolPosition: 'after',
   },
-  ADA: {
-    symbol: '₳',
-    decimals: 6,
+  jpy: {
+    symbol: '¥',
+    decimals: 0,
+    symbolPosition: 'before',
+  },
+  chf: {
+    symbol: 'CHF',
+    decimals: 2,
+    symbolPosition: 'before',
+  },
+  aed: {
+    symbol: 'AED',
+    decimals: 2,
     symbolPosition: 'before',
   },
 };
 
-function getCurrencyConfig(currencyId: string): Currency {
+function getCurrencyConfig(
+  currencyId: (typeof supportedCurrencies)[number],
+): Currency {
   const config = CURRENCY_CONFIG[currencyId];
   if (config) {
     return {
@@ -76,9 +104,10 @@ type InvoiceItem = {
   priceWithVat: number;
   vatAmount: number;
   // Optional conversion display (does not affect totals)
-  conversionFactor?: number;
-  conversionPrefix?: string;
-  conversionSuffix?: string;
+  conversionFactor: number;
+  decimals: number;
+  convertedUnit: string;
+  conversionDate: Date;
 };
 
 export type InvoiceGroupItemInput = {
@@ -87,10 +116,11 @@ export type InvoiceGroupItemInput = {
   // Base price per unit (net, without VAT)
   price: number;
   vatRateOverride?: number | null;
-  // Optional conversion display for itemization
-  conversionFactor?: number | null;
-  conversionPrefix?: string | null;
-  conversionSuffix?: string | null;
+
+  decimals: number;
+  conversionFactor: number;
+  convertedUnit: string;
+  conversionDate: Date;
 };
 
 export interface InvoiceGroup {
@@ -103,7 +133,7 @@ export interface InvoiceGroup {
 
 // Language and region-specific configuration
 const LOCALE_CONFIG = {
-  'en-us': {
+  en: {
     texts: {
       itemNamePrefix: 'Agent: ',
       itemNameSuffix: '',
@@ -117,7 +147,7 @@ const LOCALE_CONFIG = {
       defaultSignature: 'Accounts Receivable',
       defaultFooter:
         'This invoice was generated electronically and is valid without a signature.',
-      defaultTerms: 'Payment due within 14 days of invoice date.',
+      defaultTerms: '',
       defaultPrivacy:
         'We process your personal data in accordance with our privacy policy.',
       reason: 'Reason',
@@ -139,51 +169,13 @@ const LOCALE_CONFIG = {
       phone: 'Phone',
       termsAndConditions: 'Terms and Conditions',
       privacyPolicy: 'Privacy Policy',
+      correctionReasonItemsChanged: 'Changes to items and/or their prices',
+      correctionReasonSellerChanged: 'Changes to seller data',
+      correctionReasonBuyerChanged: 'Changes to buyer data',
+      correctionReasonMetadataChanged: 'Changes to texts and formatting',
+      conversionText: 'Conversion Factor: ',
+      coingeckoAttribution: 'Conversions and price data by',
     },
-    defaultThousandDelimiter: ',',
-    defaultDecimalDelimiter: '.',
-    defaultDateFormat: 'MM/DD/YYYY',
-  },
-  'en-uk': {
-    texts: {
-      itemNamePrefix: 'Agent: ',
-      itemNameSuffix: '',
-      invoice: 'Invoice',
-      correction: 'Correction',
-      correctionInvoice: 'CORRECTION INVOICE',
-      correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
-        `This invoice corrects the original invoice #${invoiceNumber} dated ${invoiceDate}.`,
-      defaultGreeting: 'Thank you for your business.',
-      defaultClosing: 'Best regards,',
-      defaultSignature: 'Accounts Receivable',
-      defaultFooter:
-        'This invoice was generated electronically and is valid without a signature.',
-      defaultTerms: 'Payment due within 14 days of invoice date.',
-      defaultPrivacy:
-        'We process your personal data in accordance with our privacy policy.',
-      reason: 'Reason',
-      from: 'From',
-      to: 'To',
-      description: 'Description',
-      quantity: 'Quantity',
-      unitPrice: 'Unit Price (Net)',
-      totalNet: 'Total (Net)',
-      vatRate: 'VAT Rate',
-      netTotal: 'Net Total',
-      totalVat: 'Total VAT',
-      totalAmount: 'Total Amount',
-      subtotal: 'Subtotal',
-      vat: 'VAT',
-      date: 'Date',
-      invoiceNumber: 'Invoice #',
-      email: 'Email',
-      phone: 'Phone',
-      termsAndConditions: 'Terms and Conditions',
-      privacyPolicy: 'Privacy Policy',
-    },
-    defaultThousandDelimiter: ',',
-    defaultDecimalDelimiter: '.',
-    defaultDateFormat: 'DD/MM/YYYY',
   },
   de: {
     texts: {
@@ -199,7 +191,7 @@ const LOCALE_CONFIG = {
       defaultSignature: 'Buchhaltung',
       defaultFooter:
         'Diese Rechnung wurde elektronisch erstellt und ist auch ohne Unterschrift gültig.',
-      defaultTerms: 'Zahlbar innerhalb von 14 Tagen nach Rechnungsdatum.',
+      defaultTerms: '',
       defaultPrivacy:
         'Wir verarbeiten Ihre personenbezogenen Daten gemäß unserer Datenschutzerklärung.',
       reason: 'Grund',
@@ -221,10 +213,15 @@ const LOCALE_CONFIG = {
       phone: 'Telefon',
       termsAndConditions: 'Allgemeine Geschäftsbedingungen',
       privacyPolicy: 'Datenschutzerklärung',
+      correctionReasonItemsChanged:
+        'Änderungen an den Artikeln und/oder ihren Preisen',
+      correctionReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
+      correctionReasonBuyerChanged: 'Änderungen an den Käuferdaten',
+      correctionReasonMetadataChanged:
+        'Änderungen an Texten und Formatierungen',
+      conversionText: 'Umrechnungsfaktor: ',
+      coingeckoAttribution: 'Konvertierung und Preisdaten von',
     },
-    defaultThousandDelimiter: '.',
-    defaultDecimalDelimiter: ',',
-    defaultDateFormat: 'DD.MM.YYYY',
   },
 } as const;
 
@@ -260,6 +257,12 @@ export type InvoiceTexts = {
   phone: string;
   termsAndConditions: string;
   privacyPolicy: string;
+  correctionReasonItemsChanged: string;
+  correctionReasonSellerChanged: string;
+  correctionReasonBuyerChanged: string;
+  correctionReasonMetadataChanged: string;
+  conversionText: string;
+  coingeckoAttribution: string;
 };
 
 function isLanguageKey(value: unknown): value is keyof typeof LOCALE_CONFIG {
@@ -270,7 +273,7 @@ function isLanguageKey(value: unknown): value is keyof typeof LOCALE_CONFIG {
 }
 
 function resolveLanguageKey(value?: string): keyof typeof LOCALE_CONFIG {
-  return isLanguageKey(value) ? value : 'en-us';
+  return isLanguageKey(value) ? value : 'en';
 }
 
 // Extracts the localized texts based on the invoice's language field
@@ -308,13 +311,20 @@ export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
     phone: t.phone,
     termsAndConditions: t.termsAndConditions,
     privacyPolicy: t.privacyPolicy,
+    correctionReasonItemsChanged: t.correctionReasonItemsChanged,
+    correctionReasonSellerChanged: t.correctionReasonSellerChanged,
+    correctionReasonBuyerChanged: t.correctionReasonBuyerChanged,
+    correctionReasonMetadataChanged: t.correctionReasonMetadataChanged,
+    conversionText: t.conversionText,
+    coingeckoAttribution: t.coingeckoAttribution,
   };
 }
 
+export type SupportedCurrencies = (typeof supportedCurrencies)[number];
 export type ResolvedInvoiceConfig = {
   // Display fields (fully resolved)
   title: string;
-  date: string;
+  date: Date;
   greeting: string;
   closing: string;
   signature: string;
@@ -322,69 +332,51 @@ export type ResolvedInvoiceConfig = {
   footer: string;
   terms: string;
   privacy: string;
-  id: string;
-  correctionInvoiceReference: {
-    correctionTitle: string;
-    correctionDescription: string;
-  } | null;
   itemNamePrefix: string;
   itemNameSuffix: string;
-  currencyShortId: string;
-  currencySymbol: string;
-  currencySymbolPosition: $Enums.SymbolPosition;
-  currencyDecimals: number;
-
+  currency: SupportedCurrencies;
   // Resolved formatting
-  decimals: number;
-  thousandDelimiter: ',' | '.' | ' ' | "'";
-  decimalDelimiter: '.' | ',';
   language: LanguageKey;
-  dateFormat: string;
-  // Localized texts bundle
+  currencyFormatter: Intl.NumberFormat;
+  numberFormatter: Intl.NumberFormat;
+  dateFormatter: Intl.DateTimeFormat;
+  localizationFormat: string;
   texts: InvoiceTexts;
 };
 
 export function resolveInvoiceConfig(
-  currencySettings: InvoiceData['currencySettings'],
+  currency: InvoiceData['invoiceCurrency'],
   invoice?: InvoiceData['invoice'],
-  correctionInvoiceData?: {
-    correctionReason: string;
-    correctionTitle: string;
-    originalInvoiceNumber: string;
-    originalInvoiceDate: string;
-  },
 ): ResolvedInvoiceConfig {
   const languageKey = resolveLanguageKey(invoice?.language);
   const locale = LOCALE_CONFIG[languageKey];
-  // Map each language to a sensible default currency
-  const LANGUAGE_DEFAULT_CURRENCY: Record<LanguageKey, string> = {
-    'en-us': 'USD',
-    'en-uk': 'GBP',
-    de: 'EUR',
-  };
-  const defaultCurrencyId = LANGUAGE_DEFAULT_CURRENCY[languageKey];
-  const defaultCurrency = getCurrencyConfig(defaultCurrencyId);
-  const resolvedId = invoice?.id ?? generateInvoiceId();
-  const resolvedDate = invoice?.date ?? new Date().toLocaleDateString();
 
-  const resolvedCurrencyShortId =
-    currencySettings?.currencyId ?? defaultCurrency.id;
-  const resolvedCurrencySymbol =
-    currencySettings?.currencySymbol ?? defaultCurrency.symbol;
-  const resolvedCurrencyDecimals =
-    currencySettings?.currencyDecimals ?? defaultCurrency.decimals;
-  const resolvedCurrencySymbolPosition =
-    currencySettings?.currencySymbolPosition ??
-    (defaultCurrency.symbolPosition === 'before'
-      ? $Enums.SymbolPosition.Before
-      : $Enums.SymbolPosition.After);
+  const resolvedDate = invoice?.date ? new Date(invoice?.date) : new Date();
+  const localizationFormat = invoice?.language ?? 'en-US';
+  const currencyFormatter = new Intl.NumberFormat(
+    invoice?.localizationFormat ?? localizationFormat,
+    {
+      style: 'currency',
+      currency: currency,
+    },
+  );
+  const numberFormatter = new Intl.NumberFormat(
+    invoice?.localizationFormat ?? localizationFormat,
+    {
+      style: 'decimal',
+    },
+  );
+  const dateFormatter = new Intl.DateTimeFormat(
+    invoice?.localizationFormat ?? localizationFormat,
+    {
+      dateStyle: 'short',
+    },
+  );
+
   return {
     itemNamePrefix: invoice?.itemNamePrefix ?? locale.texts.itemNamePrefix,
     itemNameSuffix: invoice?.itemNameSuffix ?? locale.texts.itemNameSuffix,
-    currencyShortId: resolvedCurrencyShortId,
-    currencySymbol: resolvedCurrencySymbol,
-    currencySymbolPosition: resolvedCurrencySymbolPosition,
-    currencyDecimals: resolvedCurrencyDecimals,
+    currency: currency,
     title: invoice?.title?.trim() || locale.texts.invoice,
     date: resolvedDate,
     greeting: invoice?.greeting ?? locale.texts.defaultGreeting,
@@ -394,26 +386,11 @@ export function resolveInvoiceConfig(
     footer: invoice?.footer ?? locale.texts.defaultFooter,
     terms: invoice?.terms ?? locale.texts.defaultTerms,
     privacy: invoice?.privacy ?? locale.texts.defaultPrivacy,
-    id: resolvedId,
-    correctionInvoiceReference: correctionInvoiceData
-      ? {
-          correctionTitle:
-            correctionInvoiceData?.correctionTitle?.trim() ||
-            locale.texts.correctionInvoice,
-          correctionDescription: locale.texts.correctionDefault(
-            correctionInvoiceData?.originalInvoiceNumber?.trim() || resolvedId,
-            correctionInvoiceData?.originalInvoiceDate?.trim() || resolvedDate,
-          ),
-        }
-      : null,
-
-    decimals: invoice?.decimals ?? 2,
-    thousandDelimiter:
-      invoice?.thousandDelimiter ?? locale.defaultThousandDelimiter,
-    decimalDelimiter:
-      invoice?.decimalDelimiter ?? locale.defaultDecimalDelimiter,
     language: languageKey,
-    dateFormat: invoice?.dateFormat ?? locale.defaultDateFormat,
+    currencyFormatter: currencyFormatter,
+    numberFormatter: numberFormatter,
+    dateFormatter: dateFormatter,
+    localizationFormat: invoice?.localizationFormat ?? 'en-US',
     texts: extractInvoiceTexts(languageKey),
   };
 }
@@ -456,9 +433,10 @@ export function generateInvoiceGroups(
       priceWithVat: grossAmount,
       vatRate: itemVatRate,
       vatAmount: vatAmount,
-      conversionFactor: item.conversionFactor ?? undefined,
-      conversionPrefix: item.conversionPrefix ?? undefined,
-      conversionSuffix: item.conversionSuffix ?? undefined,
+      decimals: item.decimals,
+      conversionFactor: item.conversionFactor,
+      convertedUnit: item.convertedUnit,
+      conversionDate: item.conversionDate,
     };
 
     group.items.push(enhancedItem);
@@ -477,6 +455,12 @@ export function generateInvoiceHTML(
   seller: InvoiceData['seller'],
   buyer: InvoiceData['buyer'],
   invoiceGroups: InvoiceGroup[],
+  newInvoiceId: string,
+  correctionInvoiceReference: {
+    correctionTitle: string;
+    correctionDescription: string;
+  } | null,
+  includeCoingeckoAttribution: boolean = false,
 ): string {
   const {
     title,
@@ -488,79 +472,16 @@ export function generateInvoiceHTML(
     footer,
     terms,
     privacy,
-    id,
-    correctionInvoiceReference,
-    decimals,
-    thousandDelimiter,
-    decimalDelimiter,
-    dateFormat,
+    currencyFormatter,
+    numberFormatter,
+    dateFormatter,
     texts,
   } = config;
 
   const t = texts;
-  const invoiceCurrency: Currency = {
-    id: config.currencyShortId,
-    symbol: config.currencySymbol,
-    decimals: config.currencyDecimals,
-    symbolPosition:
-      config.currencySymbolPosition === $Enums.SymbolPosition.Before
-        ? 'before'
-        : 'after',
-  };
   const defaultInvoiceTitle = title || t.invoice;
 
-  // Determine delimiters (already resolved)
-  const useThousandDelimiter = thousandDelimiter;
-  const useDecimalDelimiter = decimalDelimiter;
-  const useDateFormat = dateFormat;
-
-  const usedInvoiceNumber = id ?? generateInvoiceId();
-
   // Group items by VAT rate and inclusion setting
-
-  // Helper function to format dates
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const year = date.getFullYear().toString();
-
-    return useDateFormat
-      .replace('DD', day)
-      .replace('MM', month)
-      .replace('YYYY', year);
-  };
-
-  // Helper function to format amounts with currency-specific configuration
-  const formatAmount = (
-    amount: number,
-    currency: Currency,
-    itemDecimals?: number,
-  ) => {
-    const useDecimals = itemDecimals ?? currency.decimals ?? decimals;
-
-    // Custom delimiter formatting using language defaults
-    const numStr = amount.toFixed(useDecimals);
-    const [integerPart, decimalPart] = numStr.split('.');
-
-    // Apply thousand delimiter
-    const formattedInteger = integerPart.replace(
-      /\B(?=(\d{3})+(?!\d))/g,
-      useThousandDelimiter === ' ' ? ' ' : useThousandDelimiter,
-    );
-
-    // Combine with decimal delimiter
-    const formattedNum = decimalPart
-      ? `${formattedInteger}${useDecimalDelimiter}${decimalPart}`
-      : formattedInteger;
-
-    // Format with currency symbol
-    if (currency.symbolPosition === 'before') {
-      return `${currency.symbol}${formattedNum}`;
-    } else {
-      return `${formattedNum} ${currency.symbol}`;
-    }
-  };
 
   return `
 <!DOCTYPE html>
@@ -575,254 +496,365 @@ export function generateInvoiceHTML(
       padding: 0;
       box-sizing: border-box;
     }
-    
+
+    :root {
+      --surface: #ffffff;
+      --surface-muted: #f4f6fb;
+      --border: #d8deeb;
+      --border-strong: #bcc5d6;
+      --primary: #1f3b73;
+      --primary-accent: #0f5ad9;
+      --text: #1f2430;
+      --text-muted: #5b6577;
+      --accent: #e9efff;
+      --warning-bg: #fff6e0;
+      --warning-border: #f7ca63;
+      --warning-text: #8a6212;
+      --shadow: 0 12px 24px rgba(31, 59, 115, 0.08);
+    }
+
     body {
       font-family: 'Arial', sans-serif;
       font-size: 12px;
       line-height: 1.6;
-      color: #333;
-      background: #fff;
+      color: var(--text);
+      padding: 24px 12px;
     }
-    
+
     .container {
-      max-width: 800px;
+      max-width: 830px;
       margin: 0 auto;
-      padding: 20px;
+      padding: 24px 28px;
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
     }
-    
+
     .header {
       display: flex;
       justify-content: space-between;
+      gap: 18px;
       align-items: flex-start;
-      margin-bottom: 30px;
       padding-bottom: 20px;
-      border-bottom: 2px solid #e0e0e0;
+      border-bottom: 1px solid var(--border-strong);
+      margin-bottom: 22px;
     }
-    
+
     .logo {
       max-width: 200px;
       max-height: 80px;
+      object-fit: contain;
+      display: block;
     }
-    
+
     .invoice-info {
       text-align: right;
-    }
-    
-    .invoice-title {
-      font-size: 24px;
-      font-weight: bold;
-      color: #2c3e50;
-      margin-bottom: 10px;
-    }
-    
-    .invoice-details {
-      font-size: 14px;
-    }
-    
-    .parties {
       display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 40px;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 210px;
     }
-    
-    .party {
-      margin-bottom: 0;
-      width: 40%;
+
+    .invoice-meta {
+      display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
     }
-    
-    .party-from {
-      text-align: right;
-      margin-top: 5px;
-      padding-bottom: 30px;
+
+    .invoice-meta span {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 4px;
     }
-    
-    .party-to {
-      text-align: left;
+
+    .invoice-meta strong {
+      color: var(--text);
+      font-weight: 600;
     }
-    
-    .party-title {
-      font-size: 12px;
-      font-weight: bold;
-      color: #666;
-      margin-bottom: 8px;
+
+    .invoice-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      color: var(--primary);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
-    
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3px 8px;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-radius: 6px;
+      background: rgba(15, 90, 217, 0.16);
+      color: var(--primary-accent);
+    }
+
+    .parties {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .party-card {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      display: grid;
+      gap: 5px;
+      font-size: 11px;
+    }
+
+    .party-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 1.1px;
+    }
+
     .party-info {
-      font-size: 13px;
-      line-height: 1.4;
-      color: #333;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      color: var(--text);
+      align-items: flex-start;
     }
-    
-    .company-name {
-      font-weight: bold;
-      font-size: 14px;
-      margin-bottom: 4px;
-    }
-    
-    .person-name {
-      font-size: 13px;
-      margin-bottom: 4px;
-    }
-    
-    .greeting {
-      margin-bottom: 20px;
-      font-style: italic;
-      color: #555;
-    }
-    
-    .correction-notice {
-      background: #fff3cd;
-      border: 2px solid #ffc107;
-      border-radius: 5px;
-      padding: 15px;
-      margin: 20px 0;
-      color: #856404;
-    }
-    
-    .correction-title {
-      font-weight: bold;
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #856404;
-    }
-    
-    .correction-details {
+
+    .party-info strong {
       font-size: 12px;
-      line-height: 1.4;
+      font-weight: 600;
     }
-    
+
+    .party-info span {
+      color: var(--text-muted);
+    }
+
+    .party-meta {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .party-meta span {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .greeting {
+      margin-bottom: 18px;
+      font-style: italic;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .correction-notice {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin: 18px 0;
+      color: var(--warning-text);
+      display: grid;
+      gap: 4px;
+    }
+
+    .correction-title {
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+    }
+
+    .correction-details {
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .table-wrapper {
+      overflow: hidden;
+      border-radius: 6px;
+      border: 1px solid var(--border-strong);
+
+      margin-bottom: 20px;
+      background: var(--surface);
+    }
+
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 20px;
-      background: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 12px;
     }
-    
+
+    .items-table thead tr {
+      background: var(--primary);
+      color: #fff;
+    }
+
     .items-table th {
-      background: #f8f9fa;
-      color: #2c3e50;
-      font-weight: bold;
-      padding: 12px 8px;
+      padding: 10px 12px;
       text-align: left;
-      border-bottom: 2px solid #e0e0e0;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
     }
-    
+
     .items-table td {
-      padding: 10px 8px;
-      border-bottom: 1px solid #e0e0e0;
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      color: var(--text);
     }
-    
-    .items-table tr:nth-child(even) {
-      background: #f8f9fa;
+
+    .items-table tbody tr:nth-child(even) {
+      background: transparent;
     }
-    
-    .vat-category-header {
-      background: #e9ecef !important;
-      border-top: 2px solid #2c3e50;
-    }
-    
+
     .vat-category-header td {
-      padding: 12px 8px !important;
-      font-size: 13px;
-      color: #2c3e50;
+      background: transparent;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--primary);
+      border-top: 1px solid var(--border);
     }
-    
-    .vat-category-subtotal {
-      background: #f1f3f4 !important;
-      border-bottom: 2px solid #e0e0e0;
-    }
-    
+
     .vat-category-subtotal td {
-      padding: 10px 8px !important;
-      font-size: 12px;
+      background: transparent;
+      font-weight: 600;
+      border-top: 1px solid var(--border);
     }
-    
-    .vat-row {
-      background: #f8f9fa !important;
-    }
-    
+
     .vat-row td {
-      padding: 8px 8px !important;
-      font-size: 12px;
       font-style: italic;
+      color: var(--text-muted);
+      background: transparent;
     }
-    
+
     .text-right {
       text-align: right;
     }
-    
+
     .text-center {
       text-align: center;
     }
-    
+
     .total-section {
       margin-left: auto;
-      width: 300px;
-      margin-bottom: 30px;
+      max-width: 260px;
+      margin-bottom: 16px;
     }
-    
+
+    .totals-card {
+      padding: 12px 14px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: rgba(15, 90, 217, 0.04);
+      display: grid;
+      gap: 6px;
+    }
+
     .total-row {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      padding: 8px 0;
-      border-bottom: 1px solid #e0e0e0;
+      color: var(--text);
+      font-size: 11px;
     }
-    
+
     .total-row.final {
-      font-weight: bold;
-      font-size: 14px;
-      border-bottom: 2px solid #2c3e50;
-      color: #2c3e50;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--primary);
+      padding-top: 6px;
+      border-top: 1px solid rgba(31, 59, 115, 0.2);
     }
-    
-    .closing {
-      margin-bottom: 20px;
-      color: #555;
+
+    .total-label {
+      letter-spacing: 0.4px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
     }
-    
-    .signature {
-      margin-bottom: 30px;
-      text-align: right;
+
+    .total-value {
+      font-weight: 600;
+      color: var(--text);
     }
-    
+
+    .terms-section {
+      display: none;
+    }
+
     .footer {
-      margin-top: 40px;
-      padding-top: 20px;
-      border-top: 1px solid #e0e0e0;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-strong);
       font-size: 10px;
-      color: #666;
+      color: var(--text-muted);
       text-align: center;
     }
-    
-    .terms-section {
-      margin-top: 30px;
-      padding: 15px;
-      background: #f8f9fa;
-      border-left: 4px solid #2c3e50;
+
+    .coingecko-link {
+        color: rgb(75, 204, 0);
+        text-decoration: underline;
+        display: inline-flex;
+        align-items: center;
+        font-weight: 500;
     }
-    
-    .terms-title {
-      font-weight: bold;
-      margin-bottom: 10px;
-      color: #2c3e50;
+
+    .coingecko-icon {
+        margin-left: 2px;
+        margin-bottom: 4px;
+        width: 12px;
+        height: 12px;
+        stroke: currentColor;
+        fill: none;
     }
-    
-    .terms-content {
-      font-size: 10px;
-      line-height: 1.4;
-      color: #555;
+
+    .attribution {
+     margin-top: 25px;
+     display: flex;
+     justify-content: flex-end;
+     align-items: flex-end;
     }
-    
+
     @media print {
       body {
+        background: #fff;
+        padding: 0;
         font-size: 11px;
       }
+
       .container {
-        padding: 10px;
+        box-shadow: none;
+        border-radius: 0;
+        border: none;
+        padding: 18px 20px;
+      }
+
+      .table-wrapper {
+        box-shadow: none;
+      }
+
+      .totals-card {
+        background: rgba(15, 90, 217, 0.08);
+      }
+
+      .badge {
+        background: rgba(15, 90, 217, 0.2) !important;
       }
     }
   </style>
@@ -835,43 +867,48 @@ export function generateInvoiceHTML(
         ${logo ? `<img src="${logo}" alt="Company Logo" class="logo">` : ''}
       </div>
       <div class="invoice-info">
-        <div class="invoice-title">${correctionInvoiceReference ? `${t.correction} ` : ''}${defaultInvoiceTitle}</div>
-        <div class="invoice-details">
-          ${usedInvoiceNumber ? `<div><strong>${t.invoiceNumber}:</strong> ${usedInvoiceNumber}</div>` : ''}
-          <div><strong>${t.date}:</strong> ${formatDate(date)}</div>
+        <div class="invoice-title">${defaultInvoiceTitle}</div>
+        <div class="invoice-meta">
+          <span>${t.invoiceNumber}: <strong>${newInvoiceId}</strong></span>
+          <span>${t.date}: <strong>${dateFormatter.format(date)}</strong></span>
+          ${correctionInvoiceReference ? `<span class="badge">${t.correction}</span>` : ''}
         </div>
       </div>
     </div>
 
     <!-- Parties Information -->
     <div class="parties">
-      <!-- To (Buyer) - Left side -->
-      <div class="party party-to">
+      <!-- To (Buyer) -->
+      <div class="party-card">
         <div class="party-title">${t.to}</div>
         <div class="party-info">
-          ${buyer.companyName ? `<div class="company-name">${buyer.companyName}</div>` : ''}
-          ${buyer.name ? `<div class="person-name">${buyer.name}</div>` : ''}
-          <div>${buyer.street} ${buyer.streetNumber}</div>
-          <div>${buyer.zipCode} ${buyer.city}</div>
-          <div>${buyer.country}</div>
-          ${buyer.email ? `<div>${t.email}: ${buyer.email}</div>` : ''}
-          ${buyer.phone ? `<div>${t.phone}: ${buyer.phone}</div>` : ''}
-          ${buyer.vatNumber ? `<div>${t.vat}: ${buyer.vatNumber}</div>` : ''}
+          ${buyer.companyName ? `<strong>${buyer.companyName}</strong>` : ''}
+          ${buyer.name ? `<span>${buyer.name}</span>` : ''}
+          <span>${buyer.street} ${buyer.streetNumber}</span>
+          <span>${buyer.zipCode} ${buyer.city}</span>
+          <span>${buyer.country}</span>
+          <div class="party-meta">
+            ${buyer.email ? `<span>${t.email}: ${buyer.email}</span>` : ''}
+            ${buyer.phone ? `<span>${t.phone}: ${buyer.phone}</span>` : ''}
+            ${buyer.vatNumber ? `<span>${t.vat}: ${buyer.vatNumber}</span>` : ''}
+          </div>
         </div>
       </div>
-      
-      <!-- From (Seller) - Right side -->
-      <div class="party party-from">
+
+      <!-- From (Seller) -->
+      <div class="party-card">
         <div class="party-title">${t.from}</div>
         <div class="party-info">
-          ${seller.companyName ? `<div class="company-name">${seller.companyName}</div>` : ''}
-          ${seller.name ? `<div class="person-name">${seller.name}</div>` : ''}
-          <div>${seller.street} ${seller.streetNumber}</div>
-          <div>${seller.zipCode} ${seller.city}</div>
-          <div>${seller.country}</div>
-          ${seller.email ? `<div>${t.email}: ${seller.email}</div>` : ''}
-          ${seller.phone ? `<div>${t.phone}: ${seller.phone}</div>` : ''}
-          ${seller.vatNumber ? `<div>${t.vat}: ${seller.vatNumber}</div>` : ''}
+          ${seller.companyName ? `<strong>${seller.companyName}</strong>` : ''}
+          ${seller.name ? `<span>${seller.name}</span>` : ''}
+          <span>${seller.street} ${seller.streetNumber}</span>
+          <span>${seller.zipCode} ${seller.city}</span>
+          <span>${seller.country}</span>
+          <div class="party-meta">
+            ${seller.email ? `<span>${t.email}: ${seller.email}</span>` : ''}
+            ${seller.phone ? `<span>${t.phone}: ${seller.phone}</span>` : ''}
+            ${seller.vatNumber ? `<span>${t.vat}: ${seller.vatNumber}</span>` : ''}
+          </div>
         </div>
       </div>
     </div>
@@ -897,67 +934,64 @@ export function generateInvoiceHTML(
     ${
       invoiceGroups.length > 0
         ? `
-    <table class="items-table">
-      <thead>
-        <tr>
-          <th>${t.description}</th>
-          <th class="text-center">${t.quantity}</th>
-          <th class="text-right">${t.unitPrice}</th>
-          <th class="text-right">${t.totalNet}</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${Array.from(invoiceGroups.values())
-          .map((group) => {
-            const vatRateDisplay = (group.vatRate * 100).toFixed(1);
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${t.description}</div>
+    <div class="table-wrapper">
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>${t.description}</th>
+            <th class="text-center">${t.quantity}</th>
+            <th class="text-right">${t.unitPrice}</th>
+            <th class="text-right">${t.totalNet}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${Array.from(invoiceGroups.values())
+            .map((group) => {
+              const vatRateDisplay = numberFormatter.format(
+                group.vatRate * 100,
+              );
 
-            return `
-        <!-- VAT Category Header -->
-        <tr class="vat-category-header">
-          <td colspan="4"><strong>${t.vatRate}: ${vatRateDisplay}%</strong></td>
-        </tr>
-        ${group.items
-          .map((item) => {
-            const netUnitPrice = item.price; // Show the base price per unit
-            const netAmount = item.priceWithoutVat || 0;
-
-            return `
-        <tr>
-          <td>${item.name}</td>
-          <td class="text-center">${item.quantity}</td>
-          <td class="text-right">
-            ${formatAmount(netUnitPrice, invoiceCurrency)}
-            ${item.conversionFactor ? `<br><small>(${item.conversionPrefix ?? ''}${(netUnitPrice * item.conversionFactor).toFixed(2)}${item.conversionSuffix ?? ''})</small>` : ''}
-          </td>
-          <td class="text-right">
-            ${formatAmount(netAmount, invoiceCurrency)}
-            ${item.conversionFactor ? `<br><small>(${item.conversionPrefix ?? ''}${(netAmount * item.conversionFactor).toFixed(2)}${item.conversionSuffix ?? ''})</small>` : ''}
-          </td>
-        </tr>
-        `;
-          })
-          .join('')}
-        <!-- VAT Row -->
-        ${
-          group.vatRate > 0
-            ? `
-        <tr class="vat-row">
-          <td colspan="3"><strong>${t.vat} (${vatRateDisplay}%)</strong></td>
-          <td class="text-right"><strong>${formatAmount(group.vatAmount, invoiceCurrency)}</strong></td>
-        </tr>
-        `
-            : ''
-        }
-        <!-- Category Subtotal -->
-        <tr class="vat-category-subtotal">
-          <td colspan="3"><strong>${t.subtotal} (${vatRateDisplay}%)</strong></td>
-          <td class="text-right"><strong>${formatAmount(group.grossTotal, invoiceCurrency)}</strong></td>
-        </tr>
-        `;
-          })
-          .join('')}
-      </tbody>
-    </table>
+              return `
+          <tr class="vat-category-header">
+            <td colspan="4">${t.vatRate}: ${vatRateDisplay}%</td>
+          </tr>
+          ${group.items
+            .map((item) => {
+              const netUnitPrice = item.price;
+              const netAmount = item.priceWithoutVat || 0;
+              return `
+          <tr>
+            <td>${item.name}
+            <br><small>${t.conversionText} ${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(item.convertedUnit, numberFormatter.format(item.conversionFactor / 10 ** item.decimals))}<br>(${dateFormatter.format(item.conversionDate)})</small>
+            </td>
+            <td class="text-center">${item.quantity}</td>
+            <td class="text-right">${currencyFormatter.format(netUnitPrice)}</td>
+            <td class="text-right">${currencyFormatter.format(netAmount)}</td>
+          </tr>
+          `;
+            })
+            .join('')}
+          ${
+            group.vatRate > 0
+              ? `
+          <tr class="vat-row">
+            <td colspan="3"><strong>${t.vat} (${vatRateDisplay}%)</strong></td>
+            <td class="text-right"><strong>${currencyFormatter.format(group.vatAmount)}</strong></td>
+          </tr>
+          `
+              : ''
+          }
+          <tr class="vat-category-subtotal">
+            <td colspan="3"><strong>${t.subtotal} (${vatRateDisplay}%)</strong></td>
+            <td class="text-right"><strong>${currencyFormatter.format(group.grossTotal)}</strong></td>
+          </tr>
+          `;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
 
     <!-- Total Section -->
     <div class="total-section">
@@ -973,23 +1007,25 @@ export function generateInvoiceHTML(
         );
 
         return `
-      <div class="total-row">
-        <span>${t.netTotal} (${invoiceCurrency.id}):</span>
-        <span>${formatAmount(totals.net, invoiceCurrency)}</span>
-      </div>
-      ${
-        totals.vat > 0
-          ? `
-      <div class="total-row">
-        <span>${t.totalVat} (${invoiceCurrency.id}):</span>
-        <span>${formatAmount(totals.vat, invoiceCurrency)}</span>
-      </div>
-      `
-          : ''
-      }
-      <div class="total-row final">
-        <span>${t.totalAmount} (${invoiceCurrency.id}):</span>
-        <span>${formatAmount(totals.gross, invoiceCurrency)}</span>
+      <div class="totals-card">
+        <div class="total-row">
+          <span class="total-label">${t.netTotal}</span>
+          <span class="total-value">${currencyFormatter.format(totals.net)}</span>
+        </div>
+        ${
+          totals.vat > 0
+            ? `
+        <div class="total-row">
+          <span class="total-label">${t.totalVat}</span>
+          <span class="total-value">${currencyFormatter.format(totals.vat)}</span>
+        </div>
+        `
+            : ''
+        }
+        <div class="total-row final">
+          <span class="total-label">${t.totalAmount}</span>
+          <span class="total-value">${currencyFormatter.format(totals.gross)}</span>
+        </div>
       </div>`;
       })()}
     </div>
@@ -997,32 +1033,28 @@ export function generateInvoiceHTML(
         : ''
     }
 
-    <!-- Closing -->
-    ${closing ? `<div class="closing">${closing}</div>` : ''}
-
-    <!-- Signature -->
-    ${signature ? `<div class="signature">${signature}</div>` : ''}
-
-    <!-- Terms and Conditions -->
-    ${
-      (terms && terms.trim()) || (privacy && privacy.trim())
-        ? `
-    <div class="terms-section">
-      <div class="terms-title">${t.termsAndConditions}</div>
-      <div class="terms-content">
-        ${terms && terms.trim() ? terms : ''}
-        ${terms && terms.trim() && privacy && privacy.trim() ? `<br><br><strong>${t.privacyPolicy}:</strong><br>` : ''}
-        ${privacy && privacy.trim() ? privacy : ''}
-      </div>
-    </div>
-    `
-        : ''
-    }
-
     <!-- Footer -->
     ${footer ? `<div class="footer">${footer}</div>` : ''}
+    ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer" class="coingecko-link">CoinGecko<svg class="coingecko-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5h6v6M11 5 5 11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a></span></div>` : ''}
   </div>
 </body>
 </html>
   `.trim();
+}
+function formatCryptoUnitConversion(
+  convertedUnit: string,
+  conversionFactor: string,
+) {
+  let unitName = convertedUnit;
+  if (convertedUnit == '') {
+    unitName = 'ADA';
+  } else if (
+    convertedUnit ==
+      '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d' ||
+    convertedUnit ==
+      'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d'
+  ) {
+    unitName = 'USDM';
+  }
+  return ` ${conversionFactor} ${unitName}`;
 }

@@ -37,6 +37,8 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import { postSignatureEndpoint } from './invoice/signature';
+import { postGenerateInvoiceEndpoint } from './invoice';
 
 export const apiRouter: Routing = {
   v1: {
@@ -112,6 +114,13 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    invoice: new DependsOnMethod({
+      post: postGenerateInvoiceEndpoint,
+    }).nest({
+      signature: new DependsOnMethod({
+        post: postSignatureEndpoint,
+      }),
     }),
   },
 };
