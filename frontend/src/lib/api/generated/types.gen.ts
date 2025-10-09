@@ -1625,6 +1625,291 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
 
 export type PostPurchaseResolveBlockchainIdentifierResponse = PostPurchaseResolveBlockchainIdentifierResponses[keyof PostPurchaseResolveBlockchainIdentifierResponses];
 
+export type PostInvoiceData = {
+    body?: {
+        /**
+         * The signature to verify
+         */
+        signature: string;
+        /**
+         * The key to verify the signature
+         */
+        key: string;
+        /**
+         * The wallet address that signed the message
+         */
+        walletAddress: string;
+        /**
+         * The valid until timestamp
+         */
+        validUntil: number;
+        /**
+         * The blockchain identifier, for which the invoice should be created
+         */
+        blockchainIdentifier: string;
+        /**
+         * The data to verify the signature
+         */
+        signatureData: string;
+        /**
+         * The action to perform
+         */
+        action: 'retrieve_invoice';
+        /**
+         * The currency of the invoice
+         */
+        invoiceCurrency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+        /**
+         * Currency conversion settings for this item
+         */
+        currencyConversion?: {
+            [key: string]: number;
+        };
+        invoice?: {
+            /**
+             * The prefix of the item name
+             */
+            itemNamePrefix?: string;
+            /**
+             * The suffix of the item name
+             */
+            itemNameSuffix?: string;
+            /**
+             * The title of the invoice
+             */
+            title?: string;
+            /**
+             * The description of the invoice
+             */
+            description?: string;
+            /**
+             * The prefix of the invoice number
+             */
+            idPrefix?: string;
+            /**
+             * The date of the invoice
+             */
+            date?: string;
+            /**
+             * The greetings of the invoice
+             */
+            greeting?: string;
+            /**
+             * The closing of the invoice
+             */
+            closing?: string;
+            /**
+             * The signature of the invoice
+             */
+            signature?: string;
+            /**
+             * The logo of the invoice
+             */
+            logo?: string;
+            /**
+             * The footer of the invoice
+             */
+            footer?: string;
+            /**
+             * The terms of the invoice
+             */
+            terms?: string;
+            /**
+             * The privacy of the invoice
+             */
+            privacy?: string;
+            /**
+             * Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us
+             */
+            language?: 'en-us' | 'en-uk' | 'de';
+            /**
+             * The localization format of the invoice
+             */
+            localizationFormat?: 'en-us' | 'en-uk' | 'de';
+        };
+        /**
+         * The VAT rate as decimal (e.g., 0.19 for 19%)
+         */
+        vatRate?: number;
+        seller: {
+            /**
+             * The country of the invoice
+             */
+            country: string;
+            /**
+             * The city of the invoice
+             */
+            city: string;
+            /**
+             * The zip code of the invoice
+             */
+            zipCode: string;
+            /**
+             * The street of the invoice
+             */
+            street: string;
+            /**
+             * The street number of the invoice
+             */
+            streetNumber: string;
+            /**
+             * The email of the invoice
+             */
+            email: string | null;
+            /**
+             * The phone of the invoice
+             */
+            phone: string | null;
+            /**
+             * The name of the invoice
+             */
+            name: string | null;
+            /**
+             * The company name of the invoice
+             */
+            companyName: string | null;
+            /**
+             * The VAT number of the invoice
+             */
+            vatNumber: string | null;
+        };
+        buyer: {
+            /**
+             * The country of the invoice
+             */
+            country: string;
+            /**
+             * The city of the invoice
+             */
+            city: string;
+            /**
+             * The zip code of the invoice
+             */
+            zipCode: string;
+            /**
+             * The street of the invoice
+             */
+            street: string;
+            /**
+             * The street number of the invoice
+             */
+            streetNumber: string;
+            /**
+             * The email of the invoice
+             */
+            email: string | null;
+            /**
+             * The phone of the invoice
+             */
+            phone: string | null;
+            /**
+             * The name of the invoice
+             */
+            name: string | null;
+            /**
+             * The company name of the invoice
+             */
+            companyName: string | null;
+            /**
+             * The VAT number of the invoice
+             */
+            vatNumber: string | null;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/invoice/';
+};
+
+export type PostInvoiceResponses = {
+    /**
+     * Invoice generated or existing invoice returned
+     */
+    200: {
+        status: string;
+        data: {
+            invoice: string;
+        };
+    };
+};
+
+export type PostInvoiceResponse = PostInvoiceResponses[keyof PostInvoiceResponses];
+
+export type PostInvoiceSignatureData = {
+    body?: {
+        /**
+         * The blockchain identifier, for which the invoice should be created
+         */
+        blockchainIdentifier: string;
+        /**
+         * The action to perform
+         */
+        action: 'retrieve_invoice';
+        buyer: {
+            /**
+             * The country of the invoice
+             */
+            country: string;
+            /**
+             * The city of the invoice
+             */
+            city: string;
+            /**
+             * The zip code of the invoice
+             */
+            zipCode: string;
+            /**
+             * The street of the invoice
+             */
+            street: string;
+            /**
+             * The street number of the invoice
+             */
+            streetNumber: string;
+            /**
+             * The email of the invoice
+             */
+            email: string | null;
+            /**
+             * The phone of the invoice
+             */
+            phone: string | null;
+            /**
+             * The name of the invoice
+             */
+            name: string | null;
+            /**
+             * The company name of the invoice
+             */
+            companyName: string | null;
+            /**
+             * The VAT number of the invoice
+             */
+            vatNumber: string | null;
+        };
+    };
+    path?: never;
+    query?: never;
+    url: '/invoice/signature';
+};
+
+export type PostInvoiceSignatureResponses = {
+    /**
+     * Signature generated
+     */
+    200: {
+        status: string;
+        data: {
+            signature: string;
+            key: string;
+            walletAddress: string;
+            signatureData: string;
+        };
+    };
+};
+
+export type PostInvoiceSignatureResponse = PostInvoiceSignatureResponses[keyof PostInvoiceSignatureResponses];
+
 export type GetRegistryWalletData = {
     body?: never;
     path?: never;
