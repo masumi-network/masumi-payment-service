@@ -98,7 +98,6 @@ export async function checkLatestTransactions(
     release();
   }
 }
-
 async function processPaymentSource(
   paymentContract: PaymentSourceWithConfig,
   maxParallelTransactions: number,
@@ -158,7 +157,6 @@ async function processPaymentSource(
     }
   }
 }
-
 async function processTransactionData(
   tx: ExtendedTxInfo,
   paymentContract: PaymentSourceWithConfig,
@@ -179,7 +177,6 @@ async function processTransactionData(
     await updateTransaction(paymentContract, extractedData, blockfrost, tx);
   }
 }
-
 async function updateSyncCheckpoint(
   paymentContract: PaymentSourceWithConfig,
   currentTxHash: string,
