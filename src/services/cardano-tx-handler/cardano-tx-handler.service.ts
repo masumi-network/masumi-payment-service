@@ -222,4 +222,3 @@ async function queryAndLockPaymentSourcesForSync() {
     },
   );
 }
-
