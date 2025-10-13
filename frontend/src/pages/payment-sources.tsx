@@ -319,7 +319,7 @@ export default function PaymentSourcesPage() {
             <p className="text-sm text-muted-foreground">
               Manage your payment sources.{' '}
               <Link
-                href="https://docs.masumi.network/technical-documentation/payment-service-api/payment-source"
+                href="https://docs.masumi.network/api-reference/payment-service/get-payment-source"
                 target="_blank"
                 className="text-primary hover:underline"
               >

@@ -270,7 +270,7 @@ export default function ApiKeys() {
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
-                  href="https://docs.masumi.network/technical-documentation/payment-service-api/api-keys"
+                  href="https://docs.masumi.network/api-reference"
                   target="_blank"
                   className="text-primary hover:underline"
                 >
