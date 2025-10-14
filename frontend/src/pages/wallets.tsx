@@ -421,7 +421,7 @@ export default function WalletsPage() {
             <p className="text-sm text-muted-foreground">
               Manage your buying and selling wallets.{' '}
               <Link
-                href="https://docs.masumi.network/technical-documentation/payment-service-api/wallets"
+                href="https://docs.masumi.network/core-concepts/wallets"
                 target="_blank"
                 className="text-primary hover:underline"
               >
