@@ -49,7 +49,6 @@ function validatePaymentRequestFields(request: {
     throw new Error('No transaction hash found');
   }
 }
-
 function calculateTransactionTimeWindow(
   network: 'mainnet' | 'preprod' | 'testnet' | 'preview',
 ): {
@@ -68,7 +67,6 @@ function calculateTransactionTimeWindow(
 
   return { invalidBefore, invalidAfter };
 }
-
 function decodeAndValidateUtxoDatum(params: {
   utxo: UTxO;
   network: 'mainnet' | 'preprod' | 'testnet' | 'preview';
