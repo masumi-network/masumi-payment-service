@@ -33,7 +33,6 @@ import { generateMasumiSmartContractInteractionTransaction } from '@/utils/gener
 import { SERVICE_CONSTANTS } from '@/utils/config';
 
 const mutex = new Mutex();
-
 function validatePurchaseRequestFields(request: {
   payByTime: bigint | null;
   collateralReturnLovelace: bigint | null;
@@ -53,7 +52,6 @@ function validatePurchaseRequestFields(request: {
     throw new Error('Purchasing wallet not found');
   }
 }
-
 function calculateTransactionTimeWindow(
   network: 'mainnet' | 'preprod' | 'testnet' | 'preview',
 ): {
@@ -72,7 +70,6 @@ function calculateTransactionTimeWindow(
 
   return { invalidBefore, invalidAfter };
 }
-
 function decodeAndValidateUtxoDatum(params: {
   utxo: UTxO;
   network: 'mainnet' | 'preprod' | 'testnet' | 'preview';
@@ -91,7 +88,6 @@ function decodeAndValidateUtxoDatum(params: {
 
   return decodedContract;
 }
-
 function createCancelRefundDatum(params: {
   decodedContract: NonNullable<ReturnType<typeof decodeV1ContractDatum>>;
   buyerAddress: string;
