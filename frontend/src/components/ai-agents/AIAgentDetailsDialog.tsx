@@ -167,15 +167,27 @@ export function AIAgentDetailsDialog({
                       {agent.description || 'No description provided'}
                     </p>
                   </div>
-                  <Badge
-                    variant={getStatusBadgeVariant(agent.state)}
-                    className={cn(
-                      agent.state === 'RegistrationConfirmed' &&
-                        'bg-green-50 text-green-700 hover:bg-green-50/80',
+                  <div className="text-right">
+                    <Badge
+                      variant={getStatusBadgeVariant(agent.state)}
+                      className={cn(
+                        agent.state === 'RegistrationConfirmed' &&
+                          'bg-green-50 text-green-700 hover:bg-green-50/80',
+                      )}
+                    >
+                      {parseAgentStatus(agent.state)}
+                    </Badge>
+                    {agent.state === 'RegistrationFailed' && agent.error && (
+                      <div className="mt-2 p-2 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <div className="text-xs font-medium text-destructive mb-1">
+                          Registration Error:
+                        </div>
+                        <div className="text-xs text-destructive break-words">
+                          {agent.error}
+                        </div>
+                      </div>
                     )}
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
+                  </div>
                 </div>
 
                 {/* API Base URL */}

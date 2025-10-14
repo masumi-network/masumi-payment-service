@@ -596,15 +596,26 @@ export default function AIAgentsPage() {
                         )}
                       </td>
                       <td className="p-4">
-                        <Badge
-                          variant={getStatusBadgeVariant(agent.state)}
-                          className={cn(
-                            agent.state === 'RegistrationConfirmed' &&
-                              'bg-green-50 text-green-700 hover:bg-green-50/80',
-                          )}
-                        >
-                          {parseAgentStatus(agent.state)}
-                        </Badge>
+                        <div className="space-y-1">
+                          <Badge
+                            variant={getStatusBadgeVariant(agent.state)}
+                            className={cn(
+                              agent.state === 'RegistrationConfirmed' &&
+                                'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            )}
+                          >
+                            {parseAgentStatus(agent.state)}
+                          </Badge>
+                          {agent.state === 'RegistrationFailed' &&
+                            agent.error && (
+                              <div
+                                className="text-xs text-destructive max-w-[200px] truncate"
+                                title={agent.error}
+                              >
+                                {agent.error}
+                              </div>
+                            )}
+                        </div>
                       </td>
                       <td className="p-4">
                         {['RegistrationConfirmed'].includes(agent.state) ? (
