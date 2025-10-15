@@ -10,7 +10,6 @@ import {
   SLOT_CONFIG_NETWORK,
   deserializeDatum,
   unixTimeToEnclosingSlot,
-  UTxO,
 } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import {
@@ -67,25 +66,6 @@ function calculateTransactionTimeWindow(
 
   return { invalidBefore, invalidAfter };
 }
-function decodeAndValidateUtxoDatum(params: {
-  utxo: UTxO;
-  network: 'mainnet' | 'preprod' | 'testnet' | 'preview';
-}): NonNullable<ReturnType<typeof decodeV1ContractDatum>> {
-  const utxoDatum = params.utxo.output.plutusData;
-  if (!utxoDatum) {
-    throw new Error('No datum found in UTXO');
-  }
-
-  const decodedDatum: unknown = deserializeDatum(utxoDatum);
-  const decodedContract = decodeV1ContractDatum(decodedDatum, params.network);
-
-  if (decodedContract == null) {
-    throw new Error('Invalid datum');
-  }
-
-  return decodedContract;
-}
-
 function createRefundRequestDatum(params: {
   decodedContract: NonNullable<ReturnType<typeof decodeV1ContractDatum>>;
   buyerAddress: string;
@@ -221,10 +201,19 @@ export async function authorizeRefundV1() {
             const buyerAddress = request.BuyerWallet!.walletAddress;
             const sellerAddress = request.SmartContractWallet!.walletAddress;
 
-            const decodedContract = decodeAndValidateUtxoDatum({
-              utxo,
+            const utxoDatum = utxo.output.plutusData;
+            if (!utxoDatum) {
+              throw new Error('No datum found in UTXO');
+            }
+
+            const decodedDatum: unknown = deserializeDatum(utxoDatum);
+            const decodedContract = decodeV1ContractDatum(
+              decodedDatum,
               network,
-            });
+            );
+            if (decodedContract == null) {
+              throw new Error('Invalid datum');
+            }
 
             const datum = createRefundRequestDatum({
               decodedContract,
