@@ -26,13 +26,22 @@ export const metadataSchema = z.object({
         name: z
           .string()
           .max(60)
-          .or(z.array(z.string().max(60)).min(1).max(1)),
+          .or(z.array(z.string().max(60)).min(1).max(1))
+          .describe('Human-readable display name for this example output'),
         mime_type: z
           .string()
           .min(1)
           .max(60)
-          .or(z.array(z.string().min(1).max(60)).min(1).max(1)),
-        url: z.string().or(z.array(z.string())),
+          .or(z.array(z.string().min(1).max(60)).min(1).max(1))
+          .describe(
+            "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')",
+          ),
+        url: z
+          .string()
+          .or(z.array(z.string()))
+          .describe(
+            'Public URL where the example output can be accessed or viewed',
+          ),
       }),
     )
     .optional(),
@@ -68,11 +77,20 @@ export const metadataSchema = z.object({
       fixedPricing: z
         .array(
           z.object({
-            amount: z.number({ coerce: true }).int().min(1),
+            amount: z
+              .number({ coerce: true })
+              .int()
+              .min(1)
+              .describe(
+                "Amount as an integer in the token's smallest unit, including all decimals. For ADA (6 decimals): 10000000 = 10 ADA, 1000000 = 1 ADA. For custom tokens, multiply by 10^decimals.",
+              ),
             unit: z
               .string()
               .min(1)
-              .or(z.array(z.string().min(1))),
+              .or(z.array(z.string().min(1)))
+              .describe(
+                "Cardano asset unit identifier. Use empty string '' or 'lovelace' for ADA. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
+              ),
           }),
         )
         .min(1)
@@ -117,9 +135,24 @@ export const queryAgentFromWalletSchemaOutput = z.object({
         ExampleOutputs: z
           .array(
             z.object({
-              name: z.string().max(60),
-              mimeType: z.string().max(60),
-              url: z.string().max(250),
+              name: z
+                .string()
+                .max(60)
+                .describe(
+                  'Human-readable display name for this example output',
+                ),
+              mimeType: z
+                .string()
+                .max(60)
+                .describe(
+                  "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')",
+                ),
+              url: z
+                .string()
+                .max(250)
+                .describe(
+                  'Public URL where the example output can be accessed or viewed',
+                ),
             }),
           )
           .max(25),
@@ -151,8 +184,17 @@ export const queryAgentFromWalletSchemaOutput = z.object({
             Pricing: z
               .array(
                 z.object({
-                  amount: z.string(),
-                  unit: z.string().max(250),
+                  amount: z
+                    .string()
+                    .describe(
+                      "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
+                    ),
+                  unit: z
+                    .string()
+                    .max(250)
+                    .describe(
+                      "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
+                    ),
                 }),
               )
               .min(1),
