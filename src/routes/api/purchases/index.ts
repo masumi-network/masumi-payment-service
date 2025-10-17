@@ -104,44 +104,20 @@ export const queryPurchaseRequestSchemaOutput = z.object({
       ),
       PaidFunds: z.array(
         z.object({
-          amount: z
-            .string()
-            .describe(
-              "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-            ),
-          unit: z
-            .string()
-            .describe(
-              "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-            ),
+          amount: z.string(),
+          unit: z.string(),
         }),
       ),
       WithdrawnForSeller: z.array(
         z.object({
-          amount: z
-            .string()
-            .describe(
-              "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-            ),
-          unit: z
-            .string()
-            .describe(
-              "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-            ),
+          amount: z.string(),
+          unit: z.string(),
         }),
       ),
       WithdrawnForBuyer: z.array(
         z.object({
-          amount: z
-            .string()
-            .describe(
-              "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-            ),
-          unit: z
-            .string()
-            .describe(
-              "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-            ),
+          amount: z.string(),
+          unit: z.string(),
         }),
       ),
       PaymentSource: z.object({
@@ -278,22 +254,7 @@ export const createPurchaseInitSchemaInput = z.object({
     .max(250)
     .describe('The identifier of the agent that is being purchased'),
   Amounts: z
-    .array(
-      z.object({
-        amount: z
-          .string()
-          .max(25)
-          .describe(
-            "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-          ),
-        unit: z
-          .string()
-          .max(150)
-          .describe(
-            "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-          ),
-      }),
-    )
+    .array(z.object({ amount: z.string().max(25), unit: z.string().max(150) }))
     .max(7)
     .optional()
     .describe('The amounts to be paid for the purchase'),
@@ -360,44 +321,20 @@ export const createPurchaseInitSchemaOutput = z.object({
     .nullable(),
   PaidFunds: z.array(
     z.object({
-      amount: z
-        .string()
-        .describe(
-          "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-        ),
-      unit: z
-        .string()
-        .describe(
-          "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-        ),
+      amount: z.string(),
+      unit: z.string(),
     }),
   ),
   WithdrawnForSeller: z.array(
     z.object({
-      amount: z
-        .string()
-        .describe(
-          "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-        ),
-      unit: z
-        .string()
-        .describe(
-          "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-        ),
+      amount: z.string(),
+      unit: z.string(),
     }),
   ),
   WithdrawnForBuyer: z.array(
     z.object({
-      amount: z
-        .string()
-        .describe(
-          "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-        ),
-      unit: z
-        .string()
-        .describe(
-          "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-        ),
+      amount: z.string(),
+      unit: z.string(),
     }),
   ),
   PaymentSource: z.object({

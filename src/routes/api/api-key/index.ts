@@ -31,16 +31,8 @@ export const getAPIKeySchemaOutput = z.object({
       networkLimit: z.array(z.nativeEnum(Network)),
       RemainingUsageCredits: z.array(
         z.object({
-          unit: z
-            .string()
-            .describe(
-              "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-            ),
-          amount: z
-            .string()
-            .describe(
-              "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-            ),
+          unit: z.string(),
+          amount: z.string(),
         }),
       ),
       status: z.nativeEnum(ApiKeyStatus),
@@ -89,17 +81,8 @@ export const addAPIKeySchemaInput = z.object({
   UsageCredits: z
     .array(
       z.object({
-        unit: z
-          .string()
-          .max(150)
-          .describe(
-            "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-          ),
-        amount: z
-          .string()
-          .describe(
-            "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-          ),
+        unit: z.string().max(150),
+        amount: z.string(),
       }),
     )
     .describe(
@@ -177,17 +160,8 @@ export const updateAPIKeySchemaInput = z.object({
   UsageCreditsToAddOrRemove: z
     .array(
       z.object({
-        unit: z
-          .string()
-          .max(150)
-          .describe(
-            "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).",
-          ),
-        amount: z
-          .string()
-          .describe(
-            "Amount as an integer string in the token's smallest unit, including all decimals. Use positive values to add credits, negative values to remove credits. For ADA (6 decimals): '10000000' = 10 ADA, '-1000000' = -1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').",
-          ),
+        unit: z.string().max(150),
+        amount: z.string(),
       }),
     )
     .max(25)
