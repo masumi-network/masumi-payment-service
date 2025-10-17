@@ -5,6 +5,7 @@ import {
   $Enums,
   PaymentAction,
   PaymentErrorType,
+  TransactionStatus,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -63,6 +64,9 @@ export const postPaymentRequestSchemaOutput = z.object({
       createdAt: z.date(),
       updatedAt: z.date(),
       txHash: z.string().nullable(),
+      status: z.nativeEnum(TransactionStatus),
+      previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+      newOnChainState: z.nativeEnum(OnChainState).nullable(),
     })
     .nullable(),
   TransactionHistory: z
@@ -72,6 +76,9 @@ export const postPaymentRequestSchemaOutput = z.object({
         createdAt: z.date(),
         updatedAt: z.date(),
         txHash: z.string().nullable(),
+        status: z.nativeEnum(TransactionStatus),
+        previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+        newOnChainState: z.nativeEnum(OnChainState).nullable(),
       }),
     )
     .nullable(),

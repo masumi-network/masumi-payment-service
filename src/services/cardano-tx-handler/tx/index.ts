@@ -126,6 +126,8 @@ export async function handlePaymentTransactionCardanoV1(
             create: {
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
+              previousOnChainState: paymentRequest.onChainState,
+              newOnChainState: newState,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -242,6 +244,8 @@ export async function handlePurchasingTransactionCardanoV1(
             create: {
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
+              previousOnChainState: purchasingRequest.onChainState,
+              newOnChainState: newStatus,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -721,6 +725,8 @@ export async function updateInitialPurchaseTransaction(
             create: {
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
+              previousOnChainState: null,
+              newOnChainState: OnChainState.FundsLocked,
             },
           },
           onChainState: OnChainState.FundsLocked,
@@ -1044,6 +1050,8 @@ export async function updateInitialPaymentTransaction(
             create: {
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
+              previousOnChainState: null,
+              newOnChainState: newState,
             },
           },
           onChainState: newState,
