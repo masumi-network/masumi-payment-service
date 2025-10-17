@@ -1,5 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable react-hooks/rules-of-hooks */
+/* eslint-disable react-hooks/exhaustive-deps, react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +19,7 @@ import {
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
@@ -148,52 +148,65 @@ export default function AIAgentsPage() {
 
   const fetchAgents = useCallback(
     async (cursor?: string | null) => {
-      try {
-        if (!cursor) {
-          setIsLoading(true);
-          setAllAgents([]);
-        } else {
-          setIsLoadingMore(true);
-        }
+      if (!cursor) {
+        setIsLoading(true);
+        setAllAgents([]);
+      } else {
+        setIsLoadingMore(true);
+      }
 
-        const selectedPaymentSource = state.paymentSources.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress;
+      const selectedPaymentSource = state.paymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+      const smartContractAddress = selectedPaymentSource?.smartContractAddress;
 
-        const response = await getRegistry({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: cursor || undefined,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
+      const response = await handleApiCall(
+        () =>
+          getRegistry({
+            client: apiClient,
+            query: {
+              network: state.network,
+              cursorId: cursor || undefined,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching agents:', error);
+            toast.error(error.message || 'Failed to load AI agents');
+            if (!cursor) {
+              setAllAgents([]);
+            }
+            setHasMore(false);
+            setIsLoading(false);
+            setIsLoadingMore(false);
           },
-        });
+          onFinally: () => {
+            setIsLoading(false);
+            setIsLoadingMore(false);
+          },
+          errorMessage: 'Failed to load AI agents',
+        },
+      );
 
-        if (response.data?.data?.Assets) {
-          const newAgents = response.data.data.Assets;
-          if (cursor) {
-            setAllAgents((prev) => [...prev, ...newAgents]);
-          } else {
-            setAllAgents(newAgents);
-          }
+      if (!response) return;
 
-          setHasMore(newAgents.length === 10);
+      if (response.data?.data?.Assets) {
+        const newAgents = response.data.data.Assets;
+        if (cursor) {
+          setAllAgents((prev) => [...prev, ...newAgents]);
         } else {
-          if (!cursor) {
-            setAllAgents([]);
-          }
-          setHasMore(false);
+          setAllAgents(newAgents);
         }
-      } catch (error) {
-        console.error('Error fetching agents:', error);
-        toast.error('Failed to load AI agents');
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+
+        setHasMore(newAgents.length === 10);
+      } else {
+        if (!cursor) {
+          setAllAgents([]);
+        }
+        setHasMore(false);
       }
     },
     [apiClient, state.network, selectedPaymentSourceId],
@@ -265,50 +278,72 @@ export default function AIAgentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    try {
-      if (
-        selectedAgentToDelete?.state === 'RegistrationFailed' ||
-        selectedAgentToDelete?.state === 'DeregistrationConfirmed'
-      ) {
-        setIsDeleting(true);
-        await deleteRegistry({
-          client: apiClient,
-          body: {
-            id: selectedAgentToDelete.id,
+    if (
+      selectedAgentToDelete?.state === 'RegistrationFailed' ||
+      selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+    ) {
+      setIsDeleting(true);
+      await handleApiCall(
+        () =>
+          deleteRegistry({
+            client: apiClient,
+            body: {
+              id: selectedAgentToDelete.id,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deleted successfully');
+            setIsDeleteDialogOpen(false);
+            setSelectedAgentToDelete(null);
+            fetchAgents();
           },
-        });
-        toast.success('AI agent deleted successfully');
-        setIsDeleteDialogOpen(false);
-        setSelectedAgentToDelete(null);
-        fetchAgents();
-      } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
-        if (!selectedAgentToDelete?.agentIdentifier) {
-          toast.error('Cannot delete agent: Missing identifier');
-          return;
-        }
-        setIsDeleting(true);
-        await postRegistryDeregister({
-          client: apiClient,
-          body: {
-            agentIdentifier: selectedAgentToDelete.agentIdentifier,
-            network: state.network,
+          onError: (error: any) => {
+            console.error('Error deleting agent:', error);
+            toast.error(error.message || 'Failed to delete AI agent');
           },
-        });
-
-        toast.success('AI agent deleted successfully');
-        setIsDeleteDialogOpen(false);
-        setSelectedAgentToDelete(null);
-        fetchAgents();
-      } else {
-        toast.error(
-          'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
-        );
+          onFinally: () => {
+            setIsDeleting(false);
+          },
+          errorMessage: 'Failed to delete AI agent',
+        },
+      );
+    } else if (selectedAgentToDelete?.state === 'RegistrationConfirmed') {
+      if (!selectedAgentToDelete?.agentIdentifier) {
+        toast.error('Cannot deregister agent: Missing identifier');
+        return;
       }
-    } catch (error) {
-      console.error('Error deleting agent:', error);
-      toast.error('Failed to delete AI agent');
-    } finally {
-      setIsDeleting(false);
+      setIsDeleting(true);
+      await handleApiCall(
+        () =>
+          postRegistryDeregister({
+            client: apiClient,
+            body: {
+              agentIdentifier: selectedAgentToDelete.agentIdentifier!,
+              network: state.network,
+            },
+          }),
+        {
+          onSuccess: () => {
+            toast.success('AI agent deregistered successfully');
+            setIsDeleteDialogOpen(false);
+            setSelectedAgentToDelete(null);
+            fetchAgents();
+          },
+          onError: (error: any) => {
+            console.error('Error deregistering agent:', error);
+            toast.error(error.message || 'Failed to deregister AI agent');
+          },
+          onFinally: () => {
+            setIsDeleting(false);
+          },
+          errorMessage: 'Failed to deregister AI agent',
+        },
+      );
+    } else {
+      toast.error(
+        'Cannot delete agent: Agent is not in a state to be deleted. Please wait for transactions to settle.',
+      );
     }
   };
 
@@ -317,54 +352,59 @@ export default function AIAgentsPage() {
   };
 
   const handleWalletClick = async (walletAddress: string) => {
-    try {
-      // Fetch wallet balance
-      const response = await getUtxos({
-        client: apiClient,
-        query: {
-          address: walletAddress,
-          network: state.network,
+    // Fetch wallet balance
+    const response = await handleApiCall(
+      () =>
+        getUtxos({
+          client: apiClient,
+          query: {
+            address: walletAddress,
+            network: state.network,
+          },
+        }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching wallet details:', error);
+          toast.error(error.message || 'Failed to fetch wallet details');
         },
-      });
+        errorMessage: 'Failed to fetch wallet details',
+      },
+    );
 
-      let adaBalance = '0';
-      let usdmBalance = '0';
+    if (!response) return;
 
-      if (response.data?.data?.Utxos) {
-        response.data.data.Utxos.forEach((utxo) => {
-          utxo.Amounts.forEach((amount) => {
-            if (amount.unit === 'lovelace' || amount.unit === '') {
-              adaBalance = (
-                parseInt(adaBalance) + (amount.quantity || 0)
-              ).toString();
-            } else if (
-              amount.unit === getUsdmConfig(state.network).fullAssetId
-            ) {
-              usdmBalance = (
-                parseInt(usdmBalance) + (amount.quantity || 0)
-              ).toString();
-            }
-          });
+    let adaBalance = '0';
+    let usdmBalance = '0';
+
+    if (response.data?.data?.Utxos) {
+      response.data.data.Utxos.forEach((utxo) => {
+        utxo.Amounts.forEach((amount) => {
+          if (amount.unit === 'lovelace' || amount.unit === '') {
+            adaBalance = (
+              parseInt(adaBalance) + (amount.quantity || 0)
+            ).toString();
+          } else if (amount.unit === getUsdmConfig(state.network).fullAssetId) {
+            usdmBalance = (
+              parseInt(usdmBalance) + (amount.quantity || 0)
+            ).toString();
+          }
         });
-      }
-
-      // Create wallet details object
-      const walletDetails: WalletWithBalance = {
-        id: walletAddress, // Using address as ID since we don't have the actual wallet ID
-        walletVkey: '', // We don't have this information
-        walletAddress,
-        collectionAddress: null,
-        note: null,
-        type: 'Selling', // AI agents use selling wallets
-        balance: adaBalance,
-        usdmBalance,
-      };
-
-      setSelectedWalletForDetails(walletDetails);
-    } catch (error) {
-      console.error('Error fetching wallet details:', error);
-      toast.error('Failed to fetch wallet details');
+      });
     }
+
+    // Create wallet details object
+    const walletDetails: WalletWithBalance = {
+      id: walletAddress, // Using address as ID since we don't have the actual wallet ID
+      walletVkey: '', // We don't have this information
+      walletAddress,
+      collectionAddress: null,
+      note: null,
+      type: 'Selling', // AI agents use selling wallets
+      balance: adaBalance,
+      usdmBalance,
+    };
+
+    setSelectedWalletForDetails(walletDetails);
   };
 
   return (
@@ -637,7 +677,12 @@ export default function AIAgentsPage() {
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
           }}
-          title="Delete AI Agent"
+          title={
+            selectedAgentToDelete?.state === 'RegistrationFailed' ||
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              ? `Delete ${selectedAgentToDelete?.name}`
+              : `Deregister ${selectedAgentToDelete?.name}`
+          }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
             selectedAgentToDelete?.state === 'DeregistrationConfirmed'

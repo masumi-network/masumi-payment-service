@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +13,7 @@ import {
   GetApiKeyResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -98,55 +100,60 @@ export default function ApiKeys() {
 
   const fetchApiKeys = useCallback(
     async (cursor?: string | null) => {
-      try {
-        if (!cursor) {
-          setIsLoading(true);
-          setAllApiKeys([]);
-        } else {
-          setIsLoadingMore(true);
-        }
+      if (!cursor) {
+        setIsLoading(true);
+        setAllApiKeys([]);
+      } else {
+        setIsLoadingMore(true);
+      }
 
-        const response = await getApiKey({
-          client: apiClient,
-          query: {
-            limit: 10,
-            cursorToken: cursor || undefined,
+      const response = await handleApiCall(
+        () =>
+          getApiKey({
+            client: apiClient,
+            query: {
+              limit: 10,
+              cursorToken: cursor || undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching API keys:', error);
+            toast.error(error.message || 'Failed to fetch API keys');
+            if (!cursor) {
+              setAllApiKeys([]);
+            }
+            setHasMore(false);
           },
-        });
+          onFinally: () => {
+            setIsLoading(false);
+            setIsLoadingMore(false);
+          },
+          errorMessage: 'Failed to fetch API keys',
+        },
+      );
 
-        if (response?.data?.data?.ApiKeys) {
-          const newKeys = response.data.data.ApiKeys;
+      if (!response) return;
 
-          if (cursor) {
-            setAllApiKeys((prev) => {
-              // Create a map of existing keys by token to prevent duplicates
-              const existingKeysMap = new Map(
-                prev.map((key) => [key.token, key]),
-              );
+      if (response?.data?.data?.ApiKeys) {
+        const newKeys = response.data.data.ApiKeys;
 
-              // Add new keys, overwriting any existing ones with the same token
-              newKeys.forEach((key) => {
-                existingKeysMap.set(key.token, key);
-              });
+        if (cursor) {
+          setAllApiKeys((prev) => {
+            // Create a map of existing keys by token to prevent duplicates
+            const existingKeysMap = new Map(
+              prev.map((key) => [key.token, key]),
+            );
 
-              const combinedKeys = Array.from(existingKeysMap.values());
-
-              // Check if we need to fetch more
-              const filteredCount = combinedKeys.filter((key) =>
-                key.networkLimit.includes(state.network),
-              ).length;
-
-              if (newKeys.length === 10 && filteredCount < 10) {
-                const lastKey = newKeys[newKeys.length - 1];
-                fetchApiKeys(lastKey.token);
-              }
-
-              return combinedKeys;
+            // Add new keys, overwriting any existing ones with the same token
+            newKeys.forEach((key) => {
+              existingKeysMap.set(key.token, key);
             });
-          } else {
-            setAllApiKeys(newKeys);
-            // Check if we need to fetch more for initial load
-            const filteredCount = newKeys.filter((key) =>
+
+            const combinedKeys = Array.from(existingKeysMap.values());
+
+            // Check if we need to fetch more
+            const filteredCount = combinedKeys.filter((key) =>
               key.networkLimit.includes(state.network),
             ).length;
 
@@ -154,22 +161,32 @@ export default function ApiKeys() {
               const lastKey = newKeys[newKeys.length - 1];
               fetchApiKeys(lastKey.token);
             }
-          }
 
-          setHasMore(newKeys.length === 10);
+            return combinedKeys;
+          });
         } else {
-          if (!cursor) {
-            setAllApiKeys([]);
+          setAllApiKeys(newKeys);
+          // Check if we need to fetch more for initial load
+          const filteredCount = newKeys.filter((key) =>
+            key.networkLimit.includes(state.network),
+          ).length;
+
+          if (newKeys.length === 10 && filteredCount < 10) {
+            const lastKey = newKeys[newKeys.length - 1];
+            fetchApiKeys(lastKey.token);
           }
-          setHasMore(false);
         }
-      } catch (error) {
-        console.error('Error fetching API keys:', error);
-        toast.error('Failed to fetch API keys');
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+
+        setHasMore(newKeys.length === 10);
+      } else {
+        if (!cursor) {
+          setAllApiKeys([]);
+        }
+        setHasMore(false);
       }
+
+      setIsLoading(false);
+      setIsLoadingMore(false);
     },
     [apiClient, state.network],
   );
@@ -214,40 +231,30 @@ export default function ApiKeys() {
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
 
-    try {
-      setIsDeleting(true);
-
-      const response = await deleteApiKey({
-        client: apiClient,
-        body: {
-          id: keyToDelete.id,
+    await handleApiCall(
+      () =>
+        deleteApiKey({
+          client: apiClient,
+          body: {
+            id: keyToDelete.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('API key deleted successfully');
+          fetchApiKeys();
         },
-      });
-
-      if (response?.status !== 200) {
-        throw new Error('Failed to delete API key');
-      }
-
-      toast.success('API key deleted successfully');
-      fetchApiKeys();
-    } catch (error) {
-      console.error('Error deleting API key:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
-      setKeyToDelete(null);
-    }
+        onError: (error: any) => {
+          console.error('Error deleting API key:', error);
+          toast.error(error.message || 'Failed to delete API key');
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+          setKeyToDelete(null);
+        },
+        errorMessage: 'Failed to delete API key',
+      },
+    );
   };
 
   return (
@@ -263,7 +270,7 @@ export default function ApiKeys() {
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
-                  href="https://docs.masumi.network/technical-documentation/payment-service-api/api-keys"
+                  href="https://docs.masumi.network/api-reference"
                   target="_blank"
                   className="text-primary hover:underline"
                 >
