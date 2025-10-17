@@ -1027,8 +1027,8 @@
                                             "amount": "10000000"
                                         },
                                         {
-                                            "unit": "usdm_policy_and_asset_id",
-                                            "amount": "-10000000"
+                                            "unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+                                            "amount": "-25000000"
                                         }
                                     ],
                                     "status": "Active"
@@ -1705,8 +1705,8 @@
                                                     "TransactionHistory": [],
                                                     "RequestedFunds": [
                                                         {
-                                                            "amount": "10000000",
-                                                            "unit": ""
+                                                            "unit": "",
+                                                            "amount": "10000000"
                                                         }
                                                     ],
                                                     "PaymentSource": {
@@ -2181,8 +2181,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2550,8 +2550,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2912,8 +2912,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -3877,8 +3877,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4624,8 +4624,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5014,8 +5014,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5459,8 +5459,8 @@
                                             "TransactionHistory": [],
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5926,8 +5926,8 @@
                                             "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -6283,8 +6283,8 @@
                                                             "pricingType": "Fixed",
                                                             "Pricing": [
                                                                 {
-                                                                    "amount": "1000000",
-                                                                    "unit": "unit"
+                                                                    "unit": "",
+                                                                    "amount": "10000000"
                                                                 }
                                                             ]
                                                         },
@@ -6674,8 +6674,8 @@
                                                         "pricingType": "Fixed",
                                                         "Pricing": [
                                                             {
-                                                                "unit": "unit",
-                                                                "amount": "1000000"
+                                                                "unit": "",
+                                                                "amount": "10000000"
                                                             }
                                                         ]
                                                     },
