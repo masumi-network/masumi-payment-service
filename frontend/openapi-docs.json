@@ -1474,13 +1474,53 @@
                                                                     "txHash": {
                                                                         "type": "string",
                                                                         "nullable": true
+                                                                    },
+                                                                    "status": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "Pending",
+                                                                            "Confirmed",
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
+                                                                        ]
+                                                                    },
+                                                                    "previousOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "newOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "id",
                                                                     "createdAt",
                                                                     "updatedAt",
-                                                                    "txHash"
+                                                                    "txHash",
+                                                                    "status",
+                                                                    "previousOnChainState",
+                                                                    "newOnChainState"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -1501,13 +1541,53 @@
                                                                         "txHash": {
                                                                             "type": "string",
                                                                             "nullable": true
+                                                                        },
+                                                                        "status": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                                "Pending",
+                                                                                "Confirmed",
+                                                                                "FailedViaTimeout",
+                                                                                "RolledBack"
+                                                                            ]
+                                                                        },
+                                                                        "previousOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "newOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "id",
                                                                         "createdAt",
                                                                         "updatedAt",
-                                                                        "txHash"
+                                                                        "txHash",
+                                                                        "status",
+                                                                        "previousOnChainState",
+                                                                        "newOnChainState"
                                                                     ]
                                                                 }
                                                             },
@@ -3167,6 +3247,34 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "previousOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "newOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3174,7 +3282,9 @@
                                                                     "createdAt",
                                                                     "updatedAt",
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "previousOnChainState",
+                                                                    "newOnChainState"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -3202,6 +3312,34 @@
                                                                                 "FailedViaTimeout",
                                                                                 "RolledBack"
                                                                             ]
+                                                                        },
+                                                                        "previousOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "newOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3209,7 +3347,9 @@
                                                                         "createdAt",
                                                                         "updatedAt",
                                                                         "txHash",
-                                                                        "status"
+                                                                        "status",
+                                                                        "previousOnChainState",
+                                                                        "newOnChainState"
                                                                     ]
                                                                 }
                                                             },
@@ -5236,13 +5376,53 @@
                                                         "txHash": {
                                                             "type": "string",
                                                             "nullable": true
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        },
+                                                        "previousOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn"
+                                                            ]
+                                                        },
+                                                        "newOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn"
+                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "createdAt",
                                                         "updatedAt",
-                                                        "txHash"
+                                                        "txHash",
+                                                        "status",
+                                                        "previousOnChainState",
+                                                        "newOnChainState"
                                                     ]
                                                 },
                                                 "TransactionHistory": {
@@ -5263,13 +5443,53 @@
                                                             "txHash": {
                                                                 "type": "string",
                                                                 "nullable": true
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "previousOnChainState": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "enum": [
+                                                                    "FundsLocked",
+                                                                    "FundsOrDatumInvalid",
+                                                                    "ResultSubmitted",
+                                                                    "RefundRequested",
+                                                                    "Disputed",
+                                                                    "Withdrawn",
+                                                                    "RefundWithdrawn",
+                                                                    "DisputedWithdrawn"
+                                                                ]
+                                                            },
+                                                            "newOnChainState": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "enum": [
+                                                                    "FundsLocked",
+                                                                    "FundsOrDatumInvalid",
+                                                                    "ResultSubmitted",
+                                                                    "RefundRequested",
+                                                                    "Disputed",
+                                                                    "Withdrawn",
+                                                                    "RefundWithdrawn",
+                                                                    "DisputedWithdrawn"
+                                                                ]
                                                             }
                                                         },
                                                         "required": [
                                                             "id",
                                                             "createdAt",
                                                             "updatedAt",
-                                                            "txHash"
+                                                            "txHash",
+                                                            "status",
+                                                            "previousOnChainState",
+                                                            "newOnChainState"
                                                         ]
                                                     }
                                                 },
@@ -6595,11 +6815,41 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "previousOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "newOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "previousOnChainState",
+                                                                    "newOnChainState"
                                                                 ]
                                                             }
                                                         },

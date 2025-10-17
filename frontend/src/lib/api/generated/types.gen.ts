@@ -493,12 +493,18 @@ export type GetPaymentResponses = {
                     createdAt: string;
                     updatedAt: string;
                     txHash: string | null;
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
                     createdAt: string;
                     updatedAt: string;
                     txHash: string | null;
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 }> | null;
                 RequestedFunds: Array<{
                     amount: string;
@@ -926,6 +932,8 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
@@ -933,6 +941,8 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 }>;
                 PaidFunds: Array<{
                     amount: string;
@@ -1445,12 +1455,18 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
                 createdAt: string;
                 updatedAt: string;
                 txHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             } | null;
             TransactionHistory: Array<{
                 id: string;
                 createdAt: string;
                 updatedAt: string;
                 txHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             }> | null;
             RequestedFunds: Array<{
                 amount: string;
@@ -1813,6 +1829,8 @@ export type GetRegistryResponses = {
                 CurrentTransaction: {
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
                 } | null;
             }>;
         };
