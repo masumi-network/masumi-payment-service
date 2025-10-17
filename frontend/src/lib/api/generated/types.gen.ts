@@ -37,13 +37,7 @@ export type GetApiKeyStatusResponses = {
             usageLimited: boolean;
             networkLimit: Array<'Preprod' | 'Mainnet'>;
             RemainingUsageCredits: Array<{
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
             }>;
             status: 'Active' | 'Revoked';
@@ -280,13 +274,7 @@ export type GetApiKeyResponses = {
                 usageLimited: boolean;
                 networkLimit: Array<'Preprod' | 'Mainnet'>;
                 RemainingUsageCredits: Array<{
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
                 }>;
                 status: 'Active' | 'Revoked';
@@ -311,13 +299,7 @@ export type PatchApiKeyData = {
          * The amount of credits to add or remove from the API key. Only relevant if usageLimited is true.
          */
         UsageCreditsToAddOrRemove?: Array<{
-            /**
-             * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-             */
             unit: string;
-            /**
-             * Amount as an integer string in the token's smallest unit, including all decimals. Use positive values to add credits, negative values to remove credits. For ADA (6 decimals): '10000000' = 10 ADA, '-1000000' = -1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-             */
             amount: string;
         }>;
         /**
@@ -382,13 +364,7 @@ export type PostApiKeyData = {
          * The credits allowed to be used by the API key. Only relevant if usageLimited is true.
          */
         UsageCredits: Array<{
-            /**
-             * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-             */
             unit: string;
-            /**
-             * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-             */
             amount: string;
         }>;
         /**
@@ -525,33 +501,15 @@ export type GetPaymentResponses = {
                     txHash: string | null;
                 }> | null;
                 RequestedFunds: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 WithdrawnForSeller: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 WithdrawnForBuyer: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 PaymentSource: {
@@ -595,13 +553,7 @@ export type PostPaymentData = {
          * The amounts of the payment, should be null for fixed amount
          */
         RequestedFunds?: Array<{
-            /**
-             * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-             */
             amount: string;
-            /**
-             * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-             */
             unit: string;
         }>;
         /**
@@ -675,33 +627,15 @@ export type PostPaymentResponses = {
                 errorNote: string | null;
             };
             RequestedFunds: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForBuyer: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             PaymentSource: {
@@ -1001,33 +935,15 @@ export type GetPurchaseResponses = {
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
                 }>;
                 PaidFunds: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 WithdrawnForSeller: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 WithdrawnForBuyer: Array<{
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
                 }>;
                 PaymentSource: {
@@ -1079,13 +995,7 @@ export type PostPurchaseData = {
          * The amounts to be paid for the purchase
          */
         Amounts?: Array<{
-            /**
-             * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-             */
             amount: string;
-            /**
-             * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-             */
             unit: string;
         }>;
         /**
@@ -1163,33 +1073,15 @@ export type PostPurchaseErrors = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForBuyer: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             PaymentSource: {
@@ -1250,33 +1142,15 @@ export type PostPurchaseResponses = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             WithdrawnForBuyer: Array<{
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
             }>;
             PaymentSource: {
@@ -1768,17 +1642,8 @@ export type GetRegistryWalletResponses = {
                     description?: string | null;
                     apiBaseUrl: string;
                     ExampleOutputs: Array<{
-                        /**
-                         * Human-readable display name for this example output
-                         */
                         name: string;
-                        /**
-                         * MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')
-                         */
                         mimeType: string;
-                        /**
-                         * Public URL where the example output can be accessed or viewed
-                         */
                         url: string;
                     }>;
                     Tags: Array<string>;
@@ -1800,13 +1665,7 @@ export type GetRegistryWalletResponses = {
                     AgentPricing: {
                         pricingType: 'Fixed';
                         Pricing: Array<{
-                            /**
-                             * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                             */
                             amount: string;
-                            /**
-                             * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                             */
                             unit: string;
                         }>;
                     } | {
@@ -1933,30 +1792,15 @@ export type GetRegistryResponses = {
                 updatedAt: string;
                 lastCheckedAt: string | null;
                 ExampleOutputs: Array<{
-                    /**
-                     * Human-readable display name for this example output
-                     */
                     name: string;
-                    /**
-                     * Public URL where the example output can be accessed or viewed
-                     */
                     url: string;
-                    /**
-                     * MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')
-                     */
                     mimeType: string;
                 }>;
                 agentIdentifier: string | null;
                 AgentPricing: {
                     pricingType: 'Fixed';
                     Pricing: Array<{
-                        /**
-                         * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                         */
                         amount: string;
-                        /**
-                         * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                         */
                         unit: string;
                     }>;
                 } | {
@@ -1988,17 +1832,8 @@ export type PostRegistryData = {
          */
         sellingWalletVkey: string;
         ExampleOutputs: Array<{
-            /**
-             * Human-readable display name for this example output
-             */
             name: string;
-            /**
-             * Public URL where the example output can be accessed or viewed
-             */
             url: string;
-            /**
-             * MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')
-             */
             mimeType: string;
         }>;
         /**
@@ -2030,13 +1865,7 @@ export type PostRegistryData = {
              * Price for a default interaction
              */
             Pricing: Array<{
-                /**
-                 * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                 */
                 unit: string;
-                /**
-                 * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                 */
                 amount: string;
             }>;
         } | {
@@ -2098,29 +1927,14 @@ export type PostRegistryResponses = {
                 walletAddress: string;
             };
             ExampleOutputs: Array<{
-                /**
-                 * Human-readable display name for this example output
-                 */
                 name: string;
-                /**
-                 * Public URL where the example output can be accessed or viewed
-                 */
                 url: string;
-                /**
-                 * MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')
-                 */
                 mimeType: string;
             }>;
             AgentPricing: {
                 pricingType: 'Fixed';
                 Pricing: Array<{
-                    /**
-                     * Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId).
-                     */
                     unit: string;
-                    /**
-                     * Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5').
-                     */
                     amount: string;
                 }>;
             } | {

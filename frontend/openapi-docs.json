@@ -110,12 +110,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             },
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -679,12 +677,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -790,12 +786,10 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150,
-                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                    "maxLength": 150
                                                 },
                                                 "amount": {
-                                                    "type": "string",
-                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
@@ -976,12 +970,10 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150,
-                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                    "maxLength": 150
                                                 },
                                                 "amount": {
-                                                    "type": "string",
-                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. Use positive values to add credits, negative values to remove credits. For ADA (6 decimals): '10000000' = 10 ADA, '-1000000' = -1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
@@ -1035,8 +1027,8 @@
                                             "amount": "10000000"
                                         },
                                         {
-                                            "unit": "usdm_policy_and_asset_id",
-                                            "amount": "-10000000"
+                                            "unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+                                            "amount": "-25000000"
                                         }
                                     ],
                                     "status": "Active"
@@ -1525,12 +1517,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1545,12 +1535,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1565,12 +1553,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1719,8 +1705,8 @@
                                                     "TransactionHistory": [],
                                                     "RequestedFunds": [
                                                         {
-                                                            "amount": "10000000",
-                                                            "unit": ""
+                                                            "unit": "",
+                                                            "amount": "10000000"
                                                         }
                                                     ],
                                                     "PaymentSource": {
@@ -1797,13 +1783,11 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "maxLength": 25,
-                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                    "maxLength": 25
                                                 },
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150,
-                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                    "maxLength": 150
                                                 }
                                             },
                                             "required": [
@@ -2024,12 +2008,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -2044,12 +2026,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -2064,12 +2044,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -2203,8 +2181,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2572,8 +2550,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2934,8 +2912,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -3241,12 +3219,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3261,12 +3237,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3281,12 +3255,10 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3518,13 +3490,11 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "maxLength": 25,
-                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                    "maxLength": 25
                                                 },
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150,
-                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                    "maxLength": 150
                                                 }
                                             },
                                             "required": [
@@ -3733,12 +3703,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -3753,12 +3721,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -3773,12 +3739,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -3913,8 +3877,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4099,12 +4063,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -4119,12 +4081,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -4139,12 +4099,10 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string",
-                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                "type": "string"
                                                             },
                                                             "unit": {
-                                                                "type": "string",
-                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                "type": "string"
                                                             }
                                                         },
                                                         "required": [
@@ -4666,8 +4624,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5056,8 +5014,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5501,8 +5459,8 @@
                                             "TransactionHistory": [],
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5968,8 +5926,8 @@
                                             "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -6105,18 +6063,15 @@
                                                                             "properties": {
                                                                                 "name": {
                                                                                     "type": "string",
-                                                                                    "maxLength": 60,
-                                                                                    "description": "Human-readable display name for this example output"
+                                                                                    "maxLength": 60
                                                                                 },
                                                                                 "mimeType": {
                                                                                     "type": "string",
-                                                                                    "maxLength": 60,
-                                                                                    "description": "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')"
+                                                                                    "maxLength": 60
                                                                                 },
                                                                                 "url": {
                                                                                     "type": "string",
-                                                                                    "maxLength": 250,
-                                                                                    "description": "Public URL where the example output can be accessed or viewed"
+                                                                                    "maxLength": 250
                                                                                 }
                                                                             },
                                                                             "required": [
@@ -6215,13 +6170,11 @@
                                                                                             "type": "object",
                                                                                             "properties": {
                                                                                                 "amount": {
-                                                                                                    "type": "string",
-                                                                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                                                    "type": "string"
                                                                                                 },
                                                                                                 "unit": {
                                                                                                     "type": "string",
-                                                                                                    "maxLength": 250,
-                                                                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                                                    "maxLength": 250
                                                                                                 }
                                                                                             },
                                                                                             "required": [
@@ -6330,8 +6283,8 @@
                                                             "pricingType": "Fixed",
                                                             "Pricing": [
                                                                 {
-                                                                    "amount": "1000000",
-                                                                    "unit": "unit"
+                                                                    "unit": "",
+                                                                    "amount": "10000000"
                                                                 }
                                                             ]
                                                         },
@@ -6534,18 +6487,15 @@
                                                                     "properties": {
                                                                         "name": {
                                                                             "type": "string",
-                                                                            "maxLength": 60,
-                                                                            "description": "Human-readable display name for this example output"
+                                                                            "maxLength": 60
                                                                         },
                                                                         "url": {
                                                                             "type": "string",
-                                                                            "maxLength": 250,
-                                                                            "description": "Public URL where the example output can be accessed or viewed"
+                                                                            "maxLength": 250
                                                                         },
                                                                         "mimeType": {
                                                                             "type": "string",
-                                                                            "maxLength": 60,
-                                                                            "description": "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')"
+                                                                            "maxLength": 60
                                                                         }
                                                                     },
                                                                     "required": [
@@ -6579,13 +6529,11 @@
                                                                                     "type": "object",
                                                                                     "properties": {
                                                                                         "amount": {
-                                                                                            "type": "string",
-                                                                                            "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                                            "type": "string"
                                                                                         },
                                                                                         "unit": {
                                                                                             "type": "string",
-                                                                                            "maxLength": 250,
-                                                                                            "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                                            "maxLength": 250
                                                                                         }
                                                                                     },
                                                                                     "required": [
@@ -6726,8 +6674,8 @@
                                                         "pricingType": "Fixed",
                                                         "Pricing": [
                                                             {
-                                                                "unit": "unit",
-                                                                "amount": "1000000"
+                                                                "unit": "",
+                                                                "amount": "10000000"
                                                             }
                                                         ]
                                                     },
@@ -6784,18 +6732,15 @@
                                             "properties": {
                                                 "name": {
                                                     "type": "string",
-                                                    "maxLength": 60,
-                                                    "description": "Human-readable display name for this example output"
+                                                    "maxLength": 60
                                                 },
                                                 "url": {
                                                     "type": "string",
-                                                    "maxLength": 250,
-                                                    "description": "Public URL where the example output can be accessed or viewed"
+                                                    "maxLength": 250
                                                 },
                                                 "mimeType": {
                                                     "type": "string",
-                                                    "maxLength": 60,
-                                                    "description": "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')"
+                                                    "maxLength": 60
                                                 }
                                             },
                                             "required": [
@@ -6867,13 +6812,11 @@
                                                             "properties": {
                                                                 "unit": {
                                                                     "type": "string",
-                                                                    "maxLength": 250,
-                                                                    "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                    "maxLength": 250
                                                                 },
                                                                 "amount": {
                                                                     "type": "string",
-                                                                    "maxLength": 25,
-                                                                    "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                    "maxLength": 25
                                                                 }
                                                             },
                                                             "required": [
@@ -7142,18 +7085,15 @@
                                                         "properties": {
                                                             "name": {
                                                                 "type": "string",
-                                                                "maxLength": 60,
-                                                                "description": "Human-readable display name for this example output"
+                                                                "maxLength": 60
                                                             },
                                                             "url": {
                                                                 "type": "string",
-                                                                "maxLength": 250,
-                                                                "description": "Public URL where the example output can be accessed or viewed"
+                                                                "maxLength": 250
                                                             },
                                                             "mimeType": {
                                                                 "type": "string",
-                                                                "maxLength": 60,
-                                                                "description": "MIME type of the example output (e.g., 'image/png', 'application/json', 'text/plain')"
+                                                                "maxLength": 60
                                                             }
                                                         },
                                                         "required": [
@@ -7181,12 +7121,10 @@
                                                                         "type": "object",
                                                                         "properties": {
                                                                             "unit": {
-                                                                                "type": "string",
-                                                                                "description": "Cardano asset unit identifier. Use empty string '' for ADA/lovelace. For native tokens, concatenate policyId + assetName in hexadecimal format (e.g., '99e40070791314c489849b...6d7920746f6b656e' where first 56 chars are policyId)."
+                                                                                "type": "string"
                                                                             },
                                                                             "amount": {
-                                                                                "type": "string",
-                                                                                "description": "Amount as an integer string in the token's smallest unit, including all decimals. For ADA (6 decimals): '10000000' = 10 ADA, '1000000' = 1 ADA. For custom tokens, multiply by 10^decimals. Never use decimal notation (e.g., '10.5')."
+                                                                                "type": "string"
                                                                             }
                                                                         },
                                                                         "required": [
