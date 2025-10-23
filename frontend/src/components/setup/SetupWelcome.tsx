@@ -7,7 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'react-toastify';
-import { Download, Copy, X } from 'lucide-react';
+import { Download, Copy, X, ArrowRight, ChevronDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -22,7 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postWallet, postPaymentSourceExtended } from '@/lib/api/generated';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
@@ -34,12 +34,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 function WelcomeScreen({
   onStart,
   networkType,
-  ignoreSetup,
 }: {
   onStart: () => void;
   networkType: string;
   ignoreSetup: () => void;
 }) {
+  const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
   const networkDisplay =
     networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
@@ -59,16 +59,49 @@ function WelcomeScreen({
       </p>
 
       <div className="flex items-center justify-center gap-4 mt-8">
-        <Button
+        {/* <Button
           variant="secondary"
           className="text-sm"
           type="button"
           onClick={ignoreSetup}
         >
           Skip for now
-        </Button>
+        </Button> */}
+        <div className="relative">
+          <Button
+            variant="secondary"
+            className="text-sm flex items-center gap-2"
+            onClick={() => setShowNetworkDropdown(!showNetworkDropdown)}
+          >
+            Network: <span className="font-bold">{networkDisplay}</span>
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+          {showNetworkDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-md shadow-lg z-50">
+              {networkDisplay === 'Mainnet' ? (
+                <Link
+                  href="/setup?network=Preprod"
+                  replace
+                  className="block px-3 py-2 text-sm hover:bg-muted"
+                  onClick={() => setShowNetworkDropdown(false)}
+                >
+                  Preprod
+                </Link>
+              ) : (
+                <Link
+                  href="/setup?network=Mainnet"
+                  replace
+                  className="block px-3 py-2 text-sm hover:bg-muted"
+                  onClick={() => setShowNetworkDropdown(false)}
+                >
+                  Mainnet
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
         <Button className="text-sm" onClick={onStart}>
-          Start setup
+          Start setup <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
     </div>
@@ -604,12 +637,16 @@ function PaymentSourceSetupScreen({
   );
 }
 
-function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
+function AddAiAgentScreen({
+  onNext,
+  sellingWallet,
+}: {
+  onNext: () => void;
+  sellingWallet: { address: string; mnemonic: string } | null;
+}) {
+  const { state } = useAppContext();
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
-  const [sellingWallet] = useState(
-    '126f48bb1824c271b64c8716bc2478b1624c781266b4cb716b24c7216b',
-  );
 
   const handleAddTag = () => {
     if (newTag && !tags.includes(newTag)) {
@@ -668,7 +705,18 @@ function AddAiAgentScreen({ onNext }: { onNext: () => void }) {
               <Button variant="ghost" size="icon" className="h-8 w-8">
                 <Copy className="h-4 w-4" />
               </Button>
-              {sellingWallet}
+              {sellingWallet?.address ? (
+                <a
+                  href={getExplorerUrl(sellingWallet.address, state.network)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-sm break-all hover:underline text-primary"
+                >
+                  {shortenAddress(sellingWallet.address, 6)}
+                </a>
+              ) : (
+                'No wallet available'
+              )}
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -817,7 +865,11 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       sellingWallet={wallets.selling}
       ignoreSetup={handleIgnoreSetup}
     />,
-    <AddAiAgentScreen key="ai" onNext={() => setCurrentStep(4)} />,
+    <AddAiAgentScreen
+      key="ai"
+      onNext={() => setCurrentStep(4)}
+      sellingWallet={wallets.selling}
+    />,
     <SuccessScreen
       key="success"
       onComplete={handleComplete}

@@ -111,6 +111,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       if (typeof window !== 'undefined') {
         localStorage.setItem('network', action.payload);
       }
+      console.log('setting network', action.payload);
       return {
         ...state,
         network: action.payload,
