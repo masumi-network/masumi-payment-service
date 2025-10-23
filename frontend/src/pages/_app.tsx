@@ -103,7 +103,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       }
     }
 
-    console.log(router.pathname);
 
     if (state.apiKey && isHealthy && filteredSources.length === 0) {
       const protectedPages = [
@@ -211,7 +210,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   useEffect(() => {
     if (isHealthy && state.apiKey) {
-      console.log('fetching payment sources', state.network);
       fetchPaymentSources();
     }
   }, [isHealthy, state.apiKey, fetchPaymentSources, state.network]);
