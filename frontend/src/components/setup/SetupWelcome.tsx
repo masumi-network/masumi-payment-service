@@ -7,9 +7,7 @@ import { Footer } from '@/components/Footer';
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'react-toastify';
-import { Download, Copy, X, ArrowRight, ChevronDown } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { Download, Copy, ArrowRight } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -19,10 +17,9 @@ import {
 } from '@/components/ui/select';
 import router from 'next/router';
 import { Spinner } from '@/components/ui/spinner';
-import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postWallet, postPaymentSourceExtended } from '@/lib/api/generated';
-import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
@@ -39,7 +36,6 @@ function WelcomeScreen({
   networkType: string;
   ignoreSetup: () => void;
 }) {
-  const [showNetworkDropdown, setShowNetworkDropdown] = useState(false);
   const networkDisplay =
     networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
@@ -59,46 +55,22 @@ function WelcomeScreen({
       </p>
 
       <div className="flex items-center justify-center gap-4 mt-8">
-        {/* <Button
-          variant="secondary"
-          className="text-sm"
-          type="button"
-          onClick={ignoreSetup}
-        >
-          Skip for now
-        </Button> */}
         <div className="relative">
-          <Button
-            variant="secondary"
-            className="text-sm flex items-center gap-2"
-            onClick={() => setShowNetworkDropdown(!showNetworkDropdown)}
-          >
-            Network: <span className="font-bold">{networkDisplay}</span>
-            <ChevronDown className="h-4 w-4" />
-          </Button>
-          {showNetworkDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-md shadow-lg z-50">
-              {networkDisplay === 'Mainnet' ? (
-                <Link
-                  href="/setup?network=Preprod"
-                  replace
-                  className="block px-3 py-2 text-sm hover:bg-muted"
-                  onClick={() => setShowNetworkDropdown(false)}
-                >
-                  Preprod
-                </Link>
-              ) : (
-                <Link
-                  href="/setup?network=Mainnet"
-                  replace
-                  className="block px-3 py-2 text-sm hover:bg-muted"
-                  onClick={() => setShowNetworkDropdown(false)}
-                >
-                  Mainnet
-                </Link>
-              )}
-            </div>
-          )}
+          <div className="text-sm flex items-center gap-2">
+            <span>Network:</span>
+            <Select
+              defaultValue={networkDisplay}
+              onValueChange={(value) => router.replace(`/setup?network=${value}`)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="Preprod">Preprod</SelectItem>
+                <SelectItem value="Mainnet">Mainnet</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <Button className="text-sm" onClick={onStart}>
           Start setup <ArrowRight className="w-4 h-4" />
@@ -383,10 +355,8 @@ function SeedPhrasesScreen({
         </div>
 
         <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm">
-            <Link href={'/settings'} replace onClick={ignoreSetup}>
-              Skip for now
-            </Link>
+          <Button variant="secondary" className="text-sm" onClick={ignoreSetup}>
+            Cancel
           </Button>
           <Button
             className="text-sm"
@@ -444,7 +414,7 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: '',
+        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
       },
       feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
     },
@@ -478,10 +448,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -624,7 +594,7 @@ function PaymentSourceSetupScreen({
                 type="button"
                 onClick={ignoreSetup}
               >
-                Skip for now
+                Cancel
               </Button>
               <Button className="text-sm" disabled={isLoading} type="submit">
                 {isLoading ? 'Creating...' : 'Create Payment Source'}
@@ -637,7 +607,7 @@ function PaymentSourceSetupScreen({
   );
 }
 
-function AddAiAgentScreen({
+/*function AddAiAgentScreen({
   onNext,
   sellingWallet,
 }: {
@@ -775,11 +745,11 @@ function AddAiAgentScreen({
         </div>
 
         <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm">
-            <Link href={'/'} replace>
-              Skip for now
-            </Link>
-          </Button>
+
+          <Link href={'/'} replace>
+            Skip for now
+          </Link>
+
           <Button className="text-sm" onClick={onNext}>
             Add
           </Button>
@@ -788,7 +758,7 @@ function AddAiAgentScreen({
     </div>
   );
 }
-
+*/
 function SuccessScreen({
   onComplete,
   networkType,
@@ -865,11 +835,11 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       sellingWallet={wallets.selling}
       ignoreSetup={handleIgnoreSetup}
     />,
-    <AddAiAgentScreen
+    /*<AddAiAgentScreen
       key="ai"
       onNext={() => setCurrentStep(4)}
       sellingWallet={wallets.selling}
-    />,
+    />,*/
     <SuccessScreen
       key="success"
       onComplete={handleComplete}
