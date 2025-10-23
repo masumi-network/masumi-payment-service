@@ -102,6 +102,24 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.push(`/setup?network=${encodeURIComponent(state.network)}`);
       }
     }
+
+
+    if (state.apiKey && isHealthy && filteredSources.length === 0) {
+      const protectedPages = [
+        '/',
+        '/ai-agents',
+        '/wallets',
+        '/transactions',
+        '/api-keys',
+      ];
+      if (protectedPages.includes(router.pathname)) {
+        router.replace('/payment-sources');
+      }
+    } else if (state.apiKey && isHealthy && filteredSources.length > 0) {
+      if (router.pathname === '/setup') {
+        router.replace('/');
+      }
+    }
   }, [
     apiClient,
     dispatch,
@@ -202,21 +220,17 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     }
   }, [isHealthy, state.apiKey, fetchRpcApiKeys]);
 
-  // Redirect to payment sources if no payment sources exist and user is trying to access pages that require payment sources
+  // Watch for network changes in URL and update state
   useEffect(() => {
-    if (state.apiKey && isHealthy && state.paymentSources.length === 0) {
-      const protectedPages = [
-        '/',
-        '/ai-agents',
-        '/wallets',
-        '/transactions',
-        '/api-keys',
-      ];
-      if (protectedPages.includes(router.pathname)) {
-        router.replace('/payment-sources');
-      }
+    const networkParam = router.query.network as string;
+
+    if (networkParam && networkParam !== state.network) {
+      dispatch({
+        type: 'SET_NETWORK',
+        payload: networkParam as 'Mainnet' | 'Preprod',
+      });
     }
-  }, [state.apiKey, isHealthy, state.paymentSources, router.pathname]);
+  }, [router.query.network, state.network, dispatch]);
 
   if (isHealthy === null) {
     return (
