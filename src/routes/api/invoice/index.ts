@@ -738,28 +738,32 @@ export const postGenerateInvoiceEndpoint =
           );
         }
 
-        const items: InvoiceGroupItemInput[] = await Promise.all(
-          payment.RequestedFunds.map(async (fund) => {
-            const unit = fund.unit;
-            const factor = conversion.get(unit)!;
-            const quantity = 1;
-            const price =
-              (Number(fund.amount) * factor.factor) /
-              (1 + (input.vatRate ?? 0));
-            const conversionFactor = 1 / factor.factor;
-            const agentDisplayName = metadataToString(parsedMetadata.name);
-            const name = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
-            return {
-              name,
-              quantity,
-              price,
-              conversionFactor,
-              decimals: factor.decimals,
-              convertedUnit: unit,
-              conversionDate: dateOfConversionDate,
-            };
-          }),
-        );
+        const items: InvoiceGroupItemInput[] = [];
+        let paymentCount = 0;
+        for (const fund of payment.RequestedFunds) {
+          paymentCount++;
+          const unit = fund.unit;
+          const factor = conversion.get(unit)!;
+          const quantity = 1;
+          const price =
+            (Number(fund.amount) * factor.factor) / (1 + (input.vatRate ?? 0));
+          const conversionFactor = 1 / factor.factor;
+          const agentDisplayName = metadataToString(parsedMetadata.name);
+          const name = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
+          let newName = name;
+          if (paymentCount > 1) {
+            newName = `${newName} (${paymentCount}/${payment.RequestedFunds.length})`;
+          }
+          items.push({
+            name: newName,
+            quantity,
+            price,
+            conversionFactor,
+            decimals: factor.decimals,
+            convertedUnit: unit,
+            conversionDate: dateOfConversionDate,
+          });
+        }
         const createdInvoice = await prisma.$transaction(
           async (tx) => {
             const existingInvoice = await prisma.invoiceRevision.findFirst({
@@ -848,6 +852,7 @@ export const postGenerateInvoiceEndpoint =
               newInvoiceId,
               correctionData.correctionInvoice,
               usedCoingeckoForConversion,
+              { invoiceType: 'single' },
             );
 
             const vatRateDefault = input.vatRate ?? 0;

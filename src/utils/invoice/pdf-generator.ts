@@ -20,6 +20,7 @@ export async function generateInvoicePDF(
     correctionDescription: string;
   } | null,
   includeCoingeckoAttribution: boolean = false,
+  options?: { invoiceType?: 'monthly' | 'single' },
 ): Promise<{ pdfBase64: string }> {
   try {
     const invoiceHtml = generateInvoiceHTML(
@@ -30,12 +31,18 @@ export async function generateInvoicePDF(
       newInvoiceId,
       correctionInvoiceReference,
       includeCoingeckoAttribution,
+      options,
     );
 
     // Default PDF options - always A4 format
     const defaultOptions: html_to_pdf.Options = {
       format: 'A4',
-      margin: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+      margin: {
+        top: '0.25in',
+        right: '0.5in',
+        bottom: '0.25in',
+        left: '0.5in',
+      },
       printBackground: true,
     };
 
@@ -78,6 +85,7 @@ export async function generateInvoicePDFBase64(
     correctionDescription: string;
   } | null,
   includeCoingeckoAttribution: boolean = false,
+  options?: { invoiceType?: 'monthly' | 'single' },
 ): Promise<{ pdfBase64: string }> {
   const invoice = await generateInvoicePDF(
     invoiceGroups,
@@ -87,6 +95,7 @@ export async function generateInvoicePDFBase64(
     newInvoiceId,
     correctionInvoiceReference,
     includeCoingeckoAttribution,
+    options,
   );
   return {
     pdfBase64: invoice.pdfBase64,

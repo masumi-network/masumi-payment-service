@@ -117,6 +117,14 @@ import {
   postSignatureSchemaInput,
   postSignatureSchemaOutput,
 } from '@/routes/api/invoice/signature';
+import {
+  postGenerateMonthlyInvoiceSchemaInput,
+  postGenerateMonthlyInvoiceSchemaOutput,
+} from '@/routes/api/invoice/monthly';
+import {
+  postMonthlySignatureSchemaInput,
+  postMonthlySignatureSchemaOutput,
+} from '@/routes/api/invoice/signature/monthly';
 
 extendZodWithOpenApi(z);
 
@@ -1747,6 +1755,160 @@ export function generateOpenAPI() {
                     walletAddress: 'addr1...',
                     signatureData:
                       '{"action":"retrieve_invoice","validUntil":1736352000000,"hash":"..."}',
+                  },
+                },
+              }),
+          },
+        },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/invoice/signature/monthly',
+    description:
+      'Provides a signed message from the smart contract wallet to authorize monthly invoice retrieval for a buyer wallet. (+PAY access required)',
+    summary:
+      'Get a signed message to request a monthly invoice. (+PAY access required)',
+    tags: ['invoice'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postMonthlySignatureSchemaInput.openapi({
+              example: {
+                action: 'retrieve_monthly_invoices',
+                buyerWalletVkey: 'buyer_wallet_vkey',
+                month: '2025-09',
+                buyer: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Buyer Str.',
+                  streetNumber: '2',
+                  email: 'buyer@example.com',
+                  phone: '+49 30 987654',
+                  name: 'Bob',
+                  companyName: null,
+                  vatNumber: null,
+                },
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Monthly signature generated',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postMonthlySignatureSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    signature: 'ed25519_signature',
+                    key: 'ed25519_key',
+                    walletAddress: 'addr1...',
+                    signatureData:
+                      '{"action":"retrieve_monthly_invoices","validUntil":1736352000000,"hash":"..."}',
+                  },
+                },
+              }),
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/invoice/monthly',
+    description:
+      'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)',
+    summary:
+      'Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)',
+    tags: ['invoice'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postGenerateMonthlyInvoiceSchemaInput.openapi({
+              example: {
+                signature: 'ed25519_signature',
+                key: 'ed25519_key',
+                walletAddress:
+                  'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
+                validUntil: 1736352000000,
+                action: 'retrieve_monthly_invoices',
+                buyerWalletVkey: 'buyer_wallet_vkey',
+                month: '2025-09',
+                invoiceCurrency: 'usd',
+                currencyConversion: {
+                  '': 0.45,
+                  policyIdAssetHex: 1.23,
+                },
+                invoice: {
+                  itemNamePrefix: 'Agent: ',
+                  title: 'Monthly Invoice',
+                  language: 'en-us',
+                  localizationFormat: 'en-us',
+                },
+                vatRate: 0.19,
+                seller: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Example Str.',
+                  streetNumber: '1',
+                  email: 'seller@example.com',
+                  phone: '+49 30 123456',
+                  name: 'Alice',
+                  companyName: 'Alice GmbH',
+                  vatNumber: 'DE123456789',
+                },
+                buyer: {
+                  country: 'DE',
+                  city: 'Berlin',
+                  zipCode: '10115',
+                  street: 'Buyer Str.',
+                  streetNumber: '2',
+                  email: 'buyer@example.com',
+                  phone: '+49 30 987654',
+                  name: 'Bob',
+                  companyName: null,
+                  vatNumber: null,
+                },
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Monthly invoice generated',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postGenerateMonthlyInvoiceSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    invoice: 'BASE64_PDF_STRING',
                   },
                 },
               }),

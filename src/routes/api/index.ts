@@ -38,7 +38,9 @@ import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-ident
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
 import { postSignatureEndpoint } from './invoice/signature';
+import { postMonthlySignatureEndpoint } from './invoice/signature/monthly';
 import { postGenerateInvoiceEndpoint } from './invoice';
+import { postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
 
 export const apiRouter: Routing = {
   v1: {
@@ -120,6 +122,13 @@ export const apiRouter: Routing = {
     }).nest({
       signature: new DependsOnMethod({
         post: postSignatureEndpoint,
+      }).nest({
+        monthly: new DependsOnMethod({
+          post: postMonthlySignatureEndpoint,
+        }),
+      }),
+      monthly: new DependsOnMethod({
+        post: postGenerateMonthlyInvoiceEndpoint,
       }),
     }),
   },

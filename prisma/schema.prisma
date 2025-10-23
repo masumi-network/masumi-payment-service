@@ -431,11 +431,17 @@ enum PurchasingAction {
   WithdrawRefundInitiated
 }
 
+enum InvoiceType {
+  Monthly
+  OneTime
+}
+
 model InvoiceBase {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  invoiceType      InvoiceType
   InvoiceRevisions InvoiceRevision[]
   invoiceId        String            @unique
 }
