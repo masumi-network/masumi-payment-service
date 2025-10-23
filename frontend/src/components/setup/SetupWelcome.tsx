@@ -60,7 +60,9 @@ function WelcomeScreen({
             <span>Network:</span>
             <Select
               defaultValue={networkDisplay}
-              onValueChange={(value) => router.replace(`/setup?network=${value}`)}
+              onValueChange={(value) =>
+                router.replace(`/setup?network=${value}`)
+              }
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -448,10 +450,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
