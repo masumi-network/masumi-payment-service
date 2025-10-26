@@ -623,10 +623,7 @@ export async function updateInitialPurchaseTransaction(
         );
         return;
       }
-      if (
-        decodedNewContract.state == SmartContractState.RefundRequested ||
-        decodedNewContract.state == SmartContractState.Disputed
-      ) {
+      if (decodedNewContract.state != SmartContractState.FundsLocked) {
         logger.warn(
           'Refund was requested. This likely is a spoofing attempt.',
           {
@@ -902,10 +899,7 @@ export async function updateInitialPaymentTransaction(
         newState = OnChainState.FundsOrDatumInvalid;
         errorNote.push(errorMessage);
       }
-      if (
-        decodedNewContract.state == SmartContractState.RefundRequested ||
-        decodedNewContract.state == SmartContractState.Disputed
-      ) {
+      if (decodedNewContract.state != SmartContractState.FundsLocked) {
         const errorMessage =
           'Refund was requested. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
