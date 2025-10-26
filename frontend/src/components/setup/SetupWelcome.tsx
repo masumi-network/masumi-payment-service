@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
-import { Download, Copy, ArrowRight, X, Trash2 } from 'lucide-react';
+import { Download, Copy, ArrowRight, Trash2 } from 'lucide-react';
 import {
   Select,
   SelectContent,
