@@ -7,7 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { formatDistanceToNow } from 'date-fns';
-import Link from 'next/link';
+import { useRouter } from 'next/router';
 
 interface NotificationsDialogProps {
   open: boolean;
@@ -20,10 +20,12 @@ export function NotificationsDialog({
 }: NotificationsDialogProps) {
   const { transactions, newTransactionsCount, markAllAsRead } =
     useTransactions();
+  const router = useRouter();
 
   const handleViewTransactions = () => {
-    onClose();
     markAllAsRead();
+    onClose();
+    router.push('/transactions');
   };
 
   const newTransactions = transactions
@@ -71,10 +73,8 @@ export function NotificationsDialog({
               ))}
             </div>
             <div className="flex justify-center">
-              <Button variant="ghost" asChild>
-                <Link href="/transactions" onClick={handleViewTransactions}>
-                  View all transactions
-                </Link>
+              <Button variant="ghost" onClick={handleViewTransactions}>
+                View all transactions
               </Button>
             </div>
           </div>
