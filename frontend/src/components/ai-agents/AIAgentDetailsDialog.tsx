@@ -260,16 +260,26 @@ export function AIAgentDetailsDialog({
                                   ? 'ADA'
                                   : price.unit ===
                                       getUsdmConfig(state.network).fullAssetId
-                                    ? 'USDM'
+                                    ? state.network === 'Mainnet'
+                                      ? 'USDM'
+                                      : 'tUSDM'
                                     : price.unit === TESTUSDM_CONFIG.unit
                                       ? 'tUSDM'
                                       : price.unit}
                                 )
                               </span>
-                              <span className="font-medium">
+                              <span
+                                className="font-medium"
+                                onClick={() => {
+                                  console.log(price.unit);
+                                  console.log(
+                                    getUsdmConfig(state.network).fullAssetId,
+                                  );
+                                }}
+                              >
                                 {price.unit === 'lovelace' || !price.unit
                                   ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? (state.network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                               </span>
                             </div>
                           ),

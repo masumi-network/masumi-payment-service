@@ -43,15 +43,18 @@ interface SellingWallet {
   note: string | null;
 }
 
-const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM'], {
-    required_error: 'Token is required',
-  }),
-  amount: z.string().refine((val) => {
-    if (val === '0' || val === '0.0' || val === '0.00') return true;
-    return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-  }, 'Amount must be a valid number >= 0'),
-});
+const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
+  const usdmUnit = network === 'Mainnet' ? 'USDM' : 'tUSDM';
+  return z.object({
+    unit: z.enum(['lovelace', usdmUnit], {
+      required_error: 'Token is required',
+    }),
+    amount: z.string().refine((val) => {
+      if (val === '0' || val === '0.0' || val === '0.00') return true;
+      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+    }, 'Amount must be a valid number >= 0'),
+  });
+};
 
 const exampleOutputSchema = z.object({
   name: z
@@ -65,80 +68,86 @@ const exampleOutputSchema = z.object({
     .min(1, 'MIME type is required'),
 });
 
-const agentSchema = z.object({
-  apiUrl: z
-    .string()
-    .url('API URL must be a valid URL')
-    .min(1, 'API URL is required')
-    .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-      message: 'API URL must start with http:// or https://',
-    }),
-  name: z.string().min(1, 'Name is required'),
-  description: z
-    .string()
-    .min(1, 'Description is required')
-    .max(250, 'Description must be less than 250 characters'),
-  selectedWallet: z.string().min(1, 'Wallet is required'),
-  prices: z.array(priceSchema).min(1, 'At least one price is required'),
-  tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-  isFree: z.boolean().optional(),
-  // Additional Fields
-  authorName: z
-    .string()
-    .max(250, 'Author name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  authorEmail: z
-    .string()
-    .email('Author email must be a valid email')
-    .max(250, 'Author email must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  organization: z
-    .string()
-    .max(250, 'Organization must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  contactOther: z
-    .string()
-    .max(250, 'Contact other must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
+  const priceSchema = createPriceSchema(network);
+  return z.object({
+    apiUrl: z
+      .string()
+      .url('API URL must be a valid URL')
+      .min(1, 'API URL is required')
+      .refine(
+        (val) => val.startsWith('http://') || val.startsWith('https://'),
+        {
+          message: 'API URL must start with http:// or https://',
+        },
+      ),
+    name: z.string().min(1, 'Name is required'),
+    description: z
+      .string()
+      .min(1, 'Description is required')
+      .max(250, 'Description must be less than 250 characters'),
+    selectedWallet: z.string().min(1, 'Wallet is required'),
+    prices: z.array(priceSchema).min(1, 'At least one price is required'),
+    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+    isFree: z.boolean().optional(),
+    // Additional Fields
+    authorName: z
+      .string()
+      .max(250, 'Author name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    authorEmail: z
+      .string()
+      .email('Author email must be a valid email')
+      .max(250, 'Author email must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    organization: z
+      .string()
+      .max(250, 'Organization must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    contactOther: z
+      .string()
+      .max(250, 'Contact other must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  termsOfUseUrl: z
-    .string()
-    .url('Terms of use URL must be a valid URL')
-    .max(250, 'Terms of use URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  privacyPolicyUrl: z
-    .string()
-    .url('Privacy policy URL must be a valid URL')
-    .max(250, 'Privacy policy URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  otherUrl: z
-    .string()
-    .url('Other URL must be a valid URL')
-    .max(250, 'Other URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    termsOfUseUrl: z
+      .string()
+      .url('Terms of use URL must be a valid URL')
+      .max(250, 'Terms of use URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    privacyPolicyUrl: z
+      .string()
+      .url('Privacy policy URL must be a valid URL')
+      .max(250, 'Privacy policy URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    otherUrl: z
+      .string()
+      .url('Other URL must be a valid URL')
+      .max(250, 'Other URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  capabilityName: z
-    .string()
-    .max(250, 'Capability name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  capabilityVersion: z
-    .string()
-    .max(250, 'Capability version must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    capabilityName: z
+      .string()
+      .max(250, 'Capability name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    capabilityVersion: z
+      .string()
+      .max(250, 'Capability version must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  exampleOutputs: z.array(exampleOutputSchema).optional(),
-});
+    exampleOutputs: z.array(exampleOutputSchema).optional(),
+  });
+};
 
-type AgentFormValues = z.infer<typeof agentSchema>;
+type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
 export function RegisterAIAgentDialog({
   open,
@@ -158,7 +167,7 @@ export function RegisterAIAgentDialog({
     formState: { errors },
     watch,
   } = useForm<AgentFormValues>({
-    resolver: zodResolver(agentSchema),
+    resolver: zodResolver(createAgentSchema(state.network)),
     defaultValues: {
       apiUrl: '',
       name: '',
@@ -299,7 +308,7 @@ export function RegisterAIAgentDialog({
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => {
                   const unit =
-                    price.unit === 'USDM'
+                    price.unit === 'USDM' || price.unit === 'tUSDM'
                       ? getUsdmConfig(state.network).fullAssetId
                       : price.unit;
                   return {
@@ -508,7 +517,13 @@ export function RegisterAIAgentDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="lovelace">ADA</SelectItem>
-                          <SelectItem value="USDM">USDM</SelectItem>
+                          <SelectItem
+                            value={
+                              state.network === 'Mainnet' ? 'USDM' : 'tUSDM'
+                            }
+                          >
+                            {state.network === 'Mainnet' ? 'USDM' : 'tUSDM'}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     )}
