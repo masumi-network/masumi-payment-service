@@ -20,15 +20,21 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource } from '@/lib/api/generated';
+import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, handleApiCall } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -147,6 +153,8 @@ export function RegisterAIAgentDialog({
 }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
+  const [buyingWalletBalance, setBuyingWalletBalance] = useState<number>(0);
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
   const { apiClient, state } = useAppContext();
 
   const {
@@ -204,6 +212,7 @@ export function RegisterAIAgentDialog({
   useEffect(() => {
     if (open) {
       fetchSellingWallets();
+      fetchBuyingWalletBalance();
       reset();
     }
   }, [open, reset]);
@@ -231,6 +240,68 @@ export function RegisterAIAgentDialog({
     } catch (error) {
       console.error('Error fetching selling wallets:', error);
       toast.error('Failed to load selling wallets');
+    }
+  };
+
+  const fetchBuyingWalletBalance = async () => {
+    setIsCheckingBalance(true);
+    try {
+      const response = await getPaymentSource({
+        client: apiClient,
+      });
+
+      if (response.data?.data?.PaymentSources) {
+        const paymentSources = response.data.data.PaymentSources.filter(
+          (s) => s.network == state.network,
+        );
+
+        if (paymentSources.length > 0) {
+          // Get the first payment source's purchasing wallet (buying wallet)
+          const purchasingWallets = paymentSources[0].PurchasingWallets;
+          if (purchasingWallets && purchasingWallets.length > 0) {
+            const buyingWallet = purchasingWallets[0];
+            const utxoResponse = await handleApiCall(
+              () =>
+                getUtxos({
+                  client: apiClient,
+                  query: {
+                    address: buyingWallet.walletAddress,
+                    network: state.network,
+                  },
+                }),
+              {
+                onError: (error: any) => {
+                  console.error('Error fetching buying wallet balance:', error);
+                },
+                errorMessage: 'Failed to fetch buying wallet balance',
+              },
+            );
+
+            if (utxoResponse?.data?.data?.Utxos) {
+              let adaBalance = 0;
+              utxoResponse.data.data.Utxos.forEach((utxo: any) => {
+                utxo.Amounts.forEach((amount: any) => {
+                  if (amount.unit === 'lovelace' || amount.unit === '') {
+                    adaBalance += amount.quantity || 0;
+                  }
+                });
+              });
+              setBuyingWalletBalance(adaBalance);
+            } else {
+              setBuyingWalletBalance(0);
+            }
+          } else {
+            setBuyingWalletBalance(0);
+          }
+        } else {
+          setBuyingWalletBalance(0);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching buying wallet balance:', error);
+      setBuyingWalletBalance(0);
+    } finally {
+      setIsCheckingBalance(false);
     }
   };
 
@@ -781,9 +852,33 @@ export function RegisterAIAgentDialog({
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Registering...' : 'Register'}
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-block">
+                    <Button
+                      type="submit"
+                      disabled={
+                        isLoading ||
+                        buyingWalletBalance === 0 ||
+                        isCheckingBalance
+                      }
+                    >
+                      {isLoading ? 'Registering...' : 'Register'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {buyingWalletBalance === 0
+                      ? 'Cannot register agent: No funds in buying wallet'
+                      : isLoading
+                        ? 'Registering agent...'
+                        : 'Register AI agent'}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </form>
       </DialogContent>
