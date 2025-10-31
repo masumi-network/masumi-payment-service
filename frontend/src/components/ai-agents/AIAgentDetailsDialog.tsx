@@ -75,7 +75,6 @@ export function AIAgentDetailsDialog({
   const { apiClient, state } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -147,10 +146,7 @@ export function AIAgentDetailsDialog({
 
   return (
     <>
-      <Dialog
-        open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen}
-        onOpenChange={onClose}
-      >
+      <Dialog open={!!agent && !isDeleteDialogOpen} onOpenChange={onClose}>
         <DialogContent className="max-w-[700px] px-0">
           {agent && (
             <>
@@ -507,13 +503,6 @@ export function AIAgentDetailsDialog({
               </div>
               <div className="pt-4 border-t flex justify-end gap-2 bg-background absolute bottom-0 left-0 w-full p-4 z-10">
                 <Button
-                  onClick={() => setIsPurchaseDialogOpen(true)}
-                  disabled
-                  className="font-semibold"
-                >
-                  Trigger Purchase
-                </Button>
-                <Button
                   variant="destructive"
                   onClick={() => setIsDeleteDialogOpen(true)}
                 >
@@ -539,17 +528,6 @@ export function AIAgentDetailsDialog({
         }
         onConfirm={handleDelete}
         isLoading={isDeleting}
-      />
-      <ConfirmDialog
-        open={isPurchaseDialogOpen}
-        onClose={() => setIsPurchaseDialogOpen(false)}
-        title="Trigger Purchase"
-        description={`Are you sure you want to trigger a purchase for "${agent?.name}"?`}
-        onConfirm={async () => {
-          toast.info('Purchase functionality is not yet implemented.');
-          setIsPurchaseDialogOpen(false);
-        }}
-        isLoading={false}
       />
     </>
   );
