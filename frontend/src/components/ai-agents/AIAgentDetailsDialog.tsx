@@ -156,10 +156,10 @@ export function AIAgentDetailsDialog({
 
               <div className="space-y-6 py-4 px-6 max-h-[600px] overflow-y-auto pb-20">
                 {/* Status and Description */}
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between w-full gap-4">
+                  <div className="w-full truncate">
                     <h3 className="font-medium mb-2">Description</h3>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground truncate">
                       {agent.description || 'No description provided'}
                     </p>
                   </div>
@@ -168,6 +168,7 @@ export function AIAgentDetailsDialog({
                     className={cn(
                       agent.state === 'RegistrationConfirmed' &&
                         'bg-green-50 text-green-700 hover:bg-green-50/80',
+                      'w-fit',
                     )}
                   >
                     {parseAgentStatus(agent.state)}
