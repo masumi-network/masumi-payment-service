@@ -47,7 +47,8 @@ export function ConfirmDialog({
   useEffect(() => {
     if (requireConfirmation) {
       setIsConfirmationValid(
-        confirmationInput.trim().toUpperCase() === confirmationText.toUpperCase(),
+        confirmationInput.trim().toUpperCase() ===
+          confirmationText.toUpperCase(),
       );
     } else {
       setIsConfirmationValid(true);
@@ -112,7 +113,9 @@ export function ConfirmDialog({
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
+            disabled={
+              isLoading || (requireConfirmation && !isConfirmationValid)
+            }
           >
             {isLoading ? <Spinner size={16} /> : 'Confirm'}
           </Button>
