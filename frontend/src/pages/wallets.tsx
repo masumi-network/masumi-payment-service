@@ -21,7 +21,6 @@ import {
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
@@ -61,7 +60,6 @@ interface WalletWithBalance extends BaseWalletWithBalance {
 export default function WalletsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
   const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>(
     [],
@@ -304,27 +302,6 @@ export default function WalletsPage() {
     fetchWallets();
   }, [fetchWallets, state.network, selectedPaymentSourceId]);
 
-  const handleSelectWallet = (id: string) => {
-    setSelectedWallets((prev) =>
-      prev.includes(id)
-        ? prev.filter((walletId) => walletId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (filteredWallets.length === 0) {
-      setSelectedWallets([]);
-      return;
-    }
-
-    if (selectedWallets.length === filteredWallets.length) {
-      setSelectedWallets([]);
-    } else {
-      setSelectedWallets(filteredWallets.map((wallet) => wallet.id));
-    }
-  };
-
   const refreshWalletBalance = async (
     wallet: WalletWithBalance,
     isCollection: boolean = false,
@@ -463,15 +440,6 @@ export default function WalletsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b">
-                <th className="w-12 p-4">
-                  <Checkbox
-                    checked={
-                      filteredWallets.length > 0 &&
-                      selectedWallets.length === filteredWallets.length
-                    }
-                    onCheckedChange={handleSelectAll}
-                  />
-                </th>
                 <th className="p-4 text-left text-sm font-medium">Type</th>
                 <th className="p-4 text-left text-sm font-medium">Note</th>
                 <th className="p-4 text-left text-sm font-medium">Address</th>
@@ -490,13 +458,13 @@ export default function WalletsPage() {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={7}>
                     <Spinner size={20} addContainer />
                   </td>
                 </tr>
               ) : filteredWallets.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8">
+                  <td colSpan={7} className="text-center py-8">
                     No wallets found
                   </td>
                 </tr>
@@ -508,12 +476,6 @@ export default function WalletsPage() {
                       className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
                       onClick={() => handleWalletClick(wallet)}
                     >
-                      <td className="p-4">
-                        <Checkbox
-                          checked={selectedWallets.includes(wallet.id)}
-                          onCheckedChange={() => handleSelectWallet(wallet.id)}
-                        />
-                      </td>
                       <td className="p-4">
                         <span
                           className={cn(

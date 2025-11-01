@@ -8,7 +8,6 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -62,7 +61,6 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 export default function AIAgentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -232,27 +230,6 @@ export default function AIAgentsPage() {
   useEffect(() => {
     filterAgents();
   }, [filterAgents, searchQuery, activeTab]);
-
-  const handleSelectAgent = (id: string) => {
-    setSelectedAgents((prev) =>
-      prev.includes(id)
-        ? prev.filter((agentId) => agentId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (allAgents.length === 0) {
-      setSelectedAgents([]);
-      return;
-    }
-
-    if (selectedAgents.length === allAgents.length) {
-      setSelectedAgents([]);
-    } else {
-      setSelectedAgents(allAgents.map((agent) => agent.id));
-    }
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -470,15 +447,6 @@ export default function AIAgentsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        allAgents.length > 0 &&
-                        selectedAgents.length === allAgents.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
                   <th className="p-4 text-left text-sm font-medium">Name</th>
                   <th className="p-4 text-left text-sm font-medium">Added</th>
                   <th className="p-4 text-left text-sm font-medium">
@@ -496,13 +464,13 @@ export default function AIAgentsPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={7}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredAgents.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       {searchQuery
                         ? 'No AI agents found matching your search'
                         : 'No AI agents found'}
@@ -521,12 +489,6 @@ export default function AIAgentsPage() {
                       }}
                       onClick={() => handleAgentClick(agent)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedAgents.includes(agent.id)}
-                          onCheckedChange={() => handleSelectAgent(agent.id)}
-                        />
-                      </td>
                       <td className="p-4 max-w-[200px] truncate">
                         <div className="text-sm font-medium">{agent.name}</div>
                         <div className="text-xs text-muted-foreground truncate">

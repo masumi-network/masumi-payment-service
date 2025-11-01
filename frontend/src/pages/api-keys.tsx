@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -34,7 +33,6 @@ type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
 
 export default function ApiKeys() {
   const { apiClient, state } = useAppContext();
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [allApiKeys, setAllApiKeys] = useState<ApiKey[]>([]);
   const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -214,20 +212,6 @@ export default function ApiKeys() {
     }
   };
 
-  const handleSelectKey = (token: string) => {
-    setSelectedKeys((prev) =>
-      prev.includes(token) ? prev.filter((k) => k !== token) : [...prev, token],
-    );
-  };
-
-  const handleSelectAll = () => {
-    setSelectedKeys(
-      selectedKeys.length === allApiKeys.length
-        ? []
-        : allApiKeys.map((key) => key.token),
-    );
-  };
-
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
 
@@ -319,15 +303,6 @@ export default function ApiKeys() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        allApiKeys.length > 0 &&
-                        selectedKeys.length === allApiKeys.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
                   <th className="p-4 text-left text-sm font-medium">
@@ -346,13 +321,13 @@ export default function ApiKeys() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={7}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       {searchQuery
                         ? 'No API keys found matching your search'
                         : 'No API keys found'}
@@ -361,12 +336,6 @@ export default function ApiKeys() {
                 ) : (
                   filteredApiKeys.map((key, index) => (
                     <tr key={index} className="border-b" onClick={() => {}}>
-                      <td className="p-4">
-                        <Checkbox
-                          checked={selectedKeys.includes(key.token)}
-                          onCheckedChange={() => handleSelectKey(key.token)}
-                        />
-                      </td>
                       <td className="p-4">
                         <div className="text-sm">{key.id}</div>
                       </td>

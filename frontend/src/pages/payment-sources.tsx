@@ -18,7 +18,6 @@ import {
   GetPaymentSourceResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
@@ -143,7 +142,6 @@ type PaymentSource =
 export default function PaymentSourcesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSource | null>(
@@ -247,22 +245,6 @@ export default function PaymentSourcesPage() {
     filterPaymentSources();
   }, [filterPaymentSources, searchQuery]);
 
-  const handleSelectSource = (id: string) => {
-    setSelectedSources((prev) =>
-      prev.includes(id)
-        ? prev.filter((sourceId) => sourceId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    setSelectedSources(
-      selectedSources.length === paymentSources.length
-        ? []
-        : paymentSources.map((source) => source.id),
-    );
-  };
-
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
@@ -360,15 +342,6 @@ export default function PaymentSourcesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        paymentSources.length > 0 &&
-                        selectedSources.length === paymentSources.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
                   <th className="p-4 text-left text-sm font-medium truncate">
                     Contract address
                   </th>
@@ -407,13 +380,13 @@ export default function PaymentSourcesPage() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={7}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       No payment sources found
                     </td>
                   </tr>
@@ -424,12 +397,6 @@ export default function PaymentSourcesPage() {
                       className="border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedSources.includes(source.id)}
-                          onCheckedChange={() => handleSelectSource(source.id)}
-                        />
-                      </td>
                       <td className="p-4">
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           {shortenAddress(source.smartContractAddress)}{' '}
