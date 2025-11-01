@@ -70,9 +70,6 @@ export default function WalletsPage() {
   const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(
     new Set(),
   );
-  const [copiedAddresses, setCopiedAddresses] = useState<Set<string>>(
-    new Set(),
-  );
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
   const { rate, isLoading: isLoadingRate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
@@ -371,34 +368,8 @@ export default function WalletsPage() {
     }
   };
 
-  const formatUsdValue = (adaAmount: string) => {
-    if (!rate || !adaAmount) return '—';
-    const ada = parseInt(adaAmount) / 1000000;
-    return `≈ $${(ada * rate).toFixed(2)}`;
-  };
-
-  const hasSellingWallets = !isLoading
-    ? allWallets.some((wallet) => wallet.type === 'Selling')
-    : true;
-
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedAddresses((prev) => {
-      const newSet = new Set(prev);
-      newSet.add(`${id}-${text}`);
-      return newSet;
-    });
-    setTimeout(() => {
-      setCopiedAddresses((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(`${id}-${text}`);
-        return newSet;
-      });
-    }, 2000);
   };
 
   return (
