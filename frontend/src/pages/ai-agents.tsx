@@ -15,7 +15,6 @@ import {
   getRegistry,
   deleteRegistry,
   GetRegistryResponses,
-  getUtxos,
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
