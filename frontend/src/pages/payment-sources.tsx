@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
@@ -141,6 +142,7 @@ type PaymentSource =
   };
 
 export default function PaymentSourcesPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
@@ -246,6 +248,15 @@ export default function PaymentSourcesPage() {
   useEffect(() => {
     filterPaymentSources();
   }, [filterPaymentSources, searchQuery]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_payment_source') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/payment-sources', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleSelectSource = (id: string) => {
     setSelectedSources((prev) =>
