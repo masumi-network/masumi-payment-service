@@ -31,7 +31,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -157,6 +157,19 @@ export function AddWalletDialog({
 
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
+
+    // Validate collection address if provided
+    if (data.collectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        data.collectionAddress.trim(),
+        state.network,
+      );
+
+      if (!validation.isValid) {
+        setError(validation.error || 'Invalid collection address');
+        return;
+      }
+    }
 
     if (!paymentSourceId) {
       setError('No payment source available');

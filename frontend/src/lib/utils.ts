@@ -131,3 +131,102 @@ export function formatCount(count: number, maxValue: number = 999): string {
 
   return count.toString();
 }
+
+/**
+ * Validates a Cardano wallet address based on network type
+ *
+ * @param address - The wallet address to validate
+ * @param network - The network type ('Mainnet' or 'Preprod')
+ * @returns An object with `isValid` boolean and optional `error` message
+ *
+ * Mainnet addresses:
+ * - Start with 'addr1' (Shelley era)
+ * - Typically 57-100+ characters in length
+ *
+ * Preprod/Testnet addresses:
+ * - Start with 'addr_test' (Shelley era)
+ * - Typically 64-100+ characters in length
+ */
+export function validateCardanoAddress(
+  address: string,
+  network: 'Mainnet' | 'Preprod',
+): { isValid: boolean; error?: string } {
+  if (!address || typeof address !== 'string') {
+    return {
+      isValid: false,
+      error: 'Address is required and must be a string',
+    };
+  }
+
+  const trimmedAddress = address.trim();
+
+  if (trimmedAddress.length === 0) {
+    return {
+      isValid: false,
+      error: 'Address cannot be empty',
+    };
+  }
+
+  // Network-specific validation
+  if (network === 'Mainnet') {
+    // Mainnet addresses should start with 'addr1'
+    if (!trimmedAddress.startsWith('addr1')) {
+      return {
+        isValid: false,
+        error: 'Mainnet addresses must start with "addr1"',
+      };
+    }
+
+    // Mainnet Shelley addresses are typically 57+ characters
+    // Minimum length check to catch obviously invalid addresses
+    if (trimmedAddress.length < 57) {
+      return {
+        isValid: false,
+        error: 'Mainnet address appears to be too short',
+      };
+    }
+  } else if (network === 'Preprod') {
+    // Preprod/Testnet addresses should start with 'addr_test'
+    if (!trimmedAddress.startsWith('addr_test')) {
+      return {
+        isValid: false,
+        error: 'Preprod addresses must start with "addr_test"',
+      };
+    }
+
+    // Preprod Shelley addresses are typically 64+ characters
+    // Minimum length check to catch obviously invalid addresses
+    if (trimmedAddress.length < 64) {
+      return {
+        isValid: false,
+        error: 'Preprod address appears to be too short',
+      };
+    }
+  } else {
+    return {
+      isValid: false,
+      error: `Unsupported network: ${network}. Supported networks are 'Mainnet' and 'Preprod'`,
+    };
+  }
+
+  // Basic base58 character check (Cardano addresses use base58 encoding)
+  // Base58 characters: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]+$/;
+  if (!base58Regex.test(trimmedAddress)) {
+    return {
+      isValid: false,
+      error:
+        'Address contains invalid characters. Cardano addresses use base58 encoding.',
+    };
+  }
+
+  // Maximum reasonable length check (prevent extremely long strings)
+  if (trimmedAddress.length > 150) {
+    return {
+      isValid: false,
+      error: 'Address appears to be too long',
+    };
+  }
+
+  return { isValid: true };
+}
