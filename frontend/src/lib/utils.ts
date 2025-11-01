@@ -189,7 +189,7 @@ export function validateCardanoAddress(
   if (!normalizedAddress.startsWith(expectedPrefix)) {
     return {
       isValid: false,
-      error: `${network} addresses must start with "${expectedPrefix}"`,
+      error: `${network} address must start with "${expectedPrefix}"`,
     };
   }
 
