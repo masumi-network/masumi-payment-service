@@ -46,10 +46,7 @@ export function ConfirmDialog({
   // Validate confirmation input
   useEffect(() => {
     if (requireConfirmation) {
-      setIsConfirmationValid(
-        confirmationInput.trim().toUpperCase() ===
-          confirmationText.toUpperCase(),
-      );
+      setIsConfirmationValid(confirmationInput.trim() === confirmationText);
     } else {
       setIsConfirmationValid(true);
     }
@@ -83,11 +80,6 @@ export function ConfirmDialog({
                 value={confirmationInput}
                 onChange={(e) => setConfirmationInput(e.target.value)}
                 placeholder={confirmationText}
-                className={
-                  isConfirmationValid && confirmationInput.trim()
-                    ? 'border-green-500'
-                    : ''
-                }
                 disabled={isLoading}
               />
               {confirmationInput.trim() && !isConfirmationValid && (
