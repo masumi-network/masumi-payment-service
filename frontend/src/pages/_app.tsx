@@ -46,6 +46,24 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   // Add dynamic favicon functionality
   useDynamicFavicon();
 
+  // Register service worker for push notifications
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      state.apiKey
+    ) {
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .then((registration) => {
+          console.log('Service Worker registered:', registration);
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    }
+  }, [state.apiKey]);
+
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 1024);
@@ -102,7 +120,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.push(`/setup?network=${encodeURIComponent(state.network)}`);
       }
     }
-
 
     if (state.apiKey && isHealthy && filteredSources.length === 0) {
       const protectedPages = [

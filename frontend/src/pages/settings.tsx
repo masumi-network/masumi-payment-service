@@ -3,18 +3,52 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useTheme } from '@/lib/contexts/ThemeContext';
-import { LuEye, LuEyeOff, LuSun, LuMoon, LuMonitor } from 'react-icons/lu';
+import {
+  LuEye,
+  LuEyeOff,
+  LuSun,
+  LuMoon,
+  LuMonitor,
+  LuBell,
+  LuBellOff,
+} from 'react-icons/lu';
 import { cn } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
 import { CopyButton } from '@/components/ui/copy-button';
+import { usePushNotifications } from '@/lib/hooks/usePushNotifications';
+import { Spinner } from '@/components/ui/spinner';
 
 export default function Settings() {
   const { state, signOut } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
+  const {
+    isSupported,
+    permission,
+    subscription,
+    isSubscribing,
+    subscribe,
+    unsubscribe,
+  } = usePushNotifications();
 
   const adminApiKey = state.apiKey || '';
+
+  const handleSubscribe = async () => {
+    const subscriptionData = await subscribe();
+    if (subscriptionData) {
+      // TODO: Send subscriptionData to backend to store
+      console.log('Subscription data:', subscriptionData);
+    }
+  };
+
+  const handleUnsubscribe = async () => {
+    const success = await unsubscribe();
+    if (success) {
+      // TODO: Notify backend to remove subscription
+      console.log('Unsubscribed successfully');
+    }
+  };
 
   return (
     <MainLayout>
@@ -119,6 +153,64 @@ export default function Settings() {
               </div>
             </div>
           </div>
+
+          {/* Push Notifications */}
+          {isSupported && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-sm font-medium">Push Notifications</h2>
+                <p className="text-sm text-muted-foreground">
+                  Receive browser notifications for important updates
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {subscription ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <LuBell className="h-4 w-4 text-green-500" />
+                      <span>Notifications enabled</span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleUnsubscribe}
+                      disabled={isSubscribing}
+                    >
+                      {isSubscribing ? (
+                        <Spinner size={16} />
+                      ) : (
+                        <>
+                          <LuBellOff className="h-4 w-4 mr-2" />
+                          Disable
+                        </>
+                      )}
+                    </Button>
+                  </>
+                ) : permission === 'denied' ? (
+                  <div className="text-sm text-destructive">
+                    Notifications are blocked. Please enable them in your
+                    browser settings.
+                  </div>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSubscribe}
+                    disabled={isSubscribing}
+                  >
+                    {isSubscribing ? (
+                      <Spinner size={16} />
+                    ) : (
+                      <>
+                        <LuBell className="h-4 w-4 mr-2" />
+                        Enable Notifications
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Sign Out */}
           <div className="pt-4 border-t w-full">
