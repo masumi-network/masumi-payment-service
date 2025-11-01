@@ -141,11 +141,11 @@ export function formatCount(count: number, maxValue: number = 999): string {
  *
  * Mainnet addresses:
  * - Start with 'addr1' (Shelley era)
- * - Typically 57-100+ characters in length
+ * - Minimum length: 58 characters (5 prefix + 53 data chars)
  *
  * Preprod/Testnet addresses:
  * - Start with 'addr_test' (Shelley era)
- * - Typically 64-100+ characters in length
+ * - Minimum length: 63 characters (9 prefix + 53 data chars)
  */
 export function validateCardanoAddress(
   address: string,
@@ -167,41 +167,18 @@ export function validateCardanoAddress(
     };
   }
 
-  // Network-specific validation
+  // Normalize to lowercase (Bech32 addresses are case-insensitive but conventionally lowercase)
+  const normalizedAddress = trimmedAddress.toLowerCase();
+
+  // Network-specific validation for Shelley-era payment addresses
+  let expectedPrefix: string;
+  let minLength: number;
   if (network === 'Mainnet') {
-    // Mainnet addresses should start with 'addr1'
-    if (!trimmedAddress.startsWith('addr1')) {
-      return {
-        isValid: false,
-        error: 'Mainnet addresses must start with "addr1"',
-      };
-    }
-
-    // Mainnet Shelley addresses are typically 57+ characters
-    // Minimum length check to catch obviously invalid addresses
-    if (trimmedAddress.length < 57) {
-      return {
-        isValid: false,
-        error: 'Mainnet address appears to be too short',
-      };
-    }
+    expectedPrefix = 'addr1';
+    minLength = 58;
   } else if (network === 'Preprod') {
-    // Preprod/Testnet addresses should start with 'addr_test'
-    if (!trimmedAddress.startsWith('addr_test')) {
-      return {
-        isValid: false,
-        error: 'Preprod addresses must start with "addr_test"',
-      };
-    }
-
-    // Preprod Shelley addresses are typically 64+ characters
-    // Minimum length check to catch obviously invalid addresses
-    if (trimmedAddress.length < 64) {
-      return {
-        isValid: false,
-        error: 'Preprod address appears to be too short',
-      };
-    }
+    expectedPrefix = 'addr_test1';
+    minLength = 63;
   } else {
     return {
       isValid: false,
@@ -209,22 +186,30 @@ export function validateCardanoAddress(
     };
   }
 
-  // Basic base58 character check (Cardano addresses use base58 encoding)
-  // Base58 characters: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
-  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]+$/;
-  if (!base58Regex.test(trimmedAddress)) {
+  if (!normalizedAddress.startsWith(expectedPrefix)) {
     return {
       isValid: false,
-      error:
-        'Address contains invalid characters. Cardano addresses use base58 encoding.',
+      error: `${network} addresses must start with "${expectedPrefix}"`,
     };
   }
 
-  // Maximum reasonable length check (prevent extremely long strings)
-  if (trimmedAddress.length > 150) {
+  if (normalizedAddress.length < minLength) {
     return {
       isValid: false,
-      error: 'Address appears to be too long',
+      error: `${network} address must be at least ${minLength} characters long`,
+    };
+  }
+
+  // Strict Bech32 character validation (data part only, after prefix)
+  // Charset: qpzry9x8gf2tvdw0s3jn54khce6mua7l (includes digits 0-9 and specific letters)
+  const dataPart = normalizedAddress.slice(expectedPrefix.length);
+  const bech32Regex = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
+
+  if (!bech32Regex.test(dataPart)) {
+    return {
+      isValid: false,
+      error:
+        'Address contains invalid characters. Cardano addresses use strict Bech32 encoding.',
     };
   }
 
