@@ -597,7 +597,7 @@ export default function WalletsPage() {
                           >
                             <RefreshCw className="h-4 w-4" />
                           </Button>
-                          <Button
+                          {/*<Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
@@ -607,7 +607,7 @@ export default function WalletsPage() {
                             }}
                           >
                             <FaExchangeAlt className="h-4 w-4" />
-                          </Button>
+                          </Button>*/}
                           <Button
                             variant="muted"
                             className="h-8"
