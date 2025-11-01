@@ -324,7 +324,6 @@ export default function Transactions() {
     }
   };
 
-
   const getStatusColor = (status: string, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
     switch (status?.toLowerCase()) {
