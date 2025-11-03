@@ -64,7 +64,6 @@ export default function AIAgentsPage() {
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
-  const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] =
@@ -87,65 +86,6 @@ export default function AIAgentsPage() {
     { name: 'Failed', count: null },
   ];
 
-  const filterAgents = useCallback(() => {
-    let filtered = [...allAgents];
-
-    if (activeTab === 'Registered') {
-      filtered = filtered.filter(
-        (agent) => parseAgentStatus(agent.state) === 'Registered',
-      );
-    } else if (activeTab === 'Deregistered') {
-      filtered = filtered.filter(
-        (agent) => parseAgentStatus(agent.state) === 'Deregistered',
-      );
-    } else if (activeTab === 'Pending') {
-      filtered = filtered.filter(
-        (agent) => parseAgentStatus(agent.state) === 'Pending',
-      );
-    } else if (activeTab === 'Failed') {
-      filtered = filtered.filter(
-        (agent) => agent.state && agent.state.includes('Failed'),
-      );
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((agent) => {
-        const matchName = agent.name?.toLowerCase().includes(query) || false;
-        const matchDescription =
-          agent.description?.toLowerCase().includes(query) || false;
-        const matchTags =
-          agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
-        const matchWallet =
-          agent.SmartContractWallet?.walletAddress
-            ?.toLowerCase()
-            .includes(query) || false;
-        const matchState = agent.state?.toLowerCase().includes(query) || false;
-        const matchPrice =
-          agent.AgentPricing &&
-          agent.AgentPricing.pricingType == 'Fixed' &&
-          agent.AgentPricing.Pricing?.[0]?.amount
-            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-                .toFixed(2)
-                .includes(query)
-            : agent.AgentPricing &&
-              agent.AgentPricing.pricingType == 'Free' &&
-              'free'.includes(query);
-
-        return (
-          matchName ||
-          matchDescription ||
-          matchTags ||
-          matchWallet ||
-          matchState ||
-          matchPrice
-        );
-      });
-    }
-
-    setFilteredAgents(filtered);
-  }, [allAgents, searchQuery, activeTab]);
-
   const fetchAgents = useCallback(
     async (cursor?: string | null) => {
       if (!cursor) {
@@ -160,6 +100,20 @@ export default function AIAgentsPage() {
       );
       const smartContractAddress = selectedPaymentSource?.smartContractAddress;
 
+      // Map tab name to backend filterStatus
+      const filterStatus =
+        activeTab === 'All'
+          ? undefined
+          : activeTab === 'Registered'
+            ? 'Registered'
+            : activeTab === 'Deregistered'
+              ? 'Deregistered'
+              : activeTab === 'Pending'
+                ? 'Pending'
+                : activeTab === 'Failed'
+                  ? 'Failed'
+                  : undefined;
+
       const response = await handleApiCall(
         () =>
           getRegistry({
@@ -170,6 +124,8 @@ export default function AIAgentsPage() {
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
+              filterStatus: filterStatus,
+              searchQuery: searchQuery || undefined,
             },
           }),
         {
@@ -209,7 +165,7 @@ export default function AIAgentsPage() {
         setHasMore(false);
       }
     },
-    [apiClient, state.network, selectedPaymentSourceId],
+    [apiClient, state.network, selectedPaymentSourceId, activeTab, searchQuery],
   );
 
   const handleLoadMore = () => {
@@ -227,11 +183,13 @@ export default function AIAgentsPage() {
     ) {
       fetchAgents();
     }
-  }, [state.network, state.paymentSources, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    filterAgents();
-  }, [filterAgents, searchQuery, activeTab]);
+  }, [
+    state.network,
+    state.paymentSources,
+    selectedPaymentSourceId,
+    activeTab,
+    searchQuery,
+  ]);
 
   const handleSelectAgent = (id: string) => {
     setSelectedAgents((prev) =>
@@ -449,7 +407,7 @@ export default function AIAgentsPage() {
             onTabChange={(tab) => {
               setActiveTab(tab);
               setAllAgents([]);
-              fetchAgents();
+              setHasMore(true);
             }}
           />
 
@@ -500,7 +458,7 @@ export default function AIAgentsPage() {
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
-                ) : filteredAgents.length === 0 ? (
+                ) : allAgents.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
                       {searchQuery
@@ -509,7 +467,7 @@ export default function AIAgentsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredAgents.map((agent) => (
+                  allAgents.map((agent) => (
                     <tr
                       key={agent.id}
                       className="border-b cursor-pointer hover:bg-muted/50"

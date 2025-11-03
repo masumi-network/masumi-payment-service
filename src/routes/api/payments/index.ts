@@ -46,7 +46,16 @@ export const queryPaymentsSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('The smart contract address of the payment source'),
-
+  filterOnChainState: z
+    .enum(['RefundRequests', 'Disputes'])
+    .optional()
+    .describe('Filter by on-chain state category (RefundRequests or Disputes)'),
+  searchQuery: z
+    .string()
+    .optional()
+    .describe(
+      'Search query to filter by ID, hash, state, network, wallet address, or amount',
+    ),
   includeHistory: z
     .string()
     .optional()
@@ -179,14 +188,71 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.paymentRequest.findMany({
-      where: {
-        PaymentSource: {
-          network: input.network,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-          deletedAt: null,
-        },
+    // Build onChainState filter
+    let onChainStateFilter: OnChainState[] | undefined;
+    if (input.filterOnChainState === 'RefundRequests') {
+      onChainStateFilter = [OnChainState.RefundRequested];
+    } else if (input.filterOnChainState === 'Disputes') {
+      onChainStateFilter = [OnChainState.Disputed];
+    }
+
+    // Build search query filter
+    const searchLower = input.searchQuery?.toLowerCase();
+    const matchingStates = searchLower
+      ? Object.values(OnChainState).filter((s) =>
+          s.toLowerCase().includes(searchLower),
+        )
+      : undefined;
+
+    const whereClause: any = {
+      PaymentSource: {
+        network: input.network,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        deletedAt: null,
       },
+    };
+
+    if (onChainStateFilter) {
+      whereClause.onChainState = { in: onChainStateFilter };
+    }
+
+    if (searchLower) {
+      whereClause.OR = [
+        { id: { contains: searchLower, mode: 'insensitive' as const } },
+        {
+          CurrentTransaction: {
+            txHash: {
+              contains: searchLower,
+              mode: 'insensitive' as const,
+            },
+          },
+        },
+        {
+          PaymentSource: {
+            network: {
+              in: Object.values(Network).filter((n) =>
+                n.toLowerCase().includes(searchLower),
+              ),
+            },
+          },
+        },
+        {
+          SmartContractWallet: {
+            walletAddress: {
+              contains: searchLower,
+              mode: 'insensitive' as const,
+            },
+          },
+        },
+      ];
+
+      if (matchingStates && matchingStates.length > 0) {
+        whereClause.OR.push({ onChainState: { in: matchingStates } });
+      }
+    }
+
+    let result = await prisma.paymentRequest.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       cursor: input.cursorId
         ? {
@@ -209,6 +275,45 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         },
       },
     });
+
+    // Filter by amount if search query is provided (amount filtering happens in-memory)
+    if (searchLower && result.length > 0) {
+      result = result.filter((payment) => {
+        const matchedById = payment.id.toLowerCase().includes(searchLower);
+        const matchedByHash = payment.CurrentTransaction?.txHash
+          ?.toLowerCase()
+          .includes(searchLower);
+        const matchedByState =
+          matchingStates?.includes(payment.onChainState!) ||
+          payment.onChainState?.toLowerCase().includes(searchLower);
+        const matchedByNetwork = payment.PaymentSource.network
+          .toLowerCase()
+          .includes(searchLower);
+        const matchedByWallet = payment.SmartContractWallet?.walletAddress
+          .toLowerCase()
+          .includes(searchLower);
+
+        // Check amount matching
+        let matchedByAmount = false;
+        const requestedFunds = payment.RequestedFunds as Array<{
+          unit: string;
+          amount: bigint;
+        }>;
+        matchedByAmount = requestedFunds.some((fund) => {
+          const amountInAda = (Number(fund.amount) / 1000000).toFixed(2);
+          return amountInAda.includes(searchLower);
+        });
+
+        return (
+          matchedById ||
+          matchedByHash ||
+          matchedByState ||
+          matchedByNetwork ||
+          matchedByWallet ||
+          matchedByAmount
+        );
+      });
+    }
     if (result == null) {
       throw createHttpError(404, 'Payment not found');
     }

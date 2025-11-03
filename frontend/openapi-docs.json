@@ -1326,6 +1326,30 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "RefundRequests",
+                                "Disputes"
+                            ],
+                            "description": "Filter by on-chain state category (RefundRequests or Disputes)"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state category (RefundRequests or Disputes)",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "default": "false",
                             "description": "Whether to include the full transaction and status history of the payments"
                         },
@@ -3084,6 +3108,30 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "RefundRequests",
+                                "Disputes"
+                            ],
+                            "description": "Filter by on-chain state category (RefundRequests or Disputes)"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state category (RefundRequests or Disputes)",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
                         "in": "query"
                     },
                     {
@@ -6507,6 +6555,32 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Registered",
+                                "Deregistered",
+                                "Pending",
+                                "Failed"
+                            ],
+                            "description": "Filter by registration status category"
+                        },
+                        "required": false,
+                        "description": "Filter by registration status category",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by name, description, tags, wallet address, state, or price"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, tags, wallet address, state, or price",
+                        "name": "searchQuery",
                         "in": "query"
                     }
                 ],

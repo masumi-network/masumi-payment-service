@@ -436,6 +436,14 @@ export type GetPaymentData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by on-chain state category (RefundRequests or Disputes)
+         */
+        filterOnChainState?: 'RefundRequests' | 'Disputes';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
+        /**
          * Whether to include the full transaction and status history of the payments
          */
         includeHistory?: string;
@@ -900,6 +908,14 @@ export type GetPurchaseData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by on-chain state category (RefundRequests or Disputes)
+         */
+        filterOnChainState?: 'RefundRequests' | 'Disputes';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
         /**
          * Whether to include the full transaction and status history of the purchases
          */
@@ -1820,6 +1836,14 @@ export type GetRegistryData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by registration status category
+         */
+        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+        /**
+         * Search query to filter by name, description, tags, wallet address, state, or price
+         */
+        searchQuery?: string;
     };
     url: '/registry/';
 };
