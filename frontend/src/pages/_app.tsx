@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 import { AppProvider, initialAppState } from '@/lib/contexts/AppContext';
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import '@/styles/globals.css';
 import '@/styles/styles.scss';
 import type { AppProps } from 'next/app';
@@ -40,11 +41,16 @@ function App({ Component, pageProps, router }: AppProps) {
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
 
   // Add dynamic favicon functionality
   useDynamicFavicon();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -102,7 +108,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.push(`/setup?network=${encodeURIComponent(state.network)}`);
       }
     }
-
 
     if (state.apiKey && isHealthy && filteredSources.length === 0) {
       const protectedPages = [
@@ -303,18 +308,22 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   return (
     <>
       {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
+      {mounted &&
+        createPortal(
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="dark"
+          />,
+          document.body,
+        )}
     </>
   );
 }
