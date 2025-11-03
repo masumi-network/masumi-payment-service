@@ -14,6 +14,7 @@ import { submitResultV1 } from '../cardano-submit-result-handler/';
 import { authorizeRefundV1 } from '../cardano-authorize-refund-handler/';
 import { handleAutomaticDecisions } from '../automatic-decision-handler';
 import { checkRegistryTransactions } from '../cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
+import { checkAllWalletBalances } from '../../utils/wallet-balance-checker';
 
 export async function initJobs() {
   const start = new Date();
@@ -187,6 +188,20 @@ export async function initJobs() {
           's',
       );
     }, CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000); // Convert seconds to milliseconds
+  });
+
+  void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {
+    // Wallet balance monitoring interval - runs every 1 hour for preprod wallets
+    AsyncInterval.start(async () => {
+      logger.info('Starting wallet balance monitoring');
+      const start = new Date();
+      await checkAllWalletBalances();
+      logger.info(
+        'Finished wallet balance monitoring in ' +
+          (new Date().getTime() - start.getTime()) / 1000 +
+          's',
+      );
+    }, CONFIG.CHECK_WALLET_BALANCE_INTERVAL * 1000);
   });
 
   void new Promise((resolve) => setTimeout(resolve, 7500)).then(() => {
