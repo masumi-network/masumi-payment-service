@@ -108,6 +108,10 @@ import {
   postRevealDataSchemaOutput,
   postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
+import {
+  swapTokensSchemaInput,
+  swapTokensSchemaOutput,
+} from '@/routes/api/swap';
 
 extendZodWithOpenApi(z);
 
@@ -345,6 +349,75 @@ export function generateOpenAPI() {
       },
     },
   });
+
+  /********************* SWAP *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/swap/',
+    description:
+      'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
+    summary:
+      'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
+    tags: ['swap'],
+    request: {
+      body: {
+        description: 'Swap request parameters',
+        content: {
+          'application/json': {
+            schema: swapTokensSchemaInput.openapi({
+              example: {
+                walletVkey: 'wallet_verification_key_here',
+                amount: 1,
+                fromToken: {
+                  policyId:
+                    'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+                  assetName: '5553444d',
+                  name: 'USDM',
+                },
+                toToken: {
+                  policyId:
+                    'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+                  assetName: '5553444d',
+                  name: 'USDM',
+                },
+                poolId:
+                  '64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
+                blockfrostApiKey: 'your_blockfrost_api_key_here',
+                slippage: 0.03,
+              },
+            }),
+          },
+        },
+      },
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Swap executed successfully',
+        content: {
+          'application/json': {
+            schema: swapTokensSchemaOutput.openapi({
+              example: {
+                txHash: 'abc123def456...',
+                walletAddress: 'addr1...',
+              },
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (missing or invalid parameters)',
+      },
+      401: {
+        description:
+          'Unauthorized (invalid API key or insufficient permissions)',
+      },
+      500: {
+        description: 'Internal Server Error (swap failed)',
+      },
+    },
+  });
+
   /********************* API KEYS *****************************/
   registry.registerPath({
     method: 'get',
