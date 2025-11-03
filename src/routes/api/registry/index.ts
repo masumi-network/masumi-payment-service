@@ -173,43 +173,40 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
         )
       : undefined;
 
-    const whereClause: any = {
+    const whereClause = {
       PaymentSource: {
         network: input.network,
         deletedAt: null,
         smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
       SmartContractWallet: { deletedAt: null },
+      ...(stateFilter ? { state: { in: stateFilter } } : {}),
+      ...(searchLower
+        ? {
+            OR: [
+              { name: { contains: searchLower, mode: 'insensitive' as const } },
+              {
+                description: {
+                  contains: searchLower,
+                  mode: 'insensitive' as const,
+                },
+              },
+              { tags: { hasSome: [searchLower] } },
+              {
+                SmartContractWallet: {
+                  walletAddress: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              ...(matchingStates && matchingStates.length > 0
+                ? [{ state: { in: matchingStates } }]
+                : []),
+            ],
+          }
+        : {}),
     };
-
-    if (stateFilter) {
-      whereClause.state = { in: stateFilter };
-    }
-
-    if (searchLower) {
-      whereClause.OR = [
-        { name: { contains: searchLower, mode: 'insensitive' as const } },
-        {
-          description: {
-            contains: searchLower,
-            mode: 'insensitive' as const,
-          },
-        },
-        { tags: { hasSome: [searchLower] } },
-        {
-          SmartContractWallet: {
-            walletAddress: {
-              contains: searchLower,
-              mode: 'insensitive' as const,
-            },
-          },
-        },
-      ];
-
-      if (matchingStates && matchingStates.length > 0) {
-        whereClause.OR.push({ state: { in: matchingStates } });
-      }
-    }
 
     let result = await prisma.registryRequest.findMany({
       where: whereClause,

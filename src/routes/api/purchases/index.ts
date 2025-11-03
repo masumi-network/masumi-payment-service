@@ -206,52 +206,51 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         )
       : undefined;
 
-    const whereClause: any = {
+    const whereClause = {
       PaymentSource: {
         deletedAt: null,
         network: input.network,
         smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
+      ...(onChainStateFilter
+        ? { onChainState: { in: onChainStateFilter } }
+        : {}),
+      ...(searchLower
+        ? {
+            OR: [
+              { id: { contains: searchLower, mode: 'insensitive' as const } },
+              {
+                CurrentTransaction: {
+                  txHash: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                PaymentSource: {
+                  network: {
+                    in: Object.values(Network).filter((n) =>
+                      n.toLowerCase().includes(searchLower),
+                    ),
+                  },
+                },
+              },
+              {
+                SmartContractWallet: {
+                  walletAddress: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              ...(matchingStates && matchingStates.length > 0
+                ? [{ onChainState: { in: matchingStates } }]
+                : []),
+            ],
+          }
+        : {}),
     };
-
-    if (onChainStateFilter) {
-      whereClause.onChainState = { in: onChainStateFilter };
-    }
-
-    if (searchLower) {
-      whereClause.OR = [
-        { id: { contains: searchLower, mode: 'insensitive' as const } },
-        {
-          CurrentTransaction: {
-            txHash: {
-              contains: searchLower,
-              mode: 'insensitive' as const,
-            },
-          },
-        },
-        {
-          PaymentSource: {
-            network: {
-              in: Object.values(Network).filter((n) =>
-                n.toLowerCase().includes(searchLower),
-              ),
-            },
-          },
-        },
-        {
-          SmartContractWallet: {
-            walletAddress: {
-              contains: searchLower,
-              mode: 'insensitive' as const,
-            },
-          },
-        },
-      ];
-
-      if (matchingStates && matchingStates.length > 0) {
-        whereClause.OR.push({ onChainState: { in: matchingStates } });
-      }
-    }
 
     let result = await prisma.purchaseRequest.findMany({
       where: whereClause,
