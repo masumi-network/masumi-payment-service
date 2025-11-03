@@ -30,6 +30,8 @@ import {
 import {
   queryRegistryRequestSchemaInput,
   queryRegistryRequestSchemaOutput,
+  queryRegistryCountSchemaInput,
+  queryRegistryCountSchemaOutput,
   registerAgentSchemaInput,
   registerAgentSchemaOutput,
   deleteAgentRegistrationSchemaInput,
@@ -1738,6 +1740,44 @@ export function generateOpenAPI() {
                         CurrentTransaction: null,
                       },
                     ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/registry/count',
+    description: 'Gets the total count of AI agents.',
+    summary: 'Get the total number of AI agents. (READ access required)',
+    tags: ['registry'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: queryRegistryCountSchemaInput.openapi({
+        example: {
+          network: Network.Preprod,
+          filterSmartContractAddress: null,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Total AI agents count',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: queryRegistryCountSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    total: 42,
                   },
                 },
               }),

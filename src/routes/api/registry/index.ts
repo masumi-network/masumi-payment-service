@@ -100,6 +100,21 @@ export const queryRegistryRequestSchemaOutput = z.object({
   ),
 });
 
+export const queryRegistryCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The Cardano network used to register the agent on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryRegistryCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of AI agents'),
+});
+
 export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: queryRegistryRequestSchemaInput,
@@ -177,6 +192,45 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
               },
         Tags: item.tags,
       })),
+    };
+  },
+});
+
+export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryRegistryCountSchemaInput,
+  output: queryRegistryCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryRegistryCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.registryRequest.count({
+      where: {
+        PaymentSource: {
+          network: input.network,
+          deletedAt: null,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        },
+        SmartContractWallet: { deletedAt: null },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });

@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   getRegistry,
   GetRegistryResponses,
+  getRegistryCount,
   getUtxos,
   getPaymentSource,
   GetPaymentSourceResponses,
@@ -56,6 +57,8 @@ export const getStaticProps: GetStaticProps = async () => {
 export default function Overview() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
   const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [totalAgentsCount, setTotalAgentsCount] = useState<number | null>(null);
+  const [isLoadingAgentsCount, setIsLoadingAgentsCount] = useState(true);
   const [wallets, setWallets] = useState<WalletWithBalance[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
@@ -146,6 +149,42 @@ export default function Overview() {
     },
     [apiClient, state.network, state.paymentSources, selectedPaymentSourceId],
   );
+
+  const fetchAgentsCount = useCallback(async () => {
+    setIsLoadingAgentsCount(true);
+    const selectedPaymentSource = state.paymentSources?.find(
+      (ps) => ps.id === selectedPaymentSourceId,
+    );
+    const smartContractAddress =
+      selectedPaymentSource?.smartContractAddress ?? null;
+
+    const response = await handleApiCall(
+      () =>
+        getRegistryCount({
+          client: apiClient,
+          query: {
+            network: state.network,
+            filterSmartContractAddress: smartContractAddress
+              ? smartContractAddress
+              : undefined,
+          },
+        }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching agents count:', error);
+          // Don't show toast for count errors, just log
+        },
+        onFinally: () => {
+          setIsLoadingAgentsCount(false);
+        },
+        errorMessage: 'Failed to load AI agents count',
+      },
+    );
+
+    if (response?.data?.data?.total !== undefined) {
+      setTotalAgentsCount(response.data.data.total);
+    }
+  }, [apiClient, state.network, state.paymentSources, selectedPaymentSourceId]);
 
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMore && agents.length > 0) {
@@ -351,9 +390,11 @@ export default function Overview() {
       selectedPaymentSourceId
     ) {
       fetchAgents();
+      fetchAgentsCount();
     }
   }, [
     fetchAgents,
+    fetchAgentsCount,
     state.paymentSources,
     state.network,
     selectedPaymentSourceId,
@@ -419,10 +460,12 @@ export default function Overview() {
               <div className="text-sm text-muted-foreground mb-2">
                 Total AI agents
               </div>
-              {isLoadingAgents ? (
+              {isLoadingAgentsCount ? (
                 <Spinner size={20} addContainer />
               ) : (
-                <div className="text-2xl font-semibold">{agents.length}</div>
+                <div className="text-2xl font-semibold">
+                  {totalAgentsCount ?? 0}
+                </div>
               )}
             </div>
             <div className="border rounded-lg p-6">
@@ -768,6 +811,7 @@ export default function Overview() {
         onSuccess={() => {
           setTimeout(() => {
             fetchAgents();
+            fetchAgentsCount();
           }, 2000);
         }}
       />
@@ -778,6 +822,7 @@ export default function Overview() {
         onSuccess={() => {
           setTimeout(() => {
             fetchAgents();
+            fetchAgentsCount();
           }, 2000);
         }}
       />
