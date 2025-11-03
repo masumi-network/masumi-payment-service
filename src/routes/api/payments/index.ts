@@ -57,6 +57,21 @@ export const queryPaymentsSchemaInput = z.object({
     ),
 });
 
+export const queryPaymentCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The network the payments were made on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryPaymentCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of payments'),
+});
+
 export const queryPaymentsSchemaOutput = z.object({
   Payments: z.array(
     z.object({
@@ -228,6 +243,44 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
           amount: amount.amount.toString(),
         })),
       })),
+    };
+  },
+});
+
+export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPaymentCountSchemaInput,
+  output: queryPaymentCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryPaymentCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.paymentRequest.count({
+      where: {
+        PaymentSource: {
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+          deletedAt: null,
+        },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });

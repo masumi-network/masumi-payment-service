@@ -59,6 +59,21 @@ export const queryPurchaseRequestSchemaInput = z.object({
     ),
 });
 
+export const queryPurchaseCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The network the purchases were made on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryPurchaseCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of purchases'),
+});
+
 export const queryPurchaseRequestSchemaOutput = z.object({
   Purchases: z.array(
     z.object({
@@ -226,6 +241,44 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         cooldownTime: Number(purchase.buyerCoolDownTime),
         cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
       })),
+    };
+  },
+});
+
+export const queryPurchaseCountGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPurchaseCountSchemaInput,
+  output: queryPurchaseCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryPurchaseCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.purchaseRequest.count({
+      where: {
+        PaymentSource: {
+          deletedAt: null,
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });

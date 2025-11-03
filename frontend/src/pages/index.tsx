@@ -12,6 +12,8 @@ import {
   getRegistry,
   GetRegistryResponses,
   getRegistryCount,
+  getPurchaseCount,
+  getPaymentCount,
   getUtxos,
   getPaymentSource,
   GetPaymentSourceResponses,
@@ -27,7 +29,6 @@ import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
-import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -75,8 +76,11 @@ export default function Overview() {
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const { rate, isLoading: isLoadingRate } = useRate();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
+  const [totalTransactionsCount, setTotalTransactionsCount] = useState<
+    number | null
+  >(null);
+  const [isLoadingTransactionsCount, setIsLoadingTransactionsCount] =
+    useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
@@ -184,6 +188,59 @@ export default function Overview() {
     if (response?.data?.data?.total !== undefined) {
       setTotalAgentsCount(response.data.data.total);
     }
+  }, [apiClient, state.network, state.paymentSources, selectedPaymentSourceId]);
+
+  const fetchTransactionsCount = useCallback(async () => {
+    setIsLoadingTransactionsCount(true);
+    const selectedPaymentSource = state.paymentSources?.find(
+      (ps) => ps.id === selectedPaymentSourceId,
+    );
+    const smartContractAddress =
+      selectedPaymentSource?.smartContractAddress ?? null;
+
+    const [purchasesResponse, paymentsResponse] = await Promise.all([
+      handleApiCall(
+        () =>
+          getPurchaseCount({
+            client: apiClient,
+            query: {
+              network: state.network,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching purchases count:', error);
+          },
+          errorMessage: 'Failed to load purchases count',
+        },
+      ),
+      handleApiCall(
+        () =>
+          getPaymentCount({
+            client: apiClient,
+            query: {
+              network: state.network,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching payments count:', error);
+          },
+          errorMessage: 'Failed to load payments count',
+        },
+      ),
+    ]);
+
+    const purchasesTotal = purchasesResponse?.data?.data?.total ?? 0;
+    const paymentsTotal = paymentsResponse?.data?.data?.total ?? 0;
+    setTotalTransactionsCount(purchasesTotal + paymentsTotal);
+    setIsLoadingTransactionsCount(false);
   }, [apiClient, state.network, state.paymentSources, selectedPaymentSourceId]);
 
   const handleLoadMore = () => {
@@ -391,10 +448,12 @@ export default function Overview() {
     ) {
       fetchAgents();
       fetchAgentsCount();
+      fetchTransactionsCount();
     }
   }, [
     fetchAgents,
     fetchAgentsCount,
+    fetchTransactionsCount,
     state.paymentSources,
     state.network,
     selectedPaymentSourceId,
@@ -513,14 +572,14 @@ export default function Overview() {
             </div>
             <div className="border rounded-lg p-6">
               <div className="text-sm text-muted-foreground mb-2">
-                New Transactions
+                Total Transactions
               </div>
-              {isLoadingTransactions ? (
+              {isLoadingTransactionsCount ? (
                 <Spinner size={20} addContainer />
               ) : (
                 <>
                   <div className="text-2xl font-semibold">
-                    {newTransactionsCount}
+                    {totalTransactionsCount ?? 0}
                   </div>
                   <Link
                     href="/transactions"

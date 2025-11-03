@@ -18,12 +18,16 @@ import {
 import {
   createPaymentSchemaOutput,
   createPaymentsSchemaInput,
+  queryPaymentCountSchemaInput,
+  queryPaymentCountSchemaOutput,
   queryPaymentsSchemaInput,
   queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
 import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
+  queryPurchaseCountSchemaInput,
+  queryPurchaseCountSchemaOutput,
   queryPurchaseRequestSchemaInput,
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
@@ -955,6 +959,45 @@ export function generateOpenAPI() {
     },
   });
 
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/count',
+    description: 'Gets the total count of payments.',
+    summary: 'Get the total number of payments. (READ access required)',
+    tags: ['payment'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: queryPaymentCountSchemaInput.openapi({
+        example: {
+          network: Network.Preprod,
+          filterSmartContractAddress: null,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Total payments count',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: queryPaymentCountSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    total: 150,
+                  },
+                },
+              }),
+          },
+        },
+      },
+    },
+  });
+
   /********************* PURCHASE *****************************/
   registry.registerPath({
     method: 'get',
@@ -1043,6 +1086,45 @@ export function generateOpenAPI() {
       },
       500: {
         description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/count',
+    description: 'Gets the total count of purchases.',
+    summary: 'Get the total number of purchases. (READ access required)',
+    tags: ['purchase'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: queryPurchaseCountSchemaInput.openapi({
+        example: {
+          network: Network.Preprod,
+          filterSmartContractAddress: null,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Total purchases count',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: queryPurchaseCountSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    total: 75,
+                  },
+                },
+              }),
+          },
+        },
       },
     },
   });
