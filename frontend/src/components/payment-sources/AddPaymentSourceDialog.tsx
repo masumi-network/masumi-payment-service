@@ -48,7 +48,6 @@ const adminWalletSchema = z.object({
 const formSchema = z
   .object({
     network: z.enum(['Mainnet', 'Preprod']),
-    paymentType: z.literal('Web3CardanoV1'),
     blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
     feeReceiverWallet: z.object({
       walletAddress: z.string().min(1, 'Fee receiver wallet is required'),
@@ -112,7 +111,7 @@ export function AddPaymentSourceDialog({
       network: state.network,
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+        walletAddress: '',
       },
       feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
       purchasingWallets: [
@@ -719,6 +718,39 @@ export function AddPaymentSourceDialog({
           {walletGenError && (
             <div className="text-xs text-destructive mt-1">
               {walletGenError}
+            </div>
+          )}
+
+          {Object.keys(errors).length > 0 && (
+            <div className="text-sm text-destructive mt-4 p-3 bg-destructive/10 rounded-md">
+              <p className="font-medium mb-1">
+                Please fix the following errors:
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                {errors.network && <li>{errors.network.message}</li>}
+                {errors.blockfrostApiKey && (
+                  <li>{errors.blockfrostApiKey.message}</li>
+                )}
+                {errors.feeReceiverWallet?.walletAddress && (
+                  <li>
+                    Fee receiver wallet:{' '}
+                    {errors.feeReceiverWallet.walletAddress.message}
+                  </li>
+                )}
+                {errors.feePermille && <li>{errors.feePermille.message}</li>}
+                {errors.purchasingWallets && (
+                  <li>At least one purchasing wallet is required</li>
+                )}
+                {errors.sellingWallets && (
+                  <li>At least one selling wallet is required</li>
+                )}
+                {errors.customAdminWallets && (
+                  <li>
+                    All admin wallet addresses are required when using custom
+                    admin wallets
+                  </li>
+                )}
+              </ul>
             </div>
           )}
 
