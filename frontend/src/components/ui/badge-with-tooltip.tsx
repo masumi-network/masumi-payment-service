@@ -6,6 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './tooltip';
+import { cn } from '@/lib/utils';
 
 export interface BadgeWithTooltipProps extends BadgeProps {
   text: string;
@@ -15,16 +16,25 @@ export interface BadgeWithTooltipProps extends BadgeProps {
 function BadgeWithTooltip({
   text,
   tooltipText,
+  className,
   ...badgeProps
 }: BadgeWithTooltipProps) {
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={100}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge {...badgeProps}>{text}</Badge>
+          <Badge 
+            {...badgeProps} 
+            className={cn(
+              'text-muted-foreground hover:text-foreground cursor-help transition-colors',
+              className
+            )}
+          >
+            {text}
+          </Badge>
         </TooltipTrigger>
-        <TooltipContent>
-          <p>{tooltipText}</p>
+        <TooltipContent className="max-w-sm p-3">
+          <p className="text-sm">{tooltipText}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
