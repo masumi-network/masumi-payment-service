@@ -14,7 +14,7 @@ import {
   Moon,
   MessageSquare,
   BookOpen,
-  ChevronLeft,
+  PanelLeft,
   Bell,
   Search,
   NotebookPen,
@@ -36,6 +36,9 @@ import { useSearch, SearchableItem } from '@/lib/hooks/useSearch';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
+import Image from 'next/image';
+import masumiLogoSmallBlack from '@/assets/masumi-logo-small-black.png';
+import masumiLogoSmallWhite from '@/assets/masumi-logo-small-white.png';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -53,6 +56,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
     return false;
   });
+  const [isHovered, setIsHovered] = useState(false);
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
@@ -209,89 +213,122 @@ export function MainLayout({ children }: MainLayoutProps) {
       <aside
         className={cn(
           'fixed left-0 top-0 z-40 h-screen border-r transition-[width] duration-300',
-          'bg-[#FAFAFA] dark:bg-background',
+          'bg-[#FAFAFA] dark:bg-[#111]',
         )}
         data-collapsed={collapsed}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         style={{
-          width: collapsed ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
+          width:
+            collapsed && !isHovered
+              ? `${sideBarWidthCollapsed}px`
+              : `${sideBarWidth}px`,
         }}
       >
-        <div className="flex flex-col space-y-6">
+        <div className="flex flex-col">
           <div
             className={cn(
               'flex gap-2 border-b p-2.5 px-4 w-full',
-              collapsed ? 'justify-center items-center' : '',
+              collapsed && !isHovered ? 'justify-center items-center' : '',
             )}
           >
             <div
               className={cn(
                 'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
+                collapsed && !isHovered
+                  ? 'grid-cols-2 w-auto gap-0.5'
+                  : 'grid-cols-2 gap-2',
               )}
             >
               <Button
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300',
-                  collapsed && 'px-2',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  collapsed && !isHovered && 'px-2',
                   state.network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
-                {collapsed ? 'P' : 'Preprod'}
+                {collapsed && !isHovered ? 'P' : 'Preprod'}
               </Button>
               <Button
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300',
-                  collapsed && 'px-2',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  collapsed && !isHovered && 'px-2',
                   state.network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
-                {collapsed ? 'M' : 'Mainnet'}
+                {collapsed && !isHovered ? 'M' : 'Mainnet'}
               </Button>
             </div>
           </div>
 
           <div
             className={cn(
-              'flex items-center p-2 px-4',
-              collapsed ? 'justify-center' : 'justify-between',
+              'flex items-center p-2 px-4 border-b border-border',
+              collapsed && !isHovered ? 'justify-center' : 'justify-between',
             )}
           >
-            {!collapsed && (
-              <Link href="/">
+            {!(collapsed && !isHovered) ? (
+              <Link
+                href="/"
+                style={{
+                  animation: 'scaleIn 0.3s ease-out',
+                  transformOrigin: 'left center',
+                }}
+              >
                 <MasumiLogo />
               </Link>
-            )}
-            <Button
-              variant={collapsed ? 'ghost' : 'muted'}
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setCollapsed(!collapsed)}
-            >
-              <div
-                className={cn(
-                  'flex transition-transform duration-300',
-                  collapsed && 'rotate-180',
-                )}
+            ) : (
+              <Link
+                href="/"
+                className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground"
+                style={{
+                  animation: 'rotateIn 0.3s ease-out',
+                }}
               >
-                <ChevronLeft className="h-4 w-4" />
-                <ChevronLeft className="h-4 w-4 -ml-2" />
-              </div>
-            </Button>
+                <Image
+                  src={
+                    theme === 'dark'
+                      ? masumiLogoSmallBlack
+                      : masumiLogoSmallWhite
+                  }
+                  alt="Masumi"
+                  width={24}
+                  height={24}
+                />
+              </Link>
+            )}
+            {!(collapsed && !isHovered) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-8 w-8',
+                  collapsed
+                    ? 'text-muted-foreground opacity-50'
+                    : 'text-foreground opacity-100',
+                )}
+                onClick={() => setCollapsed(!collapsed)}
+              >
+                <PanelLeft
+                  className={cn('h-4 w-4 transition-transform duration-300')}
+                />
+              </Button>
+            )}
           </div>
         </div>
 
         <nav
           className={cn(
-            'flex flex-col gap-1 mt-4',
-            collapsed ? 'px-0 items-center' : 'p-2',
+            'flex flex-col gap-1 mt-2 p-2',
+            collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
           {navItems.map((item) => (
@@ -301,20 +338,24 @@ export function MainLayout({ children }: MainLayoutProps) {
               className={cn(
                 'flex items-center rounded-lg text-sm transition-all relative',
                 'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed ? 'h-10 w-10 justify-center' : 'px-3 py-2 gap-3',
+                collapsed && !isHovered
+                  ? 'h-10 w-10 justify-center'
+                  : 'px-3 h-10 gap-3',
                 router.pathname === item.href &&
                   'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
-              title={collapsed ? item.name : undefined}
+              title={collapsed && !isHovered ? item.name : undefined}
             >
-              <item.icon className="h-4 w-4" />
-              {!collapsed && <span>{item.name}</span>}
-              {!collapsed && item.badge && (
+              <item.icon className="h-4 w-4 min-w-4" />
+              {!(collapsed && !isHovered) && (
+                <span className="truncate">{item.name}</span>
+              )}
+              {!(collapsed && !isHovered) && item.badge && (
                 <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
               )}
-              {collapsed && item.badge && (
+              {collapsed && !isHovered && item.badge && (
                 <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
@@ -325,29 +366,35 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <div
           className={cn(
-            'absolute bottom-4 left-0 right-0',
-            collapsed ? 'px-2' : 'px-4',
+            'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
+            collapsed && !isHovered ? 'px-2' : 'px-4',
           )}
         >
           <div className="flex items-center justify-between">
             <div
               className={cn(
                 'flex gap-4 text-xs text-muted-foreground',
-                collapsed && 'hidden',
+                collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link href="https://www.masumi.network/about" target="_blank">
+              <Link
+                href="https://www.masumi.network/about"
+                target="_blank"
+                className="truncate"
+              >
                 About
               </Link>
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
+                className="truncate"
               >
                 Privacy Policy
               </Link>
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
+                className="truncate"
               >
                 Changelog
               </Link>
@@ -355,7 +402,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <Button
               variant="ghost"
               size="icon"
-              className={cn('h-8 w-8', collapsed && 'mx-auto')}
+              className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() =>
                 setThemePreference(theme === 'dark' ? 'light' : 'dark')
               }
@@ -373,9 +420,10 @@ export function MainLayout({ children }: MainLayoutProps) {
       <div
         className="flex flex-col min-h-screen w-[100vw] transition-all duration-300"
         style={{
-          paddingLeft: collapsed
-            ? `${sideBarWidthCollapsed}px`
-            : `${sideBarWidth}px`,
+          paddingLeft:
+            collapsed && !isHovered
+              ? `${sideBarWidthCollapsed}px`
+              : `${sideBarWidth}px`,
         }}
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
