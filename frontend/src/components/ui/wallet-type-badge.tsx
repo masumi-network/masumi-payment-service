@@ -48,7 +48,7 @@ export function WalletTypeBadge({
               </span>
             </TooltipTrigger>
             <TooltipContent className="max-w-sm p-3">
-              <p className="text-sm">{tooltipText}</p>
+              <p className="text-sm whitespace-pre-line">{tooltipText}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
