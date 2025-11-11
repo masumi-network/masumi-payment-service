@@ -2085,6 +2085,20 @@ export function generateOpenAPI() {
                         amount: '47500000',
                       },
                     ],
+                    monthlyBreakdown: [
+                      {
+                        month: 'January',
+                        monthNumber: 1,
+                        year: 2024,
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '45000000',
+                          },
+                        ],
+                        transactions: 25,
+                      },
+                    ],
                     dailyEarnings: [
                       {
                         date: '2024-09-15',
@@ -2183,6 +2197,20 @@ export function generateOpenAPI() {
                       {
                         unit: 'lovelace',
                         amount: '47500000',
+                      },
+                    ],
+                    monthlyBreakdown: [
+                      {
+                        month: 'January',
+                        monthNumber: 1,
+                        year: 2024,
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '45000000',
+                          },
+                        ],
+                        transactions: 25,
                       },
                     ],
                     dailyEarnings: [
