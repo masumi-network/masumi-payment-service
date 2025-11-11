@@ -2032,7 +2032,7 @@ export function generateOpenAPI() {
 
   registry.registerPath({
     method: 'get',
-    path: '/purchase/purchase-earnings',
+    path: '/purchase/earnings',
     description:
       'Get agent earnings and fee analytics for Purchase Request transactions only, over specified time periods.',
     summary: 'Get agent purchase earnings analytics. (READ access required)',
@@ -2132,7 +2132,7 @@ export function generateOpenAPI() {
 
   registry.registerPath({
     method: 'get',
-    path: '/payment/payment-earnings',
+    path: '/payment/earnings',
     description:
       'Get agent earnings and fee analytics for Payment Request transactions only, over specified time periods.',
     summary: 'Get agent payment earnings analytics. (READ access required)',

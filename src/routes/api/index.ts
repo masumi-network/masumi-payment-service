@@ -65,7 +65,7 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePurchaseRequestPost,
       }),
-      'purchase-earnings': new DependsOnMethod({
+      earnings: new DependsOnMethod({
         get: getPurchaseEarnings,
       }),
     }),
@@ -82,7 +82,7 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePaymentRequestPost,
       }),
-      'payment-earnings': new DependsOnMethod({
+      earnings: new DependsOnMethod({
         get: getPaymentEarnings,
       }),
     }),

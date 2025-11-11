@@ -7708,7 +7708,7 @@
                 }
             }
         },
-        "/purchase/purchase-earnings": {
+        "/purchase/earnings": {
             "get": {
                 "description": "Get agent earnings and fee analytics for Purchase Request transactions only, over specified time periods.",
                 "summary": "Get agent purchase earnings analytics. (READ access required)",
@@ -8061,7 +8061,7 @@
                 }
             }
         },
-        "/payment/payment-earnings": {
+        "/payment/earnings": {
             "get": {
                 "description": "Get agent earnings and fee analytics for Payment Request transactions only, over specified time periods.",
                 "summary": "Get agent payment earnings analytics. (READ access required)",

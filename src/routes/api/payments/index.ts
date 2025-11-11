@@ -27,9 +27,10 @@ import { validateHexString } from '@/utils/generator/contract-generator';
 import {
   parseDateRange,
   filterByAgentIdentifier,
-  aggregateEarnings,
+  aggregatePaymentEarnings,
+  mapUnitAmountToResponse,
   TransactionWithFunds,
-} from '../earnings-helpers';
+} from '@/utils/earnings-helpers';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const queryPaymentsSchemaInput = z.object({
@@ -699,21 +700,20 @@ export const getPaymentEarningsSchemaOutput = z.object({
       amount: z.string(),
     }),
   ),
-  monthlyBreakdown: z
-    .array(
-      z.object({
-        month: z.string(),
-        year: z.number(),
-        earnings: z.array(
-          z.object({
-            unit: z.string(),
-            amount: z.string(),
-          }),
-        ),
-        transactions: z.number(),
-      }),
-    )
-    .optional(),
+  monthlyBreakdown: z.array(
+    z.object({
+      month: z.string(),
+      monthNumber: z.number(),
+      year: z.number(),
+      earnings: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+      transactions: z.number(),
+    }),
+  ),
   dailyEarnings: z.array(
     z.object({
       date: z.string(),
@@ -769,11 +769,6 @@ export const getPaymentEarnings = readAuthenticatedEndpointFactory.build({
         input.endDate,
       );
 
-      const daysDifference = Math.ceil(
-        (periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24),
-      );
-      const includeMonthlyBreakdown = daysDifference > 60;
-
       const paymentRequests = await prisma.paymentRequest.findMany({
         where: {
           createdAt: {
@@ -801,184 +796,109 @@ export const getPaymentEarnings = readAuthenticatedEndpointFactory.build({
         input.agentIdentifier,
       );
 
-      const { earningsMap, revenueMap, feesMap } = aggregateEarnings(
+      const { earningsMap, revenueMap, feesMap } = aggregatePaymentEarnings(
         agentPayments as unknown as TransactionWithFunds[],
-        false,
       );
 
       const totalEarnings = Array.from(earningsMap.entries()).map(
-        ([unit, amount]) => ({
-          unit: unit === '' ? 'lovelace' : unit,
-          amount: amount.toString(),
-        }),
+        ([unit, amount]) => mapUnitAmountToResponse(unit, amount),
       );
 
       const totalFeesPaid = Array.from(feesMap.entries()).map(
-        ([unit, amount]) => ({
-          unit: unit === '' ? 'lovelace' : unit,
-          amount: amount.toString(),
-        }),
+        ([unit, amount]) => mapUnitAmountToResponse(unit, amount),
       );
 
       const totalRevenue = Array.from(revenueMap.entries()).map(
-        ([unit, amount]) => ({
-          unit: unit === '' ? 'lovelace' : unit,
-          amount: amount.toString(),
-        }),
+        ([unit, amount]) => mapUnitAmountToResponse(unit, amount),
       );
 
-      const dailyMap = new Map<
-        string,
-        {
-          earnings: Map<string, bigint>;
-          revenue: Map<string, bigint>;
-          count: number;
-        }
-      >();
-
+      const transactionsByDate = new Map<string, typeof agentPayments>();
       agentPayments.forEach((payment) => {
         const dateKey = new Date(payment.createdAt).toISOString().split('T')[0];
-        if (!dailyMap.has(dateKey)) {
-          dailyMap.set(dateKey, {
-            earnings: new Map(),
-            revenue: new Map(),
-            count: 0,
-          });
+        if (!transactionsByDate.has(dateKey)) {
+          transactionsByDate.set(dateKey, []);
         }
-        const dayData = dailyMap.get(dateKey)!;
-        dayData.count++;
-
-        payment.RequestedFunds.forEach(
-          (fund: { unit: string; amount: bigint }) => {
-            const unit = fund.unit || 'lovelace';
-            dayData.revenue.set(
-              unit,
-              (dayData.revenue.get(unit) || BigInt(0)) + fund.amount,
-            );
-          },
-        );
-
-        payment.WithdrawnForSeller.forEach(
-          (withdrawn: { unit: string; amount: bigint }) => {
-            const unit = withdrawn.unit || 'lovelace';
-            dayData.earnings.set(
-              unit,
-              (dayData.earnings.get(unit) || BigInt(0)) + withdrawn.amount,
-            );
-          },
-        );
-
-        if (
-          payment.onChainState === 'Withdrawn' &&
-          payment.WithdrawnForSeller.length === 0
-        ) {
-          payment.RequestedFunds.forEach(
-            (fund: { unit: string; amount: bigint }) => {
-              const unit = fund.unit || 'lovelace';
-              const feeRate = BigInt(payment.PaymentSource.feeRatePermille);
-              const estimatedEarnings =
-                (fund.amount * (1000n - feeRate)) / 1000n;
-              dayData.earnings.set(
-                unit,
-                (dayData.earnings.get(unit) || BigInt(0)) + estimatedEarnings,
-              );
-            },
-          );
-        }
+        transactionsByDate.get(dateKey)!.push(payment);
       });
 
-      const dailyEarnings = Array.from(dailyMap.entries())
+      const dailyEarnings = Array.from(transactionsByDate.entries())
         .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-        .map(([date, data]) => {
-          const earnings = Array.from(data.earnings.entries()).map(
-            ([unit, amount]) => ({
-              unit: unit === '' ? 'lovelace' : unit,
-              amount: amount.toString(),
-            }),
+        .map(([date, dayTransactions]) => {
+          const { earningsMap, revenueMap, feesMap } = aggregatePaymentEarnings(
+            dayTransactions as unknown as TransactionWithFunds[],
           );
 
-          const revenue = Array.from(data.revenue.entries()).map(
-            ([unit, amount]) => ({
-              unit: unit === '' ? 'lovelace' : unit,
-              amount: amount.toString(),
-            }),
+          const earnings = Array.from(earningsMap.entries()).map(
+            ([unit, amount]) => mapUnitAmountToResponse(unit, amount),
           );
 
-          const dayFees = new Map<string, bigint>();
-          data.revenue.forEach((revAmount, unit) => {
-            const earnAmount = data.earnings.get(unit) || BigInt(0);
-            const fee = revAmount - earnAmount;
-            if (fee > 0) {
-              dayFees.set(unit, fee);
-            }
-          });
+          const revenue = Array.from(revenueMap.entries()).map(
+            ([unit, amount]) => mapUnitAmountToResponse(unit, amount),
+          );
 
-          const fees = Array.from(dayFees.entries()).map(([unit, amount]) => ({
-            unit: unit === '' ? 'lovelace' : unit,
-            amount: amount.toString(),
-          }));
+          const fees = Array.from(feesMap.entries()).map(([unit, amount]) =>
+            mapUnitAmountToResponse(unit, amount),
+          );
 
           return {
             date,
             earnings,
             revenue,
             fees,
-            transactions: data.count,
+            transactions: dayTransactions.length,
           };
         });
 
-      let monthlyBreakdown: any[] | undefined = undefined;
-      if (includeMonthlyBreakdown) {
-        const monthlyMap = new Map<
-          string,
-          {
-            earnings: Map<string, bigint>;
-            count: number;
-            year: number;
-            month: string;
-          }
-        >();
+      const monthlyMap = new Map<
+        string,
+        {
+          earnings: Map<string, bigint>;
+          count: number;
+          year: number;
+          month: string;
+          monthNumber: number;
+        }
+      >();
 
-        dailyEarnings.forEach((day) => {
-          const date = new Date(day.date);
-          const year = date.getFullYear();
-          const month = date.toLocaleString('default', { month: 'long' });
-          const key = `${year}-${month}`;
+      dailyEarnings.forEach((day) => {
+        const date = new Date(day.date);
+        const year = date.getFullYear();
+        const monthNumber = date.getMonth() + 1;
+        const month = date.toLocaleString('default', { month: 'long' });
+        const key = `${year}-${monthNumber}`;
 
-          if (!monthlyMap.has(key)) {
-            monthlyMap.set(key, {
-              earnings: new Map(),
-              count: 0,
-              year,
-              month,
-            });
-          }
-
-          const monthData = monthlyMap.get(key)!;
-          monthData.count += day.transactions;
-
-          day.earnings.forEach((earning) => {
-            const currentAmount =
-              monthData.earnings.get(earning.unit) || BigInt(0);
-            monthData.earnings.set(
-              earning.unit,
-              currentAmount + BigInt(earning.amount),
-            );
+        if (!monthlyMap.has(key)) {
+          monthlyMap.set(key, {
+            earnings: new Map(),
+            count: 0,
+            year,
+            month,
+            monthNumber,
           });
-        });
+        }
 
-        monthlyBreakdown = Array.from(monthlyMap.values()).map((data) => ({
-          month: data.month,
-          year: data.year,
-          earnings: Array.from(data.earnings.entries()).map(
-            ([unit, amount]) => ({
-              unit: unit === '' ? 'lovelace' : unit,
-              amount: amount.toString(),
-            }),
-          ),
-          transactions: data.count,
-        }));
-      }
+        const monthData = monthlyMap.get(key)!;
+        monthData.count += day.transactions;
+
+        day.earnings.forEach((earning) => {
+          const currentAmount =
+            monthData.earnings.get(earning.unit) || BigInt(0);
+          monthData.earnings.set(
+            earning.unit,
+            currentAmount + BigInt(earning.amount),
+          );
+        });
+      });
+
+      const monthlyBreakdown = Array.from(monthlyMap.values()).map((data) => ({
+        month: data.month,
+        monthNumber: data.monthNumber,
+        year: data.year,
+        earnings: Array.from(data.earnings.entries()).map(([unit, amount]) =>
+          mapUnitAmountToResponse(unit, amount),
+        ),
+        transactions: data.count,
+      }));
 
       const startDateString = periodStart.toISOString().split('T')[0];
       const endDateString = periodEnd.toISOString().split('T')[0];
@@ -1005,7 +925,7 @@ export const getPaymentEarnings = readAuthenticatedEndpointFactory.build({
         500;
 
       recordBusinessEndpointError(
-        '/api/v1/payment/payment-earnings',
+        '/api/v1/payment/earnings',
         'GET',
         statusCode,
         errorInstance,

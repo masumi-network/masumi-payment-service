@@ -2,6 +2,16 @@ import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { logger } from '@/utils/logger';
 
+export function mapUnitAmountToResponse(
+  unit: string,
+  amount: bigint,
+): { unit: string; amount: string } {
+  return {
+    unit: unit === '' ? 'lovelace' : unit,
+    amount: amount.toString(),
+  };
+}
+
 export function parseDateRange(
   startDate: string | null | undefined,
   endDate: string | null | undefined,
@@ -66,9 +76,11 @@ export type TransactionWithFunds = {
   PaymentSource: { feeRatePermille: number };
 };
 
-export function aggregateEarnings(
+function _aggregateEarningsInternal(
   transactions: TransactionWithFunds[],
-  usePaidFunds: boolean,
+  getFundsArray: (
+    tx: TransactionWithFunds,
+  ) => Array<{ unit: string; amount: bigint }>,
 ): {
   earningsMap: Map<string, bigint>;
   revenueMap: Map<string, bigint>;
@@ -79,30 +91,42 @@ export function aggregateEarnings(
   const feesMap = new Map<string, bigint>();
 
   transactions.forEach((transaction) => {
-    const fundsSource = usePaidFunds
-      ? transaction.PaidFunds
-      : transaction.RequestedFunds;
-    const funds = fundsSource || [];
+    const funds = getFundsArray(transaction);
 
     funds.forEach((fund) => {
-      const unit = fund.unit || '';
+      if (fund.unit === undefined || fund.unit === null) {
+        throw createHttpError(
+          500,
+          `Invalid fund data: unit is ${fund.unit === undefined ? 'undefined' : 'null'}. All funds must have a unit specified (empty string '' for lovelace).`,
+        );
+      }
+      const unit = fund.unit;
       revenueMap.set(unit, (revenueMap.get(unit) || BigInt(0)) + fund.amount);
     });
 
-    transaction.WithdrawnForSeller.forEach((withdrawn) => {
-      const unit = withdrawn.unit || '';
-      earningsMap.set(
-        unit,
-        (earningsMap.get(unit) || BigInt(0)) + withdrawn.amount,
-      );
-    });
-
-    if (
-      transaction.onChainState === 'Withdrawn' &&
-      transaction.WithdrawnForSeller.length === 0
-    ) {
+    if (transaction.WithdrawnForSeller.length > 0) {
+      transaction.WithdrawnForSeller.forEach((withdrawn) => {
+        if (withdrawn.unit === undefined || withdrawn.unit === null) {
+          throw createHttpError(
+            500,
+            `Invalid withdrawal data: unit is ${withdrawn.unit === undefined ? 'undefined' : 'null'}. All withdrawals must have a unit specified (empty string '' for lovelace).`,
+          );
+        }
+        const unit = withdrawn.unit;
+        earningsMap.set(
+          unit,
+          (earningsMap.get(unit) || BigInt(0)) + withdrawn.amount,
+        );
+      });
+    } else if (transaction.onChainState === 'Withdrawn') {
       funds.forEach((fund) => {
-        const unit = fund.unit || '';
+        if (fund.unit === undefined || fund.unit === null) {
+          throw createHttpError(
+            500,
+            `Invalid fund data: unit is ${fund.unit === undefined ? 'undefined' : 'null'}. All funds must have a unit specified (empty string '' for lovelace).`,
+          );
+        }
+        const unit = fund.unit;
         const feeRate = BigInt(transaction.PaymentSource.feeRatePermille);
         const estimatedEarnings = (fund.amount * (1000n - feeRate)) / 1000n;
         earningsMap.set(
@@ -122,4 +146,40 @@ export function aggregateEarnings(
   });
 
   return { earningsMap, revenueMap, feesMap };
+}
+
+export function aggregatePaymentEarnings(
+  transactions: TransactionWithFunds[],
+): {
+  earningsMap: Map<string, bigint>;
+  revenueMap: Map<string, bigint>;
+  feesMap: Map<string, bigint>;
+} {
+  return _aggregateEarningsInternal(
+    transactions,
+    (tx) => tx.RequestedFunds || [],
+  );
+}
+
+export function aggregatePurchaseEarnings(
+  transactions: TransactionWithFunds[],
+): {
+  earningsMap: Map<string, bigint>;
+  revenueMap: Map<string, bigint>;
+  feesMap: Map<string, bigint>;
+} {
+  return _aggregateEarningsInternal(transactions, (tx) => tx.PaidFunds || []);
+}
+
+export function aggregateEarnings(
+  transactions: TransactionWithFunds[],
+  usePaidFunds: boolean,
+): {
+  earningsMap: Map<string, bigint>;
+  revenueMap: Map<string, bigint>;
+  feesMap: Map<string, bigint>;
+} {
+  return usePaidFunds
+    ? aggregatePurchaseEarnings(transactions)
+    : aggregatePaymentEarnings(transactions);
 }
