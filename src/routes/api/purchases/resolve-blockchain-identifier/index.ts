@@ -14,7 +14,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
-} from '../../shared/transformers';
+} from '../../../../utils/shared/transformers';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z

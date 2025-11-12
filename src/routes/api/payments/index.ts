@@ -27,7 +27,7 @@ import { validateHexString } from '@/utils/generator/contract-generator';
 import {
   transformPaymentGetTimestamps,
   transformPaymentGetAmounts,
-} from '../shared/transformers';
+} from '../../../utils/shared/transformers';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z

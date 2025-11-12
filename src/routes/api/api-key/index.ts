@@ -6,7 +6,7 @@ import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateHash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
-import { transformBigIntAmounts } from '../shared/transformers';
+import { transformBigIntAmounts } from '../../../utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
   limit: z

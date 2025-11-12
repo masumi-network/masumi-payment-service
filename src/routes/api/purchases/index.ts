@@ -29,7 +29,7 @@ import { recordBusinessEndpointError } from '@/utils/metrics';
 import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
-} from '../shared/transformers';
+} from '../../../utils/shared/transformers';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
