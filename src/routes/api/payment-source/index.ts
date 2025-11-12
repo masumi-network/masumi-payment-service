@@ -1,7 +1,8 @@
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { $Enums, HotWalletType, Network } from '@prisma/client';
+import { $Enums, Network } from '@prisma/client';
 import { z } from 'zod';
+import { splitWalletsByType } from '../shared/transformers';
 
 export const paymentSourceSchemaInput = z.object({
   take: z
@@ -92,14 +93,10 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
       },
     });
     const mappedPaymentSources = paymentSources.map((paymentSource) => {
+      const { HotWallets, ...rest } = paymentSource;
       return {
-        ...paymentSource,
-        SellingWallets: paymentSource.HotWallets.filter(
-          (wallet) => wallet.type == HotWalletType.Selling,
-        ),
-        PurchasingWallets: paymentSource.HotWallets.filter(
-          (wallet) => wallet.type == HotWalletType.Purchasing,
-        ),
+        ...rest,
+        ...splitWalletsByType(HotWallets),
       };
     });
     return { PaymentSources: mappedPaymentSources };
