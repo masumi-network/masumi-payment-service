@@ -36,9 +36,7 @@ import { useSearch, SearchableItem } from '@/lib/hooks/useSearch';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
-import Image from 'next/image';
-import masumiLogoSmallBlack from '@/assets/masumi-logo-small-black.png';
-import masumiLogoSmallWhite from '@/assets/masumi-logo-small-white.png';
+import MasumiIconFlat from '@/components/MasumiIconFlat';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -288,21 +286,12 @@ export function MainLayout({ children }: MainLayoutProps) {
             ) : (
               <Link
                 href="/"
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground"
+                className="flex items-center justify-center w-8 h-8"
                 style={{
                   animation: 'rotateIn 0.3s ease-out',
                 }}
               >
-                <Image
-                  src={
-                    theme === 'dark'
-                      ? masumiLogoSmallBlack
-                      : masumiLogoSmallWhite
-                  }
-                  alt="Masumi"
-                  width={24}
-                  height={24}
-                />
+                <MasumiIconFlat className="w-6 h-6" />
               </Link>
             )}
             {!(collapsed && !isHovered) && (
