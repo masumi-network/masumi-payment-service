@@ -587,6 +587,172 @@
                 }
             }
         },
+        "/swap/": {
+            "post": {
+                "description": "Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.",
+                "summary": "Execute a token swap on SundaeSwap. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Swap request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) to identify the wallet"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "exclusiveMinimum": true,
+                                        "description": "Amount to swap (in ADA or token units)"
+                                    },
+                                    "isFromAda": {
+                                        "type": "boolean",
+                                        "description": "true for ADA → Token, false for Token → ADA. If not provided, will be inferred from fromToken (ADA has no policyId)"
+                                    },
+                                    "fromToken": {
+                                        "type": "object",
+                                        "properties": {
+                                            "policyId": {
+                                                "type": "string",
+                                                "description": "Policy ID of the source token"
+                                            },
+                                            "assetName": {
+                                                "type": "string",
+                                                "description": "Asset name of the source token"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "description": "Name of the source token"
+                                            }
+                                        },
+                                        "required": [
+                                            "policyId",
+                                            "assetName",
+                                            "name"
+                                        ],
+                                        "description": "Source token information"
+                                    },
+                                    "toToken": {
+                                        "type": "object",
+                                        "properties": {
+                                            "policyId": {
+                                                "type": "string",
+                                                "description": "Policy ID of the destination token"
+                                            },
+                                            "assetName": {
+                                                "type": "string",
+                                                "description": "Asset name of the destination token"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "description": "Name of the destination token"
+                                            }
+                                        },
+                                        "required": [
+                                            "policyId",
+                                            "assetName",
+                                            "name"
+                                        ],
+                                        "description": "Destination token information"
+                                    },
+                                    "poolId": {
+                                        "type": "string",
+                                        "description": "SundaeSwap pool identifier"
+                                    },
+                                    "blockfrostApiKey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Blockfrost API key for mainnet"
+                                    },
+                                    "slippage": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                        "description": "Slippage tolerance (0-1, default: 0.03 for 3%)"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "amount",
+                                    "fromToken",
+                                    "toToken",
+                                    "poolId",
+                                    "blockfrostApiKey"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "amount": 1,
+                                    "fromToken": {
+                                        "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                        "assetName": "5553444d",
+                                        "name": "USDM"
+                                    },
+                                    "toToken": {
+                                        "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                        "assetName": "5553444d",
+                                        "name": "USDM"
+                                    },
+                                    "poolId": "64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef",
+                                    "blockfrostApiKey": "your_blockfrost_api_key_here",
+                                    "slippage": 0.03
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Swap executed successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "txHash": {
+                                            "type": "string",
+                                            "description": "Transaction hash of the swap"
+                                        },
+                                        "walletAddress": {
+                                            "type": "string",
+                                            "description": "Wallet address used for the swap"
+                                        }
+                                    },
+                                    "required": [
+                                        "txHash",
+                                        "walletAddress"
+                                    ],
+                                    "example": {
+                                        "txHash": "abc123def456...",
+                                        "walletAddress": "addr1..."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (missing or invalid parameters)"
+                    },
+                    "401": {
+                        "description": "Unauthorized (invalid API key or insufficient permissions)"
+                    },
+                    "500": {
+                        "description": "Internal Server Error (swap failed)"
+                    }
+                }
+            }
+        },
         "/api-key/": {
             "get": {
                 "description": "Gets api key status",
