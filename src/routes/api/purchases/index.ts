@@ -91,6 +91,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           updatedAt: z.date(),
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          confirmations: z.number(),
         })
         .nullable(),
       TransactionHistory: z.array(
@@ -100,6 +101,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           updatedAt: z.date(),
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          confirmations: z.number(),
         }),
       ),
       PaidFunds: z.array(

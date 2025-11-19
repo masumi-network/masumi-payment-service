@@ -75,6 +75,7 @@ export async function handlePaymentTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -118,16 +119,21 @@ export async function handlePaymentTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            paymentRequest.currentTransactionId != null
-              ? { connect: { id: paymentRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: paymentRequest.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -190,6 +196,7 @@ export async function handlePurchasingTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -234,16 +241,21 @@ export async function handlePurchasingTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            purchasingRequest.currentTransactionId != null
-              ? { connect: { id: purchasingRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: purchasingRequest.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -711,18 +723,21 @@ export async function updateInitialPurchaseTransaction(
               requestedAction: PurchasingAction.WaitingForExternalAction,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                },
+              },
           onChainState: OnChainState.FundsLocked,
           resultHash: decodedNewContract.resultHash,
         },
@@ -1034,18 +1049,21 @@ export async function updateInitialPaymentTransaction(
                 errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                },
+              },
           onChainState: newState,
           resultHash: decodedNewContract.resultHash,
           BuyerWallet: {
@@ -1241,6 +1259,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
       );
     }
   } catch (error) {
@@ -1262,6 +1281,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
       );
     }
   } catch (error) {

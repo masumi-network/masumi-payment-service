@@ -8,6 +8,7 @@ import {
   PaymentAction,
   PaymentErrorType,
   PricingType,
+  TransactionStatus,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -88,6 +89,8 @@ export const queryPaymentsSchemaOutput = z.object({
           createdAt: z.date(),
           updatedAt: z.date(),
           txHash: z.string().nullable(),
+          status: z.nativeEnum(TransactionStatus),
+          confirmations: z.number(),
         })
         .nullable(),
       TransactionHistory: z
@@ -97,6 +100,8 @@ export const queryPaymentsSchemaOutput = z.object({
             createdAt: z.date(),
             updatedAt: z.date(),
             txHash: z.string().nullable(),
+            status: z.nativeEnum(TransactionStatus),
+            confirmations: z.number(),
           }),
         )
         .nullable(),

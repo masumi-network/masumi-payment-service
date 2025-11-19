@@ -76,6 +76,7 @@ model Transaction {
   updatedAt                DateTime          @updatedAt
   txHash                   String
   status                   TransactionStatus
+  confirmations            Int               @default(0)
   lastCheckedAt            DateTime?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?

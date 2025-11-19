@@ -84,6 +84,7 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: 0,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
@@ -122,6 +123,7 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: 0,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
