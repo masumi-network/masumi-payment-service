@@ -1632,6 +1632,41 @@
                                                             "metadata": {
                                                                 "type": "string",
                                                                 "nullable": true
+                                                            },
+                                                            "ActionHistory": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "id": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "createdAt": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "requestedAction": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                                "None",
+                                                                                "Ignore",
+                                                                                "WaitingForManualAction",
+                                                                                "WaitingForExternalAction",
+                                                                                "SubmitResultRequested",
+                                                                                "SubmitResultInitiated",
+                                                                                "WithdrawRequested",
+                                                                                "WithdrawInitiated",
+                                                                                "AuthorizeRefundRequested",
+                                                                                "AuthorizeRefundInitiated"
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "id",
+                                                                        "createdAt",
+                                                                        "requestedAction"
+                                                                    ]
+                                                                },
+                                                                "description": "History of previous NextAction states"
                                                             }
                                                         },
                                                         "required": [
@@ -3334,6 +3369,43 @@
                                                             "metadata": {
                                                                 "type": "string",
                                                                 "nullable": true
+                                                            },
+                                                            "ActionHistory": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "id": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "createdAt": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "requestedAction": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                                "None",
+                                                                                "Ignore",
+                                                                                "WaitingForManualAction",
+                                                                                "WaitingForExternalAction",
+                                                                                "FundsLockingRequested",
+                                                                                "FundsLockingInitiated",
+                                                                                "SetRefundRequestedRequested",
+                                                                                "SetRefundRequestedInitiated",
+                                                                                "UnSetRefundRequestedRequested",
+                                                                                "UnSetRefundRequestedInitiated",
+                                                                                "WithdrawRefundRequested",
+                                                                                "WithdrawRefundInitiated"
+                                                                            ]
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "id",
+                                                                        "createdAt",
+                                                                        "requestedAction"
+                                                                    ]
+                                                                },
+                                                                "description": "History of previous NextAction states"
                                                             }
                                                         },
                                                         "required": [
