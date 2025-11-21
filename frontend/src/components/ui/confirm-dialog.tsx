@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
+import { CopyButton } from '@/components/ui/copy-button';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -72,9 +73,12 @@ export function ConfirmDialog({
 
           {requireConfirmation && (
             <div className="mt-4 space-y-2">
-              <label className="text-sm font-medium">
-                {confirmationLabel || `Type "${confirmationText}" to confirm`}
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">
+                  {confirmationLabel || `Type "${confirmationText}" to confirm`}
+                </label>
+                <CopyButton value={confirmationText} className="h-6 w-6" />
+              </div>
               <Input
                 type="text"
                 value={confirmationInput}
