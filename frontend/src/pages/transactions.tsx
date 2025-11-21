@@ -27,8 +27,8 @@ import TransactionDetailsDialog from '@/components/transactions/TransactionDetai
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -59,15 +59,12 @@ export default function Transactions() {
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
     if (!amount) return '—';
-    const formattedAmount = (parseInt(amount) / 1000000).toFixed(2);
-    // Format with commas for thousands
-    const parts = formattedAmount.split('.');
-    const integerPart = parts[0];
-    const decimalPart = parts[1];
-    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    return decimalPart
-      ? `${formattedInteger}.${decimalPart}`
-      : formattedInteger;
+    const numericAmount = parseInt(amount) / 1000000;
+    return new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+      useGrouping: true,
+    }).format(numericAmount);
   };
   const [activeTab, setActiveTab] = useState('All');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
@@ -442,7 +439,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                          filteredTransactions.length
+                        filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -513,8 +510,37 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.length
+                          transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
+                            const amount = formatPrice(fund.amount);
+                            const usdmConfig = getUsdmConfig(state.network);
+                            const isUsdm =
+                              fund.unit === usdmConfig.fullAssetId ||
+                              fund.unit === usdmConfig.policyId ||
+                              fund.unit === 'USDM' ||
+                              fund.unit === 'tUSDM';
+                            const isTestUsdm =
+                              fund.unit === TESTUSDM_CONFIG.unit;
+
+                            const unit =
+                              fund.unit === 'lovelace' || !fund.unit
+                                ? 'ADA'
+                                : isUsdm
+                                  ? state.network?.toLowerCase() === 'preprod'
+                                    ? 'tUSDM'
+                                    : 'USDM'
+                                  : isTestUsdm
+                                    ? 'tUSDM'
+                                    : fund.unit;
+                            return (
+                              <div key={index} className="text-sm">
+                                {amount} {unit}
+                              </div>
+                            );
+                          })
+                          : transaction.type === 'purchase' &&
+                            transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const usdmConfig = getUsdmConfig(state.network);
                               const isUsdm =
@@ -529,7 +555,8 @@ export default function Transactions() {
                                 fund.unit === 'lovelace' || !fund.unit
                                   ? 'ADA'
                                   : isUsdm
-                                    ? state.network?.toLowerCase() === 'preprod'
+                                    ? state.network?.toLowerCase() ===
+                                      'preprod'
                                       ? 'tUSDM'
                                       : 'USDM'
                                     : isTestUsdm
@@ -541,36 +568,6 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const usdmConfig = getUsdmConfig(state.network);
-                                const isUsdm =
-                                  fund.unit === usdmConfig.fullAssetId ||
-                                  fund.unit === usdmConfig.policyId ||
-                                  fund.unit === 'USDM' ||
-                                  fund.unit === 'tUSDM';
-                                const isTestUsdm =
-                                  fund.unit === TESTUSDM_CONFIG.unit;
-
-                                const unit =
-                                  fund.unit === 'lovelace' || !fund.unit
-                                    ? 'ADA'
-                                    : isUsdm
-                                      ? state.network?.toLowerCase() ===
-                                        'preprod'
-                                        ? 'tUSDM'
-                                        : 'USDM'
-                                      : isTestUsdm
-                                        ? 'tUSDM'
-                                        : fund.unit;
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -613,8 +610,8 @@ export default function Transactions() {
               <Pagination
                 hasMore={
                   activeTab === 'All' ||
-                  activeTab === 'Refund Requests' ||
-                  activeTab === 'Disputes'
+                    activeTab === 'Refund Requests' ||
+                    activeTab === 'Disputes'
                     ? hasMorePurchases || hasMorePayments
                     : activeTab === 'Payments'
                       ? hasMorePayments
