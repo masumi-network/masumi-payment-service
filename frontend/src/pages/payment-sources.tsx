@@ -545,6 +545,9 @@ export default function PaymentSourcesPage() {
           description={`Are you sure you want to delete this payment source? This will also delete all associated wallets and transactions. This action cannot be undone.`}
           onConfirm={handleDeleteSource}
           isLoading={isDeleting}
+          requireConfirmation={true}
+          confirmationText="DELETE"
+          confirmationLabel="Type 'DELETE' to confirm deletion"
         />
 
         <ConfirmDialog
