@@ -14,7 +14,7 @@ import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@/utils/config';
-import { advancedRetry, delayErrorResolver } from 'advanced-retry';
+import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
@@ -73,10 +73,10 @@ function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
   return { collateralUtxo, limitedFilteredUtxos };
 }
 async function handlePotentialDeregistrationFailure(
-  result: Awaited<ReturnType<typeof advancedRetry>>,
+  result: RetryResult<boolean>,
   registryRequest: { id: string },
 ): Promise<void> {
-  if (result.success == false || result.result != true) {
+  if (result.success !== true || result.result !== true) {
     const error = result.error;
     logger.error(`Error deregistering agent ${registryRequest.id}`, {
       error: error,
