@@ -42,11 +42,11 @@ import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
-    type: 'Purchasing';
-  })
+      type: 'Purchasing';
+    })
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
-    type: 'Selling';
-  });
+      type: 'Selling';
+    });
 
 type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
 
@@ -540,7 +540,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         {wallet.type === 'Selling' &&
-                          wallet.collectionAddress ? (
+                        wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -560,16 +560,16 @@ export default function WalletsPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) ||
-                              wallet.isLoadingBalance ? (
+                            wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
                                   ? useFormatBalance(
-                                    (
-                                      parseInt(wallet.balance) / 1000000
-                                    ).toFixed(2),
-                                  )
+                                      (
+                                        parseInt(wallet.balance) / 1000000
+                                      ).toFixed(2),
+                                    )
                                   : '0'}
                               </span>
                             )}
@@ -593,7 +593,7 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                          wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>
