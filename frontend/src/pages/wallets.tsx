@@ -8,6 +8,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, RefreshCw } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
@@ -59,7 +60,10 @@ interface WalletWithBalance extends BaseWalletWithBalance {
 }
 
 export default function WalletsPage() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState(
+    typeof router.query.searched === 'string' ? router.query.searched : '',
+  );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
@@ -300,6 +304,22 @@ export default function WalletsPage() {
   useEffect(() => {
     fetchWallets();
   }, [fetchWallets, state.network, selectedPaymentSourceId]);
+
+  // Initialize searchQuery from router query parameter
+  useEffect(() => {
+    if (router.query.searched && typeof router.query.searched === 'string') {
+      setSearchQuery(router.query.searched);
+    }
+  }, [router.query.searched]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_wallet') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/wallets', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleSelectWallet = (id: string) => {
     setSelectedWallets((prev) =>

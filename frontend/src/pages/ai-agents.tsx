@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -59,6 +60,7 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 };
 
 export default function AIAgentsPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -231,6 +233,15 @@ export default function AIAgentsPage() {
   useEffect(() => {
     filterAgents();
   }, [filterAgents, searchQuery, activeTab]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'register_agent') {
+      setIsRegisterDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/ai-agents', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleSelectAgent = (id: string) => {
     setSelectedAgents((prev) =>

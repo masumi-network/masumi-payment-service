@@ -252,6 +252,15 @@ export default function PaymentSourcesPage() {
     filterPaymentSources();
   }, [filterPaymentSources, searchQuery]);
 
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_payment_source') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/payment-sources', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleSelectSource = (id: string) => {
     setSelectedSources((prev) =>
       prev.includes(id)

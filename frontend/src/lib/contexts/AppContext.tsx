@@ -27,11 +27,13 @@ interface AppState {
     };
     PurchasingWallets: {
       walletMnemonic: string;
+      walletAddress: string;
       note?: string;
     }[];
     SellingWallets: {
       id: string;
       walletVkey: string;
+      walletAddress: string;
       walletMnemonic: string;
       note?: string;
     }[];

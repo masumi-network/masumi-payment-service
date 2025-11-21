@@ -23,16 +23,7 @@ import { useTheme } from '@/lib/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { useSearch, SearchableItem } from '@/lib/hooks/useSearch';
+import { SearchDialog } from '@/components/search/SearchDialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
@@ -56,8 +47,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { searchQuery, setSearchQuery, searchResults, handleSearch } =
-    useSearch();
   const { state, dispatch, isChangingNetwork } = useAppContext();
 
   useEffect(() => {
@@ -193,31 +182,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
     // Don't mark as read immediately, let user view notifications first
-  };
-
-  const handleSearchSelect = (result: SearchableItem) => {
-    setIsSearchOpen(false);
-    router.push(result.href).then(() => {
-      if (result.elementId) {
-        setTimeout(() => {
-          const element = document.getElementById(result.elementId || '');
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            element.classList.add('highlight-element');
-            setTimeout(() => {
-              element.classList.remove('highlight-element');
-            }, 4000);
-          }
-        }, 100);
-      }
-    });
-  };
-
-  const handleCommandSelect = (value: string) => {
-    const result = searchResults.find((r) => r.id === value);
-    if (result) {
-      handleSearchSelect(result);
-    }
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
@@ -416,7 +380,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <div className="max-w-[1400px] mx-auto w-full">
             <div className="h-14 px-4 flex items-center justify-between gap-4">
               <div
-                className="flex flex-1 max-w-[190px] justify-start gap-1 relative items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
+                className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
                 onClick={() => setIsSearchOpen(true)}
               >
                 <Search className="h-4 w-4 text-muted-foreground" />
@@ -471,42 +435,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </main>
       </div>
 
-      <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
-        <DialogContent>
-          <Command className="py-2">
-            <CommandInput
-              placeholder="Type to search..."
-              value={searchQuery}
-              onValueChange={(value) => {
-                setSearchQuery(value);
-                handleSearch(value);
-              }}
-              className="p-1 px-2 mb-2"
-            />
-            <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandGroup>
-                {searchResults.map((result) => (
-                  <CommandItem
-                    key={result.id}
-                    onSelect={() => handleCommandSelect(result.id)}
-                    onClick={() => handleCommandSelect(result.id)}
-                    className="flex flex-col items-start p-2 cursor-pointer pointer-events-auto"
-                    style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                  >
-                    <div className="font-medium">{result.title || '...'}</div>
-                    {result.description && (
-                      <div className="text-sm text-muted-foreground">
-                        {result.description}
-                      </div>
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </DialogContent>
-      </Dialog>
+      <SearchDialog open={isSearchOpen} onOpenChange={setIsSearchOpen} />
 
       {isNotificationsOpen && (
         <NotificationsDialog
