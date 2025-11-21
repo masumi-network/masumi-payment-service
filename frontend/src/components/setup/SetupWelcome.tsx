@@ -450,10 +450,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -776,7 +776,8 @@ function SuccessScreen({
         </span>
       </div>
       <h1 className="text-4xl font-bold">
-        Your {networkType.toLowerCase() == 'mainnet' ? 'Mainnet' : 'Preprod'} environment
+        Your {networkType.toLowerCase() == 'mainnet' ? 'Mainnet' : 'Preprod'}{' '}
+        environment
         <br />
         is all set!
       </h1>
