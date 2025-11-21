@@ -14,9 +14,10 @@ import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@/utils/config';
-import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 const mutex = new Mutex();
 
@@ -26,9 +27,6 @@ function validateDeregistrationRequest(request: {
   if (!request.agentIdentifier) {
     throw new Error('Agent identifier is not set');
   }
-}
-function extractAssetName(agentIdentifier: string, policyId: string): string {
-  return agentIdentifier.slice(policyId.length);
 }
 
 function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
@@ -74,32 +72,27 @@ function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
 
   return { collateralUtxo, limitedFilteredUtxos };
 }
-async function handleDeregistrationResults(
-  results: Awaited<ReturnType<typeof advancedRetryAll>>,
-  registryRequests: Array<{ id: string }>,
+async function handlePotentialDeregistrationFailure(
+  result: Awaited<ReturnType<typeof advancedRetry>>,
+  registryRequest: { id: string },
 ): Promise<void> {
-  let index = 0;
-  for (const result of results) {
-    const request = registryRequests[index];
-    if (result.success == false || result.result != true) {
-      const error = result.error;
-      logger.error(`Error deregistering agent ${request.id}`, {
-        error: error,
-      });
-      await prisma.registryRequest.update({
-        where: { id: request.id },
-        data: {
-          state: RegistrationState.DeregistrationFailed,
-          error: convertErrorString(error),
-          SmartContractWallet: {
-            update: {
-              lockedAt: null,
-            },
+  if (result.success == false || result.result != true) {
+    const error = result.error;
+    logger.error(`Error deregistering agent ${registryRequest.id}`, {
+      error: error,
+    });
+    await prisma.registryRequest.update({
+      where: { id: registryRequest.id },
+      data: {
+        state: RegistrationState.DeregistrationFailed,
+        error: convertErrorString(error),
+        SmartContractWallet: {
+          update: {
+            lockedAt: null,
           },
         },
-      });
-    }
-    index++;
+      },
+    });
   }
 }
 
@@ -134,14 +127,24 @@ export async function deRegisterAgentV1() {
         const blockchainProvider = new BlockfrostProvider(
           paymentSource.PaymentSourceConfig.rpcProviderApiKey,
         );
-
-        const results = await advancedRetryAll({
+        if (registryRequests.length == 0) {
+          logger.warn('No agents to deregister');
+          return;
+        }
+        //we can only deregister one agent at a time
+        const deregistrationRequest = registryRequests.at(0);
+        if (deregistrationRequest == null) {
+          logger.warn('No agents to deregister');
+          return;
+        }
+        const result = await advancedRetry({
           errorResolvers: [
             delayErrorResolver({
               configuration: SERVICE_CONSTANTS.RETRY,
             }),
           ],
-          operations: registryRequests.map((request) => async () => {
+          operation: async () => {
+            const request = deregistrationRequest;
             validateDeregistrationRequest(request);
             const { wallet, utxos, address } = await generateWalletExtended(
               paymentSource.network,
@@ -160,10 +163,7 @@ export async function deRegisterAgentV1() {
             const { collateralUtxo, limitedFilteredUtxos } =
               sortAndLimitUtxosForDeregistration(utxos);
 
-            const assetName = extractAssetName(
-              request.agentIdentifier!,
-              policyId,
-            );
+            const assetName = extractAssetName(request.agentIdentifier!);
 
             const evaluationTx = await generateDeregisterAgentTransaction(
               blockchainProvider,
@@ -232,13 +232,16 @@ export async function deRegisterAgentV1() {
                   }cardanoscan.io/transaction/${newTxHash}
               `);
             return true;
-          }),
+          },
         });
-        await handleDeregistrationResults(results, registryRequests);
+        await handlePotentialDeregistrationFailure(
+          result,
+          deregistrationRequest,
+        );
       }),
     );
   } catch (error) {
-    logger.error('Error submitting result', { error: error });
+    logger.error('Error deregistering agent', { error: error });
   } finally {
     release();
   }
