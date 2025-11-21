@@ -27,8 +27,8 @@ import TransactionDetailsDialog from '@/components/transactions/TransactionDetai
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface ApiError {
   message: string;
@@ -86,7 +86,6 @@ export default function Transactions() {
       unit === usdmConfig.policyId ||
       unit === 'USDM' ||
       unit === 'tUSDM';
-
 
     if (isUsdm) {
       return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
@@ -471,7 +470,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                        filteredTransactions.length
+                          filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -542,27 +541,33 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                          transaction.RequestedFunds?.length
+                        transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
-                            const amount = formatPrice(fund.amount);
-                            const unit = formatFundUnit(fund.unit, state.network);
-                            return (
-                              <div key={index} className="text-sm">
-                                {amount} {unit}
-                              </div>
-                            );
-                          })
-                          : transaction.type === 'purchase' &&
-                            transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(fund.unit, state.network);
+                              const unit = formatFundUnit(
+                                fund.unit,
+                                state.network,
+                              );
                               return (
                                 <div key={index} className="text-sm">
                                   {amount} {unit}
                                 </div>
                               );
                             })
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
+                                const amount = formatPrice(fund.amount);
+                                const unit = formatFundUnit(
+                                  fund.unit,
+                                  state.network,
+                                );
+                                return (
+                                  <div key={index} className="text-sm">
+                                    {amount} {unit}
+                                  </div>
+                                );
+                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -605,8 +610,8 @@ export default function Transactions() {
               <Pagination
                 hasMore={
                   activeTab === 'All' ||
-                    activeTab === 'Refund Requests' ||
-                    activeTab === 'Disputes'
+                  activeTab === 'Refund Requests' ||
+                  activeTab === 'Disputes'
                     ? hasMorePurchases || hasMorePayments
                     : activeTab === 'Payments'
                       ? hasMorePayments
