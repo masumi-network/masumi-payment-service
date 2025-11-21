@@ -818,6 +818,16 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     localStorage.setItem('userIgnoredSetup', 'true');
   };
 
+  const handleCancel = () => {
+    // Clear states
+    setWallets({
+      buying: null,
+      selling: null,
+    });
+    // Return to welcome screen
+    setCurrentStep(0);
+  };
+
   const steps = [
     <WelcomeScreen
       key="welcome"
@@ -831,14 +841,14 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         setWallets({ buying, selling });
         setCurrentStep(2);
       }}
-      ignoreSetup={handleIgnoreSetup}
+      ignoreSetup={handleCancel}
     />,
     <PaymentSourceSetupScreen
       key="payment-source"
       onNext={() => setCurrentStep(3)}
       buyingWallet={wallets.buying}
       sellingWallet={wallets.selling}
-      ignoreSetup={handleIgnoreSetup}
+      ignoreSetup={handleCancel}
     />,
     /*<AddAiAgentScreen
       key="ai"

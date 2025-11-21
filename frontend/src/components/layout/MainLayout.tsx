@@ -58,7 +58,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [isMac, setIsMac] = useState(false);
   const { searchQuery, setSearchQuery, searchResults, handleSearch } =
     useSearch();
-  const { state, dispatch } = useAppContext();
+  const { state, dispatch, isChangingNetwork } = useAppContext();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -99,6 +99,40 @@ export function MainLayout({ children }: MainLayoutProps) {
       };
     }
   }, [isChangingTheme]);
+
+  useEffect(() => {
+    if (isChangingNetwork) {
+      const app = document.getElementById('__next');
+      if (app) {
+        app.style.transition = 'all 0.2s ease';
+        app.style.filter = 'blur(10px)';
+        app.style.pointerEvents = 'none';
+        app.style.opacity = '1';
+        app.style.scale = '1.1';
+      }
+
+      const timer = setTimeout(() => {
+        if (app) {
+          app.style.filter = '';
+          app.style.pointerEvents = 'auto';
+          app.style.opacity = '1';
+          app.style.scale = '1';
+        }
+      }, 200);
+
+      return () => {
+        clearTimeout(timer);
+        const app = document.getElementById('__next');
+        if (app) {
+          app.style.filter = '';
+          app.style.transition = '';
+          app.style.pointerEvents = 'auto';
+          app.style.opacity = '1';
+          app.style.scale = '1';
+        }
+      };
+    }
+  }, [isChangingNetwork]);
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));

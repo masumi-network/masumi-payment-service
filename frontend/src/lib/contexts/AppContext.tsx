@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useRef,
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
@@ -144,6 +145,7 @@ export const AppContext = createContext<
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
       signOut: () => void;
+      isChangingNetwork: boolean;
     }
   | undefined
 >(undefined);
@@ -177,6 +179,9 @@ export function AppProvider({
     return null;
   });
 
+  const [isChangingNetwork, setIsChangingNetwork] = useState(false);
+  const previousNetworkRef = useRef<NetworkType>(state.network);
+
   // Persist selectedPaymentSourceId to localStorage whenever it changes
   const setSelectedPaymentSourceIdAndPersist = (id: string | null) => {
     setSelectedPaymentSourceId(id);
@@ -194,6 +199,17 @@ export function AppProvider({
       setSelectedPaymentSourceIdAndPersist(selectedPaymentSourceId);
     }
   }, [selectedPaymentSourceId, state.paymentSources]);
+
+  // Track network changes for transition effect
+  useEffect(() => {
+    if (previousNetworkRef.current !== state.network) {
+      setIsChangingNetwork(true);
+      setTimeout(() => {
+        setIsChangingNetwork(false);
+      }, 500);
+      previousNetworkRef.current = state.network;
+    }
+  }, [state.network]);
 
   const showError = useCallback(
     (error: { code?: number; message: string; details?: unknown }) => {
@@ -230,6 +246,7 @@ export function AppProvider({
         selectedPaymentSourceId,
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
         signOut,
+        isChangingNetwork,
       }}
     >
       {children}
