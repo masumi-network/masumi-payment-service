@@ -47,10 +47,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { searchQuery, setSearchQuery, searchResults, handleSearch } =
-    useSearch();
   const { state, dispatch, isChangingNetwork } = useAppContext();
-
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -383,7 +380,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <div className="max-w-[1400px] mx-auto w-full">
             <div className="h-14 px-4 flex items-center justify-between gap-4">
               <div
-                className="flex flex-1 max-w-[190px] justify-start gap-1 relative items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
+                className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
                 onClick={() => setIsSearchOpen(true)}
               >
                 <Search className="h-4 w-4 text-muted-foreground" />
