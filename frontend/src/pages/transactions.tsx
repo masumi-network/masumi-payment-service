@@ -66,6 +66,38 @@ export default function Transactions() {
       useGrouping: true,
     }).format(numericAmount);
   };
+
+  // Format fund unit display helper function
+  const formatFundUnit = (
+    unit: string | undefined,
+    network: string | undefined,
+  ): string => {
+    if (!network) {
+      // If no network, fallback to basic unit formatting
+      if (unit === 'lovelace' || !unit) {
+        return 'ADA';
+      }
+      return unit;
+    }
+
+    const usdmConfig = getUsdmConfig(network);
+    const isUsdm =
+      unit === usdmConfig.fullAssetId ||
+      unit === usdmConfig.policyId ||
+      unit === 'USDM' ||
+      unit === 'tUSDM';
+
+
+    if (isUsdm) {
+      return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
+    }
+
+    const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
+    if (isTestUsdm) {
+      return 'tUSDM';
+    }
+    return unit ?? '—';
+  };
   const [activeTab, setActiveTab] = useState('All');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
     [],
@@ -513,25 +545,7 @@ export default function Transactions() {
                           transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
                             const amount = formatPrice(fund.amount);
-                            const usdmConfig = getUsdmConfig(state.network);
-                            const isUsdm =
-                              fund.unit === usdmConfig.fullAssetId ||
-                              fund.unit === usdmConfig.policyId ||
-                              fund.unit === 'USDM' ||
-                              fund.unit === 'tUSDM';
-                            const isTestUsdm =
-                              fund.unit === TESTUSDM_CONFIG.unit;
-
-                            const unit =
-                              fund.unit === 'lovelace' || !fund.unit
-                                ? 'ADA'
-                                : isUsdm
-                                  ? state.network?.toLowerCase() === 'preprod'
-                                    ? 'tUSDM'
-                                    : 'USDM'
-                                  : isTestUsdm
-                                    ? 'tUSDM'
-                                    : fund.unit;
+                            const unit = formatFundUnit(fund.unit, state.network);
                             return (
                               <div key={index} className="text-sm">
                                 {amount} {unit}
@@ -542,26 +556,7 @@ export default function Transactions() {
                             transaction.PaidFunds?.length
                             ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
-                              const usdmConfig = getUsdmConfig(state.network);
-                              const isUsdm =
-                                fund.unit === usdmConfig.fullAssetId ||
-                                fund.unit === usdmConfig.policyId ||
-                                fund.unit === 'USDM' ||
-                                fund.unit === 'tUSDM';
-                              const isTestUsdm =
-                                fund.unit === TESTUSDM_CONFIG.unit;
-
-                              const unit =
-                                fund.unit === 'lovelace' || !fund.unit
-                                  ? 'ADA'
-                                  : isUsdm
-                                    ? state.network?.toLowerCase() ===
-                                      'preprod'
-                                      ? 'tUSDM'
-                                      : 'USDM'
-                                    : isTestUsdm
-                                      ? 'tUSDM'
-                                      : fund.unit;
+                              const unit = formatFundUnit(fund.unit, state.network);
                               return (
                                 <div key={index} className="text-sm">
                                   {amount} {unit}
