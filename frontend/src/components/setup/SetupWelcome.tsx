@@ -768,6 +768,9 @@ function SuccessScreen({
   onComplete: () => void;
   networkType: string;
 }) {
+  const networkDisplay =
+    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+
   return (
     <div className="text-center space-y-4 max-w-[600px]">
       <div className="flex justify-center mb-6">
@@ -776,8 +779,7 @@ function SuccessScreen({
         </span>
       </div>
       <h1 className="text-4xl font-bold">
-        Your {networkType.toLowerCase() == 'mainnet' ? 'Mainnet' : 'Preprod'}{' '}
-        environment
+        Your {networkDisplay} environment
         <br />
         is all set!
       </h1>

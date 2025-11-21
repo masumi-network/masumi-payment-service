@@ -66,21 +66,21 @@
   color: #171717;
 }
 
-#transakRoot{
+#transakRoot {
   background-color: #000a !important;
 }
 
-#main-content{
+#main-content {
   overflow-y: scroll !important;
 }
 
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
 
-input[type="number"] {
+input[type='number'] {
   -moz-appearance: textfield;
 }
 
@@ -99,7 +99,7 @@ input[type="number"] {
   animation: bounceBottom 0.3s ease forwards;
 }
 
-#__next{
+#__next {
   overflow-y: scroll !important;
 }
 
@@ -132,11 +132,17 @@ input[type="number"] {
   transition: all 0.2s ease;
 }
 
-.Toastify{
+/* Ensure toast notifications appear above dialog overlays */
+/* Dialog overlay uses z-[999], dialog content uses z-[1000], so toasts need higher */
+.Toastify {
   position: fixed;
-  z-index: 1000000 !important;
+  z-index: 10000 !important;
 }
 
 .Toastify__toast-container {
-  z-index: 11000 !important;
+  z-index: 10000 !important;
+}
+
+.Toastify__toast {
+  z-index: 10000 !important;
 }
