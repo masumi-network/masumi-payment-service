@@ -206,7 +206,8 @@ model PaymentRequest {
   TransactionHistory        Transaction[]     @relation("PaymentTransactionHistory")
   WithdrawnForBuyer         UnitValue[]       @relation("BuyerWithdrawnPaymentRequest")
   RequestedFunds            UnitValue[]
-  WithdrawnForSeller        UnitValue[]       @relation("SellerWithdrawnPaymentRequest")
+  WithdrawnForSeller        UnitValue[]            @relation("SellerWithdrawnPaymentRequest")
+  ActionHistory             PaymentActionHistory[]
 }
 
 model PaymentActionData {
@@ -219,6 +220,16 @@ model PaymentActionData {
   errorType             PaymentErrorType?
   errorNote             String?
   PaymentRequestCurrent PaymentRequest?   @relation("NextAction")
+}
+
+model PaymentActionHistory {
+  id               String         @id @default(cuid())
+  createdAt        DateTime       @default(now())
+  requestedAction  PaymentAction
+  paymentRequestId String
+  PaymentRequest   PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
+
+  @@index([paymentRequestId, createdAt])
 }
 
 model PurchaseRequest {
@@ -253,7 +264,8 @@ model PurchaseRequest {
   TransactionHistory        Transaction[]      @relation("PurchaseTransactionHistory")
   WithdrawnForBuyer         UnitValue[]        @relation("BuyerWithdrawnPurchaseRequest")
   PaidFunds                 UnitValue[]
-  WithdrawnForSeller        UnitValue[]        @relation("SellerWithdrawnPurchaseRequest")
+  WithdrawnForSeller        UnitValue[]             @relation("SellerWithdrawnPurchaseRequest")
+  ActionHistory             PurchaseActionHistory[]
 }
 
 model PurchaseActionData {
@@ -266,6 +278,16 @@ model PurchaseActionData {
   errorType              PurchaseErrorType?
   errorNote              String?
   PurchaseRequestCurrent PurchaseRequest?   @relation("NextAction")
+}
+
+model PurchaseActionHistory {
+  id                String           @id @default(cuid())
+  createdAt         DateTime         @default(now())
+  requestedAction   PurchasingAction
+  purchaseRequestId String
+  PurchaseRequest   PurchaseRequest  @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseRequestId, createdAt])
 }
 
 model PaymentSourceIdentifiers {

@@ -11,6 +11,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { modifyPaymentNextAction } from '@/utils/action-history';
 
 export const submitPaymentResultSchemaInput = z.object({
   network: z
@@ -166,16 +167,16 @@ export const submitPaymentResultEndpointPost =
         throw createHttpError(404, 'Smart contract wallet not found');
       }
 
-      const result = await prisma.paymentRequest.update({
+      // Update NextAction with history tracking
+      await modifyPaymentNextAction(
+        payment.id,
+        PaymentAction.SubmitResultRequested,
+        { resultHash: input.submitResultHash },
+      );
+
+      // Fetch the updated payment
+      const result = await prisma.paymentRequest.findUnique({
         where: { id: payment.id },
-        data: {
-          NextAction: {
-            update: {
-              requestedAction: PaymentAction.SubmitResultRequested,
-              resultHash: input.submitResultHash,
-            },
-          },
-        },
         include: {
           NextAction: true,
           BuyerWallet: true,
@@ -186,6 +187,10 @@ export const submitPaymentResultEndpointPost =
           WithdrawnForBuyer: true,
         },
       });
+
+      if (!result) {
+        throw createHttpError(500, 'Failed to fetch updated payment');
+      }
 
       return {
         ...result,

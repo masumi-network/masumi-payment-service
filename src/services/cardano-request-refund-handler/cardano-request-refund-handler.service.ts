@@ -4,6 +4,7 @@ import {
   PurchaseErrorType,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
+import { updatePurchaseNextAction } from '@/utils/action-history';
 import {
   BlockfrostProvider,
   deserializeDatum,
@@ -264,15 +265,18 @@ export async function requestRefundsV1() {
 
             const signedTx = await wallet.signTx(unsignedTx);
 
+            // Update NextAction with history tracking
+            await updatePurchaseNextAction(
+              request.id,
+              PurchasingAction.SetRefundRequestedInitiated,
+              {
+                inputHash: request.inputHash,
+              },
+            );
+
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
-                NextAction: {
-                  update: {
-                    requestedAction:
-                      PurchasingAction.SetRefundRequestedInitiated,
-                  },
-                },
                 CurrentTransaction: {
                   create: {
                     txHash: '',
@@ -324,17 +328,22 @@ export async function requestRefundsV1() {
             logger.error(`Error requesting refund ${request.id}`, {
               error: error,
             });
+
+            // Update NextAction with history tracking (error case)
+            await updatePurchaseNextAction(
+              request.id,
+              PurchasingAction.WaitingForManualAction,
+              {
+                inputHash: request.inputHash,
+                errorType: PurchaseErrorType.Unknown,
+                errorNote:
+                  'Requesting refund failed: ' + convertErrorString(error),
+              },
+            );
+
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
-                NextAction: {
-                  update: {
-                    requestedAction: PurchasingAction.WaitingForManualAction,
-                    errorType: PurchaseErrorType.Unknown,
-                    errorNote:
-                      'Requesting refund failed: ' + convertErrorString(error),
-                  },
-                },
                 SmartContractWallet: {
                   update: {
                     lockedAt: null,

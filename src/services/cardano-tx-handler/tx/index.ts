@@ -19,6 +19,12 @@ import {
   WalletType,
 } from '@prisma/client';
 import {
+  updatePaymentNextAction,
+  updatePurchaseNextAction,
+  upsertPaymentNextAction,
+  upsertPurchaseNextAction,
+} from '@/utils/action-history';
+import {
   calculateValueChange,
   checkIfTxIsInHistory,
   checkPaymentAmountsMatch,
@@ -100,24 +106,22 @@ export async function handlePaymentTransactionCardanoV1(
         newState,
       );
 
+      // Update NextAction with history tracking
+      await updatePaymentNextAction(
+        paymentRequest.id,
+        newAction.action,
+        {
+          errorNote: newAction.errorNote,
+          errorType: newAction.errorType,
+          concatenateErrorNote: true,
+        },
+        prisma,
+      );
+
+      // Update other fields
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
-          NextAction: {
-            create: {
-              requestedAction: newAction.action,
-              errorNote:
-                paymentRequest.NextAction.errorNote != null
-                  ? paymentRequest.NextAction.errorNote +
-                    '(' +
-                    paymentRequest.NextAction.requestedAction +
-                    ')' +
-                    ' -> ' +
-                    newAction.errorNote
-                  : newAction.errorNote,
-              errorType: newAction.errorType,
-            },
-          },
           TransactionHistory:
             paymentRequest.currentTransactionId != null
               ? { connect: { id: paymentRequest.currentTransactionId } }
@@ -214,26 +218,24 @@ export async function handlePurchasingTransactionCardanoV1(
         newStatus,
       );
 
+      // Update NextAction with history tracking
+      await updatePurchaseNextAction(
+        purchasingRequest.id,
+        newAction.action,
+        {
+          inputHash: purchasingRequest.inputHash,
+          errorNote: newAction.errorNote,
+          errorType: newAction.errorType,
+          concatenateErrorNote: true,
+        },
+        prisma,
+      );
+
+      // Update other fields
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
         data: {
           inputHash: purchasingRequest.inputHash,
-          NextAction: {
-            create: {
-              inputHash: purchasingRequest.inputHash,
-              requestedAction: newAction.action,
-              errorNote:
-                purchasingRequest.NextAction.errorNote != null
-                  ? purchasingRequest.NextAction.errorNote +
-                    '(' +
-                    purchasingRequest.NextAction.requestedAction +
-                    ')' +
-                    ' -> ' +
-                    newAction.errorNote
-                  : newAction.errorNote,
-              errorType: newAction.errorType,
-            },
-          },
           TransactionHistory:
             purchasingRequest.currentTransactionId != null
               ? { connect: { id: purchasingRequest.currentTransactionId } }
@@ -335,64 +337,34 @@ export async function updateRolledBackTransaction(
         transaction.PaymentRequestCurrent ||
         transaction.PaymentRequestHistory
       ) {
-        await prisma.paymentRequest.update({
-          where: {
-            id:
-              transaction.PaymentRequestCurrent?.id ??
-              transaction.PaymentRequestHistory!.id,
+        await upsertPaymentNextAction(
+          transaction.PaymentRequestCurrent?.id ??
+            transaction.PaymentRequestHistory!.id,
+          PaymentAction.WaitingForManualAction,
+          {
+            errorNote:
+              'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+            errorType: PaymentErrorType.Unknown,
           },
-          data: {
-            NextAction: {
-              upsert: {
-                update: {
-                  requestedAction: PaymentAction.WaitingForManualAction,
-                  errorNote:
-                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-                  errorType: PaymentErrorType.Unknown,
-                },
-                create: {
-                  requestedAction: PaymentAction.WaitingForManualAction,
-                  errorNote:
-                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-                  errorType: PaymentErrorType.Unknown,
-                },
-              },
-            },
-          },
-        });
+        );
       }
       if (
         transaction.PurchaseRequestCurrent ||
         transaction.PurchaseRequestHistory
       ) {
-        await prisma.purchaseRequest.update({
-          where: {
-            id:
-              transaction.PurchaseRequestCurrent?.id ??
-              transaction.PurchaseRequestHistory!.id,
+        await upsertPurchaseNextAction(
+          transaction.PurchaseRequestCurrent?.id ??
+            transaction.PurchaseRequestHistory!.id,
+          PurchasingAction.WaitingForManualAction,
+          {
+            inputHash:
+              transaction.PurchaseRequestCurrent?.inputHash ??
+              transaction.PurchaseRequestHistory!.inputHash,
+            errorNote:
+              'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
+            errorType: PurchaseErrorType.Unknown,
           },
-          data: {
-            NextAction: {
-              upsert: {
-                update: {
-                  requestedAction: PurchasingAction.WaitingForManualAction,
-                  errorNote:
-                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-                  errorType: PurchaseErrorType.Unknown,
-                },
-                create: {
-                  requestedAction: PurchasingAction.WaitingForManualAction,
-                  errorNote:
-                    'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
-                  errorType: PurchaseErrorType.Unknown,
-                  inputHash:
-                    transaction.PurchaseRequestCurrent?.inputHash ??
-                    transaction.PurchaseRequestHistory!.inputHash,
-                },
-              },
-            },
-          },
-        });
+        );
       }
     }
   }
@@ -489,20 +461,16 @@ export async function updateInitialPurchaseTransaction(
           'No smart contract wallet set for purchase request in db',
           { purchaseRequest: dbEntry },
         );
-        await prisma.purchaseRequest.update({
-          where: { id: dbEntry.id },
-          data: {
-            NextAction: {
-              create: {
-                requestedAction: PurchasingAction.WaitingForManualAction,
-                errorNote:
-                  'No smart contract wallet set for purchase request in db. This is likely an internal error.',
-                errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
-              },
-            },
+        await updatePurchaseNextAction(
+          dbEntry.id,
+          PurchasingAction.WaitingForManualAction,
+          {
+            inputHash: decodedNewContract.inputHash,
+            errorNote:
+              'No smart contract wallet set for purchase request in db. This is likely an internal error.',
+            errorType: PurchaseErrorType.Unknown,
           },
-        });
+        );
         return;
       }
 
@@ -511,20 +479,16 @@ export async function updateInitialPurchaseTransaction(
           'No seller wallet set for purchase request in db. This seems like an internal error.',
           { purchaseRequest: dbEntry },
         );
-        await prisma.purchaseRequest.update({
-          where: { id: dbEntry.id },
-          data: {
-            NextAction: {
-              create: {
-                requestedAction: PurchasingAction.WaitingForManualAction,
-                errorNote:
-                  'No seller wallet set for purchase request in db. This seems like an internal error.',
-                errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
-              },
-            },
+        await updatePurchaseNextAction(
+          dbEntry.id,
+          PurchasingAction.WaitingForManualAction,
+          {
+            inputHash: decodedNewContract.inputHash,
+            errorNote:
+              'No seller wallet set for purchase request in db. This seems like an internal error.',
+            errorType: PurchaseErrorType.Unknown,
           },
-        });
+        );
         return;
       }
       if (output.reference_script_hash != null) {
@@ -701,16 +665,21 @@ export async function updateInitialPurchaseTransaction(
         return;
       }
       //TODO: optional check amounts
+      // Update NextAction with history tracking (already in transaction context)
+      await updatePurchaseNextAction(
+        dbEntry.id,
+        PurchasingAction.WaitingForExternalAction,
+        {
+          inputHash: decodedNewContract.inputHash,
+        },
+        prisma, // Use the existing transaction client
+      );
+
+      // Update other fields
       await prisma.purchaseRequest.update({
         where: { id: dbEntry.id },
         data: {
           inputHash: decodedNewContract.inputHash,
-          NextAction: {
-            create: {
-              inputHash: decodedNewContract.inputHash,
-              requestedAction: PurchasingAction.WaitingForExternalAction,
-            },
-          },
           TransactionHistory:
             dbEntry.currentTransactionId != null
               ? {
@@ -796,19 +765,16 @@ export async function updateInitialPaymentTransaction(
           'Existing buyer set for payment request in db. This is likely an internal error.',
           { paymentRequest: dbEntry },
         );
-        await prisma.paymentRequest.update({
-          where: { id: dbEntry.id },
-          data: {
-            NextAction: {
-              create: {
-                requestedAction: PaymentAction.WaitingForManualAction,
-                errorNote:
-                  'Existing buyer set for payment request in db. This is likely an internal error.',
-                errorType: PaymentErrorType.Unknown,
-              },
-            },
+        await updatePaymentNextAction(
+          dbEntry.id,
+          PaymentAction.WaitingForManualAction,
+          {
+            errorNote:
+              'Existing buyer set for payment request in db. This is likely an internal error.',
+            errorType: PaymentErrorType.Unknown,
           },
-        });
+          prisma,
+        );
         return;
       }
       if (dbEntry.SmartContractWallet == null) {
@@ -816,19 +782,16 @@ export async function updateInitialPaymentTransaction(
           'No smart contract wallet set for payment request in db. This is likely an internal error.',
           { paymentRequest: dbEntry },
         );
-        await prisma.paymentRequest.update({
-          where: { id: dbEntry.id },
-          data: {
-            NextAction: {
-              create: {
-                requestedAction: PaymentAction.WaitingForManualAction,
-                errorNote:
-                  'No smart contract wallet set for payment request in db. This is likely an internal error.',
-                errorType: PaymentErrorType.Unknown,
-              },
-            },
+        await updatePaymentNextAction(
+          dbEntry.id,
+          PaymentAction.WaitingForManualAction,
+          {
+            errorNote:
+              'No smart contract wallet set for payment request in db. This is likely an internal error.',
+            errorType: PaymentErrorType.Unknown,
           },
-        });
+          prisma,
+        );
         return;
       }
 
@@ -1023,17 +986,21 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
 
+      // Update NextAction with history tracking
+      await updatePaymentNextAction(
+        dbEntry.id,
+        newAction,
+        {
+          errorNote: errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
+        },
+        prisma,
+      );
+
+      // Update other fields (use the transaction client)
       await prisma.paymentRequest.update({
         where: { id: dbEntry.id },
         data: {
           collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
-          NextAction: {
-            create: {
-              requestedAction: newAction,
-              errorNote:
-                errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
-            },
-          },
           TransactionHistory:
             dbEntry.currentTransactionId != null
               ? {

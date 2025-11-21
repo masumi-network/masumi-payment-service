@@ -11,6 +11,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { modifyPaymentNextAction } from '@/utils/action-history';
 
 export const authorizePaymentRefundSchemaInput = z.object({
   blockchainIdentifier: z
@@ -164,15 +165,15 @@ export const authorizePaymentRefundEndpointPost =
           'You are not authorized to authorize a refund for this payment',
         );
       }
-      const result = await prisma.paymentRequest.update({
+
+      // Update NextAction with history tracking
+      await modifyPaymentNextAction(
+        payment.id,
+        PaymentAction.AuthorizeRefundRequested,
+      );
+
+      const result = await prisma.paymentRequest.findUnique({
         where: { id: payment.id },
-        data: {
-          NextAction: {
-            update: {
-              requestedAction: PaymentAction.AuthorizeRefundRequested,
-            },
-          },
-        },
         include: {
           NextAction: true,
           BuyerWallet: true,
@@ -183,6 +184,10 @@ export const authorizePaymentRefundEndpointPost =
           WithdrawnForBuyer: true,
         },
       });
+
+      if (!result) {
+        throw createHttpError(500, 'Failed to fetch updated payment');
+      }
 
       return {
         ...result,

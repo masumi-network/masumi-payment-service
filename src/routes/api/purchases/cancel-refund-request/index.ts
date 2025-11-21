@@ -12,6 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { modifyPurchaseNextAction } from '@/utils/action-history';
 
 export const cancelPurchaseRefundRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -175,15 +176,18 @@ export const cancelPurchaseRefundRequestPost =
         throw createHttpError(404, 'Smart contract wallet not set on purchase');
       }
 
-      const result = await prisma.purchaseRequest.update({
-        where: { id: purchase.id },
-        data: {
-          NextAction: {
-            update: {
-              requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
-            },
-          },
+      // Update NextAction with history tracking
+      await modifyPurchaseNextAction(
+        purchase.id,
+        PurchasingAction.UnSetRefundRequestedRequested,
+        {
+          inputHash: purchase.inputHash,
         },
+      );
+
+      // Fetch the updated purchase
+      const result = await prisma.purchaseRequest.findUnique({
+        where: { id: purchase.id },
         include: {
           NextAction: true,
           CurrentTransaction: true,
@@ -196,6 +200,10 @@ export const cancelPurchaseRefundRequestPost =
           WithdrawnForBuyer: true,
         },
       });
+
+      if (!result) {
+        throw createHttpError(500, 'Failed to fetch updated purchase');
+      }
 
       return {
         ...result,
