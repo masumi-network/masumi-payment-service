@@ -54,14 +54,6 @@ interface AppState {
   apiKey: string | null;
   network: NetworkType;
   isUnauthorized: boolean;
-  rpcProviderApiKeys: {
-    id: string;
-    rpcProviderApiKey: string;
-    rpcProvider: string;
-    createdAt: string;
-    updatedAt: string;
-    network: string;
-  }[];
 }
 
 type AppAction =
@@ -70,14 +62,12 @@ type AppAction =
   | { type: 'SET_WALLETS'; payload: any[] }
   | { type: 'SET_API_KEY'; payload: string }
   | { type: 'SET_NETWORK'; payload: NetworkType }
-  | { type: 'SET_UNAUTHORIZED'; payload: boolean }
-  | { type: 'SET_RPC_API_KEYS'; payload: any[] };
+  | { type: 'SET_UNAUTHORIZED'; payload: boolean };
 
 const initialAppState: AppState = {
   paymentSources: [],
   contracts: [],
   wallets: [],
-  rpcProviderApiKeys: [],
   apiKey: null,
   network:
     (typeof window !== 'undefined' &&
@@ -120,11 +110,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         isUnauthorized: action.payload,
-      };
-    case 'SET_RPC_API_KEYS':
-      return {
-        ...state,
-        rpcProviderApiKeys: action.payload,
       };
     default:
       return state;
@@ -231,7 +216,6 @@ export function AppProvider({
     dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
     dispatch({ type: 'SET_CONTRACTS', payload: [] });
     dispatch({ type: 'SET_WALLETS', payload: [] });
-    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
     dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
   }, [dispatch]);
 
