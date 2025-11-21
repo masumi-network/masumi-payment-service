@@ -36,6 +36,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { handleApiCall } from '@/lib/utils';
+import { useRouter } from 'next/router';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -167,7 +168,7 @@ export default function PaymentSourcesPage() {
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [sourceToSelect, setSourceToSelect] = useState<
-    PaymentSource | null | undefined
+    PaymentSource | undefined
   >(undefined);
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
     useState<PaymentSource | null>(null);
@@ -215,7 +216,7 @@ export default function PaymentSourcesPage() {
       setHasMore(false);
       setIsLoading(false);
       setIsLoadingMore(false);
-      return;
+      return null;
     }
 
     if (response.data?.data?.ExtendedPaymentSources) {
@@ -230,19 +231,22 @@ export default function PaymentSourcesPage() {
       }
 
       setHasMore(response.data.data.ExtendedPaymentSources.length === 10);
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      return filteredSources;
     } else {
       if (!cursor) {
         setPaymentSources([]);
       }
       setHasMore(false);
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      return [];
     }
-
-    setIsLoading(false);
-    setIsLoadingMore(false);
   };
 
   useEffect(() => {
-    fetchPaymentSources();
+    void fetchPaymentSources();
   }, [state.network]);
 
   useEffect(() => {
@@ -286,9 +290,14 @@ export default function PaymentSourcesPage() {
           },
         }),
       {
-        onSuccess: () => {
+        onSuccess: async () => {
           toast.success('Payment source deleted successfully');
-          fetchPaymentSources();
+          const updatedSources = await fetchPaymentSources();
+
+          // Check if no payment sources remain after deletion
+          if (updatedSources && updatedSources.length === 0) {
+            router.push(`/setup?network=${encodeURIComponent(state.network)}`);
+          }
         },
         onError: (error: any) => {
           console.error('Error deleting payment source:', error);
@@ -306,7 +315,7 @@ export default function PaymentSourcesPage() {
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMore && paymentSources.length > 0) {
       const lastSource = paymentSources[paymentSources.length - 1];
-      fetchPaymentSources(lastSource.id);
+      void fetchPaymentSources(lastSource.id);
     }
   };
 
@@ -340,7 +349,9 @@ export default function PaymentSourcesPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => fetchPaymentSources()}
+              onRefresh={() => {
+                void fetchPaymentSources();
+              }}
               isRefreshing={isLoading}
             />
             <Button
@@ -392,27 +403,7 @@ export default function PaymentSourcesPage() {
                     Created at
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                  <th className="w-20 p-4">
-                    {' '}
-                    {selectedPaymentSourceId === null ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled
-                        className="text-green-600 border-green-600"
-                      >
-                        All Shown
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSourceToSelect(null)}
-                      >
-                        Show all
-                      </Button>
-                    )}
-                  </th>
+                  <th className="w-20 p-4"></th>
                 </tr>
               </thead>
               <tbody>
@@ -563,7 +554,9 @@ export default function PaymentSourcesPage() {
           title="Switch Payment Source"
           description="Switching payment source will update the displayed agents, wallets, and related content. Continue?"
           onConfirm={() => {
-            setSelectedPaymentSourceId(sourceToSelect?.id ?? null);
+            if (sourceToSelect?.id) {
+              setSelectedPaymentSourceId(sourceToSelect.id);
+            }
             setSourceToSelect(undefined);
           }}
           isLoading={false}

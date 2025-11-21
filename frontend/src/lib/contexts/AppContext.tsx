@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useRef,
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
@@ -53,14 +54,6 @@ interface AppState {
   apiKey: string | null;
   network: NetworkType;
   isUnauthorized: boolean;
-  rpcProviderApiKeys: {
-    id: string;
-    rpcProviderApiKey: string;
-    rpcProvider: string;
-    createdAt: string;
-    updatedAt: string;
-    network: string;
-  }[];
 }
 
 type AppAction =
@@ -69,14 +62,12 @@ type AppAction =
   | { type: 'SET_WALLETS'; payload: any[] }
   | { type: 'SET_API_KEY'; payload: string }
   | { type: 'SET_NETWORK'; payload: NetworkType }
-  | { type: 'SET_UNAUTHORIZED'; payload: boolean }
-  | { type: 'SET_RPC_API_KEYS'; payload: any[] };
+  | { type: 'SET_UNAUTHORIZED'; payload: boolean };
 
 const initialAppState: AppState = {
   paymentSources: [],
   contracts: [],
   wallets: [],
-  rpcProviderApiKeys: [],
   apiKey: null,
   network:
     (typeof window !== 'undefined' &&
@@ -120,11 +111,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         isUnauthorized: action.payload,
       };
-    case 'SET_RPC_API_KEYS':
-      return {
-        ...state,
-        rpcProviderApiKeys: action.payload,
-      };
     default:
       return state;
   }
@@ -144,6 +130,7 @@ export const AppContext = createContext<
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
       signOut: () => void;
+      isChangingNetwork: boolean;
     }
   | undefined
 >(undefined);
@@ -177,6 +164,9 @@ export function AppProvider({
     return null;
   });
 
+  const [isChangingNetwork, setIsChangingNetwork] = useState(false);
+  const previousNetworkRef = useRef<NetworkType>(state.network);
+
   // Persist selectedPaymentSourceId to localStorage whenever it changes
   const setSelectedPaymentSourceIdAndPersist = (id: string | null) => {
     setSelectedPaymentSourceId(id);
@@ -194,6 +184,17 @@ export function AppProvider({
       setSelectedPaymentSourceIdAndPersist(selectedPaymentSourceId);
     }
   }, [selectedPaymentSourceId, state.paymentSources]);
+
+  // Track network changes for transition effect
+  useEffect(() => {
+    if (previousNetworkRef.current !== state.network) {
+      setIsChangingNetwork(true);
+      setTimeout(() => {
+        setIsChangingNetwork(false);
+      }, 500);
+      previousNetworkRef.current = state.network;
+    }
+  }, [state.network]);
 
   const showError = useCallback(
     (error: { code?: number; message: string; details?: unknown }) => {
@@ -215,7 +216,6 @@ export function AppProvider({
     dispatch({ type: 'SET_PAYMENT_SOURCES', payload: [] });
     dispatch({ type: 'SET_CONTRACTS', payload: [] });
     dispatch({ type: 'SET_WALLETS', payload: [] });
-    dispatch({ type: 'SET_RPC_API_KEYS', payload: [] });
     dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
   }, [dispatch]);
 
@@ -230,6 +230,7 @@ export function AppProvider({
         selectedPaymentSourceId,
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
         signOut,
+        isChangingNetwork,
       }}
     >
       {children}
