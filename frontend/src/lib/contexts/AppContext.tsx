@@ -26,11 +26,13 @@ interface AppState {
     };
     PurchasingWallets: {
       walletMnemonic: string;
+      walletAddress: string;
       note?: string;
     }[];
     SellingWallets: {
       id: string;
       walletVkey: string;
+      walletAddress: string;
       walletMnemonic: string;
       note?: string;
     }[];
@@ -132,19 +134,19 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 export const AppContext = createContext<
   | {
-      state: AppState;
-      dispatch: React.Dispatch<AppAction>;
-      showError: (error: {
-        code?: number;
-        message: string;
-        details?: unknown;
-      }) => void;
-      apiClient: Client;
-      setApiClient: React.Dispatch<React.SetStateAction<Client>>;
-      selectedPaymentSourceId: string | null;
-      setSelectedPaymentSourceId: (id: string | null) => void;
-      signOut: () => void;
-    }
+    state: AppState;
+    dispatch: React.Dispatch<AppAction>;
+    showError: (error: {
+      code?: number;
+      message: string;
+      details?: unknown;
+    }) => void;
+    apiClient: Client;
+    setApiClient: React.Dispatch<React.SetStateAction<Client>>;
+    selectedPaymentSourceId: string | null;
+    setSelectedPaymentSourceId: (id: string | null) => void;
+    signOut: () => void;
+  }
   | undefined
 >(undefined);
 
