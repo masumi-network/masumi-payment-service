@@ -127,10 +127,7 @@ export async function deRegisterAgentV1() {
         const blockchainProvider = new BlockfrostProvider(
           paymentSource.PaymentSourceConfig.rpcProviderApiKey,
         );
-        if (registryRequests.length == 0) {
-          logger.warn('No agents to deregister');
-          return;
-        }
+
         //we can only deregister one agent at a time
         const deregistrationRequest = registryRequests.at(0);
         if (deregistrationRequest == null) {
@@ -165,32 +162,18 @@ export async function deRegisterAgentV1() {
 
             const assetName = extractAssetName(request.agentIdentifier!);
 
-            const evaluationTx = await generateDeregisterAgentTransaction(
-              blockchainProvider,
-              network,
-              script,
-              address,
-              policyId,
-              assetName,
-              tokenUtxo,
-              collateralUtxo,
-              limitedFilteredUtxos,
-            );
-            const estimatedFee = (await blockchainProvider.evaluateTx(
-              evaluationTx,
-            )) as Array<{ budget: { mem: number; steps: number } }>;
-            const unsignedTx = await generateDeregisterAgentTransaction(
-              blockchainProvider,
-              network,
-              script,
-              address,
-              policyId,
-              assetName,
-              tokenUtxo,
-              collateralUtxo,
-              limitedFilteredUtxos,
-              estimatedFee[0].budget,
-            );
+            const unsignedTx =
+              await generateDeregisterAgentTransactionAutomaticFees(
+                blockchainProvider,
+                network,
+                script,
+                address,
+                policyId,
+                assetName,
+                tokenUtxo,
+                collateralUtxo,
+                limitedFilteredUtxos,
+              );
 
             const signedTx = await wallet.signTx(unsignedTx);
 
@@ -247,6 +230,47 @@ export async function deRegisterAgentV1() {
   }
 }
 
+async function generateDeregisterAgentTransactionAutomaticFees(
+  blockchainProvider: BlockfrostProvider,
+  network: Network,
+  script: {
+    version: LanguageVersion;
+    code: string;
+  },
+  walletAddress: string,
+  policyId: string,
+  assetName: string,
+  assetUtxo: UTxO,
+  collateralUtxo: UTxO,
+  utxos: UTxO[],
+) {
+  const evaluationTx = await generateDeregisterAgentTransaction(
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    policyId,
+    assetName,
+    assetUtxo,
+    collateralUtxo,
+    utxos,
+  );
+  const estimatedFee = (await blockchainProvider.evaluateTx(
+    evaluationTx,
+  )) as Array<{ budget: { mem: number; steps: number } }>;
+  return await generateDeregisterAgentTransaction(
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    policyId,
+    assetName,
+    assetUtxo,
+    collateralUtxo,
+    utxos,
+    estimatedFee[0].budget,
+  );
+}
 async function generateDeregisterAgentTransaction(
   blockchainProvider: IFetcher,
   network: Network,
