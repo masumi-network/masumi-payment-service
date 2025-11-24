@@ -494,7 +494,7 @@ export type GetPaymentResponses = {
                     updatedAt: string;
                     txHash: string | null;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
-                    confirmations: number;
+                    confirmations: number | null;
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
@@ -502,7 +502,7 @@ export type GetPaymentResponses = {
                     updatedAt: string;
                     txHash: string | null;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
-                    confirmations: number;
+                    confirmations: number | null;
                 }> | null;
                 RequestedFunds: Array<{
                     amount: string;
@@ -930,7 +930,7 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
-                    confirmations: number;
+                    confirmations: number | null;
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
@@ -938,7 +938,7 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
-                    confirmations: number;
+                    confirmations: number | null;
                 }>;
                 PaidFunds: Array<{
                     amount: string;

@@ -1485,7 +1485,8 @@
                                                                         ]
                                                                     },
                                                                     "confirmations": {
-                                                                        "type": "number"
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -1526,7 +1527,8 @@
                                                                             ]
                                                                         },
                                                                         "confirmations": {
-                                                                            "type": "number"
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3197,7 +3199,8 @@
                                                                         ]
                                                                     },
                                                                     "confirmations": {
-                                                                        "type": "number"
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3236,7 +3239,8 @@
                                                                             ]
                                                                         },
                                                                         "confirmations": {
-                                                                            "type": "number"
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
