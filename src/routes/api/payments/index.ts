@@ -90,7 +90,7 @@ export const queryPaymentsSchemaOutput = z.object({
           updatedAt: z.date(),
           txHash: z.string().nullable(),
           status: z.nativeEnum(TransactionStatus),
-          confirmations: z.number(),
+          confirmations: z.number().nullable(),
         })
         .nullable(),
       TransactionHistory: z
@@ -101,7 +101,7 @@ export const queryPaymentsSchemaOutput = z.object({
             updatedAt: z.date(),
             txHash: z.string().nullable(),
             status: z.nativeEnum(TransactionStatus),
-            confirmations: z.number(),
+            confirmations: z.number().nullable(),
           }),
         )
         .nullable(),
