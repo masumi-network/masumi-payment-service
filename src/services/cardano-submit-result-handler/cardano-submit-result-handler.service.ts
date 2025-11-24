@@ -25,7 +25,7 @@ import {
   newCooldownTime,
 } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -358,7 +358,7 @@ export async function submitResultV1() {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:
-                      'Submitting result failed: ' + convertErrorString(error),
+                      'Submitting result failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

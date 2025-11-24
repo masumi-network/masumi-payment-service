@@ -19,7 +19,7 @@ import {
   SmartContractState,
 } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
 import {
@@ -654,8 +654,7 @@ export async function batchLatestPaymentEntriesV1() {
                             PurchasingAction.WaitingForManualAction,
                           errorType: PurchaseErrorType.Unknown,
                           errorNote:
-                            'Batching payments failed: ' +
-                            convertErrorString(error),
+                            'Batching payments failed: ' + errorToString(error),
                         },
                       },
                     },
@@ -714,7 +713,7 @@ export async function batchLatestPaymentEntriesV1() {
                       errorType: PurchaseErrorType.Unknown,
                       errorNote:
                         'Outer error: Batching payments failed: ' +
-                        convertErrorString(error),
+                        errorToString(error),
                     },
                   },
                 },

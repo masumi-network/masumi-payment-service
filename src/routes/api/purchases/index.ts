@@ -21,7 +21,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { handlePurchaseCreditInit } from '@/services/token-credit';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import { validateHexString } from '@/utils/generator/contract-generator';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
@@ -730,7 +730,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         sellerAddress: addressOfAsset,
       };
 
-      const hashedBlockchainIdentifier = generateHash(
+      const hashedBlockchainIdentifier = generateSHA256Hash(
         stringify(reconstructedBlockchainIdentifier),
       );
 

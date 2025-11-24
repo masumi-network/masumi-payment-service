@@ -20,7 +20,7 @@ import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
@@ -531,7 +531,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     const sellerCUID = cuid2.createId();
-    const sellerId = generateHash(sellerCUID) + input.agentIdentifier;
+    const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
       agentIdentifier: input.agentIdentifier,
@@ -553,7 +553,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       },
     });
 
-    const hashedBlockchainIdentifier = generateHash(
+    const hashedBlockchainIdentifier = generateSHA256Hash(
       stringify(blockchainIdentifier),
     );
     const signedBlockchainIdentifier = await meshWallet.signData(

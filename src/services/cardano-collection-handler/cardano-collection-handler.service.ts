@@ -21,7 +21,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
@@ -428,8 +428,7 @@ export async function collectOutstandingPaymentsV1() {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:
-                      'Collecting payments failed: ' +
-                      convertErrorString(error),
+                      'Collecting payments failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

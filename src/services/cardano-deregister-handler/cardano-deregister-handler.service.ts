@@ -15,7 +15,7 @@ import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 
 const mutex = new Mutex();
 
@@ -192,7 +192,7 @@ export async function deRegisterAgentV1() {
               where: { id: request.id },
               data: {
                 state: RegistrationState.DeregistrationFailed,
-                error: convertErrorString(error),
+                error: errorToString(error),
                 SmartContractWallet: {
                   update: {
                     lockedAt: null,

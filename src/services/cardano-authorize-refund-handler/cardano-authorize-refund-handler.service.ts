@@ -25,7 +25,7 @@ import {
   newCooldownTime,
 } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
@@ -319,7 +319,7 @@ export async function authorizeRefundV1() {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:
-                      'Authorizing refund failed: ' + convertErrorString(error),
+                      'Authorizing refund failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {
