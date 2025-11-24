@@ -24,6 +24,7 @@ import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -368,7 +369,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       input.network,
       options.permission,
     );
-    const policyId = input.agentIdentifier.slice(0, 56);
+    const policyId = extractPolicyId(input.agentIdentifier);
 
     const specifiedPaymentContract = await prisma.paymentSource.findFirst({
       where: {
