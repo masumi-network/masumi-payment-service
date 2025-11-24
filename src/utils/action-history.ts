@@ -49,15 +49,51 @@ export async function updatePaymentNextAction(
       );
     }
 
-    // 2. Save current action to history
+    const completeRecord = await tx.paymentRequest.findUnique({
+      where: { id: paymentRequestId },
+      include: { NextAction: true },
+    });
+
+    if (!completeRecord) {
+      throw new Error(
+        `PaymentRequest ${paymentRequestId} not found for history snapshot`,
+      );
+    }
+
+    // 3. Save complete snapshot to history
     await tx.paymentActionHistory.create({
       data: {
         paymentRequestId: paymentRequestId,
-        requestedAction: current.NextAction.requestedAction,
+        requestedAction: completeRecord.NextAction.requestedAction,
+        snapshotCreatedAt: completeRecord.createdAt,
+        snapshotUpdatedAt: completeRecord.updatedAt,
+        lastCheckedAt: completeRecord.lastCheckedAt,
+        paymentSourceId: completeRecord.paymentSourceId,
+        smartContractWalletId: completeRecord.smartContractWalletId,
+        buyerWalletId: completeRecord.buyerWalletId,
+        nextActionId: completeRecord.nextActionId,
+        requestedById: completeRecord.requestedById,
+        currentTransactionId: completeRecord.currentTransactionId,
+        metadata: completeRecord.metadata,
+        blockchainIdentifier: completeRecord.blockchainIdentifier,
+        submitResultTime: completeRecord.submitResultTime,
+        unlockTime: completeRecord.unlockTime,
+        externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+        inputHash: completeRecord.inputHash,
+        resultHash: completeRecord.resultHash,
+        onChainState: completeRecord.onChainState,
+        sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+        buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+        collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+        payByTime: completeRecord.payByTime,
+        nextActionResultHash: completeRecord.NextAction.resultHash,
+        nextActionSubmittedTxHash: completeRecord.NextAction.submittedTxHash,
+        nextActionErrorType: completeRecord.NextAction.errorType,
+        nextActionErrorNote: completeRecord.NextAction.errorNote,
       },
     });
 
-    // 3. Handle error note concatenation
+    // 4. Handle error note concatenation
     let finalErrorNote = options.errorNote;
     if (
       options.concatenateErrorNote &&
@@ -73,7 +109,7 @@ export async function updatePaymentNextAction(
         options.errorNote;
     }
 
-    // 4. Update to new NextAction (Prisma will handle delete + create via unique constraint)
+    // 5. Update to new NextAction (Prisma will handle delete + create via unique constraint)
     await tx.paymentRequest.update({
       where: { id: paymentRequestId },
       data: {
@@ -104,29 +140,51 @@ export async function modifyPaymentNextAction(
   prismaClient: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
   const execute = async (tx: Prisma.TransactionClient) => {
-    // Get current state
-    const current = await tx.paymentRequest.findUnique({
+    // Fetch complete parent record INCLUDING NextAction for snapshot
+    const completeRecord = await tx.paymentRequest.findUnique({
       where: { id: paymentRequestId },
-      select: {
-        NextAction: {
-          select: { requestedAction: true },
-        },
-      },
+      include: { NextAction: true },
     });
 
-    if (!current?.NextAction) {
+    if (!completeRecord?.NextAction) {
       throw new Error(
         `PaymentRequest ${paymentRequestId} or its NextAction not found`,
       );
     }
 
-    // Save history and update in one operation
+    // Update with complete history snapshot
     await tx.paymentRequest.update({
       where: { id: paymentRequestId },
       data: {
         ActionHistory: {
           create: {
-            requestedAction: current.NextAction.requestedAction,
+            requestedAction: completeRecord.NextAction.requestedAction,
+            snapshotCreatedAt: completeRecord.createdAt,
+            snapshotUpdatedAt: completeRecord.updatedAt,
+            lastCheckedAt: completeRecord.lastCheckedAt,
+            paymentSourceId: completeRecord.paymentSourceId,
+            smartContractWalletId: completeRecord.smartContractWalletId,
+            buyerWalletId: completeRecord.buyerWalletId,
+            nextActionId: completeRecord.nextActionId,
+            requestedById: completeRecord.requestedById,
+            currentTransactionId: completeRecord.currentTransactionId,
+            metadata: completeRecord.metadata,
+            blockchainIdentifier: completeRecord.blockchainIdentifier,
+            submitResultTime: completeRecord.submitResultTime,
+            unlockTime: completeRecord.unlockTime,
+            externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+            inputHash: completeRecord.inputHash,
+            resultHash: completeRecord.resultHash,
+            onChainState: completeRecord.onChainState,
+            sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+            buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+            collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+            payByTime: completeRecord.payByTime,
+            nextActionResultHash: completeRecord.NextAction.resultHash,
+            nextActionSubmittedTxHash:
+              completeRecord.NextAction.submittedTxHash,
+            nextActionErrorType: completeRecord.NextAction.errorType,
+            nextActionErrorNote: completeRecord.NextAction.errorNote,
           },
         },
         NextAction: {
@@ -165,10 +223,47 @@ export async function upsertPaymentNextAction(
     }
 
     if (current.NextAction) {
+      // Fetch complete parent record for snapshot
+      const completeRecord = await tx.paymentRequest.findUnique({
+        where: { id: paymentRequestId },
+        include: { NextAction: true },
+      });
+
+      if (!completeRecord) {
+        throw new Error(
+          `PaymentRequest ${paymentRequestId} not found for history snapshot`,
+        );
+      }
+
       await tx.paymentActionHistory.create({
         data: {
           paymentRequestId: paymentRequestId,
-          requestedAction: current.NextAction.requestedAction,
+          requestedAction: completeRecord.NextAction.requestedAction,
+          snapshotCreatedAt: completeRecord.createdAt,
+          snapshotUpdatedAt: completeRecord.updatedAt,
+          lastCheckedAt: completeRecord.lastCheckedAt,
+          paymentSourceId: completeRecord.paymentSourceId,
+          smartContractWalletId: completeRecord.smartContractWalletId,
+          buyerWalletId: completeRecord.buyerWalletId,
+          nextActionId: completeRecord.nextActionId,
+          requestedById: completeRecord.requestedById,
+          currentTransactionId: completeRecord.currentTransactionId,
+          metadata: completeRecord.metadata,
+          blockchainIdentifier: completeRecord.blockchainIdentifier,
+          submitResultTime: completeRecord.submitResultTime,
+          unlockTime: completeRecord.unlockTime,
+          externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+          inputHash: completeRecord.inputHash,
+          resultHash: completeRecord.resultHash,
+          onChainState: completeRecord.onChainState,
+          sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+          buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+          collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+          payByTime: completeRecord.payByTime,
+          nextActionResultHash: completeRecord.NextAction.resultHash,
+          nextActionSubmittedTxHash: completeRecord.NextAction.submittedTxHash,
+          nextActionErrorType: completeRecord.NextAction.errorType,
+          nextActionErrorNote: completeRecord.NextAction.errorNote,
         },
       });
     }
@@ -231,15 +326,52 @@ export async function updatePurchaseNextAction(
       );
     }
 
-    // 2. Save to history
+    // 2. Fetch complete parent record for snapshot
+    const completeRecord = await tx.purchaseRequest.findUnique({
+      where: { id: purchaseRequestId },
+      include: { NextAction: true },
+    });
+
+    if (!completeRecord) {
+      throw new Error(
+        `PurchaseRequest ${purchaseRequestId} not found for history snapshot`,
+      );
+    }
+
+    // 3. Save complete snapshot to history
     await tx.purchaseActionHistory.create({
       data: {
         purchaseRequestId: purchaseRequestId,
-        requestedAction: current.NextAction.requestedAction,
+        requestedAction: completeRecord.NextAction.requestedAction,
+        snapshotCreatedAt: completeRecord.createdAt,
+        snapshotUpdatedAt: completeRecord.updatedAt,
+        lastCheckedAt: completeRecord.lastCheckedAt,
+        paymentSourceId: completeRecord.paymentSourceId,
+        sellerWalletId: completeRecord.sellerWalletId,
+        smartContractWalletId: completeRecord.smartContractWalletId,
+        nextActionId: completeRecord.nextActionId,
+        requestedById: completeRecord.requestedById,
+        currentTransactionId: completeRecord.currentTransactionId,
+        metadata: completeRecord.metadata,
+        blockchainIdentifier: completeRecord.blockchainIdentifier,
+        submitResultTime: completeRecord.submitResultTime,
+        unlockTime: completeRecord.unlockTime,
+        externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+        inputHash: completeRecord.inputHash,
+        resultHash: completeRecord.resultHash,
+        onChainState: completeRecord.onChainState,
+        sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+        buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+        collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+        payByTime: completeRecord.payByTime,
+        nextActionInputHash: completeRecord.NextAction.inputHash,
+        nextActionSubmittedTxHash: completeRecord.NextAction.submittedTxHash,
+        nextActionErrorType: completeRecord.NextAction.errorType,
+        nextActionErrorNote: completeRecord.NextAction.errorNote,
       },
     });
 
-    // 3. Handle error note concatenation
+    // 4. Handle error note concatenation
     let finalErrorNote = options.errorNote;
     if (
       options.concatenateErrorNote &&
@@ -255,7 +387,7 @@ export async function updatePurchaseNextAction(
         options.errorNote;
     }
 
-    // 4. Update to new NextAction
+    // 5. Update to new NextAction
     await tx.purchaseRequest.update({
       where: { id: purchaseRequestId },
       data: {
@@ -286,29 +418,51 @@ export async function modifyPurchaseNextAction(
   prismaClient: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
   const execute = async (tx: Prisma.TransactionClient) => {
-    // Get current state
-    const current = await tx.purchaseRequest.findUnique({
+    // Fetch complete parent record INCLUDING NextAction for snapshot
+    const completeRecord = await tx.purchaseRequest.findUnique({
       where: { id: purchaseRequestId },
-      select: {
-        NextAction: {
-          select: { requestedAction: true },
-        },
-      },
+      include: { NextAction: true },
     });
 
-    if (!current?.NextAction) {
+    if (!completeRecord?.NextAction) {
       throw new Error(
         `PurchaseRequest ${purchaseRequestId} or its NextAction not found`,
       );
     }
 
-    // Save history and update in one operation
+    // Update with complete history snapshot
     await tx.purchaseRequest.update({
       where: { id: purchaseRequestId },
       data: {
         ActionHistory: {
           create: {
-            requestedAction: current.NextAction.requestedAction,
+            requestedAction: completeRecord.NextAction.requestedAction,
+            snapshotCreatedAt: completeRecord.createdAt,
+            snapshotUpdatedAt: completeRecord.updatedAt,
+            lastCheckedAt: completeRecord.lastCheckedAt,
+            paymentSourceId: completeRecord.paymentSourceId,
+            sellerWalletId: completeRecord.sellerWalletId,
+            smartContractWalletId: completeRecord.smartContractWalletId,
+            nextActionId: completeRecord.nextActionId,
+            requestedById: completeRecord.requestedById,
+            currentTransactionId: completeRecord.currentTransactionId,
+            metadata: completeRecord.metadata,
+            blockchainIdentifier: completeRecord.blockchainIdentifier,
+            submitResultTime: completeRecord.submitResultTime,
+            unlockTime: completeRecord.unlockTime,
+            externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+            inputHash: completeRecord.inputHash,
+            resultHash: completeRecord.resultHash,
+            onChainState: completeRecord.onChainState,
+            sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+            buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+            collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+            payByTime: completeRecord.payByTime,
+            nextActionInputHash: completeRecord.NextAction.inputHash,
+            nextActionSubmittedTxHash:
+              completeRecord.NextAction.submittedTxHash,
+            nextActionErrorType: completeRecord.NextAction.errorType,
+            nextActionErrorNote: completeRecord.NextAction.errorNote,
           },
         },
         NextAction: {
@@ -352,10 +506,47 @@ export async function upsertPurchaseNextAction(
 
     // Only create history if NextAction exists
     if (current.NextAction) {
+      // Fetch complete parent record for snapshot
+      const completeRecord = await tx.purchaseRequest.findUnique({
+        where: { id: purchaseRequestId },
+        include: { NextAction: true },
+      });
+
+      if (!completeRecord) {
+        throw new Error(
+          `PurchaseRequest ${purchaseRequestId} not found for history snapshot`,
+        );
+      }
+
       await tx.purchaseActionHistory.create({
         data: {
           purchaseRequestId: purchaseRequestId,
-          requestedAction: current.NextAction.requestedAction,
+          requestedAction: completeRecord.NextAction.requestedAction,
+          snapshotCreatedAt: completeRecord.createdAt,
+          snapshotUpdatedAt: completeRecord.updatedAt,
+          lastCheckedAt: completeRecord.lastCheckedAt,
+          paymentSourceId: completeRecord.paymentSourceId,
+          sellerWalletId: completeRecord.sellerWalletId,
+          smartContractWalletId: completeRecord.smartContractWalletId,
+          nextActionId: completeRecord.nextActionId,
+          requestedById: completeRecord.requestedById,
+          currentTransactionId: completeRecord.currentTransactionId,
+          metadata: completeRecord.metadata,
+          blockchainIdentifier: completeRecord.blockchainIdentifier,
+          submitResultTime: completeRecord.submitResultTime,
+          unlockTime: completeRecord.unlockTime,
+          externalDisputeUnlockTime: completeRecord.externalDisputeUnlockTime,
+          inputHash: completeRecord.inputHash,
+          resultHash: completeRecord.resultHash,
+          onChainState: completeRecord.onChainState,
+          sellerCoolDownTime: completeRecord.sellerCoolDownTime,
+          buyerCoolDownTime: completeRecord.buyerCoolDownTime,
+          collateralReturnLovelace: completeRecord.collateralReturnLovelace,
+          payByTime: completeRecord.payByTime,
+          nextActionInputHash: completeRecord.NextAction.inputHash,
+          nextActionSubmittedTxHash: completeRecord.NextAction.submittedTxHash,
+          nextActionErrorType: completeRecord.NextAction.errorType,
+          nextActionErrorNote: completeRecord.NextAction.errorNote,
         },
       });
     }

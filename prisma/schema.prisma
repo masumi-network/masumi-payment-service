@@ -224,9 +224,34 @@ model PaymentActionData {
 
 model PaymentActionHistory {
   id               String         @id @default(cuid())
-  createdAt        DateTime       @default(now())
+  createdAt        DateTime       @default(now())  
   requestedAction  PaymentAction
   paymentRequestId String
+  snapshotCreatedAt             DateTime?
+  snapshotUpdatedAt             DateTime?
+  lastCheckedAt                 DateTime?
+  paymentSourceId               String?
+  smartContractWalletId         String?
+  buyerWalletId                 String?
+  nextActionId                  String?
+  requestedById                 String?
+  currentTransactionId          String?
+  metadata                      String?
+  blockchainIdentifier          String?
+  submitResultTime              BigInt?
+  unlockTime                    BigInt?
+  externalDisputeUnlockTime     BigInt?
+  inputHash                     String?
+  resultHash                    String?
+  onChainState                  OnChainState?  
+  sellerCoolDownTime            BigInt?
+  buyerCoolDownTime             BigInt?
+  collateralReturnLovelace      BigInt?
+  payByTime                     BigInt?  
+  nextActionResultHash          String?
+  nextActionSubmittedTxHash     String?
+  nextActionErrorType           PaymentErrorType?
+  nextActionErrorNote           String?  
   PaymentRequest   PaymentRequest @relation(fields: [paymentRequestId], references: [id], onDelete: Cascade)
 
   @@index([paymentRequestId, createdAt])
@@ -285,6 +310,31 @@ model PurchaseActionHistory {
   createdAt         DateTime         @default(now())
   requestedAction   PurchasingAction
   purchaseRequestId String
+  snapshotCreatedAt             DateTime?
+  snapshotUpdatedAt             DateTime?
+  lastCheckedAt                 DateTime?
+  paymentSourceId               String?
+  sellerWalletId                String?
+  smartContractWalletId         String?
+  nextActionId                  String?
+  requestedById                 String?
+  currentTransactionId          String?
+  metadata                      String?
+  blockchainIdentifier          String?
+  submitResultTime              BigInt?
+  unlockTime                    BigInt?
+  externalDisputeUnlockTime     BigInt?
+  inputHash                     String?
+  resultHash                    String?
+  onChainState                  OnChainState?
+  sellerCoolDownTime            BigInt?
+  buyerCoolDownTime             BigInt?
+  collateralReturnLovelace      BigInt?
+  payByTime                     BigInt?
+  nextActionInputHash           String?
+  nextActionSubmittedTxHash     String?
+  nextActionErrorType           PurchaseErrorType?
+  nextActionErrorNote           String?
   PurchaseRequest   PurchaseRequest  @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
 
   @@index([purchaseRequestId, createdAt])
