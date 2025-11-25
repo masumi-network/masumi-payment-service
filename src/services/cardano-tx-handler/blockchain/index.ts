@@ -7,15 +7,14 @@ import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 
 export type TransactionMetadata = {
   fees: string;
-  deposit: string;
-  size: number;
-  block: string;
   block_height: number;
   block_time: number;
-  slot: number;
-  index: number;
-  invalid_before: string | null;
-  invalid_hereafter: string | null;
+  output_amount: Array<{ unit: string; quantity: string }>;
+  utxo_count: number;
+  withdrawal_count: number;
+  asset_mint_or_burn_count: number;
+  redeemer_count: number;
+  valid_contract: boolean;
 };
 
 async function detectRollbackForTxPage(
@@ -129,15 +128,14 @@ export async function getExtendedTxInformation(
 
         const metadata: TransactionMetadata = {
           fees: txDetails.fees,
-          deposit: txDetails.deposit,
-          size: txDetails.size,
-          block: txDetails.block,
           block_height: txDetails.block_height,
           block_time: txDetails.block_time,
-          slot: txDetails.slot,
-          index: txDetails.index,
-          invalid_before: txDetails.invalid_before,
-          invalid_hereafter: txDetails.invalid_hereafter,
+          output_amount: txDetails.output_amount,
+          utxo_count: txDetails.utxo_count,
+          withdrawal_count: txDetails.withdrawal_count,
+          asset_mint_or_burn_count: txDetails.asset_mint_or_burn_count,
+          redeemer_count: txDetails.redeemer_count,
+          valid_contract: txDetails.valid_contract,
         };
 
         return {

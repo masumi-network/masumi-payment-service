@@ -78,15 +78,14 @@ model Transaction {
   status                   TransactionStatus
   lastCheckedAt            DateTime?
   fees                     String?
-  deposit                  String?
-  size                     Int?
-  block                    String?
   blockHeight              Int?
   blockTime                Int?
-  slot                     BigInt?
-  txIndex                  Int?
-  invalidBefore            BigInt?
-  invalidHereafter         BigInt?
+  outputAmount             String?           @db.Text
+  utxoCount                Int?
+  withdrawalCount          Int?
+  assetMintOrBurnCount     Int?
+  redeemerCount            Int?
+  validContract            Boolean?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
   BlocksWallet             HotWallet?

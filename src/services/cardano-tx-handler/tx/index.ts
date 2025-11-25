@@ -130,21 +130,16 @@ export async function handlePaymentTransactionCardanoV1(
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
               fees: metadata?.fees ?? null,
-              deposit: metadata?.deposit ?? null,
-              size: metadata?.size ?? null,
-              block: metadata?.block ?? null,
               blockHeight: metadata?.block_height ?? null,
               blockTime: metadata?.block_time ?? null,
-              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
-              txIndex: metadata?.index ?? null,
-              invalidBefore:
-                metadata?.invalid_before != null
-                  ? BigInt(metadata.invalid_before)
-                  : null,
-              invalidHereafter:
-                metadata?.invalid_hereafter != null
-                  ? BigInt(metadata.invalid_hereafter)
-                  : null,
+              outputAmount: metadata?.output_amount
+                ? JSON.stringify(metadata.output_amount)
+                : null,
+              utxoCount: metadata?.utxo_count ?? null,
+              withdrawalCount: metadata?.withdrawal_count ?? null,
+              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
+              redeemerCount: metadata?.redeemer_count ?? null,
+              validContract: metadata?.valid_contract ?? null,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -263,21 +258,16 @@ export async function handlePurchasingTransactionCardanoV1(
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
               fees: metadata?.fees ?? null,
-              deposit: metadata?.deposit ?? null,
-              size: metadata?.size ?? null,
-              block: metadata?.block ?? null,
               blockHeight: metadata?.block_height ?? null,
               blockTime: metadata?.block_time ?? null,
-              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
-              txIndex: metadata?.index ?? null,
-              invalidBefore:
-                metadata?.invalid_before != null
-                  ? BigInt(metadata.invalid_before)
-                  : null,
-              invalidHereafter:
-                metadata?.invalid_hereafter != null
-                  ? BigInt(metadata.invalid_hereafter)
-                  : null,
+              outputAmount: metadata?.output_amount
+                ? JSON.stringify(metadata.output_amount)
+                : null,
+              utxoCount: metadata?.utxo_count ?? null,
+              withdrawalCount: metadata?.withdrawal_count ?? null,
+              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
+              redeemerCount: metadata?.redeemer_count ?? null,
+              validContract: metadata?.valid_contract ?? null,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -761,21 +751,16 @@ export async function updateInitialPurchaseTransaction(
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
               fees: metadata?.fees ?? null,
-              deposit: metadata?.deposit ?? null,
-              size: metadata?.size ?? null,
-              block: metadata?.block ?? null,
               blockHeight: metadata?.block_height ?? null,
               blockTime: metadata?.block_time ?? null,
-              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
-              txIndex: metadata?.index ?? null,
-              invalidBefore:
-                metadata?.invalid_before != null
-                  ? BigInt(metadata.invalid_before)
-                  : null,
-              invalidHereafter:
-                metadata?.invalid_hereafter != null
-                  ? BigInt(metadata.invalid_hereafter)
-                  : null,
+              outputAmount: metadata?.output_amount
+                ? JSON.stringify(metadata.output_amount)
+                : null,
+              utxoCount: metadata?.utxo_count ?? null,
+              withdrawalCount: metadata?.withdrawal_count ?? null,
+              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
+              redeemerCount: metadata?.redeemer_count ?? null,
+              validContract: metadata?.valid_contract ?? null,
             },
           },
           onChainState: OnChainState.FundsLocked,
@@ -1101,21 +1086,16 @@ export async function updateInitialPaymentTransaction(
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
               fees: metadata?.fees ?? null,
-              deposit: metadata?.deposit ?? null,
-              size: metadata?.size ?? null,
-              block: metadata?.block ?? null,
               blockHeight: metadata?.block_height ?? null,
               blockTime: metadata?.block_time ?? null,
-              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
-              txIndex: metadata?.index ?? null,
-              invalidBefore:
-                metadata?.invalid_before != null
-                  ? BigInt(metadata.invalid_before)
-                  : null,
-              invalidHereafter:
-                metadata?.invalid_hereafter != null
-                  ? BigInt(metadata.invalid_hereafter)
-                  : null,
+              outputAmount: metadata?.output_amount
+                ? JSON.stringify(metadata.output_amount)
+                : null,
+              utxoCount: metadata?.utxo_count ?? null,
+              withdrawalCount: metadata?.withdrawal_count ?? null,
+              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
+              redeemerCount: metadata?.redeemer_count ?? null,
+              validContract: metadata?.valid_contract ?? null,
             },
           },
           onChainState: newState,

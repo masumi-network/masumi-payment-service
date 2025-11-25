@@ -198,6 +198,22 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     return {
       Purchases: result.map((purchase) => ({
         ...purchase,
+        CurrentTransaction: purchase.CurrentTransaction
+          ? {
+              id: purchase.CurrentTransaction.id,
+              createdAt: purchase.CurrentTransaction.createdAt,
+              updatedAt: purchase.CurrentTransaction.updatedAt,
+              txHash: purchase.CurrentTransaction.txHash,
+              status: purchase.CurrentTransaction.status,
+            }
+          : null,
+        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
+          id: tx.id,
+          createdAt: tx.createdAt,
+          updatedAt: tx.updatedAt,
+          txHash: tx.txHash,
+          status: tx.status,
+        })),
         PaidFunds: (
           purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
         ).map((amount) => ({
@@ -407,6 +423,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           existingPurchaseRequest.id,
           {
             ...existingPurchaseRequest,
+            CurrentTransaction: existingPurchaseRequest.CurrentTransaction
+              ? {
+                  id: existingPurchaseRequest.CurrentTransaction.id,
+                  createdAt:
+                    existingPurchaseRequest.CurrentTransaction.createdAt,
+                  updatedAt:
+                    existingPurchaseRequest.CurrentTransaction.updatedAt,
+                  txHash: existingPurchaseRequest.CurrentTransaction.txHash,
+                  status: existingPurchaseRequest.CurrentTransaction.status,
+                }
+              : null,
             payByTime: existingPurchaseRequest.payByTime?.toString() ?? null,
             PaidFunds: (
               existingPurchaseRequest.PaidFunds as Array<{

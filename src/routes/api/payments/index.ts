@@ -202,6 +202,20 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     return {
       Payments: result.map((payment) => ({
         ...payment,
+        CurrentTransaction: payment.CurrentTransaction
+          ? {
+              id: payment.CurrentTransaction.id,
+              createdAt: payment.CurrentTransaction.createdAt,
+              updatedAt: payment.CurrentTransaction.updatedAt,
+              txHash: payment.CurrentTransaction.txHash,
+            }
+          : null,
+        TransactionHistory: payment.TransactionHistory.map((tx) => ({
+          id: tx.id,
+          createdAt: tx.createdAt,
+          updatedAt: tx.updatedAt,
+          txHash: tx.txHash,
+        })),
         submitResultTime: payment.submitResultTime.toString(),
         cooldownTime: Number(payment.sellerCoolDownTime),
         cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
@@ -616,6 +630,20 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     }
     return {
       ...payment,
+      CurrentTransaction: payment.CurrentTransaction
+        ? {
+            id: payment.CurrentTransaction.id,
+            createdAt: payment.CurrentTransaction.createdAt,
+            updatedAt: payment.CurrentTransaction.updatedAt,
+            txHash: payment.CurrentTransaction.txHash,
+          }
+        : null,
+      TransactionHistory: payment.TransactionHistory.map((tx) => ({
+        id: tx.id,
+        createdAt: tx.createdAt,
+        updatedAt: tx.updatedAt,
+        txHash: tx.txHash,
+      })),
       payByTime: payment.payByTime!.toString(),
       submitResultTime: payment.submitResultTime.toString(),
       unlockTime: payment.unlockTime.toString(),
