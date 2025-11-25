@@ -77,6 +77,16 @@ model Transaction {
   txHash                   String
   status                   TransactionStatus
   lastCheckedAt            DateTime?
+  fees                     String?
+  deposit                  String?
+  size                     Int?
+  block                    String?
+  blockHeight              Int?
+  blockTime                Int?
+  slot                     BigInt?
+  txIndex                  Int?
+  invalidBefore            BigInt?
+  invalidHereafter         BigInt?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
   BlocksWallet             HotWallet?

@@ -32,11 +32,13 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
+import { TransactionMetadata } from '../blockchain';
 
 export type UpdateTransactionInput = {
   blockTime: number;
   tx: { tx_hash: string };
   block: { confirmations: number };
+  metadata: TransactionMetadata;
   utxos: {
     hash: string;
     inputs: Array<{
@@ -75,6 +77,7 @@ export async function handlePaymentTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -126,6 +129,22 @@ export async function handlePaymentTransactionCardanoV1(
             create: {
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
+              fees: metadata?.fees ?? null,
+              deposit: metadata?.deposit ?? null,
+              size: metadata?.size ?? null,
+              block: metadata?.block ?? null,
+              blockHeight: metadata?.block_height ?? null,
+              blockTime: metadata?.block_time ?? null,
+              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
+              txIndex: metadata?.index ?? null,
+              invalidBefore:
+                metadata?.invalid_before != null
+                  ? BigInt(metadata.invalid_before)
+                  : null,
+              invalidHereafter:
+                metadata?.invalid_hereafter != null
+                  ? BigInt(metadata.invalid_hereafter)
+                  : null,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -190,6 +209,7 @@ export async function handlePurchasingTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -242,6 +262,22 @@ export async function handlePurchasingTransactionCardanoV1(
             create: {
               txHash: tx_hash,
               status: TransactionStatus.Confirmed,
+              fees: metadata?.fees ?? null,
+              deposit: metadata?.deposit ?? null,
+              size: metadata?.size ?? null,
+              block: metadata?.block ?? null,
+              blockHeight: metadata?.block_height ?? null,
+              blockTime: metadata?.block_time ?? null,
+              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
+              txIndex: metadata?.index ?? null,
+              invalidBefore:
+                metadata?.invalid_before != null
+                  ? BigInt(metadata.invalid_before)
+                  : null,
+              invalidHereafter:
+                metadata?.invalid_hereafter != null
+                  ? BigInt(metadata.invalid_hereafter)
+                  : null,
             },
           },
           WithdrawnForSeller: sellerWithdrawn
@@ -429,6 +465,7 @@ export async function updateInitialTransactions(
       decodedNewContract,
       output,
       tx,
+      tx.metadata,
     );
 
     await updateInitialPaymentTransaction(
@@ -436,6 +473,7 @@ export async function updateInitialTransactions(
       paymentContract,
       tx,
       output,
+      tx.metadata,
     );
   }
 }
@@ -447,6 +485,7 @@ export async function updateInitialPurchaseTransaction(
     { type: 'Initial' }
   >['valueOutputs'][number],
   tx: UpdateTransactionInput,
+  metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -721,6 +760,22 @@ export async function updateInitialPurchaseTransaction(
             create: {
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
+              fees: metadata?.fees ?? null,
+              deposit: metadata?.deposit ?? null,
+              size: metadata?.size ?? null,
+              block: metadata?.block ?? null,
+              blockHeight: metadata?.block_height ?? null,
+              blockTime: metadata?.block_time ?? null,
+              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
+              txIndex: metadata?.index ?? null,
+              invalidBefore:
+                metadata?.invalid_before != null
+                  ? BigInt(metadata.invalid_before)
+                  : null,
+              invalidHereafter:
+                metadata?.invalid_hereafter != null
+                  ? BigInt(metadata.invalid_hereafter)
+                  : null,
             },
           },
           onChainState: OnChainState.FundsLocked,
@@ -766,6 +821,7 @@ export async function updateInitialPaymentTransaction(
     ExtractOnChainTransactionDataOutput,
     { type: 'Initial' }
   >['valueOutputs'][number],
+  metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -1044,6 +1100,22 @@ export async function updateInitialPaymentTransaction(
             create: {
               txHash: tx.tx.tx_hash,
               status: TransactionStatus.Confirmed,
+              fees: metadata?.fees ?? null,
+              deposit: metadata?.deposit ?? null,
+              size: metadata?.size ?? null,
+              block: metadata?.block ?? null,
+              blockHeight: metadata?.block_height ?? null,
+              blockTime: metadata?.block_time ?? null,
+              slot: metadata?.slot != null ? BigInt(metadata.slot) : null,
+              txIndex: metadata?.index ?? null,
+              invalidBefore:
+                metadata?.invalid_before != null
+                  ? BigInt(metadata.invalid_before)
+                  : null,
+              invalidHereafter:
+                metadata?.invalid_hereafter != null
+                  ? BigInt(metadata.invalid_hereafter)
+                  : null,
             },
           },
           onChainState: newState,
@@ -1241,6 +1313,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.metadata,
       );
     }
   } catch (error) {
@@ -1262,6 +1335,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.metadata,
       );
     }
   } catch (error) {
