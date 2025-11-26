@@ -123,9 +123,7 @@ const instrumentations = [
   }),
 
   // Prisma instrumentation for database operations
-  new PrismaInstrumentation({
-    middleware: true,
-  }),
+  new PrismaInstrumentation(),
 ];
 
 // Initialize NodeSDK with comprehensive configuration
