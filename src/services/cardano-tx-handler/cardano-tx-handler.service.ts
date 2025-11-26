@@ -146,19 +146,19 @@ async function processPaymentSource(
 
     try {
       await processTransactionData(tx, paymentContract, blockfrost);
-    } catch (error) {
-      logger.error('Error processing transaction', {
-        error: error,
-        tx: tx,
-      });
-      throw error;
-    } finally {
       await updateSyncCheckpoint(
         paymentContract,
         tx.tx.tx_hash,
         latestIdentifier,
       );
       latestIdentifier = tx.tx.tx_hash;
+    } catch (error) {
+      //If the error persists this will prevent a further sync
+      logger.error('Error processing transaction', {
+        error: error,
+        tx: tx,
+      });
+      throw error;
     }
   }
 }
