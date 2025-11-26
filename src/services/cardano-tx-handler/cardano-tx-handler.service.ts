@@ -56,9 +56,11 @@ const mutex = new Mutex();
 
 export async function checkLatestTransactions(
   {
-    maxParallelTransactions = CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
-  }: { maxParallelTransactions?: number } = {
-    maxParallelTransactions: CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
+    maxParallelTransactionsExtendedLookup:
+      maxParallelTransactionsExtendedLookup = CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS_EXTENDED_LOOKUP,
+  }: { maxParallelTransactionsExtendedLookup?: number } = {
+    maxParallelTransactionsExtendedLookup:
+      CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS_EXTENDED_LOOKUP,
   },
 ) {
   let release: MutexInterface.Releaser | null;
@@ -76,7 +78,10 @@ export async function checkLatestTransactions(
     try {
       const results = await Promise.allSettled(
         paymentContracts.map((paymentContract) =>
-          processPaymentSource(paymentContract, maxParallelTransactions),
+          processPaymentSource(
+            paymentContract,
+            maxParallelTransactionsExtendedLookup,
+          ),
         ),
       );
 
@@ -100,7 +105,7 @@ export async function checkLatestTransactions(
 }
 async function processPaymentSource(
   paymentContract: PaymentSourceWithConfig,
-  maxParallelTransactions: number,
+  maxParallelTransactionsExtendedLookup: number,
 ) {
   const blockfrost = new BlockFrostAPI({
     projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
@@ -131,7 +136,7 @@ async function processPaymentSource(
   const txData = await getExtendedTxInformation(
     latestTx,
     blockfrost,
-    maxParallelTransactions,
+    maxParallelTransactionsExtendedLookup,
   );
 
   for (const tx of txData) {
