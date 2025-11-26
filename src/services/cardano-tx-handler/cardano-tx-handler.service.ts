@@ -154,7 +154,10 @@ async function processPaymentSource(
       latestIdentifier = tx.tx.tx_hash;
     } catch (error) {
       //If the error persists this will prevent a further sync
-      logger.error('Error processing transaction', {
+      logger.error(
+        '-----------SYNC FAILED TO CONTINUE: Error updating sync checkpoint-----------',
+      );
+      logger.error('SYNC FAILED TO CONTINUE: Error processing transaction', {
         error: error,
         tx: tx,
       });
