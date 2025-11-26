@@ -80,6 +80,10 @@ export default function Transactions() {
       return unit;
     }
 
+    if (!unit) {
+      return 'ADA';
+    }
+
     const usdmConfig = getUsdmConfig(network);
     const isUsdm =
       unit === usdmConfig.fullAssetId ||
