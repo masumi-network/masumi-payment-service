@@ -119,11 +119,10 @@ async function handlePaymentRequestResults(
   }
 }
 
-async function findMatchingUtxo(
+async function findMatchingUtxoAndDecodeContract(
   utxoList: UTxO[],
   txHash: string,
   request: PaymentRequestWithRelations,
-  paymentContract: PaymentSourceWithRelations,
   network: Network,
 ): Promise<MatchingUtxoResult | undefined> {
   for (const utxo of utxoList) {
@@ -236,11 +235,10 @@ async function processSinglePaymentRequest(
   }
   const utxoByHash = await blockchainProvider.fetchUTxOs(txHash);
 
-  const matchResult = await findMatchingUtxo(
+  const matchResult = await findMatchingUtxoAndDecodeContract(
     utxoByHash,
     txHash,
     request,
-    paymentContract,
     paymentContract.network,
   );
 
