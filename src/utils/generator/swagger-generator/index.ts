@@ -747,6 +747,8 @@ export function generateOpenAPI() {
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
+                    CurrentTransaction: null,
+                    TransactionHistory: [],
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
@@ -1110,6 +1112,7 @@ export function generateOpenAPI() {
                       errorNote: null,
                     },
                     CurrentTransaction: null,
+                    TransactionHistory: [],
                     PaidFunds: [
                       {
                         amount: '10000000',
