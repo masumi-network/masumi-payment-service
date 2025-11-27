@@ -33,7 +33,7 @@ import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
+import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
   include: {
@@ -284,36 +284,20 @@ async function processSinglePaymentRequest(
   const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
   const limitedUtxos = sortedUtxos.slice(0, Math.min(4, sortedUtxos.length));
 
-  const evaluationTx = await generateMasumiSmartContractInteractionTransaction(
-    'SubmitResult',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    sortedUtxos[0],
-    limitedUtxos,
-    datum.value,
-    invalidBefore,
-    invalidAfter,
-  );
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
-  const unsignedTx = await generateMasumiSmartContractInteractionTransaction(
-    'SubmitResult',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    sortedUtxos[0],
-    limitedUtxos,
-    datum.value,
-    invalidBefore,
-    invalidAfter,
-    estimatedFee[0].budget,
-  );
+  const unsignedTx =
+    await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+      'SubmitResult',
+      blockchainProvider,
+      network,
+      script,
+      address,
+      utxo,
+      sortedUtxos[0],
+      limitedUtxos,
+      datum.value,
+      invalidBefore,
+      invalidAfter,
+    );
 
   const signedTx = await wallet.signTx(unsignedTx);
 
