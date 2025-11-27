@@ -6,7 +6,7 @@ import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 
 export type TransactionMetadata = {
-  fees: string;
+  fees: bigint;
   block_height: number;
   block_time: number;
   output_amount: Array<{ unit: string; quantity: string }>;
@@ -127,7 +127,7 @@ export async function getExtendedTxInformation(
         );
 
         const metadata: TransactionMetadata = {
-          fees: txDetails.fees,
+          fees: BigInt(txDetails.fees),
           block_height: txDetails.block_height,
           block_time: txDetails.block_time,
           output_amount: txDetails.output_amount,

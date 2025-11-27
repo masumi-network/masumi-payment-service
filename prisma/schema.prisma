@@ -77,7 +77,7 @@ model Transaction {
   txHash                   String
   status                   TransactionStatus
   lastCheckedAt            DateTime?
-  fees                     String?
+  fees                     BigInt?
   blockHeight              Int?
   blockTime                Int?
   outputAmount             String?           @db.Text

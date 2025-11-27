@@ -91,6 +91,15 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           updatedAt: z.date(),
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
+          outputAmount: z.string().nullable(),
         })
         .nullable(),
       TransactionHistory: z.array(
@@ -100,6 +109,15 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           updatedAt: z.date(),
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
+          outputAmount: z.string().nullable(),
         }),
       ),
       PaidFunds: z.array(
@@ -205,6 +223,16 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
               updatedAt: purchase.CurrentTransaction.updatedAt,
               txHash: purchase.CurrentTransaction.txHash,
               status: purchase.CurrentTransaction.status,
+              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+              blockHeight: purchase.CurrentTransaction.blockHeight,
+              blockTime: purchase.CurrentTransaction.blockTime,
+              utxoCount: purchase.CurrentTransaction.utxoCount,
+              withdrawalCount: purchase.CurrentTransaction.withdrawalCount,
+              assetMintOrBurnCount:
+                purchase.CurrentTransaction.assetMintOrBurnCount,
+              redeemerCount: purchase.CurrentTransaction.redeemerCount,
+              validContract: purchase.CurrentTransaction.validContract,
+              outputAmount: purchase.CurrentTransaction.outputAmount,
             }
           : null,
         TransactionHistory: purchase.TransactionHistory.map((tx) => ({
@@ -213,6 +241,15 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
           updatedAt: tx.updatedAt,
           txHash: tx.txHash,
           status: tx.status,
+          fees: tx.fees?.toString() ?? null,
+          blockHeight: tx.blockHeight,
+          blockTime: tx.blockTime,
+          utxoCount: tx.utxoCount,
+          withdrawalCount: tx.withdrawalCount,
+          assetMintOrBurnCount: tx.assetMintOrBurnCount,
+          redeemerCount: tx.redeemerCount,
+          validContract: tx.validContract,
+          outputAmount: tx.outputAmount,
         })),
         PaidFunds: (
           purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
@@ -333,7 +370,36 @@ export const createPurchaseInitSchemaOutput = z.object({
       updatedAt: z.date(),
       txHash: z.string(),
       status: z.nativeEnum(TransactionStatus),
+      fees: z.string().nullable(),
+      blockHeight: z.number().nullable(),
+      blockTime: z.number().nullable(),
+      utxoCount: z.number().nullable(),
+      withdrawalCount: z.number().nullable(),
+      assetMintOrBurnCount: z.number().nullable(),
+      redeemerCount: z.number().nullable(),
+      validContract: z.boolean().nullable(),
+      outputAmount: z.string().nullable(),
     })
+    .nullable(),
+  TransactionHistory: z
+    .array(
+      z.object({
+        id: z.string(),
+        createdAt: z.date(),
+        updatedAt: z.date(),
+        txHash: z.string(),
+        status: z.nativeEnum(TransactionStatus),
+        fees: z.string().nullable(),
+        blockHeight: z.number().nullable(),
+        blockTime: z.number().nullable(),
+        utxoCount: z.number().nullable(),
+        withdrawalCount: z.number().nullable(),
+        assetMintOrBurnCount: z.number().nullable(),
+        redeemerCount: z.number().nullable(),
+        validContract: z.boolean().nullable(),
+        outputAmount: z.string().nullable(),
+      }),
+    )
     .nullable(),
   PaidFunds: z.array(
     z.object({
@@ -432,8 +498,29 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
                     existingPurchaseRequest.CurrentTransaction.updatedAt,
                   txHash: existingPurchaseRequest.CurrentTransaction.txHash,
                   status: existingPurchaseRequest.CurrentTransaction.status,
+                  fees:
+                    existingPurchaseRequest.CurrentTransaction.fees?.toString() ??
+                    null,
+                  blockHeight:
+                    existingPurchaseRequest.CurrentTransaction.blockHeight,
+                  blockTime:
+                    existingPurchaseRequest.CurrentTransaction.blockTime,
+                  utxoCount:
+                    existingPurchaseRequest.CurrentTransaction.utxoCount,
+                  withdrawalCount:
+                    existingPurchaseRequest.CurrentTransaction.withdrawalCount,
+                  assetMintOrBurnCount:
+                    existingPurchaseRequest.CurrentTransaction
+                      .assetMintOrBurnCount,
+                  redeemerCount:
+                    existingPurchaseRequest.CurrentTransaction.redeemerCount,
+                  validContract:
+                    existingPurchaseRequest.CurrentTransaction.validContract,
+                  outputAmount:
+                    existingPurchaseRequest.CurrentTransaction.outputAmount,
                 }
               : null,
+            TransactionHistory: [],
             payByTime: existingPurchaseRequest.payByTime?.toString() ?? null,
             PaidFunds: (
               existingPurchaseRequest.PaidFunds as Array<{
@@ -802,6 +889,33 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 
       const result = {
         ...initialPurchaseRequest,
+        CurrentTransaction: initialPurchaseRequest.CurrentTransaction
+          ? {
+              id: initialPurchaseRequest.CurrentTransaction.id,
+              createdAt: initialPurchaseRequest.CurrentTransaction.createdAt,
+              updatedAt: initialPurchaseRequest.CurrentTransaction.updatedAt,
+              txHash: initialPurchaseRequest.CurrentTransaction.txHash,
+              status: initialPurchaseRequest.CurrentTransaction.status,
+              fees:
+                initialPurchaseRequest.CurrentTransaction.fees?.toString() ??
+                null,
+              blockHeight:
+                initialPurchaseRequest.CurrentTransaction.blockHeight,
+              blockTime: initialPurchaseRequest.CurrentTransaction.blockTime,
+              utxoCount: initialPurchaseRequest.CurrentTransaction.utxoCount,
+              withdrawalCount:
+                initialPurchaseRequest.CurrentTransaction.withdrawalCount,
+              assetMintOrBurnCount:
+                initialPurchaseRequest.CurrentTransaction.assetMintOrBurnCount,
+              redeemerCount:
+                initialPurchaseRequest.CurrentTransaction.redeemerCount,
+              validContract:
+                initialPurchaseRequest.CurrentTransaction.validContract,
+              outputAmount:
+                initialPurchaseRequest.CurrentTransaction.outputAmount,
+            }
+          : null,
+        TransactionHistory: [],
         payByTime: initialPurchaseRequest.payByTime?.toString() ?? null,
         PaidFunds: (
           initialPurchaseRequest.PaidFunds as Array<{
