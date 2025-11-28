@@ -40,12 +40,19 @@ export const getUTXOSchemaOutput = z.object({
       address: z.string(),
       Amounts: z.array(
         z.object({
-          unit: z.string(),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+            ),
           quantity: z
             .number({ coerce: true })
             .int()
             .min(0)
-            .max(100000000000000),
+            .max(100000000000000)
+            .describe(
+              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+            ),
         }),
       ),
       dataHash: z.string().nullable(),
