@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { PaymentSource, PaymentSourceConfig, Prisma } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -15,14 +15,52 @@ import {
   updateRolledBackTransaction,
   updateTransaction,
 } from './tx';
+import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
+
+type PaymentSourceWithConfig = PaymentSource & {
+  PaymentSourceConfig: PaymentSourceConfig;
+};
+
+type ExtendedTxInfo = {
+  blockTime: number;
+  tx: { tx_hash: string };
+  block: { confirmations: number };
+  utxos: {
+    hash: string;
+    inputs: Array<{
+      address: string;
+      amount: Array<{ unit: string; quantity: string }>;
+      tx_hash: string;
+      output_index: number;
+      data_hash: string | null;
+      inline_datum: string | null;
+      reference_script_hash: string | null;
+      collateral: boolean;
+      reference?: boolean;
+    }>;
+    outputs: Array<{
+      address: string;
+      amount: Array<{ unit: string; quantity: string }>;
+      output_index: number;
+      data_hash: string | null;
+      inline_datum: string | null;
+      collateral: boolean;
+      reference_script_hash: string | null;
+      consumed_by_tx?: string | null;
+    }>;
+  };
+  transaction: Transaction;
+};
 
 const mutex = new Mutex();
 
 export async function checkLatestTransactions(
   {
-    maxParallelTransactions = CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
-  }: { maxParallelTransactions?: number } = {
-    maxParallelTransactions: CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS,
+    maxParallelTransactionsExtendedLookup:
+      maxParallelTransactionsExtendedLookup = CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS_EXTENDED_LOOKUP,
+  }: { maxParallelTransactionsExtendedLookup?: number } = {
+    maxParallelTransactionsExtendedLookup:
+      CONSTANTS.DEFAULT_MAX_PARALLEL_TRANSACTIONS_EXTENDED_LOOKUP,
   },
 ) {
   let release: MutexInterface.Releaser | null;
@@ -39,105 +77,12 @@ export async function checkLatestTransactions(
     if (paymentContracts == null) return;
     try {
       const results = await Promise.allSettled(
-        paymentContracts.map(async (paymentContract) => {
-          const blockfrost = new BlockFrostAPI({
-            projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-            network: convertNetwork(paymentContract.network),
-          });
-          let latestIdentifier = paymentContract.lastIdentifierChecked;
-
-          const { latestTx, rolledBackTx } =
-            await getTxsFromCardanoAfterSpecificTx(
-              blockfrost,
-              paymentContract,
-              latestIdentifier,
-            );
-
-          if (latestTx.length == 0) {
-            logger.info('No new transactions found for payment contract', {
-              paymentContractAddress: paymentContract.smartContractAddress,
-            });
-            return;
-          }
-
-          if (rolledBackTx.length > 0) {
-            logger.info('Rolled back transactions found for payment contract', {
-              paymentContractAddress: paymentContract.smartContractAddress,
-            });
-            await updateRolledBackTransaction(rolledBackTx);
-          }
-
-          const txData = await getExtendedTxInformation(
-            latestTx,
-            blockfrost,
-            maxParallelTransactions,
-          );
-
-          for (const tx of txData) {
-            if (tx.block.confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
-              break;
-            }
-
-            try {
-              const extractedData = extractOnChainTransactionData(
-                tx,
-                paymentContract,
-              );
-
-              if (extractedData.type == 'Invalid') {
-                logger.info(
-                  'Skipping invalid tx: ',
-                  tx.tx.tx_hash,
-                  extractedData.error,
-                );
-                continue;
-              } else if (extractedData.type == 'Initial') {
-                await updateInitialTransactions(
-                  extractedData.valueOutputs,
-                  paymentContract,
-                  tx,
-                );
-              } else if (extractedData.type == 'Transaction') {
-                await updateTransaction(
-                  paymentContract,
-                  extractedData,
-                  blockfrost,
-                  tx,
-                );
-              }
-            } catch (error) {
-              logger.error('Error processing transaction', {
-                error: error,
-                tx: tx,
-              });
-              throw error;
-            } finally {
-              await prisma.paymentSource.update({
-                where: { id: paymentContract.id, deletedAt: null },
-                data: {
-                  lastIdentifierChecked: tx.tx.tx_hash,
-                },
-              });
-
-              // Separately handle PaymentSourceIdentifiers
-              if (latestIdentifier != null) {
-                await prisma.paymentSourceIdentifiers.upsert({
-                  where: {
-                    txHash: latestIdentifier,
-                  },
-                  update: {
-                    txHash: latestIdentifier,
-                  },
-                  create: {
-                    txHash: latestIdentifier,
-                    paymentSourceId: paymentContract.id,
-                  },
-                });
-              }
-              latestIdentifier = tx.tx.tx_hash;
-            }
-          }
-        }),
+        paymentContracts.map((paymentContract) =>
+          processPaymentSource(
+            paymentContract,
+            maxParallelTransactionsExtendedLookup,
+          ),
+        ),
       );
 
       const failedResults = results.filter((x) => x.status == 'rejected');
@@ -156,6 +101,116 @@ export async function checkLatestTransactions(
     logger.error('Error checking latest transactions', { error: error });
   } finally {
     release();
+  }
+}
+async function processPaymentSource(
+  paymentContract: PaymentSourceWithConfig,
+  maxParallelTransactionsExtendedLookup: number,
+) {
+  const blockfrost = new BlockFrostAPI({
+    projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+    network: convertNetwork(paymentContract.network),
+  });
+  let latestIdentifier = paymentContract.lastIdentifierChecked;
+
+  const { latestTx, rolledBackTx } = await getTxsFromCardanoAfterSpecificTx(
+    blockfrost,
+    paymentContract,
+    latestIdentifier,
+  );
+
+  if (latestTx.length == 0) {
+    logger.info('No new transactions found for payment contract', {
+      paymentContractAddress: paymentContract.smartContractAddress,
+    });
+    return;
+  }
+
+  if (rolledBackTx.length > 0) {
+    logger.info('Rolled back transactions found for payment contract', {
+      paymentContractAddress: paymentContract.smartContractAddress,
+    });
+    await updateRolledBackTransaction(rolledBackTx);
+  }
+
+  const txData = await getExtendedTxInformation(
+    latestTx,
+    blockfrost,
+    maxParallelTransactionsExtendedLookup,
+  );
+
+  for (const tx of txData) {
+    if (tx.block.confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
+      break;
+    }
+
+    try {
+      await processTransactionData(tx, paymentContract, blockfrost);
+      await updateSyncCheckpoint(
+        paymentContract,
+        tx.tx.tx_hash,
+        latestIdentifier,
+      );
+      latestIdentifier = tx.tx.tx_hash;
+    } catch (error) {
+      //If the error persists this will prevent a further sync
+      logger.error(
+        '-----------SYNC FAILED TO CONTINUE: Error updating sync checkpoint-----------',
+      );
+      logger.error('SYNC FAILED TO CONTINUE: Error processing transaction', {
+        error: error,
+        tx: tx,
+      });
+      throw error;
+    }
+  }
+}
+async function processTransactionData(
+  tx: ExtendedTxInfo,
+  paymentContract: PaymentSourceWithConfig,
+  blockfrost: BlockFrostAPI,
+) {
+  const extractedData = extractOnChainTransactionData(tx, paymentContract);
+
+  if (extractedData.type == 'Invalid') {
+    logger.info('Skipping invalid tx: ', tx.tx.tx_hash, extractedData.error);
+    return;
+  } else if (extractedData.type == 'Initial') {
+    await updateInitialTransactions(
+      extractedData.valueOutputs,
+      paymentContract,
+      tx,
+    );
+  } else if (extractedData.type == 'Transaction') {
+    await updateTransaction(paymentContract, extractedData, blockfrost, tx);
+  }
+}
+async function updateSyncCheckpoint(
+  paymentContract: PaymentSourceWithConfig,
+  currentTxHash: string,
+  previousTxHash: string | null,
+) {
+  await prisma.paymentSource.update({
+    where: { id: paymentContract.id, deletedAt: null },
+    data: {
+      lastIdentifierChecked: currentTxHash,
+    },
+  });
+
+  // Separately handle PaymentSourceIdentifiers
+  if (previousTxHash != null) {
+    await prisma.paymentSourceIdentifiers.upsert({
+      where: {
+        txHash: previousTxHash,
+      },
+      update: {
+        txHash: previousTxHash,
+      },
+      create: {
+        txHash: previousTxHash,
+        paymentSourceId: paymentContract.id,
+      },
+    });
   }
 }
 

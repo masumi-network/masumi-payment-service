@@ -9,6 +9,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 export const metadataSchema = z.object({
   name: z
@@ -327,7 +328,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     return {
       Assets: detailedAssets.map((asset) => ({
         policyId: policyId,
-        assetName: asset.unit.slice(policyId.length),
+        assetName: extractAssetName(asset.unit),
         agentIdentifier: asset.unit,
         Metadata: asset.Metadata,
         Tags: asset.Metadata.Tags,

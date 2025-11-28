@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,6 +34,7 @@ import { shortenAddress } from '@/lib/utils';
 type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
 
 export default function ApiKeys() {
+  const router = useRouter();
   const { apiClient, state } = useAppContext();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [allApiKeys, setAllApiKeys] = useState<ApiKey[]>([]);
@@ -207,6 +209,15 @@ export default function ApiKeys() {
     filterApiKeys();
   }, [filterApiKeys, searchQuery, activeTab]);
 
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_api_key') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/api-keys', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMore && allApiKeys.length > 0) {
       const lastKey = allApiKeys[allApiKeys.length - 1];
@@ -270,7 +281,7 @@ export default function ApiKeys() {
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
-                  href="https://docs.masumi.network/technical-documentation/payment-service-api/api-keys"
+                  href="https://docs.masumi.network/api-reference"
                   target="_blank"
                   className="text-primary hover:underline"
                 >
