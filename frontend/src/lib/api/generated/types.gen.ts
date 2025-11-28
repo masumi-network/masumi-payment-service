@@ -37,7 +37,13 @@ export type GetApiKeyStatusResponses = {
             usageLimited: boolean;
             networkLimit: Array<'Preprod' | 'Mainnet'>;
             RemainingUsageCredits: Array<{
+                /**
+                 * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
             }>;
             status: 'Active' | 'Revoked';
@@ -274,7 +280,13 @@ export type GetApiKeyResponses = {
                 usageLimited: boolean;
                 networkLimit: Array<'Preprod' | 'Mainnet'>;
                 RemainingUsageCredits: Array<{
+                    /**
+                     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                     */
                     unit: string;
+                    /**
+                     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                     */
                     amount: string;
                 }>;
                 status: 'Active' | 'Revoked';
@@ -299,7 +311,13 @@ export type PatchApiKeyData = {
          * The amount of credits to add or remove from the API key. Only relevant if usageLimited is true.
          */
         UsageCreditsToAddOrRemove?: Array<{
+            /**
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+             */
             unit: string;
+            /**
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             */
             amount: string;
         }>;
         /**
@@ -364,7 +382,13 @@ export type PostApiKeyData = {
          * The credits allowed to be used by the API key. Only relevant if usageLimited is true.
          */
         UsageCredits: Array<{
+            /**
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+             */
             unit: string;
+            /**
+             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+             */
             amount: string;
         }>;
         /**
@@ -501,7 +525,13 @@ export type GetPaymentResponses = {
                     txHash: string | null;
                 }> | null;
                 RequestedFunds: Array<{
+                    /**
+                     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                     */
                     amount: string;
+                    /**
+                     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                     */
                     unit: string;
                 }>;
                 WithdrawnForSeller: Array<{
@@ -627,7 +657,13 @@ export type PostPaymentResponses = {
                 errorNote: string | null;
             };
             RequestedFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -722,7 +758,13 @@ export type PostPaymentSubmitResultResponses = {
                 resultHash: string | null;
             };
             RequestedFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -813,7 +855,13 @@ export type PostPaymentAuthorizeRefundResponses = {
                 resultHash: string | null;
             };
             RequestedFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1073,7 +1121,13 @@ export type PostPurchaseErrors = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1142,7 +1196,13 @@ export type PostPurchaseResponses = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1238,7 +1298,13 @@ export type PostPurchaseRequestRefundResponses = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1334,7 +1400,13 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             } | null;
             PaidFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1453,7 +1525,13 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
                 txHash: string | null;
             }> | null;
             RequestedFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1573,7 +1651,13 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
             }>;
             PaidFunds: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
             }>;
             WithdrawnForSeller: Array<{
@@ -1665,7 +1749,13 @@ export type GetRegistryWalletResponses = {
                     AgentPricing: {
                         pricingType: 'Fixed';
                         Pricing: Array<{
+                            /**
+                             * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                             */
                             amount: string;
+                            /**
+                             * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                             */
                             unit: string;
                         }>;
                     } | {
@@ -1800,7 +1890,13 @@ export type GetRegistryResponses = {
                 AgentPricing: {
                     pricingType: 'Fixed';
                     Pricing: Array<{
+                        /**
+                         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                         */
                         amount: string;
+                        /**
+                         * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                         */
                         unit: string;
                     }>;
                 } | {
@@ -1865,7 +1961,13 @@ export type PostRegistryData = {
              * Price for a default interaction
              */
             Pricing: Array<{
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
                 unit: string;
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
                 amount: string;
             }>;
         } | {
@@ -2433,7 +2535,13 @@ export type GetUtxosResponses = {
                 txHash: string;
                 address: string;
                 Amounts: Array<{
+                    /**
+                     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                     */
                     unit: string;
+                    /**
+                     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                     */
                     quantity: number | null;
                 }>;
                 dataHash: string | null;
