@@ -25,13 +25,14 @@ export async function generateWalletExtended(
 ) {
   const networkId = convertNetworkToId(network);
   const blockchainProvider = new BlockfrostProvider(rpcProviderApiKey);
+  const mnemonic = decrypt(encryptedSecret).split(' ');
   const wallet = new MeshWallet({
     networkId: networkId,
     fetcher: blockchainProvider,
     submitter: blockchainProvider,
     key: {
       type: 'mnemonic',
-      words: decrypt(encryptedSecret).split(' '),
+      words: mnemonic,
     },
   });
 

@@ -28,8 +28,8 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
-import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
 import { SERVICE_CONSTANTS } from '@/utils/config';
+import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
 const mutex = new Mutex();
 
@@ -234,25 +234,8 @@ export async function authorizeRefundV1() {
               Math.min(4, sortedUtxosByLovelaceDesc.length),
             );
 
-            const evaluationTx =
-              await generateMasumiSmartContractInteractionTransaction(
-                'AuthorizeRefund',
-                blockchainProvider,
-                network,
-                script,
-                address,
-                utxo,
-                sortedUtxosByLovelaceDesc[0],
-                limitedUtxos,
-                datum.value,
-                invalidBefore,
-                invalidAfter,
-              );
-            const estimatedFee = (await blockchainProvider.evaluateTx(
-              evaluationTx,
-            )) as Array<{ budget: { mem: number; steps: number } }>;
             const unsignedTx =
-              await generateMasumiSmartContractInteractionTransaction(
+              await generateMasumiSmartContractInteractionTransactionAutomaticFees(
                 'AuthorizeRefund',
                 blockchainProvider,
                 network,
@@ -264,7 +247,6 @@ export async function authorizeRefundV1() {
                 datum.value,
                 invalidBefore,
                 invalidAfter,
-                estimatedFee[0].budget,
               );
 
             const signedTx = await wallet.signTx(unsignedTx);
