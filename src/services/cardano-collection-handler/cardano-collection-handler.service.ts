@@ -69,10 +69,6 @@ async function processSinglePaymentCollection(
   if (request.SmartContractWallet == null)
     throw new Error('Smart contract wallet not found');
 
-  if (request.collateralReturnLovelace == null) {
-    throw new Error('Collateral return lovelace is null, this is deprecated');
-  }
-
   const { wallet, utxos, address } = await generateWalletExtended(
     paymentContract.network,
     paymentContract.PaymentSourceConfig.rpcProviderApiKey,
@@ -322,10 +318,10 @@ async function processSinglePaymentCollection(
     },
   });
   logger.debug(`Created withdrawal transaction:
-        Tx ID: ${txHash}
+        Tx ID: ${newTxHash}
         View (after a bit) on https://${
           network === 'preprod' ? 'preprod.' : ''
-        }cardanoscan.io/transaction/${txHash}
+        }cardanoscan.io/transaction/${newTxHash}
         Smart Contract Address: ${smartContractAddress}
     `);
   return true;
