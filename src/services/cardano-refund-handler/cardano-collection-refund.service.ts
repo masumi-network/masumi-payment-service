@@ -233,10 +233,10 @@ async function processSingleRefundCollection(
   });
 
   logger.debug(`Created withdrawal transaction:
-                  Tx ID: ${txHash}
+                  Tx ID: ${newTxHash}
                   View (after a bit) on https://${
                     network === 'preprod' ? 'preprod.' : ''
-                  }cardanoscan.io/transaction/${txHash}
+                  }cardanoscan.io/transaction/${newTxHash}
                   Smart Contract Address: ${smartContractAddress}
               `);
   return true;
