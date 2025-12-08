@@ -13,7 +13,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import {
   transformPaymentGetTimestamps,
   transformPaymentGetAmounts,
-} from '../../../../utils/shared/transformers';
+} from '@/utils/shared/transformers';
 
 export const postPaymentRequestSchemaInput = z.object({
   blockchainIdentifier: z

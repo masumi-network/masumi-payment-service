@@ -2,7 +2,7 @@ import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { $Enums, Network } from '@prisma/client';
 import { z } from 'zod';
-import { splitWalletsByType } from '../../../utils/shared/transformers';
+import { splitWalletsByType } from '@/utils/shared/transformers';
 
 export const paymentSourceSchemaInput = z.object({
   take: z

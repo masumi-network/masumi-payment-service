@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ApiKeyStatus, Network, Permission } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { transformBigIntAmounts } from '../../../utils/shared/transformers';
+import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 

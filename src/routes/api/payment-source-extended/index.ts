@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
-import { splitWalletsByType } from '../../../utils/shared/transformers';
+import { splitWalletsByType } from '@/utils/shared/transformers';
 
 export const paymentSourceExtendedSchemaInput = z.object({
   take: z

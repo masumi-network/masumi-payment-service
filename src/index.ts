@@ -10,7 +10,7 @@ import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@/utils/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
-import { DEFAULTS } from './../src/utils/config';
+import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
