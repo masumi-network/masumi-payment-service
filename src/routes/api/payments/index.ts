@@ -30,7 +30,6 @@ import {
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
-
 export const queryPaymentsSchemaInput = z.object({
   limit: z
     .number({ coerce: true })
