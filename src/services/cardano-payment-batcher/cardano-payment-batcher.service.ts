@@ -70,7 +70,7 @@ type WalletPairing = {
 
 const mutex = new Mutex();
 
-async function executeSingleBatchPayment(
+async function executeSpecificBatchPayment(
   walletPairing: WalletPairing,
   paymentContract: PaymentSourceWithWallets,
   blockchainProvider: BlockfrostProvider,
@@ -656,7 +656,7 @@ export async function batchLatestPaymentEntriesV1() {
                       30000,
                     );
                   }),
-                  executeSingleBatchPayment(
+                  executeSpecificBatchPayment(
                     walletPairing,
                     paymentContract,
                     blockchainProvider,
