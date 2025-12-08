@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
 import { AppProvider, initialAppState } from '@/lib/contexts/AppContext';
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import '@/styles/globals.css';
 import '@/styles/styles.scss';
 import type { AppProps } from 'next/app';
@@ -11,7 +12,6 @@ import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import {
   getHealth,
   getPaymentSource,
-  getRpcApiKeys,
   getApiKeyStatus,
 } from '@/lib/api/generated';
 import { ThemeProvider } from '@/lib/contexts/ThemeContext';
@@ -21,6 +21,7 @@ import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { handleApiCall } from '@/lib/utils';
+import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -39,8 +40,16 @@ function App({ Component, pageProps, router }: AppProps) {
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
     useAppContext();
+
+  // Add dynamic favicon functionality
+  useDynamicFavicon();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -75,30 +84,46 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const filteredSources = sources.filter(
       (source: any) => source.network === state.network,
     );
-    const sortedByCreatedAt = filteredSources.sort(
-      (a: any, b: any) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-    const reversed = [...sortedByCreatedAt]?.reverse();
-    const sourcesMapped = reversed?.map((source: any, index: number) => ({
-      ...source,
-      index: index + 1,
-    }));
-    const reversedBack = [...sourcesMapped]?.reverse();
+    // Sort by createdAt descending (newest first) and add index
+    const sortedSources = filteredSources
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .map((source: any, index: number) => ({
+        ...source,
+        index: index + 1,
+      }));
 
-    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
+    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: sortedSources });
 
-    if (reversedBack.length === 1) {
-      setSelectedPaymentSourceId(reversedBack[0].id);
+    if (sortedSources.length === 1) {
+      setSelectedPaymentSourceId(sortedSources[0].id);
     }
 
     // If no payment sources, redirect to setup
-    if (reversedBack.length === 0 && isHealthy && state.apiKey) {
+    if (sortedSources.length === 0 && isHealthy && state.apiKey) {
       if (router.pathname !== '/setup') {
         router.push(`/setup?network=${encodeURIComponent(state.network)}`);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    if (state.apiKey && isHealthy && filteredSources.length === 0) {
+      const protectedPages = [
+        '/',
+        '/ai-agents',
+        '/wallets',
+        '/transactions',
+        '/api-keys',
+      ];
+      if (protectedPages.includes(router.pathname)) {
+        router.replace('/payment-sources');
+      }
+    } else if (state.apiKey && isHealthy && filteredSources.length > 0) {
+      if (router.pathname === '/setup') {
+        router.replace('/');
+      }
+    }
   }, [
     apiClient,
     dispatch,
@@ -107,24 +132,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     state.network,
     router.pathname,
   ]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
-
-  const fetchRpcApiKeys = useCallback(async () => {
-    const response = await getRpcApiKeys({
-      client: apiClient,
-    });
-
-    if (response.error) {
-      const error = response.error as { message: string };
-      console.error('Failed to fetch RPC API keys:', error);
-      toast.error(
-        error.message || 'Error fetching RPC API keys. Please try again later.',
-      );
-      return;
-    }
-
-    const rpcKeys = response.data?.RpcProviderKeys ?? [];
-    dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
-  }, [apiClient, dispatch]);
 
   useEffect(() => {
     const init = async () => {
@@ -193,27 +200,17 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     }
   }, [isHealthy, state.apiKey, fetchPaymentSources, state.network]);
 
+  // Watch for network changes in URL and update state
   useEffect(() => {
-    if (isHealthy && state.apiKey) {
-      fetchRpcApiKeys();
-    }
-  }, [isHealthy, state.apiKey, fetchRpcApiKeys]);
+    const networkParam = router.query.network as string;
 
-  // Redirect to payment sources if no payment sources exist and user is trying to access pages that require payment sources
-  useEffect(() => {
-    if (state.apiKey && isHealthy && state.paymentSources.length === 0) {
-      const protectedPages = [
-        '/',
-        '/ai-agents',
-        '/wallets',
-        '/transactions',
-        '/api-keys',
-      ];
-      if (protectedPages.includes(router.pathname)) {
-        router.replace('/payment-sources');
-      }
+    if (networkParam && networkParam !== state.network) {
+      dispatch({
+        type: 'SET_NETWORK',
+        payload: networkParam as 'Mainnet' | 'Preprod',
+      });
     }
-  }, [state.apiKey, isHealthy, state.paymentSources, router.pathname]);
+  }, [router.query.network, state.network, dispatch]);
 
   if (isHealthy === null) {
     return (
@@ -286,18 +283,22 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   return (
     <>
       {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
+      {mounted &&
+        createPortal(
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="dark"
+          />,
+          document.body,
+        )}
     </>
   );
 }

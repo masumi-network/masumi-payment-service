@@ -28,7 +28,7 @@ import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractInteractionTransaction } from '@/utils/generator/transaction-generator';
+import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
   include: {
@@ -195,36 +195,20 @@ async function processSinglePurchaseRequest(
     Math.min(4, sortedUtxosByLovelaceDesc.length),
   );
 
-  const evaluationTx = await generateMasumiSmartContractInteractionTransaction(
-    'RequestRefund',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    sortedUtxosByLovelaceDesc[0],
-    limitedUtxos,
-    datum.value,
-    invalidBefore,
-    invalidAfter,
-  );
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
-  const unsignedTx = await generateMasumiSmartContractInteractionTransaction(
-    'RequestRefund',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    sortedUtxosByLovelaceDesc[0],
-    limitedUtxos,
-    datum.value,
-    invalidBefore,
-    invalidAfter,
-    estimatedFee[0].budget,
-  );
+  const unsignedTx =
+    await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+      'RequestRefund',
+      blockchainProvider,
+      network,
+      script,
+      address,
+      utxo,
+      sortedUtxosByLovelaceDesc[0],
+      limitedUtxos,
+      datum.value,
+      invalidBefore,
+      invalidAfter,
+    );
 
   const signedTx = await wallet.signTx(unsignedTx);
 
