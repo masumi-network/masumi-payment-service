@@ -24,7 +24,7 @@ import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
+import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
 type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
   include: {
@@ -168,48 +168,26 @@ async function processSingleRefundCollection(
     0,
     Math.min(4, filteredUtxos.length),
   );
-  const evaluationTx = await generateMasumiSmartContractWithdrawTransaction(
-    'CollectRefund',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    collateralUtxo,
-    limitedFilteredUtxos,
-    {
-      collectAssets: utxo.output.amount,
-      collectionAddress: address,
-    },
-    null,
-    null,
-    invalidBefore,
-    invalidAfter,
-  );
 
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
-
-  const unsignedTx = await generateMasumiSmartContractWithdrawTransaction(
-    'CollectRefund',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    collateralUtxo,
-    limitedFilteredUtxos,
-    {
-      collectAssets: utxo.output.amount,
-      collectionAddress: address,
-    },
-    null,
-    null,
-    invalidBefore,
-    invalidAfter,
-    estimatedFee[0].budget,
-  );
+  const unsignedTx =
+    await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+      'CollectRefund',
+      blockchainProvider,
+      network,
+      script,
+      address,
+      utxo,
+      collateralUtxo,
+      limitedFilteredUtxos,
+      {
+        collectAssets: utxo.output.amount,
+        collectionAddress: address,
+      },
+      null,
+      null,
+      invalidBefore,
+      invalidAfter,
+    );
 
   const signedTx = await wallet.signTx(unsignedTx);
   await prisma.purchaseRequest.update({

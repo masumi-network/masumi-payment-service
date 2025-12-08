@@ -52,10 +52,17 @@
 @layer base {
   * {
     @apply border-border;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
   body {
     @apply bg-background text-foreground;
     font-family: Arial, Helvetica, sans-serif;
+  }
+
+  [role='dialog'],
+  [data-radix-dialog-content] {
+    overflow-x: hidden;
   }
 }
 

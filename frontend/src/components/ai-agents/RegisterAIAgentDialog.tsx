@@ -404,7 +404,7 @@ export function RegisterAIAgentDialog({
                 {...register('description')}
                 placeholder="Describe what your agent does"
                 rows={3}
-                className={errors.description ? 'border-red-500' : ''}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
                 maxLength={250}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">

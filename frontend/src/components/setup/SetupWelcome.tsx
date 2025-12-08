@@ -768,6 +768,9 @@ function SuccessScreen({
   onComplete: () => void;
   networkType: string;
 }) {
+  const networkDisplay =
+    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+
   return (
     <div className="text-center space-y-4 max-w-[600px]">
       <div className="flex justify-center mb-6">
@@ -776,7 +779,7 @@ function SuccessScreen({
         </span>
       </div>
       <h1 className="text-4xl font-bold">
-        Your {networkType === 'mainnet' ? 'Mainnet' : 'Preprod'} environment
+        Your {networkDisplay} environment
         <br />
         is all set!
       </h1>
@@ -815,6 +818,16 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     localStorage.setItem('userIgnoredSetup', 'true');
   };
 
+  const handleCancel = () => {
+    // Clear states
+    setWallets({
+      buying: null,
+      selling: null,
+    });
+    // Return to welcome screen
+    setCurrentStep(0);
+  };
+
   const steps = [
     <WelcomeScreen
       key="welcome"
@@ -828,14 +841,14 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         setWallets({ buying, selling });
         setCurrentStep(2);
       }}
-      ignoreSetup={handleIgnoreSetup}
+      ignoreSetup={handleCancel}
     />,
     <PaymentSourceSetupScreen
       key="payment-source"
       onNext={() => setCurrentStep(3)}
       buyingWallet={wallets.buying}
       sellingWallet={wallets.selling}
-      ignoreSetup={handleIgnoreSetup}
+      ignoreSetup={handleCancel}
     />,
     /*<AddAiAgentScreen
       key="ai"
