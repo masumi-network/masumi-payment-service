@@ -6,6 +6,7 @@ import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateHash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
+import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
   limit: z
@@ -63,17 +64,12 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
       include: { RemainingUsageCredits: true },
     });
     return {
-      ApiKeys: result.map((data) => {
-        return {
-          ...data,
-          RemainingUsageCredits: data.RemainingUsageCredits.map(
-            (usageCredit) => ({
-              unit: usageCredit.unit,
-              amount: usageCredit.amount.toString(),
-            }),
-          ),
-        };
-      }),
+      ApiKeys: result.map((data) => ({
+        ...data,
+        RemainingUsageCredits: transformBigIntAmounts(
+          data.RemainingUsageCredits,
+        ),
+      })),
     };
   },
 });

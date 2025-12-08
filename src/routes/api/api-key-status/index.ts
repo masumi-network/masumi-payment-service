@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ApiKeyStatus, Network, Permission } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
+import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 
@@ -43,11 +44,8 @@ export const queryAPIKeyStatusEndpointGet =
       }
       return {
         ...result,
-        RemainingUsageCredits: result?.RemainingUsageCredits.map(
-          (usageCredit) => ({
-            unit: usageCredit.unit,
-            amount: usageCredit.amount.toString(),
-          }),
+        RemainingUsageCredits: transformBigIntAmounts(
+          result.RemainingUsageCredits,
         ),
       };
     },

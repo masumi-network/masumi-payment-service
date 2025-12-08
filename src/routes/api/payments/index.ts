@@ -24,6 +24,10 @@ import { generateHash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import {
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
 export const queryPaymentsSchemaInput = z.object({
@@ -210,32 +214,8 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     return {
       Payments: result.map((payment) => ({
         ...payment,
-        submitResultTime: payment.submitResultTime.toString(),
-        cooldownTime: Number(payment.sellerCoolDownTime),
-        cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
-        payByTime: payment.payByTime?.toString() ?? null,
-        unlockTime: payment.unlockTime.toString(),
-        externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-        collateralReturnLovelace:
-          payment.collateralReturnLovelace?.toString() ?? null,
-        RequestedFunds: (
-          payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
+        ...transformPaymentGetTimestamps(payment),
+        ...transformPaymentGetAmounts(payment),
       })),
     };
   },
