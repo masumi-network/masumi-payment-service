@@ -25,7 +25,7 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
+import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
@@ -251,68 +251,35 @@ async function processSinglePaymentCollection(
 
   const collateralUtxo = limitedFilteredUtxos[0];
 
-  const evaluationTx = await generateMasumiSmartContractWithdrawTransaction(
-    'CollectCompleted',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    collateralUtxo,
-    limitedFilteredUtxos,
-    {
-      collectAssets: Object.values(remainingAssets),
-      collectionAddress: collectionAddress,
-    },
-    {
-      feeAssets: Object.values(feeAssets),
-      feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
-      txHash: utxo.input.txHash,
-      outputIndex: utxo.input.outputIndex,
-    },
-    {
-      lovelace: collateralReturnLovelace,
-      address: buyerAddress,
-      txHash: utxo.input.txHash,
-      outputIndex: utxo.input.outputIndex,
-    },
-    invalidBefore,
-    invalidAfter,
-  );
-
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
-
-  const unsignedTx = await generateMasumiSmartContractWithdrawTransaction(
-    'CollectCompleted',
-    blockchainProvider,
-    network,
-    script,
-    address,
-    utxo,
-    collateralUtxo,
-    limitedFilteredUtxos,
-    {
-      collectAssets: Object.values(remainingAssets),
-      collectionAddress: collectionAddress,
-    },
-    {
-      feeAssets: Object.values(feeAssets),
-      feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
-      txHash: utxo.input.txHash,
-      outputIndex: utxo.input.outputIndex,
-    },
-    {
-      lovelace: collateralReturnLovelace,
-      address: buyerAddress,
-      txHash: utxo.input.txHash,
-      outputIndex: utxo.input.outputIndex,
-    },
-    invalidBefore,
-    invalidAfter,
-    estimatedFee[0].budget,
-  );
+  const unsignedTx =
+    await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+      'CollectCompleted',
+      blockchainProvider,
+      network,
+      script,
+      address,
+      utxo,
+      collateralUtxo,
+      limitedFilteredUtxos,
+      {
+        collectAssets: Object.values(remainingAssets),
+        collectionAddress: collectionAddress,
+      },
+      {
+        feeAssets: Object.values(feeAssets),
+        feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
+        txHash: utxo.input.txHash,
+        outputIndex: utxo.input.outputIndex,
+      },
+      {
+        lovelace: collateralReturnLovelace,
+        address: buyerAddress,
+        txHash: utxo.input.txHash,
+        outputIndex: utxo.input.outputIndex,
+      },
+      invalidBefore,
+      invalidAfter,
+    );
 
   const signedTx = await wallet.signTx(unsignedTx);
   await prisma.paymentRequest.update({

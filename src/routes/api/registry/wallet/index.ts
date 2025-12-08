@@ -9,6 +9,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 export const metadataSchema = z.object({
   name: z
@@ -151,8 +152,17 @@ export const queryAgentFromWalletSchemaOutput = z.object({
             Pricing: z
               .array(
                 z.object({
-                  amount: z.string(),
-                  unit: z.string().max(250),
+                  amount: z
+                    .string()
+                    .describe(
+                      'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+                    ),
+                  unit: z
+                    .string()
+                    .max(250)
+                    .describe(
+                      'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+                    ),
                 }),
               )
               .min(1),
@@ -327,7 +337,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     return {
       Assets: detailedAssets.map((asset) => ({
         policyId: policyId,
-        assetName: asset.unit.slice(policyId.length),
+        assetName: extractAssetName(asset.unit),
         agentIdentifier: asset.unit,
         Metadata: asset.Metadata,
         Tags: asset.Metadata.Tags,
