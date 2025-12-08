@@ -558,6 +558,14 @@ export type GetPaymentResponses = {
                     walletAddress: string;
                 } | null;
                 metadata: string | null;
+                /**
+                 * History of previous NextAction states
+                 */
+                ActionHistory?: Array<{
+                    id: string;
+                    createdAt: string;
+                    requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+                }>;
             }>;
         };
     };
@@ -1010,6 +1018,14 @@ export type GetPurchaseResponses = {
                     walletAddress: string;
                 } | null;
                 metadata: string | null;
+                /**
+                 * History of previous NextAction states
+                 */
+                ActionHistory?: Array<{
+                    id: string;
+                    createdAt: string;
+                    requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'FundsLockingRequested' | 'FundsLockingInitiated' | 'SetRefundRequestedRequested' | 'SetRefundRequestedInitiated' | 'UnSetRefundRequestedRequested' | 'UnSetRefundRequestedInitiated' | 'WithdrawRefundRequested' | 'WithdrawRefundInitiated';
+                }>;
             }>;
         };
     };

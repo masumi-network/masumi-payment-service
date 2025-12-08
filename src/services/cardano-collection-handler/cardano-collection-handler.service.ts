@@ -6,6 +6,10 @@ import {
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import {
+  modifyPaymentNextAction,
+  updatePaymentNextAction,
+} from '@/utils/action-history';
+import {
   Asset,
   BlockfrostProvider,
   deserializeDatum,
@@ -327,14 +331,17 @@ export async function collectOutstandingPaymentsV1() {
               );
 
             const signedTx = await wallet.signTx(unsignedTx);
+
+            // Update NextAction with history tracking
+            await modifyPaymentNextAction(
+              request.id,
+              PaymentAction.WithdrawInitiated,
+            );
+
+            // Update other fields
             await prisma.paymentRequest.update({
               where: { id: request.id },
               data: {
-                NextAction: {
-                  update: {
-                    requestedAction: PaymentAction.WithdrawInitiated,
-                  },
-                },
                 CurrentTransaction: {
                   update: {
                     txHash: '',
@@ -384,18 +391,21 @@ export async function collectOutstandingPaymentsV1() {
             logger.error(`Error collecting payments ${request.id}`, {
               error: error,
             });
+
+            // Update NextAction with history tracking (error case)
+            await updatePaymentNextAction(
+              request.id,
+              PaymentAction.WaitingForManualAction,
+              {
+                errorType: PaymentErrorType.Unknown,
+                errorNote:
+                  'Collecting payments failed: ' + convertErrorString(error),
+              },
+            );
+
             await prisma.paymentRequest.update({
               where: { id: request.id },
               data: {
-                NextAction: {
-                  update: {
-                    requestedAction: PaymentAction.WaitingForManualAction,
-                    errorType: PaymentErrorType.Unknown,
-                    errorNote:
-                      'Collecting payments failed: ' +
-                      convertErrorString(error),
-                  },
-                },
                 SmartContractWallet: {
                   update: {
                     lockedAt: null,

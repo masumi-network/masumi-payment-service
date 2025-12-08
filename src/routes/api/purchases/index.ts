@@ -144,6 +144,16 @@ export const queryPurchaseRequestSchemaOutput = z.object({
         })
         .nullable(),
       metadata: z.string().nullable(),
+      ActionHistory: z
+        .array(
+          z.object({
+            id: z.string(),
+            createdAt: z.date(),
+            requestedAction: z.nativeEnum(PurchasingAction),
+          }),
+        )
+        .optional()
+        .describe('History of previous NextAction states'),
     }),
   ),
 });
@@ -193,6 +203,14 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         TransactionHistory: {
           orderBy: { createdAt: 'desc' },
           take: input.includeHistory == true ? undefined : 0,
+        },
+        ActionHistory: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            createdAt: true,
+            requestedAction: true,
+          },
         },
       },
     });
