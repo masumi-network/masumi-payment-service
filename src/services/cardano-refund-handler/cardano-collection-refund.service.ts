@@ -108,10 +108,10 @@ async function processSingleRefundCollection(
         decodedContract.state,
         request.onChainState,
       ) &&
-      decodedContract.buyerVkey == request.SmartContractWallet!.walletVkey &&
+      decodedContract.buyerVkey == request.SmartContractWallet?.walletVkey &&
       decodedContract.sellerVkey == request.SellerWallet.walletVkey &&
       decodedContract.buyerAddress ==
-        request.SmartContractWallet!.walletAddress &&
+        request.SmartContractWallet?.walletAddress &&
       decodedContract.sellerAddress == request.SellerWallet.walletAddress &&
       decodedContract.blockchainIdentifier == request.blockchainIdentifier &&
       decodedContract.inputHash == request.inputHash &&
