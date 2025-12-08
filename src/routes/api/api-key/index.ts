@@ -32,8 +32,16 @@ export const getAPIKeySchemaOutput = z.object({
       networkLimit: z.array(z.nativeEnum(Network)),
       RemainingUsageCredits: z.array(
         z.object({
-          unit: z.string(),
-          amount: z.string(),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+            ),
+          amount: z
+            .string()
+            .describe(
+              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+            ),
         }),
       ),
       status: z.nativeEnum(ApiKeyStatus),
@@ -77,8 +85,17 @@ export const addAPIKeySchemaInput = z.object({
   UsageCredits: z
     .array(
       z.object({
-        unit: z.string().max(150),
-        amount: z.string(),
+        unit: z
+          .string()
+          .max(150)
+          .describe(
+            'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+          ),
+        amount: z
+          .string()
+          .describe(
+            'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+          ),
       }),
     )
     .describe(
@@ -156,8 +173,17 @@ export const updateAPIKeySchemaInput = z.object({
   UsageCreditsToAddOrRemove: z
     .array(
       z.object({
-        unit: z.string().max(150),
-        amount: z.string(),
+        unit: z
+          .string()
+          .max(150)
+          .describe(
+            'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+          ),
+        amount: z
+          .string()
+          .describe(
+            'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+          ),
       }),
     )
     .max(25)

@@ -82,8 +82,16 @@ export const postPurchaseRequestSchemaOutput = z.object({
   ),
   PaidFunds: z.array(
     z.object({
-      amount: z.string(),
-      unit: z.string(),
+      amount: z
+        .string()
+        .describe(
+          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+        ),
+      unit: z
+        .string()
+        .describe(
+          'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+        ),
     }),
   ),
   WithdrawnForSeller: z.array(
