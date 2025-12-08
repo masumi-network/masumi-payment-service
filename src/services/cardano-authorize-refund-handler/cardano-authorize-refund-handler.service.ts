@@ -66,29 +66,7 @@ function calculateTransactionTimeWindow(
 
   return { invalidBefore, invalidAfter };
 }
-function createRefundRequestDatum(params: {
-  decodedContract: NonNullable<ReturnType<typeof decodeV1ContractDatum>>;
-  buyerAddress: string;
-  sellerAddress: string;
-  blockchainIdentifier: string;
-  cooldownTime: bigint;
-}): ReturnType<typeof getDatumFromBlockchainIdentifier> {
-  return getDatumFromBlockchainIdentifier({
-    buyerAddress: params.buyerAddress,
-    sellerAddress: params.sellerAddress,
-    blockchainIdentifier: params.blockchainIdentifier,
-    inputHash: params.decodedContract.inputHash,
-    resultHash: '',
-    payByTime: params.decodedContract.payByTime,
-    collateralReturnLovelace: params.decodedContract.collateralReturnLovelace,
-    resultTime: params.decodedContract.resultTime,
-    unlockTime: params.decodedContract.unlockTime,
-    externalDisputeUnlockTime: params.decodedContract.externalDisputeUnlockTime,
-    newCooldownTimeSeller: newCooldownTime(params.cooldownTime),
-    newCooldownTimeBuyer: BigInt(0),
-    state: SmartContractState.RefundRequested,
-  });
-}
+
 export async function authorizeRefundV1() {
   let release: MutexInterface.Releaser | null;
   try {
@@ -214,13 +192,24 @@ export async function authorizeRefundV1() {
             if (decodedContract == null) {
               throw new Error('Invalid datum');
             }
-
-            const datum = createRefundRequestDatum({
-              decodedContract,
-              buyerAddress,
-              sellerAddress,
+            const datum = getDatumFromBlockchainIdentifier({
+              buyerAddress: buyerAddress,
+              sellerAddress: sellerAddress,
               blockchainIdentifier: request.blockchainIdentifier,
-              cooldownTime: BigInt(paymentContract.cooldownTime),
+              inputHash: decodedContract.inputHash,
+              resultHash: '',
+              payByTime: decodedContract.payByTime,
+              collateralReturnLovelace:
+                decodedContract.collateralReturnLovelace,
+              resultTime: decodedContract.resultTime,
+              unlockTime: decodedContract.unlockTime,
+              externalDisputeUnlockTime:
+                decodedContract.externalDisputeUnlockTime,
+              newCooldownTimeSeller: newCooldownTime(
+                BigInt(paymentContract.cooldownTime),
+              ),
+              newCooldownTimeBuyer: BigInt(0),
+              state: SmartContractState.RefundRequested,
             });
 
             const { invalidBefore, invalidAfter } =
