@@ -23,7 +23,7 @@ import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { generateMasumiSmartContractWithdrawTransaction } from '@/utils/generator/transaction-generator';
+import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
 const mutex = new Mutex();
 
@@ -205,32 +205,9 @@ export async function collectRefundV1() {
               0,
               Math.min(4, filteredUtxos.length),
             );
-            const evaluationTx =
-              await generateMasumiSmartContractWithdrawTransaction(
-                'CollectRefund',
-                blockchainProvider,
-                network,
-                script,
-                address,
-                utxo,
-                collateralUtxo,
-                limitedFilteredUtxos,
-                {
-                  collectAssets: utxo.output.amount,
-                  collectionAddress: address,
-                },
-                null,
-                null,
-                invalidBefore,
-                invalidAfter,
-              );
-
-            const estimatedFee = (await blockchainProvider.evaluateTx(
-              evaluationTx,
-            )) as Array<{ budget: { mem: number; steps: number } }>;
 
             const unsignedTx =
-              await generateMasumiSmartContractWithdrawTransaction(
+              await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
                 'CollectRefund',
                 blockchainProvider,
                 network,
@@ -247,7 +224,6 @@ export async function collectRefundV1() {
                 null,
                 invalidBefore,
                 invalidAfter,
-                estimatedFee[0].budget,
               );
 
             const signedTx = await wallet.signTx(unsignedTx);
