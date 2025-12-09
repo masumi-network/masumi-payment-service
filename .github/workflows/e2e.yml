@@ -1,0 +1,163 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [dev]
+
+jobs:
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120  
+    continue-on-error: true  
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Create Neon Database Branch
+        id: create-branch
+        run: |
+          BRANCH_NAME="pr-${{ github.event.pull_request.number }}-${{ github.run_id }}"
+          echo "Creating database branch: $BRANCH_NAME"
+          
+          # Create branch using Neon API v2
+          RESPONSE=$(curl -s -X POST \
+            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches" \
+            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"endpoints\": [
+                {
+                  \"type\": \"read_write\"
+                }
+              ],
+              \"branch\": {
+                \"name\": \"$BRANCH_NAME\"
+              }
+            }")
+          
+          echo "API Response: $RESPONSE"
+          
+          # Extract branch details
+          BRANCH_ID=$(echo $RESPONSE | jq -r '.branch.id')
+          ENDPOINT_HOST=$(echo $RESPONSE | jq -r '.endpoints[0].host')
+          
+          # Construct connection URI using the endpoint host
+          # Format: postgresql://[user]:[password]@[host]/[database]?sslmode=require
+          BASE_URI="${{ secrets.DATABASE_URL }}"
+          # Extract user, password, and database from base URI
+          CONNECTION_URI=$(echo $BASE_URI | sed "s/@[^/]*/@$ENDPOINT_HOST/")
+          
+          echo "branch_id=$BRANCH_ID" >> $GITHUB_OUTPUT
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "connection_uri=$CONNECTION_URI" >> $GITHUB_OUTPUT
+          echo "endpoint_host=$ENDPOINT_HOST" >> $GITHUB_OUTPUT
+          
+          echo "✅ Database branch created: $BRANCH_NAME"
+          echo "✅ Branch ID: $BRANCH_ID"
+          echo "✅ Endpoint: $ENDPOINT_HOST"
+      
+      - name: Wait for Branch to be Ready
+        run: |
+          echo "Waiting for branch to be ready..."
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(curl -s \
+              "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
+              -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
+              -H "Accept: application/json" | jq -r '.branch.active')
+            
+            if [ "$STATUS" = "true" ]; then
+              echo "✅ Branch is ready!"
+              break
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch not ready yet, waiting 2 seconds..."
+            sleep 2
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ Branch failed to become ready within timeout"
+            exit 1
+          fi
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Generate Prisma Client
+        run: npm run prisma:generate
+        env:
+          DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
+      
+      - name: Start API server in background
+        run: |
+          npm run dev > server.log 2>&1 &
+          echo $! > server.pid
+        env:
+          DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          NODE_ENV: test
+          PORT: 3001
+      
+      - name: Wait for server to be ready
+        run: npx wait-on http://localhost:3001/api/v1/health -t 60000
+      
+      - name: Run E2E test suite
+        run: npm run test:e2e -- --runInBand --verbose
+        env:
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          TEST_API_URL: http://localhost:3001
+          TEST_NETWORK: Preprod
+          TEST_TIMEOUT_REGISTRATION: 1800000  
+          DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
+          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
+      
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+      
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-failure-logs
+          path: |
+            server.log
+            **/*.log
+          retention-days: 7
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-results
+          path: |
+            coverage/
+            test-results/
+          retention-days: 7
+      
+      - name: Delete Neon Database Branch
+        if: always()
+        run: |
+          echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
+          curl -X DELETE \
+            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
+            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}"
+          echo "✅ Database branch deleted"
+
