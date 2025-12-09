@@ -26,7 +26,7 @@ import {
   newCooldownTime,
 } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
@@ -351,7 +351,7 @@ export async function cancelRefundsV1() {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:
-                      'Cancelling refund failed: ' + convertErrorString(error),
+                      'Cancelling refund failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

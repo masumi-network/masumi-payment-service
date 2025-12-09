@@ -28,8 +28,8 @@ import {
   newCooldownTime,
 } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -105,7 +105,7 @@ async function handlePaymentRequestResults(
               requestedAction: PaymentAction.WaitingForManualAction,
               errorType: PaymentErrorType.Unknown,
               errorNote:
-                'Submitting result failed: ' + convertErrorString(result.error),
+                'Submitting result failed: ' + errorToString(result.error),
             },
           },
           SmartContractWallet: {
