@@ -22,16 +22,19 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { handleApiCall } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
       <AppProvider initialState={initialAppState}>
-        <ThemedApp
-          Component={Component}
-          pageProps={pageProps}
-          router={router}
-        />
+        <TooltipProvider delayDuration={200}>
+          <ThemedApp
+            Component={Component}
+            pageProps={pageProps}
+            router={router}
+          />
+        </TooltipProvider>
       </AppProvider>
     </ThemeProvider>
   );
