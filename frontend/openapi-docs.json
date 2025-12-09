@@ -6667,11 +6667,16 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "confirmations"
                                                                 ]
                                                             }
                                                         },

@@ -1915,6 +1915,7 @@ export type GetRegistryResponses = {
                 CurrentTransaction: {
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    confirmations: number | null;
                 } | null;
             }>;
         };
