@@ -158,7 +158,7 @@ export function AddPaymentSourceDialog({
         network: state.network,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: '',
+          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
         },
         feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
         purchasingWallets: [
@@ -217,10 +217,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,

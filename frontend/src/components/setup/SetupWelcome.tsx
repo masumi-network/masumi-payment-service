@@ -426,7 +426,7 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: '',
+        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
       },
       feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
     },
@@ -460,10 +460,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -815,18 +815,18 @@ function AddAiAgentScreen({
               : { name: 'Custom Agent', version: '1.0.0' },
           AgentPricing: data.isFree
             ? {
-                pricingType: 'Free',
-              }
+              pricingType: 'Free',
+            }
             : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getUsdmConfig(state.network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+              pricingType: 'Fixed',
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getUsdmConfig(state.network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            },
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
