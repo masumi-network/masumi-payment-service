@@ -104,8 +104,6 @@ export const queryRegistryRequestSchemaOutput = z.object({
         .object({
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
-          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
-          newOnChainState: z.nativeEnum(OnChainState).nullable(),
           confirmations: z.number().nullable(),
         })
         .nullable(),
