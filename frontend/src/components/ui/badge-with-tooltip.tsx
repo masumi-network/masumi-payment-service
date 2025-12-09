@@ -1,10 +1,6 @@
 import * as React from 'react';
 import { Badge, BadgeProps } from './badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from './tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 import { cn } from '@/lib/utils';
 
 export interface BadgeWithTooltipProps extends BadgeProps {
@@ -25,7 +21,7 @@ function BadgeWithTooltip({
           {...badgeProps}
           className={cn(
             'text-muted-foreground hover:text-foreground cursor-help transition-colors',
-            className
+            className,
           )}
         >
           {text}

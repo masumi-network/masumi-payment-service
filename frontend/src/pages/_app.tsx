@@ -75,7 +75,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       console.error('Failed to fetch payment sources:', error);
       toast.error(
         error.message ||
-        'Error fetching payment sources. Please try again later.',
+          'Error fetching payment sources. Please try again later.',
       );
       return;
     }
