@@ -77,6 +77,7 @@ export async function handlePaymentTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
   metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
@@ -103,6 +104,10 @@ export async function handlePaymentTransactionCardanoV1(
         newState,
       );
 
+      const isConfirmationTransaction =
+        paymentRequest.currentTransactionId &&
+        paymentRequest.CurrentTransaction?.txHash == tx_hash;
+
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
@@ -121,27 +126,54 @@ export async function handlePaymentTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            paymentRequest.currentTransactionId != null
-              ? { connect: { id: paymentRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-              fees: metadata?.fees ?? null,
-              blockHeight: metadata?.block_height ?? null,
-              blockTime: metadata?.block_time ?? null,
-              outputAmount: metadata?.output_amount
-                ? JSON.stringify(metadata.output_amount)
-                : null,
-              utxoCount: metadata?.utxo_count ?? null,
-              withdrawalCount: metadata?.withdrawal_count ?? null,
-              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
-              redeemerCount: metadata?.redeemer_count ?? null,
-              validContract: metadata?.valid_contract ?? null,
-            },
-          },
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: paymentRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -204,6 +236,7 @@ export async function handlePurchasingTransactionCardanoV1(
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
   metadata?: TransactionMetadata,
 ) {
   await prisma.$transaction(
@@ -228,6 +261,9 @@ export async function handlePurchasingTransactionCardanoV1(
         currentAction,
         newStatus,
       );
+      const isConfirmationTransaction =
+        purchasingRequest.currentTransactionId &&
+        purchasingRequest.CurrentTransaction?.txHash == tx_hash;
 
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
@@ -249,27 +285,54 @@ export async function handlePurchasingTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            purchasingRequest.currentTransactionId != null
-              ? { connect: { id: purchasingRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-              fees: metadata?.fees ?? null,
-              blockHeight: metadata?.block_height ?? null,
-              blockTime: metadata?.block_time ?? null,
-              outputAmount: metadata?.output_amount
-                ? JSON.stringify(metadata.output_amount)
-                : null,
-              utxoCount: metadata?.utxo_count ?? null,
-              withdrawalCount: metadata?.withdrawal_count ?? null,
-              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
-              redeemerCount: metadata?.redeemer_count ?? null,
-              validContract: metadata?.valid_contract ?? null,
-            },
-          },
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: purchasingRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -740,29 +803,49 @@ export async function updateInitialPurchaseTransaction(
               requestedAction: PurchasingAction.WaitingForExternalAction,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-              fees: metadata?.fees ?? null,
-              blockHeight: metadata?.block_height ?? null,
-              blockTime: metadata?.block_time ?? null,
-              outputAmount: metadata?.output_amount
-                ? JSON.stringify(metadata.output_amount)
-                : null,
-              utxoCount: metadata?.utxo_count ?? null,
-              withdrawalCount: metadata?.withdrawal_count ?? null,
-              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
-              redeemerCount: metadata?.redeemer_count ?? null,
-              validContract: metadata?.valid_contract ?? null,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              },
           onChainState: OnChainState.FundsLocked,
           resultHash: decodedNewContract.resultHash,
         },
@@ -1075,29 +1158,49 @@ export async function updateInitialPaymentTransaction(
                 errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-              fees: metadata?.fees ?? null,
-              blockHeight: metadata?.block_height ?? null,
-              blockTime: metadata?.block_time ?? null,
-              outputAmount: metadata?.output_amount
-                ? JSON.stringify(metadata.output_amount)
-                : null,
-              utxoCount: metadata?.utxo_count ?? null,
-              withdrawalCount: metadata?.withdrawal_count ?? null,
-              assetMintOrBurnCount: metadata?.asset_mint_or_burn_count ?? null,
-              redeemerCount: metadata?.redeemer_count ?? null,
-              validContract: metadata?.valid_contract ?? null,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
+                  fees: metadata?.fees ?? null,
+                  blockHeight: metadata?.block_height ?? null,
+                  blockTime: metadata?.block_time ?? null,
+                  outputAmount: metadata?.output_amount
+                    ? JSON.stringify(metadata.output_amount)
+                    : null,
+                  utxoCount: metadata?.utxo_count ?? null,
+                  withdrawalCount: metadata?.withdrawal_count ?? null,
+                  assetMintOrBurnCount:
+                    metadata?.asset_mint_or_burn_count ?? null,
+                  redeemerCount: metadata?.redeemer_count ?? null,
+                  validContract: metadata?.valid_contract ?? null,
+                },
+              },
           onChainState: newState,
           resultHash: decodedNewContract.resultHash,
           BuyerWallet: {
@@ -1293,6 +1396,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
         tx.metadata,
       );
     }
@@ -1315,6 +1419,7 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
         tx.metadata,
       );
     }

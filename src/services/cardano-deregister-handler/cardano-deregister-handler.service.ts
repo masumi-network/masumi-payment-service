@@ -16,7 +16,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 const mutex = new Mutex();
@@ -85,7 +85,7 @@ async function handlePotentialDeregistrationFailure(
       where: { id: registryRequest.id },
       data: {
         state: RegistrationState.DeregistrationFailed,
-        error: convertErrorString(error),
+        error: errorToString(error),
         SmartContractWallet: {
           update: {
             lockedAt: null,

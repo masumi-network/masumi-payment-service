@@ -63,7 +63,10 @@ async function syncRegistryRequests(
   registryRequests: Array<{
     id: string;
     state: RegistrationState;
-    CurrentTransaction: { BlocksWallet: { id: string } | null } | null;
+    CurrentTransaction: {
+      BlocksWallet: { id: string } | null;
+      txHash: string;
+    } | null;
     agentIdentifier: string | null;
   }>,
   blockfrost: BlockFrostAPI,
@@ -77,6 +80,11 @@ async function syncRegistryRequests(
 
       if (registryRequest.state == RegistrationState.RegistrationInitiated) {
         if (owner.length >= 1 && owner[0].quantity == '1') {
+          const tx = await blockfrost.txs(
+            registryRequest.CurrentTransaction!.txHash,
+          );
+          const block = await blockfrost.blocks(tx.block);
+          const confirmations = block.confirmations;
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
             data: {
@@ -84,6 +92,7 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
@@ -115,6 +124,11 @@ async function syncRegistryRequests(
         registryRequest.state == RegistrationState.DeregistrationInitiated
       ) {
         if (owner.length == 0 || owner[0].quantity == '0') {
+          const tx = await blockfrost.txs(
+            registryRequest.CurrentTransaction!.txHash,
+          );
+          const block = await blockfrost.blocks(tx.block);
+          const confirmations = block.confirmations;
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
             data: {
@@ -122,6 +136,7 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }

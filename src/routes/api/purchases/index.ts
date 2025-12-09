@@ -21,11 +21,15 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { handlePurchaseCreditInit } from '@/services/token-credit';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import { validateHexString } from '@/utils/generator/contract-generator';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import {
+  transformPurchaseGetTimestamps,
+  transformPurchaseGetAmounts,
+} from '@/utils/shared/transformers';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -100,6 +104,9 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           redeemerCount: z.number().nullable(),
           validContract: z.boolean().nullable(),
           outputAmount: z.string().nullable(),
+          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+          newOnChainState: z.nativeEnum(OnChainState).nullable(),
+          confirmations: z.number().nullable(),
         })
         .nullable(),
       TransactionHistory: z.array(
@@ -118,6 +125,9 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           redeemerCount: z.number().nullable(),
           validContract: z.boolean().nullable(),
           outputAmount: z.string().nullable(),
+          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+          newOnChainState: z.nativeEnum(OnChainState).nullable(),
+          confirmations: z.number().nullable(),
         }),
       ),
       PaidFunds: z.array(
@@ -216,68 +226,18 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     return {
       Purchases: result.map((purchase) => ({
         ...purchase,
+        ...transformPurchaseGetTimestamps(purchase),
+        ...transformPurchaseGetAmounts(purchase),
         CurrentTransaction: purchase.CurrentTransaction
           ? {
-              id: purchase.CurrentTransaction.id,
-              createdAt: purchase.CurrentTransaction.createdAt,
-              updatedAt: purchase.CurrentTransaction.updatedAt,
-              txHash: purchase.CurrentTransaction.txHash,
-              status: purchase.CurrentTransaction.status,
+              ...purchase.CurrentTransaction,
               fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-              blockHeight: purchase.CurrentTransaction.blockHeight,
-              blockTime: purchase.CurrentTransaction.blockTime,
-              utxoCount: purchase.CurrentTransaction.utxoCount,
-              withdrawalCount: purchase.CurrentTransaction.withdrawalCount,
-              assetMintOrBurnCount:
-                purchase.CurrentTransaction.assetMintOrBurnCount,
-              redeemerCount: purchase.CurrentTransaction.redeemerCount,
-              validContract: purchase.CurrentTransaction.validContract,
-              outputAmount: purchase.CurrentTransaction.outputAmount,
             }
           : null,
         TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          id: tx.id,
-          createdAt: tx.createdAt,
-          updatedAt: tx.updatedAt,
-          txHash: tx.txHash,
-          status: tx.status,
+          ...tx,
           fees: tx.fees?.toString() ?? null,
-          blockHeight: tx.blockHeight,
-          blockTime: tx.blockTime,
-          utxoCount: tx.utxoCount,
-          withdrawalCount: tx.withdrawalCount,
-          assetMintOrBurnCount: tx.assetMintOrBurnCount,
-          redeemerCount: tx.redeemerCount,
-          validContract: tx.validContract,
-          outputAmount: tx.outputAmount,
         })),
-        PaidFunds: (
-          purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          purchase.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          purchase.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        collateralReturnLovelace:
-          purchase.collateralReturnLovelace?.toString() ?? null,
-        payByTime: purchase.payByTime?.toString() ?? null,
-        submitResultTime: purchase.submitResultTime.toString(),
-        unlockTime: purchase.unlockTime.toString(),
-        externalDisputeUnlockTime:
-          purchase.externalDisputeUnlockTime.toString(),
-        cooldownTime: Number(purchase.buyerCoolDownTime),
-        cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
       })),
     };
   },
@@ -852,7 +812,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         sellerAddress: addressOfAsset,
       };
 
-      const hashedBlockchainIdentifier = generateHash(
+      const hashedBlockchainIdentifier = generateSHA256Hash(
         stringify(reconstructedBlockchainIdentifier),
       );
 

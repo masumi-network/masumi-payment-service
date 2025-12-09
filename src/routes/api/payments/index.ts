@@ -21,10 +21,14 @@ import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import {
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
 export const queryPaymentsSchemaInput = z.object({
@@ -89,8 +93,6 @@ export const queryPaymentsSchemaOutput = z.object({
           id: z.string(),
           createdAt: z.date(),
           updatedAt: z.date(),
-          txHash: z.string(),
-          status: z.nativeEnum(TransactionStatus),
           fees: z.string().nullable(),
           blockHeight: z.number().nullable(),
           blockTime: z.number().nullable(),
@@ -100,6 +102,11 @@ export const queryPaymentsSchemaOutput = z.object({
           redeemerCount: z.number().nullable(),
           validContract: z.boolean().nullable(),
           outputAmount: z.string().nullable(),
+          txHash: z.string().nullable(),
+          status: z.nativeEnum(TransactionStatus),
+          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+          newOnChainState: z.nativeEnum(OnChainState).nullable(),
+          confirmations: z.number().nullable(),
         })
         .nullable(),
       TransactionHistory: z
@@ -119,6 +126,9 @@ export const queryPaymentsSchemaOutput = z.object({
             redeemerCount: z.number().nullable(),
             validContract: z.boolean().nullable(),
             outputAmount: z.string().nullable(),
+            previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+            newOnChainState: z.nativeEnum(OnChainState).nullable(),
+            confirmations: z.number().nullable(),
           }),
         )
         .nullable(),
@@ -231,67 +241,20 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     return {
       Payments: result.map((payment) => ({
         ...payment,
+        ...transformPaymentGetTimestamps(payment),
+        ...transformPaymentGetAmounts(payment),
         CurrentTransaction: payment.CurrentTransaction
           ? {
-              id: payment.CurrentTransaction.id,
-              createdAt: payment.CurrentTransaction.createdAt,
-              updatedAt: payment.CurrentTransaction.updatedAt,
-              txHash: payment.CurrentTransaction.txHash,
-              status: payment.CurrentTransaction.status,
+              ...payment.CurrentTransaction,
               fees: payment.CurrentTransaction.fees?.toString() ?? null,
-              blockHeight: payment.CurrentTransaction.blockHeight,
-              blockTime: payment.CurrentTransaction.blockTime,
-              utxoCount: payment.CurrentTransaction.utxoCount,
-              withdrawalCount: payment.CurrentTransaction.withdrawalCount,
-              assetMintOrBurnCount:
-                payment.CurrentTransaction.assetMintOrBurnCount,
-              redeemerCount: payment.CurrentTransaction.redeemerCount,
-              validContract: payment.CurrentTransaction.validContract,
-              outputAmount: payment.CurrentTransaction.outputAmount,
             }
           : null,
-        TransactionHistory: payment.TransactionHistory.map((tx) => ({
-          id: tx.id,
-          createdAt: tx.createdAt,
-          updatedAt: tx.updatedAt,
-          txHash: tx.txHash,
-          status: tx.status,
-          fees: tx.fees?.toString() ?? null,
-          blockHeight: tx.blockHeight,
-          blockTime: tx.blockTime,
-          utxoCount: tx.utxoCount,
-          withdrawalCount: tx.withdrawalCount,
-          assetMintOrBurnCount: tx.assetMintOrBurnCount,
-          redeemerCount: tx.redeemerCount,
-          validContract: tx.validContract,
-          outputAmount: tx.outputAmount,
-        })),
-        submitResultTime: payment.submitResultTime.toString(),
-        cooldownTime: Number(payment.sellerCoolDownTime),
-        cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
-        payByTime: payment.payByTime?.toString() ?? null,
-        unlockTime: payment.unlockTime.toString(),
-        externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-        collateralReturnLovelace:
-          payment.collateralReturnLovelace?.toString() ?? null,
-        RequestedFunds: (
-          payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
+        TransactionHistory: payment.TransactionHistory
+          ? payment.TransactionHistory.map((tx) => ({
+              ...tx,
+              fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
       })),
     };
   },
@@ -642,7 +605,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     const sellerCUID = cuid2.createId();
-    const sellerId = generateHash(sellerCUID) + input.agentIdentifier;
+    const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
       agentIdentifier: input.agentIdentifier,
@@ -664,7 +627,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       },
     });
 
-    const hashedBlockchainIdentifier = generateHash(
+    const hashedBlockchainIdentifier = generateSHA256Hash(
       stringify(blockchainIdentifier),
     );
     const signedBlockchainIdentifier = await meshWallet.signData(

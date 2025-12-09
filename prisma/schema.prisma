@@ -76,6 +76,7 @@ model Transaction {
   updatedAt                DateTime          @updatedAt
   txHash                   String
   status                   TransactionStatus
+  confirmations            Int?
   lastCheckedAt            DateTime?
   fees                     BigInt?
   blockHeight              Int?
@@ -88,6 +89,8 @@ model Transaction {
   validContract            Boolean?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
+  previousOnChainState     OnChainState?
+  newOnChainState          OnChainState?
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
