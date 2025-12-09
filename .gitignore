@@ -17,6 +17,7 @@ src/services/.DS_Store
 .DS_Store
 # claude config
 .claude
+.cursor
 
 frontend/.env
 smart-contracts/registry/wallet1.addr

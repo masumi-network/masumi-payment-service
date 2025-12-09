@@ -1482,13 +1482,28 @@
                                                                     "txHash": {
                                                                         "type": "string",
                                                                         "nullable": true
+                                                                    },
+                                                                    "status": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "Pending",
+                                                                            "Confirmed",
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
+                                                                        ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "id",
                                                                     "createdAt",
                                                                     "updatedAt",
-                                                                    "txHash"
+                                                                    "txHash",
+                                                                    "status",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -1509,13 +1524,28 @@
                                                                         "txHash": {
                                                                             "type": "string",
                                                                             "nullable": true
+                                                                        },
+                                                                        "status": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                                "Pending",
+                                                                                "Confirmed",
+                                                                                "FailedViaTimeout",
+                                                                                "RolledBack"
+                                                                            ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "id",
                                                                         "createdAt",
                                                                         "updatedAt",
-                                                                        "txHash"
+                                                                        "txHash",
+                                                                        "status",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -3183,6 +3213,10 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3190,7 +3224,8 @@
                                                                     "createdAt",
                                                                     "updatedAt",
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -3218,6 +3253,10 @@
                                                                                 "FailedViaTimeout",
                                                                                 "RolledBack"
                                                                             ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3225,7 +3264,8 @@
                                                                         "createdAt",
                                                                         "updatedAt",
                                                                         "txHash",
-                                                                        "status"
+                                                                        "status",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -6627,11 +6667,16 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "confirmations"
                                                                 ]
                                                             }
                                                         },
