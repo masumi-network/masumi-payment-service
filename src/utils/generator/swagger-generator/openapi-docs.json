@@ -7472,12 +7472,57 @@
                                                                     "confirmations": {
                                                                         "type": "number",
                                                                         "nullable": true
+                                                                    },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
                                                                     "status",
-                                                                    "confirmations"
+                                                                    "confirmations",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "outputAmount",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract"
                                                                 ]
                                                             }
                                                         },
