@@ -93,6 +93,15 @@ async function syncRegistryRequests(
                 update: {
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  fees: BigInt(tx.fees),
+                  blockHeight: tx.block_height,
+                  blockTime: tx.block_time,
+                  outputAmount: JSON.stringify(tx.output_amount),
+                  utxoCount: tx.utxo_count,
+                  withdrawalCount: tx.withdrawal_count,
+                  assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+                  redeemerCount: tx.redeemer_count,
+                  validContract: tx.valid_contract,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
@@ -137,6 +146,15 @@ async function syncRegistryRequests(
                 update: {
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  fees: BigInt(tx.fees),
+                  blockHeight: tx.block_height,
+                  blockTime: tx.block_time,
+                  outputAmount: JSON.stringify(tx.output_amount),
+                  utxoCount: tx.utxo_count,
+                  withdrawalCount: tx.withdrawal_count,
+                  assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+                  redeemerCount: tx.redeemer_count,
+                  validContract: tx.valid_contract,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }

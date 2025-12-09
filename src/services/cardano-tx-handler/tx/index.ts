@@ -32,11 +32,13 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
+import { TransactionMetadata } from '../blockchain';
 
 export type UpdateTransactionInput = {
   blockTime: number;
   tx: { tx_hash: string };
   block: { confirmations: number };
+  metadata: TransactionMetadata;
   utxos: {
     hash: string;
     inputs: Array<{
@@ -76,6 +78,7 @@ export async function handlePaymentTransactionCardanoV1(
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   confirmations: number,
+  metadata: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -136,6 +139,15 @@ export async function handlePaymentTransactionCardanoV1(
                   confirmations: confirmations,
                   previousOnChainState: paymentRequest.onChainState,
                   newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               }
             : {
@@ -145,6 +157,15 @@ export async function handlePaymentTransactionCardanoV1(
                   confirmations: confirmations,
                   previousOnChainState: paymentRequest.onChainState,
                   newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               },
           WithdrawnForSeller: sellerWithdrawn
@@ -210,6 +231,7 @@ export async function handlePurchasingTransactionCardanoV1(
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   confirmations: number,
+  metadata: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -270,6 +292,15 @@ export async function handlePurchasingTransactionCardanoV1(
                   confirmations: confirmations,
                   previousOnChainState: purchasingRequest.onChainState,
                   newOnChainState: newStatus,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               }
             : {
@@ -279,6 +310,15 @@ export async function handlePurchasingTransactionCardanoV1(
                   confirmations: confirmations,
                   previousOnChainState: purchasingRequest.onChainState,
                   newOnChainState: newStatus,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               },
           WithdrawnForSeller: sellerWithdrawn
@@ -466,6 +506,7 @@ export async function updateInitialTransactions(
       decodedNewContract,
       output,
       tx,
+      tx.metadata,
     );
 
     await updateInitialPaymentTransaction(
@@ -473,6 +514,7 @@ export async function updateInitialTransactions(
       paymentContract,
       tx,
       output,
+      tx.metadata,
     );
   }
 }
@@ -484,6 +526,7 @@ export async function updateInitialPurchaseTransaction(
     { type: 'Initial' }
   >['valueOutputs'][number],
   tx: UpdateTransactionInput,
+  metadata: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -756,6 +799,15 @@ export async function updateInitialPurchaseTransaction(
                   confirmations: tx.block.confirmations,
                   previousOnChainState: null,
                   newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               }
             : {
@@ -765,6 +817,15 @@ export async function updateInitialPurchaseTransaction(
                   confirmations: tx.block.confirmations,
                   previousOnChainState: null,
                   newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               },
           onChainState: OnChainState.FundsLocked,
@@ -810,6 +871,7 @@ export async function updateInitialPaymentTransaction(
     ExtractOnChainTransactionDataOutput,
     { type: 'Initial' }
   >['valueOutputs'][number],
+  metadata: TransactionMetadata,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -1086,6 +1148,15 @@ export async function updateInitialPaymentTransaction(
                   confirmations: tx.block.confirmations,
                   previousOnChainState: null,
                   newOnChainState: newState,
+                  fees: metadata?.fees ? metadata.fees : null,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               }
             : {
@@ -1095,6 +1166,15 @@ export async function updateInitialPaymentTransaction(
                   confirmations: tx.block.confirmations,
                   previousOnChainState: null,
                   newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
                 },
               },
           onChainState: newState,
@@ -1293,6 +1373,7 @@ export async function updateTransaction(
         sellerWithdrawn,
         buyerWithdrawn,
         tx.block.confirmations,
+        tx.metadata,
       );
     }
   } catch (error) {
@@ -1315,6 +1396,7 @@ export async function updateTransaction(
         sellerWithdrawn,
         buyerWithdrawn,
         tx.block.confirmations,
+        tx.metadata,
       );
     }
   } catch (error) {

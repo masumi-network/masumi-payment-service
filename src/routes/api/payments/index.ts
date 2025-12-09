@@ -93,6 +93,15 @@ export const queryPaymentsSchemaOutput = z.object({
           id: z.string(),
           createdAt: z.date(),
           updatedAt: z.date(),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
+          outputAmount: z.string().nullable(),
           txHash: z.string().nullable(),
           status: z.nativeEnum(TransactionStatus),
           previousOnChainState: z.nativeEnum(OnChainState).nullable(),
@@ -106,8 +115,17 @@ export const queryPaymentsSchemaOutput = z.object({
             id: z.string(),
             createdAt: z.date(),
             updatedAt: z.date(),
-            txHash: z.string().nullable(),
+            txHash: z.string(),
             status: z.nativeEnum(TransactionStatus),
+            fees: z.string().nullable(),
+            blockHeight: z.number().nullable(),
+            blockTime: z.number().nullable(),
+            utxoCount: z.number().nullable(),
+            withdrawalCount: z.number().nullable(),
+            assetMintOrBurnCount: z.number().nullable(),
+            redeemerCount: z.number().nullable(),
+            validContract: z.boolean().nullable(),
+            outputAmount: z.string().nullable(),
             previousOnChainState: z.nativeEnum(OnChainState).nullable(),
             newOnChainState: z.nativeEnum(OnChainState).nullable(),
             confirmations: z.number().nullable(),
@@ -225,6 +243,18 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         ...payment,
         ...transformPaymentGetTimestamps(payment),
         ...transformPaymentGetAmounts(payment),
+        CurrentTransaction: payment.CurrentTransaction
+          ? {
+              ...payment.CurrentTransaction,
+              fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory: payment.TransactionHistory
+          ? payment.TransactionHistory.map((tx) => ({
+              ...tx,
+              fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
       })),
     };
   },
@@ -349,6 +379,44 @@ export const createPaymentSchemaOutput = z.object({
       walletVkey: z.string(),
       walletAddress: z.string(),
     })
+    .nullable(),
+  CurrentTransaction: z
+    .object({
+      id: z.string(),
+      createdAt: z.date(),
+      updatedAt: z.date(),
+      txHash: z.string(),
+      status: z.nativeEnum(TransactionStatus),
+      fees: z.string().nullable(),
+      blockHeight: z.number().nullable(),
+      blockTime: z.number().nullable(),
+      utxoCount: z.number().nullable(),
+      withdrawalCount: z.number().nullable(),
+      assetMintOrBurnCount: z.number().nullable(),
+      redeemerCount: z.number().nullable(),
+      validContract: z.boolean().nullable(),
+      outputAmount: z.string().nullable(),
+    })
+    .nullable(),
+  TransactionHistory: z
+    .array(
+      z.object({
+        id: z.string(),
+        createdAt: z.date(),
+        updatedAt: z.date(),
+        txHash: z.string(),
+        status: z.nativeEnum(TransactionStatus),
+        fees: z.string().nullable(),
+        blockHeight: z.number().nullable(),
+        blockTime: z.number().nullable(),
+        utxoCount: z.number().nullable(),
+        withdrawalCount: z.number().nullable(),
+        assetMintOrBurnCount: z.number().nullable(),
+        redeemerCount: z.number().nullable(),
+        validContract: z.boolean().nullable(),
+        outputAmount: z.string().nullable(),
+      }),
+    )
     .nullable(),
   metadata: z.string().nullable(),
 });
@@ -621,6 +689,41 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     }
     return {
       ...payment,
+      CurrentTransaction: payment.CurrentTransaction
+        ? {
+            id: payment.CurrentTransaction.id,
+            createdAt: payment.CurrentTransaction.createdAt,
+            updatedAt: payment.CurrentTransaction.updatedAt,
+            txHash: payment.CurrentTransaction.txHash,
+            status: payment.CurrentTransaction.status,
+            fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            blockHeight: payment.CurrentTransaction.blockHeight,
+            blockTime: payment.CurrentTransaction.blockTime,
+            utxoCount: payment.CurrentTransaction.utxoCount,
+            withdrawalCount: payment.CurrentTransaction.withdrawalCount,
+            assetMintOrBurnCount:
+              payment.CurrentTransaction.assetMintOrBurnCount,
+            redeemerCount: payment.CurrentTransaction.redeemerCount,
+            validContract: payment.CurrentTransaction.validContract,
+            outputAmount: payment.CurrentTransaction.outputAmount,
+          }
+        : null,
+      TransactionHistory: payment.TransactionHistory.map((tx) => ({
+        id: tx.id,
+        createdAt: tx.createdAt,
+        updatedAt: tx.updatedAt,
+        txHash: tx.txHash,
+        status: tx.status,
+        fees: tx.fees?.toString() ?? null,
+        blockHeight: tx.blockHeight,
+        blockTime: tx.blockTime,
+        utxoCount: tx.utxoCount,
+        withdrawalCount: tx.withdrawalCount,
+        assetMintOrBurnCount: tx.assetMintOrBurnCount,
+        redeemerCount: tx.redeemerCount,
+        validContract: tx.validContract,
+        outputAmount: tx.outputAmount,
+      })),
       payByTime: payment.payByTime!.toString(),
       submitResultTime: payment.submitResultTime.toString(),
       unlockTime: payment.unlockTime.toString(),

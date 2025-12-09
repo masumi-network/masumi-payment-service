@@ -1479,6 +1479,42 @@
                                                                     "updatedAt": {
                                                                         "type": "string"
                                                                     },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
                                                                     "txHash": {
                                                                         "type": "string",
                                                                         "nullable": true
@@ -1529,6 +1565,15 @@
                                                                     "id",
                                                                     "createdAt",
                                                                     "updatedAt",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract",
+                                                                    "outputAmount",
                                                                     "txHash",
                                                                     "status",
                                                                     "previousOnChainState",
@@ -1552,8 +1597,7 @@
                                                                             "type": "string"
                                                                         },
                                                                         "txHash": {
-                                                                            "type": "string",
-                                                                            "nullable": true
+                                                                            "type": "string"
                                                                         },
                                                                         "status": {
                                                                             "type": "string",
@@ -1563,6 +1607,42 @@
                                                                                 "FailedViaTimeout",
                                                                                 "RolledBack"
                                                                             ]
+                                                                        },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "utxoCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "withdrawalCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "assetMintOrBurnCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "redeemerCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "validContract": {
+                                                                            "type": "boolean",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "outputAmount": {
+                                                                            "type": "string",
+                                                                            "nullable": true
                                                                         },
                                                                         "previousOnChainState": {
                                                                             "type": "string",
@@ -1603,6 +1683,15 @@
                                                                         "updatedAt",
                                                                         "txHash",
                                                                         "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
+                                                                        "utxoCount",
+                                                                        "withdrawalCount",
+                                                                        "assetMintOrBurnCount",
+                                                                        "redeemerCount",
+                                                                        "validContract",
+                                                                        "outputAmount",
                                                                         "previousOnChainState",
                                                                         "newOnChainState",
                                                                         "confirmations"
@@ -2222,6 +2311,167 @@
                                                         "walletAddress"
                                                     ]
                                                 },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
+                                                },
                                                 "metadata": {
                                                     "type": "string",
                                                     "nullable": true
@@ -2248,6 +2498,8 @@
                                                 "PaymentSource",
                                                 "BuyerWallet",
                                                 "SmartContractWallet",
+                                                "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "metadata"
                                             ]
                                         },
@@ -2295,6 +2547,8 @@
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
+                                            "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": []
@@ -3274,6 +3528,42 @@
                                                                             "RolledBack"
                                                                         ]
                                                                     },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
                                                                     "previousOnChainState": {
                                                                         "type": "string",
                                                                         "nullable": true,
@@ -3313,6 +3603,15 @@
                                                                     "updatedAt",
                                                                     "txHash",
                                                                     "status",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract",
+                                                                    "outputAmount",
                                                                     "previousOnChainState",
                                                                     "newOnChainState",
                                                                     "confirmations"
@@ -3343,6 +3642,42 @@
                                                                                 "FailedViaTimeout",
                                                                                 "RolledBack"
                                                                             ]
+                                                                        },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "utxoCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "withdrawalCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "assetMintOrBurnCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "redeemerCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "validContract": {
+                                                                            "type": "boolean",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "outputAmount": {
+                                                                            "type": "string",
+                                                                            "nullable": true
                                                                         },
                                                                         "previousOnChainState": {
                                                                             "type": "string",
@@ -3383,6 +3718,15 @@
                                                                         "updatedAt",
                                                                         "txHash",
                                                                         "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
+                                                                        "utxoCount",
+                                                                        "withdrawalCount",
+                                                                        "assetMintOrBurnCount",
+                                                                        "redeemerCount",
+                                                                        "validContract",
+                                                                        "outputAmount",
                                                                         "previousOnChainState",
                                                                         "newOnChainState",
                                                                         "confirmations"
@@ -3863,6 +4207,42 @@
                                                                 "FailedViaTimeout",
                                                                 "RolledBack"
                                                             ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
                                                         }
                                                     },
                                                     "required": [
@@ -3870,8 +4250,99 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
                                                     ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -4014,6 +4485,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -4053,6 +4525,7 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
                                                     "unit": "",
@@ -4225,6 +4698,42 @@
                                                                 "FailedViaTimeout",
                                                                 "RolledBack"
                                                             ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
                                                         }
                                                     },
                                                     "required": [
@@ -4232,8 +4741,99 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
                                                     ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -4376,6 +4976,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -6871,12 +7472,57 @@
                                                                     "confirmations": {
                                                                         "type": "number",
                                                                         "nullable": true
+                                                                    },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
                                                                     "status",
-                                                                    "confirmations"
+                                                                    "confirmations",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "outputAmount",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract"
                                                                 ]
                                                             }
                                                         },
