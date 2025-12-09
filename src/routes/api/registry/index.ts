@@ -4,7 +4,6 @@ import {
   $Enums,
   HotWalletType,
   Network,
-  OnChainState,
   PaymentType,
   PricingType,
   RegistrationState,

@@ -101,6 +101,10 @@ export async function handlePaymentTransactionCardanoV1(
         newState,
       );
 
+      const isConfirmationTransaction =
+        paymentRequest.currentTransactionId &&
+        paymentRequest.CurrentTransaction?.txHash == tx_hash;
+
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
@@ -119,7 +123,12 @@ export async function handlePaymentTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          CurrentTransaction: paymentRequest.currentTransactionId
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: paymentRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
             ? {
                 update: {
                   txHash: tx_hash,
@@ -224,6 +233,9 @@ export async function handlePurchasingTransactionCardanoV1(
         currentAction,
         newStatus,
       );
+      const isConfirmationTransaction =
+        purchasingRequest.currentTransactionId &&
+        purchasingRequest.CurrentTransaction?.txHash == tx_hash;
 
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
@@ -245,7 +257,12 @@ export async function handlePurchasingTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          CurrentTransaction: purchasingRequest.currentTransactionId
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: purchasingRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
             ? {
                 update: {
                   txHash: tx_hash,
