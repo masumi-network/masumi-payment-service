@@ -24,6 +24,10 @@ import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
+import {
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
 export const queryPaymentsSchemaInput = z.object({
@@ -103,8 +107,16 @@ export const queryPaymentsSchemaOutput = z.object({
         .nullable(),
       RequestedFunds: z.array(
         z.object({
-          amount: z.string(),
-          unit: z.string(),
+          amount: z
+            .string()
+            .describe(
+              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+            ),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+            ),
         }),
       ),
       WithdrawnForSeller: z.array(
@@ -202,32 +214,8 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     return {
       Payments: result.map((payment) => ({
         ...payment,
-        submitResultTime: payment.submitResultTime.toString(),
-        cooldownTime: Number(payment.sellerCoolDownTime),
-        cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
-        payByTime: payment.payByTime?.toString() ?? null,
-        unlockTime: payment.unlockTime.toString(),
-        externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-        collateralReturnLovelace:
-          payment.collateralReturnLovelace?.toString() ?? null,
-        RequestedFunds: (
-          payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
+        ...transformPaymentGetTimestamps(payment),
+        ...transformPaymentGetAmounts(payment),
       })),
     };
   },
@@ -310,8 +298,16 @@ export const createPaymentSchemaOutput = z.object({
   }),
   RequestedFunds: z.array(
     z.object({
-      amount: z.string(),
-      unit: z.string(),
+      amount: z
+        .string()
+        .describe(
+          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+        ),
+      unit: z
+        .string()
+        .describe(
+          'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+        ),
     }),
   ),
   WithdrawnForSeller: z.array(

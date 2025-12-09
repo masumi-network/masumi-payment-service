@@ -26,6 +26,10 @@ import { validateHexString } from '@/utils/generator/contract-generator';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import {
+  transformPurchaseGetTimestamps,
+  transformPurchaseGetAmounts,
+} from '@/utils/shared/transformers';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -198,33 +202,8 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     return {
       Purchases: result.map((purchase) => ({
         ...purchase,
-        PaidFunds: (
-          purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          purchase.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          purchase.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        collateralReturnLovelace:
-          purchase.collateralReturnLovelace?.toString() ?? null,
-        payByTime: purchase.payByTime?.toString() ?? null,
-        submitResultTime: purchase.submitResultTime.toString(),
-        unlockTime: purchase.unlockTime.toString(),
-        externalDisputeUnlockTime:
-          purchase.externalDisputeUnlockTime.toString(),
-        cooldownTime: Number(purchase.buyerCoolDownTime),
-        cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
+        ...transformPurchaseGetTimestamps(purchase),
+        ...transformPurchaseGetAmounts(purchase),
       })),
     };
   },
@@ -321,8 +300,16 @@ export const createPurchaseInitSchemaOutput = z.object({
     .nullable(),
   PaidFunds: z.array(
     z.object({
-      amount: z.string(),
-      unit: z.string(),
+      amount: z
+        .string()
+        .describe(
+          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+        ),
+      unit: z
+        .string()
+        .describe(
+          'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+        ),
     }),
   ),
   WithdrawnForSeller: z.array(
