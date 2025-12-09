@@ -6868,34 +6868,6 @@
                                                                             "RolledBack"
                                                                         ]
                                                                     },
-                                                                    "previousOnChainState": {
-                                                                        "type": "string",
-                                                                        "nullable": true,
-                                                                        "enum": [
-                                                                            "FundsLocked",
-                                                                            "FundsOrDatumInvalid",
-                                                                            "ResultSubmitted",
-                                                                            "RefundRequested",
-                                                                            "Disputed",
-                                                                            "Withdrawn",
-                                                                            "RefundWithdrawn",
-                                                                            "DisputedWithdrawn"
-                                                                        ]
-                                                                    },
-                                                                    "newOnChainState": {
-                                                                        "type": "string",
-                                                                        "nullable": true,
-                                                                        "enum": [
-                                                                            "FundsLocked",
-                                                                            "FundsOrDatumInvalid",
-                                                                            "ResultSubmitted",
-                                                                            "RefundRequested",
-                                                                            "Disputed",
-                                                                            "Withdrawn",
-                                                                            "RefundWithdrawn",
-                                                                            "DisputedWithdrawn"
-                                                                        ]
-                                                                    },
                                                                     "confirmations": {
                                                                         "type": "number",
                                                                         "nullable": true
@@ -6904,8 +6876,6 @@
                                                                 "required": [
                                                                     "txHash",
                                                                     "status",
-                                                                    "previousOnChainState",
-                                                                    "newOnChainState",
                                                                     "confirmations"
                                                                 ]
                                                             }
