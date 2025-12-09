@@ -80,6 +80,8 @@ model Transaction {
   lastCheckedAt            DateTime?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
+  previousOnChainState     OnChainState?
+  newOnChainState          OnChainState?
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")

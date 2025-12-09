@@ -101,6 +101,10 @@ export async function handlePaymentTransactionCardanoV1(
         newState,
       );
 
+      const isConfirmationTransaction =
+        paymentRequest.currentTransactionId &&
+        paymentRequest.CurrentTransaction?.txHash == tx_hash;
+
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
@@ -119,12 +123,19 @@ export async function handlePaymentTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          CurrentTransaction: paymentRequest.currentTransactionId
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: paymentRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
             ? {
                 update: {
                   txHash: tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
                 },
               }
             : {
@@ -132,6 +143,8 @@ export async function handlePaymentTransactionCardanoV1(
                   txHash: tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
                 },
               },
           WithdrawnForSeller: sellerWithdrawn
@@ -220,6 +233,9 @@ export async function handlePurchasingTransactionCardanoV1(
         currentAction,
         newStatus,
       );
+      const isConfirmationTransaction =
+        purchasingRequest.currentTransactionId &&
+        purchasingRequest.CurrentTransaction?.txHash == tx_hash;
 
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
@@ -241,12 +257,19 @@ export async function handlePurchasingTransactionCardanoV1(
               errorType: newAction.errorType,
             },
           },
-          CurrentTransaction: purchasingRequest.currentTransactionId
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: purchasingRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
             ? {
                 update: {
                   txHash: tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
                 },
               }
             : {
@@ -254,6 +277,8 @@ export async function handlePurchasingTransactionCardanoV1(
                   txHash: tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
                 },
               },
           WithdrawnForSeller: sellerWithdrawn
@@ -729,6 +754,8 @@ export async function updateInitialPurchaseTransaction(
                   txHash: tx.tx.tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
                 },
               }
             : {
@@ -736,6 +763,8 @@ export async function updateInitialPurchaseTransaction(
                   txHash: tx.tx.tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
                 },
               },
           onChainState: OnChainState.FundsLocked,
@@ -1055,6 +1084,8 @@ export async function updateInitialPaymentTransaction(
                   txHash: tx.tx.tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
                 },
               }
             : {
@@ -1062,6 +1093,8 @@ export async function updateInitialPaymentTransaction(
                   txHash: tx.tx.tx_hash,
                   status: TransactionStatus.Confirmed,
                   confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
                 },
               },
           onChainState: newState,
