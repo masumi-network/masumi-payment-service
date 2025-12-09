@@ -39,46 +39,127 @@ export const postPaymentRequestSchemaInput = z.object({
 });
 
 export const postPaymentRequestSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  payByTime: z.string().nullable(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  collateralReturnLovelace: z.string().nullable(),
-  externalDisputeUnlockTime: z.string(),
-  requestedById: z.string(),
-  resultHash: z.string(),
-  inputHash: z.string(),
-  cooldownTime: z.number(),
-  cooldownTimeOtherParty: z.number(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  NextAction: z.object({
-    requestedAction: z.nativeEnum(PaymentAction),
-    errorType: z.nativeEnum(PaymentErrorType).nullable(),
-    errorNote: z.string().nullable(),
-    resultHash: z.string().nullable(),
-  }),
+  id: z.string().describe('Unique identifier for the payment'),
+  createdAt: z.date().describe('Timestamp when the payment was created'),
+  updatedAt: z.date().describe('Timestamp when the payment was last updated'),
+  blockchainIdentifier: z
+    .string()
+    .describe('Unique blockchain identifier for the payment'),
+  lastCheckedAt: z
+    .date()
+    .nullable()
+    .describe(
+      'Timestamp when the payment was last checked on-chain. Null if never checked',
+    ),
+  payByTime: z
+    .string()
+    .nullable()
+    .describe(
+      'Unix timestamp by which the buyer must submit the payment transaction. Null if not set',
+    ),
+  submitResultTime: z
+    .string()
+    .describe('Unix timestamp by which the seller must submit the result'),
+  unlockTime: z
+    .string()
+    .describe(
+      'Unix timestamp after which funds can be unlocked if no disputes',
+    ),
+  collateralReturnLovelace: z
+    .string()
+    .nullable()
+    .describe(
+      'Amount of collateral to return in lovelace. Null if no collateral',
+    ),
+  externalDisputeUnlockTime: z
+    .string()
+    .describe(
+      'Unix timestamp after which external dispute resolution can occur',
+    ),
+  requestedById: z
+    .string()
+    .describe('ID of the API key that created this payment'),
+  resultHash: z
+    .string()
+    .describe('SHA256 hash of the result submitted by the seller (hex string)'),
+  inputHash: z
+    .string()
+    .describe('SHA256 hash of the input data for the payment (hex string)'),
+  cooldownTime: z
+    .number()
+    .describe('Cooldown period in milliseconds for the seller to dispute'),
+  cooldownTimeOtherParty: z
+    .number()
+    .describe('Cooldown period in milliseconds for the buyer to dispute'),
+  onChainState: z
+    .nativeEnum(OnChainState)
+    .nullable()
+    .describe(
+      'Current state of the payment on the blockchain. Null if not yet on-chain',
+    ),
+  NextAction: z
+    .object({
+      requestedAction: z
+        .nativeEnum(PaymentAction)
+        .describe('Next action required for this payment'),
+      errorType: z
+        .nativeEnum(PaymentErrorType)
+        .nullable()
+        .describe('Type of error that occurred, if any'),
+      errorNote: z
+        .string()
+        .nullable()
+        .describe('Additional details about the error, if any'),
+      resultHash: z
+        .string()
+        .nullable()
+        .describe(
+          'SHA256 hash of the result to be submitted (hex string). Null if not applicable',
+        ),
+    })
+    .describe('Next action required for this payment'),
   CurrentTransaction: z
     .object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      txHash: z.string().nullable(),
+      id: z.string().describe('Unique identifier for the transaction'),
+      createdAt: z
+        .date()
+        .describe('Timestamp when the transaction was created'),
+      updatedAt: z
+        .date()
+        .describe('Timestamp when the transaction was last updated'),
+      txHash: z
+        .string()
+        .nullable()
+        .describe(
+          'Cardano transaction hash. Null if transaction not yet submitted',
+        ),
     })
-    .nullable(),
+    .nullable()
+    .describe(
+      'Current active transaction for this payment. Null if no transaction in progress',
+    ),
   TransactionHistory: z
     .array(
       z.object({
-        id: z.string(),
-        createdAt: z.date(),
-        updatedAt: z.date(),
-        txHash: z.string().nullable(),
+        id: z.string().describe('Unique identifier for the transaction'),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the transaction was last updated'),
+        txHash: z
+          .string()
+          .nullable()
+          .describe(
+            'Cardano transaction hash. Null if transaction not yet submitted',
+          ),
       }),
     )
-    .nullable(),
+    .nullable()
+    .describe(
+      'Historical list of all transactions for this payment. Null or empty if includeHistory is false',
+    ),
   RequestedFunds: z.array(
     z.object({
       amount: z
@@ -93,38 +174,86 @@ export const postPaymentRequestSchemaOutput = z.object({
         ),
     }),
   ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    smartContractAddress: z.string(),
-    policyId: z.string().nullable(),
-  }),
+  WithdrawnForSeller: z
+    .array(
+      z.object({
+        amount: z
+          .string()
+          .describe(
+            'Amount of the asset withdrawn (as string to handle large numbers)',
+          ),
+        unit: z
+          .string()
+          .describe(
+            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
+          ),
+      }),
+    )
+    .describe('List of assets and amounts withdrawn for the seller'),
+  WithdrawnForBuyer: z
+    .array(
+      z.object({
+        amount: z
+          .string()
+          .describe(
+            'Amount of the asset withdrawn (as string to handle large numbers)',
+          ),
+        unit: z
+          .string()
+          .describe(
+            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
+          ),
+      }),
+    )
+    .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
+  PaymentSource: z
+    .object({
+      id: z.string().describe('Unique identifier for the payment source'),
+      network: z
+        .nativeEnum(Network)
+        .describe('The Cardano network (Mainnet, Preprod, or Preview)'),
+      smartContractAddress: z
+        .string()
+        .describe('Address of the smart contract managing this payment'),
+      policyId: z
+        .string()
+        .nullable()
+        .describe(
+          'Policy ID for the agent registry NFTs. Null if not applicable',
+        ),
+    })
+    .describe('Payment source configuration for this payment'),
   BuyerWallet: z
     .object({
-      id: z.string(),
-      walletVkey: z.string(),
+      id: z.string().describe('Unique identifier for the buyer wallet'),
+      walletVkey: z.string().describe('Payment key hash of the buyer wallet'),
     })
-    .nullable(),
+    .nullable()
+    .describe(
+      'Buyer wallet information. Null if buyer has not yet submitted payment',
+    ),
   SmartContractWallet: z
     .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
+      id: z
+        .string()
+        .describe('Unique identifier for the smart contract wallet'),
+      walletVkey: z
+        .string()
+        .describe('Payment key hash of the smart contract wallet'),
+      walletAddress: z
+        .string()
+        .describe('Cardano address of the smart contract wallet'),
     })
-    .nullable(),
-  metadata: z.string().nullable(),
+    .nullable()
+    .describe(
+      'Smart contract wallet (seller wallet) managing this payment. Null if not set',
+    ),
+  metadata: z
+    .string()
+    .nullable()
+    .describe(
+      'Optional metadata stored with the payment for additional context. Null if not provided',
+    ),
 });
 
 export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(

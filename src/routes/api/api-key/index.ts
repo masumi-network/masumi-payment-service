@@ -23,30 +23,44 @@ export const getAPIKeySchemaInput = z.object({
 });
 
 export const getAPIKeySchemaOutput = z.object({
-  ApiKeys: z.array(
-    z.object({
-      id: z.string(),
-      token: z.string(),
-      permission: z.nativeEnum(Permission),
-      usageLimited: z.boolean(),
-      networkLimit: z.array(z.nativeEnum(Network)),
-      RemainingUsageCredits: z.array(
-        z.object({
-          unit: z
-            .string()
-            .describe(
-              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-            ),
-          amount: z
-            .string()
-            .describe(
-              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-            ),
-        }),
-      ),
-      status: z.nativeEnum(ApiKeyStatus),
-    }),
-  ),
+  ApiKeys: z
+    .array(
+      z.object({
+        id: z.string().describe('Unique identifier for the API key'),
+        token: z.string().describe('The API key token'),
+        permission: z
+          .nativeEnum(Permission)
+          .describe('Permission level of the API key'),
+        usageLimited: z
+          .boolean()
+          .describe('Whether the API key has usage limits'),
+        networkLimit: z
+          .array(z.nativeEnum(Network))
+          .describe(
+            'List of Cardano networks this API key is allowed to access',
+          ),
+        RemainingUsageCredits: z
+          .array(
+            z.object({
+              unit: z
+                .string()
+                .describe(
+                  'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+                ),
+              amount: z
+                .string()
+                .describe(
+                  'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+                ),
+            }),
+          )
+          .describe('Remaining usage credits for this API key'),
+        status: z
+          .nativeEnum(ApiKeyStatus)
+          .describe('Current status of the API key'),
+      }),
+    )
+    .describe('List of API keys'),
 });
 
 export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
@@ -113,12 +127,18 @@ export const addAPIKeySchemaInput = z.object({
 });
 
 export const addAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  status: z.nativeEnum(ApiKeyStatus),
+  id: z.string().describe('Unique identifier for the API key'),
+  token: z.string().describe('The API key token.'),
+  permission: z
+    .nativeEnum(Permission)
+    .describe('Permission level of the API key'),
+  usageLimited: z.boolean().describe('Whether the API key has usage limits'),
+  networkLimit: z
+    .array(z.nativeEnum(Network))
+    .describe('List of Cardano networks this API key is allowed to access'),
+  status: z
+    .nativeEnum(ApiKeyStatus)
+    .describe('Current status of the API key (Active, Revoked, etc.)'),
 });
 
 export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
@@ -210,12 +230,18 @@ export const updateAPIKeySchemaInput = z.object({
 });
 
 export const updateAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  usageLimited: z.boolean(),
-  status: z.nativeEnum(ApiKeyStatus),
+  id: z.string().describe('Unique identifier for the API key'),
+  token: z.string().describe('The API key token'),
+  permission: z
+    .nativeEnum(Permission)
+    .describe('Permission level of the API key (Read, Pay, or Admin)'),
+  networkLimit: z
+    .array(z.nativeEnum(Network))
+    .describe('List of Cardano networks this API key is allowed to access'),
+  usageLimited: z.boolean().describe('Whether the API key has usage limits'),
+  status: z
+    .nativeEnum(ApiKeyStatus)
+    .describe('Current status of the API key (Active, Revoked, etc.)'),
 });
 
 export const updateAPIKeyEndpointPatch =
@@ -303,13 +329,20 @@ export const deleteAPIKeySchemaInput = z.object({
 });
 
 export const deleteAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  status: z.nativeEnum(ApiKeyStatus),
-  deletedAt: z.date().nullable(),
+  id: z.string().describe('Unique identifier for the API key'),
+  token: z.string().describe('The API key token'),
+  permission: z
+    .nativeEnum(Permission)
+    .describe('Permission level of the API key'),
+  usageLimited: z.boolean().describe('Whether the API key has usage limits'),
+  networkLimit: z
+    .array(z.nativeEnum(Network))
+    .describe('List of Cardano networks this API key is allowed to access'),
+  status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key '),
+  deletedAt: z
+    .date()
+    .nullable()
+    .describe('Timestamp when the API key was deleted. Null if not deleted'),
 });
 
 export const deleteAPIKeyEndpointDelete =
