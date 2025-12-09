@@ -217,10 +217,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
