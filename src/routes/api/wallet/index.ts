@@ -24,22 +24,49 @@ export const getWalletSchemaInput = z.object({
 export const getWalletSchemaOutput = z.object({
   Secret: z
     .object({
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      mnemonic: z.string(),
+      createdAt: z.date().describe('Timestamp when the secret was created'),
+      updatedAt: z
+        .date()
+        .describe('Timestamp when the secret was last updated'),
+      mnemonic: z
+        .string()
+        .describe('Decrypted 24-word mnemonic phrase for the wallet'),
     })
-    .optional(),
+    .optional()
+    .describe(
+      'Wallet secret (mnemonic). Only included if includeSecret is true',
+    ),
   PendingTransaction: z
     .object({
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      hash: z.string().nullable(),
-      lastCheckedAt: z.date().nullable(),
+      createdAt: z
+        .date()
+        .describe('Timestamp when the pending transaction was created'),
+      updatedAt: z
+        .date()
+        .describe('Timestamp when the pending transaction was last updated'),
+      hash: z
+        .string()
+        .nullable()
+        .describe(
+          'Transaction hash of the pending transaction. Null if not yet submitted',
+        ),
+      lastCheckedAt: z
+        .date()
+        .nullable()
+        .describe(
+          'Timestamp when the pending transaction was last checked. Null if never checked',
+        ),
     })
-    .nullable(),
-  note: z.string().nullable(),
-  walletVkey: z.string(),
-  walletAddress: z.string(),
+    .nullable()
+    .describe(
+      'Pending transaction for this wallet. Null if no transaction is pending',
+    ),
+  note: z
+    .string()
+    .nullable()
+    .describe('Optional note about this wallet. Null if not set'),
+  walletVkey: z.string().describe('Payment key hash of the wallet'),
+  walletAddress: z.string().describe('Cardano address of the wallet'),
 });
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
@@ -218,9 +245,17 @@ export const postWalletSchemaInput = z.object({
 });
 
 export const postWalletSchemaOutput = z.object({
-  walletMnemonic: z.string(),
-  walletAddress: z.string(),
-  walletVkey: z.string(),
+  walletMnemonic: z
+    .string()
+    .describe(
+      '24-word mnemonic phrase for the newly generated wallet. IMPORTANT: Backup this mnemonic securely',
+    ),
+  walletAddress: z
+    .string()
+    .describe('Cardano address of the newly generated wallet'),
+  walletVkey: z
+    .string()
+    .describe('Payment key hash of the newly generated wallet'),
 });
 
 export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
@@ -299,12 +334,20 @@ export const patchWalletSchemaInput = z.object({
 });
 
 export const patchWalletSchemaOutput = z.object({
-  id: z.string(),
-  walletVkey: z.string(),
-  walletAddress: z.string(),
-  collectionAddress: z.string().nullable(),
-  type: z.enum(['Selling', 'Purchasing']),
-  note: z.string().nullable(),
+  id: z.string().describe('Unique identifier for the wallet'),
+  walletVkey: z.string().describe('Payment key hash of the wallet'),
+  walletAddress: z.string().describe('Cardano address of the wallet'),
+  collectionAddress: z
+    .string()
+    .nullable()
+    .describe('Collection address for this wallet. Null if not set'),
+  type: z
+    .enum(['Selling', 'Purchasing'])
+    .describe('Type of wallet (Selling or Purchasing)'),
+  note: z
+    .string()
+    .nullable()
+    .describe('Optional note about this wallet. Null if not set'),
 });
 
 export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
