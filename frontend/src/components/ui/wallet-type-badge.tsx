@@ -3,7 +3,6 @@ import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
@@ -37,21 +36,19 @@ export function WalletTypeBadge({
         {displayName}
       </span>
       {showTooltip && (
-        <TooltipProvider delayDuration={100}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-muted-foreground/50 hover:border-muted-foreground text-xs text-muted-foreground hover:text-foreground cursor-help transition-colors"
-                aria-label={`Information about ${displayName} wallet`}
-              >
-                ?
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-sm p-3">
-              <p className="text-sm whitespace-pre-line">{tooltipText}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-muted-foreground/50 hover:border-muted-foreground text-xs text-muted-foreground hover:text-foreground cursor-help transition-colors"
+              aria-label={`Information about ${displayName} wallet`}
+            >
+              ?
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm p-3">
+            <p className="text-sm whitespace-pre-line">{tooltipText}</p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

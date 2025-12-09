@@ -23,7 +23,6 @@ import { Spinner } from '../ui/spinner';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
@@ -217,10 +216,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
@@ -340,16 +339,14 @@ export function AddPaymentSourceDialog({
                   <label className="text-sm font-medium">
                     Network <span className="text-red-500">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.NETWORK}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.NETWORK}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <select
                   className="w-full p-2 rounded-md bg-background border"
@@ -370,16 +367,14 @@ export function AddPaymentSourceDialog({
                     Blockfrost API Key{' '}
                     <span className="text-destructive">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.BLOCKFROST_API_KEY}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.BLOCKFROST_API_KEY}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <input
                   type="text"
@@ -398,16 +393,14 @@ export function AddPaymentSourceDialog({
                   <label className="text-sm font-medium">
                     Fee Permille <span className="text-red-500">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <input
                   type="number"
@@ -428,16 +421,14 @@ export function AddPaymentSourceDialog({
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
@@ -461,16 +452,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Admin Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.ADMIN_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.ADMIN_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm">Use Custom Admin Wallets</label>
@@ -542,16 +531,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Purchasing Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.PURCHASING_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.PURCHASING_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <Button
                 type="button"
@@ -631,16 +618,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Selling Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.SELLING_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.SELLING_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <Button
                 type="button"
