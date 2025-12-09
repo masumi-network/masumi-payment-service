@@ -110,10 +110,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             },
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             }
                                                         },
                                                         "required": [
@@ -677,10 +679,12 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -786,10 +790,12 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150
+                                                    "maxLength": 150,
+                                                    "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                 },
                                                 "amount": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -970,10 +976,12 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150
+                                                    "maxLength": 150,
+                                                    "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                 },
                                                 "amount": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -1027,8 +1035,8 @@
                                             "amount": "10000000"
                                         },
                                         {
-                                            "unit": "usdm_policy_and_asset_id",
-                                            "amount": "-10000000"
+                                            "unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+                                            "amount": "-25000000"
                                         }
                                     ],
                                     "status": "Active"
@@ -1511,6 +1519,10 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -1520,7 +1532,8 @@
                                                                     "txHash",
                                                                     "status",
                                                                     "previousOnChainState",
-                                                                    "newOnChainState"
+                                                                    "newOnChainState",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -1578,6 +1591,10 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1587,7 +1604,8 @@
                                                                         "txHash",
                                                                         "status",
                                                                         "previousOnChainState",
-                                                                        "newOnChainState"
+                                                                        "newOnChainState",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -1597,10 +1615,12 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1785,8 +1805,8 @@
                                                     "TransactionHistory": [],
                                                     "RequestedFunds": [
                                                         {
-                                                            "amount": "10000000",
-                                                            "unit": ""
+                                                            "unit": "",
+                                                            "amount": "10000000"
                                                         }
                                                     ],
                                                     "PaymentSource": {
@@ -2088,10 +2108,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2261,8 +2283,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2457,10 +2479,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2630,8 +2654,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2819,10 +2843,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2992,8 +3018,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -3275,6 +3301,10 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3284,7 +3314,8 @@
                                                                     "txHash",
                                                                     "status",
                                                                     "previousOnChainState",
-                                                                    "newOnChainState"
+                                                                    "newOnChainState",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -3340,6 +3371,10 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3349,7 +3384,8 @@
                                                                         "txHash",
                                                                         "status",
                                                                         "previousOnChainState",
-                                                                        "newOnChainState"
+                                                                        "newOnChainState",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -3843,10 +3879,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -4017,8 +4055,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4203,10 +4241,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -4592,10 +4632,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -4764,8 +4806,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4982,10 +5024,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -5154,8 +5198,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5499,10 +5543,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -5679,8 +5725,8 @@
                                             "TransactionHistory": [],
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5966,10 +6012,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -6146,8 +6194,8 @@
                                             "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -6390,11 +6438,13 @@
                                                                                             "type": "object",
                                                                                             "properties": {
                                                                                                 "amount": {
-                                                                                                    "type": "string"
+                                                                                                    "type": "string",
+                                                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                                                 },
                                                                                                 "unit": {
                                                                                                     "type": "string",
-                                                                                                    "maxLength": 250
+                                                                                                    "maxLength": 250,
+                                                                                                    "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                                                 }
                                                                                             },
                                                                                             "required": [
@@ -6503,8 +6553,8 @@
                                                             "pricingType": "Fixed",
                                                             "Pricing": [
                                                                 {
-                                                                    "amount": "1000000",
-                                                                    "unit": "unit"
+                                                                    "unit": "",
+                                                                    "amount": "10000000"
                                                                 }
                                                             ]
                                                         },
@@ -6749,11 +6799,13 @@
                                                                                     "type": "object",
                                                                                     "properties": {
                                                                                         "amount": {
-                                                                                            "type": "string"
+                                                                                            "type": "string",
+                                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                                         },
                                                                                         "unit": {
                                                                                             "type": "string",
-                                                                                            "maxLength": 250
+                                                                                            "maxLength": 250,
+                                                                                            "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                                         }
                                                                                     },
                                                                                     "required": [
@@ -6843,13 +6895,18 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
                                                                     "status",
                                                                     "previousOnChainState",
-                                                                    "newOnChainState"
+                                                                    "newOnChainState",
+                                                                    "confirmations"
                                                                 ]
                                                             }
                                                         },
@@ -6924,8 +6981,8 @@
                                                         "pricingType": "Fixed",
                                                         "Pricing": [
                                                             {
-                                                                "unit": "unit",
-                                                                "amount": "1000000"
+                                                                "unit": "",
+                                                                "amount": "10000000"
                                                             }
                                                         ]
                                                     },
@@ -7062,11 +7119,13 @@
                                                             "properties": {
                                                                 "unit": {
                                                                     "type": "string",
-                                                                    "maxLength": 250
+                                                                    "maxLength": 250,
+                                                                    "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                 },
                                                                 "amount": {
                                                                     "type": "string",
-                                                                    "maxLength": 25
+                                                                    "maxLength": 25,
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -9638,13 +9697,15 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         },
                                                                         "quantity": {
                                                                             "type": "integer",
                                                                             "nullable": true,
                                                                             "minimum": 0,
-                                                                            "maximum": 100000000000000
+                                                                            "maximum": 100000000000000,
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         }
                                                                     },
                                                                     "required": [
