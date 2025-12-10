@@ -128,7 +128,15 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          npx cross-env DATABASE_URL="${{ steps.create-branch.outputs.connection_uri }}" ENCRYPTION_KEY="${{ secrets.ENCRYPTION_KEY }}" NODE_ENV="test" PORT=3001 tsx watch ./src/index.ts > server.log 2>&1 &
+          tsx ./src/index.ts > server.log 2>&1 &
+          echo "Server PID: $!"
+          echo $! > server.pid
+
+        env:
+          DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
+          ENCRYPTION_KEY: "${{ secrets.ENCRYPTION_KEY }}"
+          NODE_ENV: "test"
+          PORT: 3001
 
       - name: Wait for Server Ready
         run: |
