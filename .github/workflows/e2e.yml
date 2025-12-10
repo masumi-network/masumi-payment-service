@@ -139,11 +139,11 @@ jobs:
       - name: Wait for Server Ready
         run: |
           echo "Waiting for server to start..."
-          sleep 10
+          sleep 15
           echo "=== Server Log (first 50 lines) ==="
           head -50 server.log || echo "No server log yet"
           echo "=== Checking if server is running ==="
-          npx wait-on http://localhost:3001/api/v1/health -t 60000 || {
+          npx wait-on http://localhost:3001/api/v1/health -t 120000 || {
             echo "=== Server failed to start. Full server log: ==="
             cat server.log
             exit 1
