@@ -116,7 +116,7 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Seed Database
-        run: npx cross-env DATABASE_URL="${{ steps.create-branch.outputs.connection_uri }}"" PURCHASE_WALLET_PREPROD_MNEMONIC="${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}" SELLING_WALLET_PREPROD_MNEMONIC="${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}" BLOCKFROST_API_KEY_PREPROD="${{ secrets.BLOCKFROST_API_KEY_PREPROD }}" ENCRYPTION_KEY="${{ secrets.ENCRYPTION_KEY }}" prisma db seed
+        run: npx cross-env DATABASE_URL="${{ steps.create-branch.outputs.connection_uri }}" PURCHASE_WALLET_PREPROD_MNEMONIC="${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}" SELLING_WALLET_PREPROD_MNEMONIC="${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}" BLOCKFROST_API_KEY_PREPROD="${{ secrets.BLOCKFROST_API_KEY_PREPROD }}" ENCRYPTION_KEY="${{ secrets.ENCRYPTION_KEY }}" prisma db seed
         env:
           DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
           PURCHASE_WALLET_PREPROD_MNEMONIC: "${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}"
