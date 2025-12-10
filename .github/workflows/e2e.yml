@@ -28,7 +28,7 @@ jobs:
           echo "Creating database branch: $BRANCH_NAME"
           
           # Create branch using Neon API v2
-          RESPONSE=$(curl -s -X POST \
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches" \
             -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
             -H "Accept: application/json" \
@@ -44,11 +44,26 @@ jobs:
               }
             }")
           
-          echo "API Response: $RESPONSE"
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "API Response: $BODY"
+          
+          if [ "$HTTP_CODE" != "201" ]; then
+            echo "❌ Failed to create branch. HTTP Status: $HTTP_CODE"
+            echo "Response: $BODY"
+            exit 1
+          fi
           
           # Extract branch details
-          BRANCH_ID=$(echo $RESPONSE | jq -r '.branch.id')
-          ENDPOINT_HOST=$(echo $RESPONSE | jq -r '.endpoints[0].host')
+          BRANCH_ID=$(echo $BODY | jq -r '.branch.id')
+          ENDPOINT_HOST=$(echo $BODY | jq -r '.endpoints[0].host')
+          
+          if [ "$BRANCH_ID" = "null" ] || [ -z "$BRANCH_ID" ]; then
+            echo "❌ Failed to extract branch ID from response"
+            exit 1
+          fi
           
           # Construct connection URI using the endpoint host
           # Format: postgresql://[user]:[password]@[host]/[database]?sslmode=require
@@ -68,7 +83,7 @@ jobs:
       - name: Wait for Branch to be Ready
         run: |
           echo "Waiting for branch to be ready..."
-          MAX_ATTEMPTS=30
+          MAX_ATTEMPTS=60
           ATTEMPT=0
           
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
@@ -83,12 +98,12 @@ jobs:
             fi
             
             ATTEMPT=$((ATTEMPT + 1))
-            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch not ready yet, waiting 2 seconds..."
-            sleep 2
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch not ready yet, waiting 5 seconds..."
+            sleep 5
           done
           
           if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-            echo "❌ Branch failed to become ready within timeout"
+            echo "❌ Branch failed to become ready within timeout (5 minutes)"
             exit 1
           fi
       
