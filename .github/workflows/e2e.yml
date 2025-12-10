@@ -16,8 +16,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm install
@@ -27,7 +27,7 @@ jobs:
         run: |
           BRANCH_NAME="pr-${{ github.event.pull_request.number }}-${{ github.run_id }}"
           echo "Creating database branch: $BRANCH_NAME"
-          
+
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches" \
             -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
@@ -43,35 +43,35 @@ jobs:
                 \"name\": \"$BRANCH_NAME\"
               }
             }")
-          
+
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
-          
+
           echo "HTTP Status: $HTTP_CODE"
           echo "API Response: $BODY"
-          
+
           if [ "$HTTP_CODE" != "201" ]; then
             echo "❌ Failed to create branch. HTTP Status: $HTTP_CODE"
             echo "Response: $BODY"
             exit 1
           fi
-          
+
           BRANCH_ID=$(echo $BODY | jq -r '.branch.id')
           ENDPOINT_HOST=$(echo $BODY | jq -r '.endpoints[0].host')
-          
+
           if [ "$BRANCH_ID" = "null" ] || [ -z "$BRANCH_ID" ]; then
             echo "❌ Failed to extract branch ID from response"
             exit 1
           fi
-          
+
           BASE_URI="${{ secrets.DATABASE_URL }}"
           CONNECTION_URI=$(echo $BASE_URI | sed "s/@[^/]*/@$ENDPOINT_HOST/")
-          
+
           echo "branch_id=$BRANCH_ID" >> $GITHUB_OUTPUT
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "connection_uri=$CONNECTION_URI" >> $GITHUB_OUTPUT
           echo "endpoint_host=$ENDPOINT_HOST" >> $GITHUB_OUTPUT
-          
+
           echo "✅ Database branch created: $BRANCH_NAME"
           echo "✅ Branch ID: $BRANCH_ID"
           echo "✅ Endpoint: $ENDPOINT_HOST"
@@ -81,7 +81,7 @@ jobs:
           echo "Waiting for branch to be ready..."
           MAX_ATTEMPTS=60
           ATTEMPT=0
-          
+
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             RESPONSE=$(curl -s \
               "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
@@ -99,7 +99,7 @@ jobs:
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Branch state is '$STATUS', waiting 5 seconds..."
             sleep 5
           done
-          
+
           if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
             echo "❌ Branch failed to become ready within timeout (5 minutes)"
             echo "Last known state: $STATUS"
@@ -139,7 +139,7 @@ jobs:
       - name: Wait for Server Ready
         run: |
           echo "Waiting for server to start..."
-          sleep 15
+          sleep 55
           echo "=== Server Log (first 50 lines) ==="
           head -50 server.log || echo "No server log yet"
           echo "=== Checking if server is running ==="
@@ -186,4 +186,3 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
             -H "Accept: application/json"
           echo "✅ Database branch deleted"
-
