@@ -185,7 +185,7 @@ jobs:
           retention-days: 7
 
       - name: Delete Neon Database Branch
-        if: false
+        if: always()
         run: |
           echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
           curl -X DELETE \

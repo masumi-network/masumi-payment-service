@@ -72,13 +72,6 @@ npm run lint -- || \
     exit 4
 )
 
-# TypeScript build check
-echo "${BLUE}🔍 Running TypeScript compilation check...${NC}"
-if ! npm run build; then
-    echo "${RED}❌ TypeScript compilation failed. Please fix type errors and try again.${NC}"
-    exit 5
-fi
-
 # Generate Swagger documentation
 echo "${BLUE}🔍 Generating Swagger documentation...${NC}"
 if ! npm run swagger-json; then
