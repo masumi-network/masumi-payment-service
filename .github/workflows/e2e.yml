@@ -157,7 +157,7 @@ jobs:
           tail -50 server.log || true
 
       - name: Run E2E Test Suite
-        run: npm run test:e2e -- --bail
+        run: npm run test:e2e
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001
