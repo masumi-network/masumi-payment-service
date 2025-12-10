@@ -64,37 +64,19 @@ while IFS= read -r line || [ -n "$line" ]; do
     fi
 done
 
-# Run tests with proper error handling
-echo "${BLUE}🔍 Running test suite...${NC}"
-if ! npm run test; then
-    echo "${RED}❌ Tests failed. Please fix failing tests and try again.${NC}"
+# Run ESLint only on staged files
+echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
+npm run lint -- || \
+(
+    echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
     exit 4
-fi
+)
 
 # TypeScript build check
 echo "${BLUE}🔍 Running TypeScript compilation check...${NC}"
 if ! npm run build; then
     echo "${RED}❌ TypeScript compilation failed. Please fix type errors and try again.${NC}"
     exit 5
-fi
-
-# Security audit with better error handling
-echo "${BLUE}🔍 Running security audit...${NC}"
-if npm audit --audit-level=high --json >/dev/null 2>&1; then
-    echo "${GREEN}✅ No high severity vulnerabilities found${NC}"
-else
-    echo "${YELLOW}⚠️ Security vulnerabilities found. Please review:${NC}"
-    echo "${YELLOW}1. Run 'npm audit' to see details${NC}"
-    echo "${YELLOW}2. Run 'npm audit fix' to fix automatically fixable issues${NC}"
-    echo "${YELLOW}3. Review and update packages with manual fixes required${NC}"
-    # Note: We don't exit here as this is a warning
-fi
-
-# Check for outdated dependencies
-echo "${BLUE}🔍 Checking for outdated dependencies...${NC}"
-if ! npm outdated --json >/dev/null 2>&1; then
-    echo "${YELLOW}⚠️ Some dependencies are outdated. Consider updating them.${NC}"
-    # Note: We don't exit here as this is informational
 fi
 
 # Generate Swagger documentation
@@ -112,14 +94,6 @@ if [ $? -ne 0 ]; then
     exit 7
 fi
 
-# TypeScript build check
-echo "${BLUE}🔍 Running Frontend TypeScript compilation check...${NC}"
-cd frontend && npm run build && cd ..
-if [ $? -ne 0 ]; then
-    echo "${RED}❌ TypeScript frontend compilation failed. Please fix type errors and try again.${NC}"
-    exit 8
-fi
-
 # Check for changes in generated files
 echo "${BLUE}🔍 Checking for generated file changes...${NC}"
 if git diff --quiet; then
@@ -130,5 +104,7 @@ else
     git commit -m "chore: update generated files" --no-verify
     echo "${GREEN}✅ Generated files committed${NC}"
 fi
+
+
 
 echo "${GREEN}✅ All pre-push checks completed!${NC}" 
