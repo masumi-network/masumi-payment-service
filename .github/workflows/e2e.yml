@@ -128,8 +128,8 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          tsx ./src/index.ts > server.log 2>&1 &
-          echo "Server PID: $!"
+          npx tsx ./src/index.ts > server.log 2>&1 &
+          echo "Server PID: !"
           echo $! > server.pid
 
         env:
