@@ -25,7 +25,7 @@ jobs:
       - name: Create Neon Database Branch
         id: create-branch
         run: |
-          BRANCH_NAME="pr-ci-e2e-${{ github.event.pull_request.number }}-${{ github.run_id }}"
+          BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}"
           echo "Creating database branch: $BRANCH_NAME"
 
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
@@ -182,7 +182,7 @@ jobs:
           path: |
             server.log
             **/*.log
-          retention-days: 7
+          retention-days: 3
 
       - name: Delete Neon Database Branch
         if: always()
