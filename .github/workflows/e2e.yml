@@ -137,7 +137,17 @@ jobs:
           NODE_ENV: test
 
       - name: Wait for Server Ready
-        run: npx wait-on http://localhost:3001/api/v1/health -t 60000
+        run: |
+          echo "Waiting for server to start..."
+          sleep 10
+          echo "=== Server Log (first 50 lines) ==="
+          head -50 server.log || echo "No server log yet"
+          echo "=== Checking if server is running ==="
+          npx wait-on http://localhost:3001/api/v1/health -t 60000 || {
+            echo "=== Server failed to start. Full server log: ==="
+            cat server.log
+            exit 1
+          }
 
       - name: Run E2E Test Suite
         run: npm run test:e2e -- --runInBand --bail
