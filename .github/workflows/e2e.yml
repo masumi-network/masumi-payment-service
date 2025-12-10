@@ -129,8 +129,9 @@ jobs:
         run: |
           echo "Starting API server..."
           npx tsx ./src/index.ts > server.log 2>&1 &
-          echo "Server PID: !"
-          echo $! > server.pid
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+          echo "$SERVER_PID" > server.pid
 
         env:
           DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
@@ -141,21 +142,25 @@ jobs:
       - name: Wait for Server Ready
         run: |
           echo "Waiting for server to start..."
-          sleep 55
-          echo "=== Server Log (first 50 lines) ==="
-          head -50 server.log || echo "No server log yet"
-          echo "=== Checking if server is running ==="
-          npx wait-on http://localhost:3001/api/v1/health -t 120000 || {
-            echo "=== Server failed to start. Full server log: ==="
+          # Continuously poll health endpoint until ready or timeout
+          npx wait-on http://127.0.0.1:3001/api/v1/health -t 180000 --interval 2000 || {
+            echo "=== Server failed to become healthy ==="
+            if [ -f server.pid ]; then
+              echo "Process status:"
+              ps -p "$(cat server.pid)" -o pid,cmd || true
+            fi
+            echo "=== Full server log ==="
             cat server.log
             exit 1
           }
+          echo "=== Server is responding, recent log tail ==="
+          tail -50 server.log || true
 
       - name: Run E2E Test Suite
         run: npm run test:e2e -- --runInBand --bail
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-          TEST_API_URL: http://localhost:3001
+          TEST_API_URL: http://127.0.0.1:3001
           TEST_NETWORK: Preprod
           TEST_TIMEOUT_REGISTRATION: 1800000
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
