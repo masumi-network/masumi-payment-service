@@ -24,6 +24,7 @@ import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
@@ -226,26 +227,12 @@ async function processSinglePaymentCollection(
   if (collectionAddress == null || collectionAddress == '') {
     collectionAddress = request.SmartContractWallet.walletAddress;
   }
-  const utxosSortedByLovelaceDesc = utxos.sort((a, b) => {
-    const aLovelace = parseInt(
-      a.output.amount.find(
-        (asset) => asset.unit == 'lovelace' || asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    const bLovelace = parseInt(
-      b.output.amount.find(
-        (asset) => asset.unit == 'lovelace' || asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    return bLovelace - aLovelace;
-  });
 
-  const limitedFilteredUtxos = utxosSortedByLovelaceDesc.slice(
-    0,
-    Math.min(4, utxosSortedByLovelaceDesc.length),
-  );
-
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
   const collateralUtxo = limitedFilteredUtxos[0];
+  if (collateralUtxo == null) {
+    throw new Error('Collateral UTXO not found');
+  }
 
   const unsignedTx =
     await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
