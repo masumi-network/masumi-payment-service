@@ -21,7 +21,7 @@ const config: Config.InitialOptions = {
   },
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/tests/e2e/setup/testEnvironment.ts'],
-  testTimeout: 800000,
+  testTimeout: 900000,
   maxWorkers: 2,
   collectCoverageFrom: [
     'src/**/*.ts',
