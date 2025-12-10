@@ -116,15 +116,7 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Seed Database
-        run: |
-          npx cross-env \
-            DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} \
-            PURCHASE_WALLET_PREPROD_MNEMONIC=${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }} \
-            SELLING_WALLET_PREPROD_MNEMONIC=${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }} \
-            BLOCKFROST_API_KEY_PREPROD=${{ secrets.BLOCKFROST_API_KEY_PREPROD }} \
-            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} \
-            prisma db seed
-
+        run: npx cross-env DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} PURCHASE_WALLET_PREPROD_MNEMONIC=${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }} SELLING_WALLET_PREPROD_MNEMONIC=${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }} BLOCKFROST_API_KEY_PREPROD=${{ secrets.BLOCKFROST_API_KEY_PREPROD }} ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} prisma db seed
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
           PURCHASE_WALLET_PREPROD_MNEMONIC: ${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}
@@ -135,14 +127,7 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          npx cross-env \
-            DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} \
-            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} \
-            BLOCKFROST_API_KEY_PREPROD=${{ secrets.BLOCKFROST_API_KEY_PREPROD }} \
-            TEST_API_KEY=${{ secrets.TEST_API_KEY }} \
-            NODE_ENV=test \
-            PORT=3001 \
-            tsx watch ./src/index.ts > server.log 2>&1 &
+          npx cross-env DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} NODE_ENV=test PORT=3001 tsx watch ./src/index.ts > server.log 2>&1 &
 
       - name: Wait for Server Ready
         run: |
