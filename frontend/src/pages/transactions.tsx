@@ -486,6 +486,9 @@ export default function Transactions() {
                   <th className="p-4 text-left text-sm font-medium">Amount</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Unlock Time
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Date</th>
                   <th className="p-4 text-left text-sm font-medium"></th>
                 </tr>
@@ -493,13 +496,13 @@ export default function Transactions() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={9} className="text-center py-8">
                       No transactions found
                     </td>
                   </tr>
@@ -593,6 +596,11 @@ export default function Transactions() {
                             formatStatus(transaction.onChainState)
                           )}
                         </span>
+                      </td>
+                      <td className="p-4">
+                        {transaction.onChainState === 'ResultSubmitted'
+                          ? formatTimestamp(transaction.unlockTime)
+                          : '—'}
                       </td>
                       <td className="p-4">
                         {new Date(transaction.createdAt).toLocaleString()}
