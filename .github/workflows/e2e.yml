@@ -117,12 +117,13 @@ jobs:
 
       - name: Seed Database
         run: |
-          echo "Seeding database..."
-          echo ${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}
-          echo ${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}
-          echo ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
-          echo ${{ secrets.ENCRYPTION_KEY }}
-          npx prisma db seed
+          npx cross-env \
+            DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} \
+            PURCHASE_WALLET_PREPROD_MNEMONIC=${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }} \
+            SELLING_WALLET_PREPROD_MNEMONIC=${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }} \
+            BLOCKFROST_API_KEY_PREPROD=${{ secrets.BLOCKFROST_API_KEY_PREPROD }} \
+            ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} \
+            prisma db seed
 
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
@@ -134,7 +135,7 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          cross-env \
+          npx cross-env \
             DATABASE_URL=${{ steps.create-branch.outputs.connection_uri }} \
             ENCRYPTION_KEY=${{ secrets.ENCRYPTION_KEY }} \
             BLOCKFROST_API_KEY_PREPROD=${{ secrets.BLOCKFROST_API_KEY_PREPROD }} \
