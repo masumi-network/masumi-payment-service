@@ -28,7 +28,7 @@ import {
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxosForDeregistration } from '@/utils/utxo';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
@@ -251,8 +251,7 @@ export async function cancelRefundsV1() {
             const { invalidBefore, invalidAfter } =
               calculateTransactionTimeWindow(network);
 
-            const { limitedFilteredUtxos } =
-              sortAndLimitUtxosForDeregistration(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
 
             const unsignedTx =
               await generateMasumiSmartContractInteractionTransactionAutomaticFees(

@@ -18,7 +18,7 @@ import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
-import { sortAndLimitUtxosForDeregistration } from '@/utils/utxo';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -127,8 +127,11 @@ export async function deRegisterAgentV1() {
 
             const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
 
-            const { collateralUtxo, limitedFilteredUtxos } =
-              sortAndLimitUtxosForDeregistration(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const collateralUtxo = limitedFilteredUtxos[0];
+            if (collateralUtxo == null) {
+              throw new Error('Collateral UTXO not found');
+            }
 
             const assetName = extractAssetName(request.agentIdentifier!);
 

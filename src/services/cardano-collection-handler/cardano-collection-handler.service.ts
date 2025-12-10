@@ -24,7 +24,7 @@ import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxosForDeregistration } from '@/utils/utxo';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
@@ -228,8 +228,11 @@ async function processSinglePaymentCollection(
     collectionAddress = request.SmartContractWallet.walletAddress;
   }
 
-  const { collateralUtxo, limitedFilteredUtxos } =
-    sortAndLimitUtxosForDeregistration(utxos);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+  const collateralUtxo = limitedFilteredUtxos[0];
+  if (collateralUtxo == null) {
+    throw new Error('Collateral UTXO not found');
+  }
 
   const unsignedTx =
     await generateMasumiSmartContractWithdrawTransactionAutomaticFees(

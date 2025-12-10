@@ -44,30 +44,3 @@ export function sortAndLimitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
 export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
   return sortUtxosByLovelaceDesc(utxos)[0];
 }
-
-export function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
-  collateralUtxo: UTxO;
-  limitedFilteredUtxos: UTxO[];
-} {
-  const filteredUtxos = utxos.sort((a, b) => {
-    const aLovelace = parseInt(
-      a.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      )?.quantity ?? '0',
-    );
-    const bLovelace = parseInt(
-      b.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      )?.quantity ?? '0',
-    );
-    return bLovelace - aLovelace;
-  });
-
-  const collateralUtxo = filteredUtxos[0];
-  const limitedFilteredUtxos = filteredUtxos.slice(
-    0,
-    Math.min(4, filteredUtxos.length),
-  );
-
-  return { collateralUtxo, limitedFilteredUtxos };
-}

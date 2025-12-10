@@ -23,7 +23,7 @@ import { decodeV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxosForDeregistration } from '@/utils/utxo';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
@@ -149,8 +149,11 @@ async function processSingleRefundCollection(
     unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
     5;
 
-  const { collateralUtxo, limitedFilteredUtxos } =
-    sortAndLimitUtxosForDeregistration(utxos);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+  const collateralUtxo = limitedFilteredUtxos[0];
+  if (collateralUtxo == null) {
+    throw new Error('Collateral UTXO not found');
+  }
 
   const unsignedTx =
     await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
