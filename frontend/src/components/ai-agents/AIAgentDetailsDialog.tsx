@@ -168,12 +168,30 @@ export function AIAgentDetailsDialog({
                     className={cn(
                       agent.state === 'RegistrationConfirmed' &&
                         'bg-green-50 text-green-700 hover:bg-green-50/80',
-                      'w-fit',
+                      'w-fit min-w-fit truncate',
                     )}
                   >
                     {parseAgentStatus(agent.state)}
                   </Badge>
                 </div>
+
+                {/* Error Message */}
+                {(agent.state === 'RegistrationFailed' ||
+                  agent.state === 'DeregistrationFailed') &&
+                  agent.error && (
+                    <Card className="border-destructive bg-destructive/10">
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium text-destructive">
+                          Error Details
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-destructive whitespace-pre-wrap">
+                          {agent.error}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
 
                 {/* API Base URL */}
                 {agent.apiBaseUrl && (
