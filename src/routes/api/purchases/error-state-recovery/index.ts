@@ -9,6 +9,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { logger } from '@/utils/logger';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -122,31 +123,68 @@ export const purchaseErrorStateRecoveryPost =
       const lastSuccessfulTransaction =
         confirmedTransaction || pendingTransaction;
 
-      // Update the request to clear error and set last successful transaction
-      const updatedPurchaseRequest = await prisma.purchaseRequest.update({
-        where: { id: purchaseRequest.id },
-        data: {
-          currentTransactionId: lastSuccessfulTransaction?.id || null,
+      const transactionsToFail = purchaseRequest.TransactionHistory.filter(
+        (tx) => {
+          if (tx.status !== TransactionStatus.Pending) return false;
+
+          if (
+            lastSuccessfulTransaction &&
+            tx.id === lastSuccessfulTransaction.id
+          ) {
+            return false;
+          }
+
+          if (!lastSuccessfulTransaction) return true;
+
+          return (
+            new Date(tx.createdAt).getTime() >
+            new Date(lastSuccessfulTransaction.createdAt).getTime()
+          );
         },
-        include: {
-          NextAction: true,
-        },
+      );
+
+      logger.info('Error state recovery initiated', {
+        purchaseRequestId: purchaseRequest.id,
+        blockchainIdentifier: input.blockchainIdentifier,
+        lastSuccessfulTransactionId: lastSuccessfulTransaction?.id || null,
+        lastSuccessfulTransactionStatus:
+          lastSuccessfulTransaction?.status || null,
+        transactionsToFailCount: transactionsToFail.length,
+        transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
       });
 
-      // Update the NextAction separately
-      await prisma.purchaseActionData.update({
-        where: { id: updatedPurchaseRequest.NextAction.id },
-        data: {
-          errorType: null,
-          errorNote: null,
-          requestedAction: PurchasingAction.WaitingForExternalAction,
-        },
+      await prisma.$transaction(async (tx) => {
+        for (const transaction of transactionsToFail) {
+          await tx.transaction.update({
+            where: { id: transaction.id },
+            data: { status: TransactionStatus.FailedViaTimeout },
+          });
+        }
+
+        await tx.purchaseRequest.update({
+          where: { id: purchaseRequest.id },
+          data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
+        });
+
+        await tx.purchaseActionData.update({
+          where: { id: purchaseRequest.NextAction.id },
+          data: {
+            errorType: null,
+            errorNote: null,
+            requestedAction: PurchasingAction.WaitingForExternalAction,
+          },
+        });
+      });
+
+      logger.info('Error state recovery completed successfully', {
+        purchaseRequestId: purchaseRequest.id,
+        failedTransactionsCount: transactionsToFail.length,
       });
 
       return {
         success: true,
         message: 'Error state cleared successfully for purchase request',
-        id: updatedPurchaseRequest.id,
+        id: purchaseRequest.id,
         currentTransactionId: lastSuccessfulTransaction?.id || null,
         nextAction: {
           requestedAction: PurchasingAction.WaitingForExternalAction,

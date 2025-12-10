@@ -9,6 +9,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { logger } from '@/utils/logger';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -122,31 +123,68 @@ export const paymentErrorStateRecoveryPost =
       const lastSuccessfulTransaction =
         confirmedTransaction || pendingTransaction;
 
-      // Update the request to clear error and set last successful transaction
-      const updatedPaymentRequest = await prisma.paymentRequest.update({
-        where: { id: paymentRequest.id },
-        data: {
-          currentTransactionId: lastSuccessfulTransaction?.id || null,
+      const transactionsToFail = paymentRequest.TransactionHistory.filter(
+        (tx) => {
+          if (tx.status !== TransactionStatus.Pending) return false;
+
+          if (
+            lastSuccessfulTransaction &&
+            tx.id === lastSuccessfulTransaction.id
+          ) {
+            return false;
+          }
+
+          if (!lastSuccessfulTransaction) return true;
+
+          return (
+            new Date(tx.createdAt).getTime() >
+            new Date(lastSuccessfulTransaction.createdAt).getTime()
+          );
         },
-        include: {
-          NextAction: true,
-        },
+      );
+
+      logger.info('Error state recovery initiated', {
+        paymentRequestId: paymentRequest.id,
+        blockchainIdentifier: input.blockchainIdentifier,
+        lastSuccessfulTransactionId: lastSuccessfulTransaction?.id || null,
+        lastSuccessfulTransactionStatus:
+          lastSuccessfulTransaction?.status || null,
+        transactionsToFailCount: transactionsToFail.length,
+        transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
       });
 
-      // Update the NextAction separately
-      await prisma.paymentActionData.update({
-        where: { id: updatedPaymentRequest.NextAction.id },
-        data: {
-          errorType: null,
-          errorNote: null,
-          requestedAction: PaymentAction.WaitingForExternalAction,
-        },
+      await prisma.$transaction(async (tx) => {
+        for (const transaction of transactionsToFail) {
+          await tx.transaction.update({
+            where: { id: transaction.id },
+            data: { status: TransactionStatus.FailedViaTimeout },
+          });
+        }
+
+        await tx.paymentRequest.update({
+          where: { id: paymentRequest.id },
+          data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
+        });
+
+        await tx.paymentActionData.update({
+          where: { id: paymentRequest.NextAction.id },
+          data: {
+            errorType: null,
+            errorNote: null,
+            requestedAction: PaymentAction.WaitingForExternalAction,
+          },
+        });
+      });
+
+      logger.info('Error state recovery completed successfully', {
+        paymentRequestId: paymentRequest.id,
+        failedTransactionsCount: transactionsToFail.length,
       });
 
       return {
         success: true,
         message: 'Error state cleared successfully for payment request',
-        id: updatedPaymentRequest.id,
+        id: paymentRequest.id,
         currentTransactionId: lastSuccessfulTransaction?.id || null,
         nextAction: {
           requestedAction: PaymentAction.WaitingForExternalAction,
