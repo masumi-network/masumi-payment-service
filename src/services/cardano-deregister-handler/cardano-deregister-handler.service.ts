@@ -18,6 +18,7 @@ import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { sortAndLimitUtxosForDeregistration } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -41,37 +42,6 @@ function findTokenUtxo(utxos: UTxO[], agentIdentifier: string): UTxO {
   return tokenUtxo;
 }
 
-function sortAndLimitUtxosForDeregistration(utxos: UTxO[]): {
-  collateralUtxo: UTxO;
-  limitedFilteredUtxos: UTxO[];
-} {
-  const filteredUtxos = utxos.sort((a, b) => {
-    const aLovelace = parseInt(
-      a.output.amount.find(
-        (asset) =>
-          asset.unit == SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN ||
-          asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    const bLovelace = parseInt(
-      b.output.amount.find(
-        (asset) =>
-          asset.unit == SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN ||
-          asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    return bLovelace - aLovelace;
-  });
-
-  const collateralUtxo = filteredUtxos[0];
-
-  const limitedFilteredUtxos = filteredUtxos.slice(
-    0,
-    Math.min(4, filteredUtxos.length),
-  );
-
-  return { collateralUtxo, limitedFilteredUtxos };
-}
 async function handlePotentialDeregistrationFailure(
   result: RetryResult<boolean>,
   registryRequest: { id: string },
