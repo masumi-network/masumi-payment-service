@@ -23,6 +23,9 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { parseError } from '@/lib/utils';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
+import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
+import { Download } from 'lucide-react';
+import { dateRangeUtils } from '@/lib/utils';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -118,6 +121,7 @@ export default function Transactions() {
   const [paymentCursorId, setPaymentCursorId] = useState<string | null>(null);
   const [hasMorePurchases, setHasMorePurchases] = useState(true);
   const [hasMorePayments, setHasMorePayments] = useState(true);
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const tabs = useMemo(() => {
@@ -225,7 +229,11 @@ export default function Transactions() {
   }, [allTransactions, searchQuery, activeTab]);
 
   const fetchTransactions = useCallback(
-    async (forceFetchPurchases = false, forceFetchPayments = false) => {
+    async (
+      forceFetchPurchases = false,
+      forceFetchPayments = false,
+      resetCursor = false,
+    ) => {
       try {
         setIsLoadingMore(true);
         const selectedPaymentSource = state.paymentSources.find(
@@ -242,7 +250,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: purchaseCursorId || undefined,
+              cursorId: resetCursor ? undefined : purchaseCursorId || undefined,
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -273,7 +281,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: paymentCursorId || undefined,
+              cursorId: resetCursor ? undefined : paymentCursorId || undefined,
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -350,7 +358,8 @@ export default function Transactions() {
     setIsLoading(true);
     setAllTransactions([]);
     // Force fetch both purchases and payments
-    fetchTransactions(true, true);
+
+    fetchTransactions(true, true, true);
   };
 
   useEffect(() => {
@@ -416,6 +425,80 @@ export default function Transactions() {
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
+  // Generate CSV data for transactions
+  const generateCSVData = (transactions: Transaction[]): string => {
+    const headers = [
+      'Transaction Type',
+      'Transaction Hash',
+      'Payment Amounts',
+      'Network',
+      'Status',
+      'Date',
+      'Fee Rate Permille',
+    ];
+    const rows = transactions.map((transaction) => {
+      const selectedPaymentSource = state.paymentSources.find(
+        (ps) => ps.id === transaction.PaymentSource.id,
+      );
+      const feeRatePermille =
+        selectedPaymentSource?.feeRatePermille ?? 'Unknown';
+      const paymentAmounts = [];
+      if (transaction.type === 'payment' && transaction.RequestedFunds) {
+        paymentAmounts.push(
+          ...transaction.RequestedFunds.map((fund) => ({
+            amount: formatPrice(fund.amount),
+            unit: formatFundUnit(fund.unit, state.network),
+          })),
+        );
+      } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
+        paymentAmounts.push(
+          ...transaction.PaidFunds.map((fund) => ({
+            amount: formatPrice(fund.amount),
+            unit: formatFundUnit(fund.unit, state.network),
+          })),
+        );
+      }
+      const amount = paymentAmounts
+        .map((amount) => `${amount.amount} ${amount.unit}`)
+        .join(', ');
+
+      const hash = transaction.CurrentTransaction?.txHash || '—';
+      const status = formatStatus(transaction.onChainState);
+      const date = new Date(transaction.createdAt).toLocaleString();
+
+      return [
+        transaction.type,
+        hash,
+        amount,
+        transaction.PaymentSource.network,
+        status,
+        date,
+        feeRatePermille,
+      ];
+    });
+
+    return [headers, ...rows]
+      .map((row) => row.map((field) => `"${field}"`).join(','))
+      .join('\n');
+  };
+
+  // Download CSV file
+  const downloadCSV = (
+    transactions: Transaction[],
+    filename: string = 'transactions.csv',
+  ) => {
+    const csvData = generateCSVData(transactions);
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <MainLayout>
       <Head>
@@ -423,17 +506,55 @@ export default function Transactions() {
       </Head>
       <div>
         <div className="mb-6">
-          <h1 className="text-xl font-semibold mb-1">Transactions</h1>
-          <p className="text-sm text-muted-foreground">
-            View and manage your transaction history.{' '}
-            <a
-              href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
-              target="_blank"
-              className="text-primary hover:underline"
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold mb-1">Transactions</h1>
+              <p className="text-sm text-muted-foreground">
+                View and manage your transaction history.{' '}
+                <a
+                  href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  Learn more
+                </a>
+              </p>
+              {(() => {
+                const selectedPaymentSource = state.paymentSources.find(
+                  (ps) => ps.id === selectedPaymentSourceId,
+                );
+                const feeRate = selectedPaymentSource?.feeRatePermille;
+
+                if (!feeRate) {
+                  return (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Fee rate: none applied
+                      {selectedPaymentSource
+                        ? ` (${selectedPaymentSource.network})`
+                        : ' (default)'}
+                    </p>
+                  );
+                }
+
+                return (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Fee rate: {(feeRate / 10).toFixed(1)}%
+                    {selectedPaymentSource
+                      ? ` (${selectedPaymentSource.network})`
+                      : ' (default)'}
+                  </p>
+                );
+              })()}
+            </div>
+            <Button
+              onClick={() => setShowDownloadDialog(true)}
+              disabled={filteredTransactions.length === 0}
+              className="flex items-center gap-2"
             >
-              Learn more
-            </a>
-          </p>
+              <Download className="h-4 w-4" />
+              Download CSV
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -643,6 +764,17 @@ export default function Transactions() {
         onRefresh={() => fetchTransactions()}
         apiClient={apiClient}
         state={state}
+      />
+
+      <DownloadDetailsDialog
+        open={showDownloadDialog}
+        onClose={() => setShowDownloadDialog(false)}
+        onDownload={(startDate, endDate, filteredTransactions) => {
+          downloadCSV(
+            filteredTransactions,
+            `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
+          );
+        }}
       />
     </MainLayout>
   );
