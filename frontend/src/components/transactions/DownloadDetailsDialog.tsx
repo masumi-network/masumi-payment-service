@@ -29,8 +29,8 @@ import { handleApiCall } from '@/lib/utils';
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface DownloadDetailsDialogProps {
   open: boolean;
@@ -63,7 +63,9 @@ export function DownloadDetailsDialog({
   const [customEndDate, setCustomEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<
+    Transaction[]
+  >([]);
 
   const fetchAllTransactions = useCallback(async () => {
     setIsLoading(true);
@@ -180,7 +182,6 @@ export function DownloadDetailsDialog({
     });
 
     return filtered;
-
   }, [allTransactions, selectedPreset, customStartDate, customEndDate]);
   useEffect(() => {
     if (open) {
@@ -191,7 +192,14 @@ export function DownloadDetailsDialog({
     if (open) {
       setFilteredTransactions(getFilteredTransactions());
     }
-  }, [open, allTransactions, selectedPreset, customStartDate, customEndDate, getFilteredTransactions]);
+  }, [
+    open,
+    allTransactions,
+    selectedPreset,
+    customStartDate,
+    customEndDate,
+    getFilteredTransactions,
+  ]);
 
   const handleDownload = () => {
     let startDate: Date;
@@ -222,7 +230,6 @@ export function DownloadDetailsDialog({
     setCustomStartDate('');
     setCustomEndDate('');
   };
-
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -309,7 +316,7 @@ export function DownloadDetailsDialog({
                     ? `${customStartDate} to ${customEndDate}`
                     : 'Please select dates'
                   : PRESET_OPTIONS.find((opt) => opt.value === selectedPreset)
-                    ?.label}
+                      ?.label}
               </span>
             </p>
           </div>

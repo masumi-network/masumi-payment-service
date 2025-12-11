@@ -30,8 +30,8 @@ import { dateRangeUtils } from '@/lib/utils';
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface ApiError {
   message: string;
@@ -123,7 +123,6 @@ export default function Transactions() {
   const [hasMorePayments, setHasMorePayments] = useState(true);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
-
 
   const tabs = useMemo(() => {
     // Apply the same deduplication logic as filterTransactions
@@ -230,7 +229,11 @@ export default function Transactions() {
   }, [allTransactions, searchQuery, activeTab]);
 
   const fetchTransactions = useCallback(
-    async (forceFetchPurchases = false, forceFetchPayments = false, resetCursor = false) => {
+    async (
+      forceFetchPurchases = false,
+      forceFetchPayments = false,
+      resetCursor = false,
+    ) => {
       try {
         setIsLoadingMore(true);
         const selectedPaymentSource = state.paymentSources.find(
@@ -247,7 +250,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: resetCursor ? undefined : (purchaseCursorId || undefined),
+              cursorId: resetCursor ? undefined : purchaseCursorId || undefined,
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -278,7 +281,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: resetCursor ? undefined : (paymentCursorId || undefined),
+              cursorId: resetCursor ? undefined : paymentCursorId || undefined,
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -422,7 +425,6 @@ export default function Transactions() {
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
-
   // Generate CSV data for transactions
   const generateCSVData = (transactions: Transaction[]): string => {
     const headers = [
@@ -438,20 +440,27 @@ export default function Transactions() {
       const selectedPaymentSource = state.paymentSources.find(
         (ps) => ps.id === transaction.PaymentSource.id,
       );
-      const feeRatePermille = selectedPaymentSource?.feeRatePermille ?? "Unknown";
+      const feeRatePermille =
+        selectedPaymentSource?.feeRatePermille ?? 'Unknown';
       const paymentAmounts = [];
       if (transaction.type === 'payment' && transaction.RequestedFunds) {
-        paymentAmounts.push(...transaction.RequestedFunds.map((fund) => ({
-          amount: formatPrice(fund.amount),
-          unit: formatFundUnit(fund.unit, state.network),
-        })));
+        paymentAmounts.push(
+          ...transaction.RequestedFunds.map((fund) => ({
+            amount: formatPrice(fund.amount),
+            unit: formatFundUnit(fund.unit, state.network),
+          })),
+        );
       } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
-        paymentAmounts.push(...transaction.PaidFunds.map((fund) => ({
-          amount: formatPrice(fund.amount),
-          unit: formatFundUnit(fund.unit, state.network),
-        })));
+        paymentAmounts.push(
+          ...transaction.PaidFunds.map((fund) => ({
+            amount: formatPrice(fund.amount),
+            unit: formatFundUnit(fund.unit, state.network),
+          })),
+        );
       }
-      const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
+      const amount = paymentAmounts
+        .map((amount) => `${amount.amount} ${amount.unit}`)
+        .join(', ');
 
       const hash = transaction.CurrentTransaction?.txHash || '—';
       const status = formatStatus(transaction.onChainState);
@@ -464,7 +473,7 @@ export default function Transactions() {
         transaction.PaymentSource.network,
         status,
         date,
-        feeRatePermille
+        feeRatePermille,
       ];
     });
 
@@ -586,7 +595,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                        filteredTransactions.length
+                          filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -660,22 +669,8 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                          transaction.RequestedFunds?.length
+                        transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
-                            const amount = formatPrice(fund.amount);
-                            const unit = formatFundUnit(
-                              fund.unit,
-                              state.network,
-                            );
-                            return (
-                              <div key={index} className="text-sm">
-                                {amount} {unit}
-                              </div>
-                            );
-                          })
-                          : transaction.type === 'purchase' &&
-                            transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(
                                 fund.unit,
@@ -687,6 +682,20 @@ export default function Transactions() {
                                 </div>
                               );
                             })
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
+                                const amount = formatPrice(fund.amount);
+                                const unit = formatFundUnit(
+                                  fund.unit,
+                                  state.network,
+                                );
+                                return (
+                                  <div key={index} className="text-sm">
+                                    {amount} {unit}
+                                  </div>
+                                );
+                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -734,8 +743,8 @@ export default function Transactions() {
               <Pagination
                 hasMore={
                   activeTab === 'All' ||
-                    activeTab === 'Refund Requests' ||
-                    activeTab === 'Disputes'
+                  activeTab === 'Refund Requests' ||
+                  activeTab === 'Disputes'
                     ? hasMorePurchases || hasMorePayments
                     : activeTab === 'Payments'
                       ? hasMorePayments
