@@ -3,6 +3,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
+import { deserializeAddress } from '@meshsdk/core';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -133,19 +134,13 @@ export function formatCount(count: number, maxValue: number = 999): string {
 }
 
 /**
- * Validates a Cardano wallet address based on network type
+ * Validates a Cardano wallet address based on network type using MeshJS
  *
  * @param address - The wallet address to validate
  * @param network - The network type ('Mainnet' or 'Preprod')
  * @returns An object with `isValid` boolean and optional `error` message
  *
- * Mainnet addresses:
- * - Start with 'addr1' (Shelley era)
- * - Minimum length: 58 characters (5 prefix + 53 data chars)
- *
- * Preprod/Testnet addresses:
- * - Start with 'addr_test' (Shelley era)
- * - Minimum length: 63 characters (9 prefix + 53 data chars)
+ * Uses MeshJS's deserializeAddress for proper Bech32 checksum validation
  */
 export function validateCardanoAddress(
   address: string,
@@ -170,15 +165,12 @@ export function validateCardanoAddress(
   // Normalize to lowercase (Bech32 addresses are case-insensitive but conventionally lowercase)
   const normalizedAddress = trimmedAddress.toLowerCase();
 
-  // Network-specific validation for Shelley-era payment addresses
+  // Network-specific prefix validation
   let expectedPrefix: string;
-  let minLength: number;
   if (network === 'Mainnet') {
     expectedPrefix = 'addr1';
-    minLength = 58;
   } else if (network === 'Preprod') {
     expectedPrefix = 'addr_test1';
-    minLength = 63;
   } else {
     return {
       isValid: false,
@@ -193,25 +185,14 @@ export function validateCardanoAddress(
     };
   }
 
-  if (normalizedAddress.length < minLength) {
+  // Use MeshJS to validate Bech32 encoding and checksum
+  try {
+    deserializeAddress(normalizedAddress);
+    return { isValid: true };
+  } catch (error: any) {
     return {
       isValid: false,
-      error: `${network} address must be at least ${minLength} characters long`,
+      error: error?.message || 'Invalid Cardano address format or checksum',
     };
   }
-
-  // Strict Bech32 character validation (data part only, after prefix)
-  // Charset: qpzry9x8gf2tvdw0s3jn54khce6mua7l (includes digits 0-9 and specific letters)
-  const dataPart = normalizedAddress.slice(expectedPrefix.length);
-  const bech32Regex = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
-
-  if (!bech32Regex.test(dataPart)) {
-    return {
-      isValid: false,
-      error:
-        'Address contains invalid characters. Cardano addresses use strict Bech32 encoding.',
-    };
-  }
-
-  return { isValid: true };
 }
