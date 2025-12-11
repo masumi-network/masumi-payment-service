@@ -200,6 +200,8 @@ export const dateRangeUtils = {
     return date.toISOString();
   },
 };
+
+/**
  * Validates a Cardano wallet address based on network type using MeshJS
  *
  * @param address - The wallet address to validate
