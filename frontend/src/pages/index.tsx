@@ -30,7 +30,6 @@ import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
