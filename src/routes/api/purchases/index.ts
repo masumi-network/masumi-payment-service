@@ -52,7 +52,16 @@ export const queryPurchaseRequestSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('The smart contract address of the payment source'),
-
+  filterOnChainState: z
+    .enum(['RefundRequests', 'Disputes'])
+    .optional()
+    .describe('Filter by on-chain state category (RefundRequests or Disputes)'),
+  searchQuery: z
+    .string()
+    .optional()
+    .describe(
+      'Search query to filter by ID, hash, state, network, wallet address, or amount',
+    ),
   includeHistory: z
     .string()
     .optional()
@@ -61,6 +70,21 @@ export const queryPurchaseRequestSchemaInput = z.object({
     .describe(
       'Whether to include the full transaction and status history of the purchases',
     ),
+});
+
+export const queryPurchaseCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The network the purchases were made on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryPurchaseCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of purchases'),
 });
 
 export const queryPurchaseRequestSchemaOutput = z.object({
@@ -194,14 +218,70 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.purchaseRequest.findMany({
-      where: {
-        PaymentSource: {
-          deletedAt: null,
-          network: input.network,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-        },
+    // Build onChainState filter
+    let onChainStateFilter: OnChainState[] | undefined;
+    if (input.filterOnChainState === 'RefundRequests') {
+      onChainStateFilter = [OnChainState.RefundRequested];
+    } else if (input.filterOnChainState === 'Disputes') {
+      onChainStateFilter = [OnChainState.Disputed];
+    }
+
+    // Build search query filter
+    const searchLower = input.searchQuery?.toLowerCase();
+    const matchingStates = searchLower
+      ? Object.values(OnChainState).filter((s) =>
+          s.toLowerCase().includes(searchLower),
+        )
+      : undefined;
+
+    const whereClause = {
+      PaymentSource: {
+        deletedAt: null,
+        network: input.network,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
+      ...(onChainStateFilter
+        ? { onChainState: { in: onChainStateFilter } }
+        : {}),
+      ...(searchLower
+        ? {
+            OR: [
+              { id: { contains: searchLower, mode: 'insensitive' as const } },
+              {
+                CurrentTransaction: {
+                  txHash: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                PaymentSource: {
+                  network: {
+                    in: Object.values(Network).filter((n) =>
+                      n.toLowerCase().includes(searchLower),
+                    ),
+                  },
+                },
+              },
+              {
+                SmartContractWallet: {
+                  walletAddress: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              ...(matchingStates && matchingStates.length > 0
+                ? [{ onChainState: { in: matchingStates } }]
+                : []),
+            ],
+          }
+        : {}),
+    };
+
+    let result = await prisma.purchaseRequest.findMany({
+      where: whereClause,
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       take: input.limit,
       orderBy: { createdAt: 'desc' },
@@ -220,6 +300,45 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         },
       },
     });
+
+    // Filter by amount if search query is provided (amount filtering happens in-memory)
+    if (searchLower && result.length > 0) {
+      result = result.filter((purchase) => {
+        const matchedById = purchase.id.toLowerCase().includes(searchLower);
+        const matchedByHash = purchase.CurrentTransaction?.txHash
+          ?.toLowerCase()
+          .includes(searchLower);
+        const matchedByState =
+          matchingStates?.includes(purchase.onChainState!) ||
+          purchase.onChainState?.toLowerCase().includes(searchLower);
+        const matchedByNetwork = purchase.PaymentSource.network
+          .toLowerCase()
+          .includes(searchLower);
+        const matchedByWallet = purchase.SmartContractWallet?.walletAddress
+          .toLowerCase()
+          .includes(searchLower);
+
+        // Check amount matching
+        let matchedByAmount = false;
+        const paidFunds = purchase.PaidFunds as Array<{
+          unit: string;
+          amount: bigint;
+        }>;
+        matchedByAmount = paidFunds.some((fund) => {
+          const amountInAda = (Number(fund.amount) / 1000000).toFixed(2);
+          return amountInAda.includes(searchLower);
+        });
+
+        return (
+          matchedById ||
+          matchedByHash ||
+          matchedByState ||
+          matchedByNetwork ||
+          matchedByWallet ||
+          matchedByAmount
+        );
+      });
+    }
     if (result == null) {
       throw createHttpError(404, 'Purchase not found');
     }
@@ -239,6 +358,44 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
           fees: tx.fees?.toString() ?? null,
         })),
       })),
+    };
+  },
+});
+
+export const queryPurchaseCountGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPurchaseCountSchemaInput,
+  output: queryPurchaseCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryPurchaseCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.purchaseRequest.count({
+      where: {
+        PaymentSource: {
+          deletedAt: null,
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });

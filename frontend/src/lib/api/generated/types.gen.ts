@@ -460,6 +460,14 @@ export type GetPaymentData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by on-chain state category (RefundRequests or Disputes)
+         */
+        filterOnChainState?: 'RefundRequests' | 'Disputes';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
+        /**
          * Whether to include the full transaction and status history of the payments
          */
         includeHistory?: string;
@@ -953,6 +961,39 @@ export type PostPaymentAuthorizeRefundResponses = {
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
 
+export type GetPaymentCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/payment/count';
+};
+
+export type GetPaymentCountResponses = {
+    /**
+     * Total payments count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of payments
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetPaymentCountResponse = GetPaymentCountResponses[keyof GetPaymentCountResponses];
+
 export type GetPurchaseData = {
     body?: never;
     path?: never;
@@ -973,6 +1014,14 @@ export type GetPurchaseData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by on-chain state category (RefundRequests or Disputes)
+         */
+        filterOnChainState?: 'RefundRequests' | 'Disputes';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
         /**
          * Whether to include the full transaction and status history of the purchases
          */
@@ -1367,6 +1416,39 @@ export type PostPurchaseResponses = {
 };
 
 export type PostPurchaseResponse = PostPurchaseResponses[keyof PostPurchaseResponses];
+
+export type GetPurchaseCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/purchase/count';
+};
+
+export type GetPurchaseCountResponses = {
+    /**
+     * Total purchases count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of purchases
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetPurchaseCountResponse = GetPurchaseCountResponses[keyof GetPurchaseCountResponses];
 
 export type PostPurchaseRequestRefundData = {
     body?: {
@@ -1982,6 +2064,14 @@ export type GetRegistryData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by registration status category
+         */
+        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+        /**
+         * Search query to filter by name, description, tags, wallet address, state, or price
+         */
+        searchQuery?: string;
     };
     url: '/registry/';
 };
@@ -2195,6 +2285,39 @@ export type PostRegistryResponses = {
 };
 
 export type PostRegistryResponse = PostRegistryResponses[keyof PostRegistryResponses];
+
+export type GetRegistryCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/registry/count';
+};
+
+export type GetRegistryCountResponses = {
+    /**
+     * Total AI agents count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of AI agents
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetRegistryCountResponse = GetRegistryCountResponses[keyof GetRegistryCountResponses];
 
 export type PostRegistryDeregisterData = {
     body?: {

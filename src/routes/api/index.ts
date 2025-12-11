@@ -6,10 +6,19 @@ import {
   updateAPIKeyEndpointPatch,
   deleteAPIKeyEndpointDelete,
 } from './api-key';
-import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
-import { paymentInitPost, queryPaymentEntryGet } from './payments';
+import {
+  createPurchaseInitPost,
+  queryPurchaseCountGet,
+  queryPurchaseRequestGet,
+} from './purchases';
+import {
+  paymentInitPost,
+  queryPaymentCountGet,
+  queryPaymentEntryGet,
+} from './payments';
 import {
   deleteAgentRegistration,
+  queryRegistryCountGet,
   queryRegistryRequestGet,
   registerAgentPost,
 } from './registry';
@@ -57,6 +66,9 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePurchaseRequestPost,
       }),
+      count: new DependsOnMethod({
+        get: queryPurchaseCountGet,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -71,6 +83,9 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePaymentRequestPost,
       }),
+      count: new DependsOnMethod({
+        get: queryPaymentCountGet,
+      }),
     }),
     registry: new DependsOnMethod({
       get: queryRegistryRequestGet,
@@ -82,6 +97,9 @@ export const apiRouter: Routing = {
       }),
       deregister: new DependsOnMethod({
         post: unregisterAgentPost,
+      }),
+      count: new DependsOnMethod({
+        get: queryRegistryCountGet,
       }),
     }),
     'api-key-status': new DependsOnMethod({
