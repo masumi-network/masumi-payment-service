@@ -27,6 +27,7 @@ import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 import { FaExchangeAlt } from 'react-icons/fa';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
@@ -639,18 +640,7 @@ export default function Overview() {
                             onClick={() => setSelectedWalletForDetails(wallet)}
                           >
                             <td className="py-3 px-2">
-                              <span
-                                className={cn(
-                                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                                  wallet.type === 'Purchasing'
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                                )}
-                              >
-                                {wallet.type === 'Purchasing'
-                                  ? 'Buying'
-                                  : 'Selling'}
-                              </span>
+                              <WalletTypeBadge type={wallet.type} />
                             </td>
                             <td className="py-3 px-2 max-w-[100px]">
                               <div className="text-sm font-medium truncate">
