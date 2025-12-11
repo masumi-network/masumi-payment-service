@@ -153,7 +153,7 @@ export function RegisterAIAgentDialog({
 }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
-  const [buyingWalletBalance, setBuyingWalletBalance] = useState<number>(0);
+  const [sellingWalletBalance, setSellingWalletBalance] = useState<number>(0);
   const [isCheckingBalance, setIsCheckingBalance] = useState(false);
   const { apiClient, state } = useAppContext();
 
@@ -212,7 +212,7 @@ export function RegisterAIAgentDialog({
   useEffect(() => {
     if (open) {
       fetchSellingWallets();
-      fetchBuyingWalletBalance();
+      fetchSellingWalletBalance();
       reset();
     }
   }, [open, reset]);
@@ -243,7 +243,7 @@ export function RegisterAIAgentDialog({
     }
   };
 
-  const fetchBuyingWalletBalance = async () => {
+  const fetchSellingWalletBalance = async () => {
     setIsCheckingBalance(true);
     try {
       const response = await getPaymentSource({
@@ -256,50 +256,64 @@ export function RegisterAIAgentDialog({
         );
 
         if (paymentSources.length > 0) {
-          // Get the first payment source's purchasing wallet (buying wallet)
-          const purchasingWallets = paymentSources[0].PurchasingWallets;
-          if (purchasingWallets && purchasingWallets.length > 0) {
-            const buyingWallet = purchasingWallets[0];
-            const utxoResponse = await handleApiCall(
-              () =>
-                getUtxos({
-                  client: apiClient,
-                  query: {
-                    address: buyingWallet.walletAddress,
-                    network: state.network,
+          // Aggregate all selling wallets from all payment sources
+          const allSellingWallets: SellingWallet[] = [];
+          paymentSources.forEach((ps) => {
+            ps.SellingWallets.forEach((w) => {
+              allSellingWallets.push(w);
+            });
+          });
+
+          if (allSellingWallets.length > 0) {
+            // Check balances for all selling wallets and aggregate
+            let totalBalance = 0;
+            const balancePromises = allSellingWallets.map((wallet) =>
+              handleApiCall(
+                () =>
+                  getUtxos({
+                    client: apiClient,
+                    query: {
+                      address: wallet.walletAddress,
+                      network: state.network,
+                    },
+                  }),
+                {
+                  onError: (error: any) => {
+                    console.error(
+                      'Error fetching selling wallet balance:',
+                      error,
+                    );
                   },
-                }),
-              {
-                onError: (error: any) => {
-                  console.error('Error fetching buying wallet balance:', error);
+                  errorMessage: 'Failed to fetch selling wallet balance',
                 },
-                errorMessage: 'Failed to fetch buying wallet balance',
-              },
+              ),
             );
 
-            if (utxoResponse?.data?.data?.Utxos) {
-              let adaBalance = 0;
-              utxoResponse.data.data.Utxos.forEach((utxo: any) => {
-                utxo.Amounts.forEach((amount: any) => {
-                  if (amount.unit === 'lovelace' || amount.unit === '') {
-                    adaBalance += amount.quantity || 0;
-                  }
+            const balanceResponses = await Promise.all(balancePromises);
+
+            balanceResponses.forEach((utxoResponse) => {
+              if (utxoResponse?.data?.data?.Utxos) {
+                utxoResponse.data.data.Utxos.forEach((utxo: any) => {
+                  utxo.Amounts.forEach((amount: any) => {
+                    if (amount.unit === 'lovelace' || amount.unit === '') {
+                      totalBalance += amount.quantity || 0;
+                    }
+                  });
                 });
-              });
-              setBuyingWalletBalance(adaBalance);
-            } else {
-              setBuyingWalletBalance(0);
-            }
+              }
+            });
+
+            setSellingWalletBalance(totalBalance);
           } else {
-            setBuyingWalletBalance(0);
+            setSellingWalletBalance(0);
           }
         } else {
-          setBuyingWalletBalance(0);
+          setSellingWalletBalance(0);
         }
       }
     } catch (error) {
-      console.error('Error fetching buying wallet balance:', error);
-      setBuyingWalletBalance(0);
+      console.error('Error fetching selling wallet balance:', error);
+      setSellingWalletBalance(0);
     } finally {
       setIsCheckingBalance(false);
     }
@@ -860,7 +874,7 @@ export function RegisterAIAgentDialog({
                       type="submit"
                       disabled={
                         isLoading ||
-                        buyingWalletBalance === 0 ||
+                        sellingWalletBalance === 0 ||
                         isCheckingBalance
                       }
                     >
@@ -870,8 +884,8 @@ export function RegisterAIAgentDialog({
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>
-                    {buyingWalletBalance === 0
-                      ? 'Cannot register agent: No funds in buying wallet'
+                    {sellingWalletBalance === 0
+                      ? 'Cannot register agent: No funds in selling wallets'
                       : isLoading
                         ? 'Registering agent...'
                         : 'Register AI agent'}
