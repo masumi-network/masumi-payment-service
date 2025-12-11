@@ -37,6 +37,7 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import { swapTokensEndpointPost } from './swap';
 
 export const apiRouter: Routing = {
   v1: {
@@ -112,6 +113,9 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    swap: new DependsOnMethod({
+      post: swapTokensEndpointPost,
     }),
   },
 };
