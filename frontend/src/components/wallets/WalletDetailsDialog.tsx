@@ -276,13 +276,23 @@ export function WalletDetailsDialog({
         newCollectionAddress.trim(),
         state.network,
       );
-
       if (!validation.isValid) {
-        toast.error(validation.error || 'Invalid wallet address');
+        toast.error('Invalid collection address: ' + validation.error);
         return;
       }
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: newCollectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
     }
-
     await handleApiCall(
       () =>
         patchWallet({

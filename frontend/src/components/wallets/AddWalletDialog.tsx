@@ -23,6 +23,7 @@ import {
   patchPaymentSourceExtended,
   getPaymentSourceExtended,
   postWallet,
+  getUtxos,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -167,8 +168,21 @@ export function AddWalletDialog({
       );
 
       if (!validation.isValid) {
-        setError(validation.error || 'Invalid collection address');
+        setError('Invalid collection address: ' + validation.error);
         return;
+      }
+
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: data.collectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
       }
     }
 

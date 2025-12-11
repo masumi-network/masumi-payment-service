@@ -189,10 +189,10 @@ export function validateCardanoAddress(
   try {
     deserializeAddress(normalizedAddress);
     return { isValid: true };
-  } catch (error: any) {
+  } catch {
     return {
       isValid: false,
-      error: error?.message || 'Invalid Cardano address format or checksum',
+      error: 'Invalid Cardano address',
     };
   }
 }
