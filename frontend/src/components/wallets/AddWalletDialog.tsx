@@ -32,6 +32,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -230,20 +231,23 @@ export function AddWalletDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Wallet type</label>
-            <Select
-              value={type}
-              onValueChange={(value: 'Purchasing' | 'Selling') =>
-                setType(value)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select wallet type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Purchasing">Purchasing wallet</SelectItem>
-                <SelectItem value="Selling">Selling wallet</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-4 flex-nowrap">
+              <Select
+                value={type}
+                onValueChange={(value: 'Purchasing' | 'Selling') =>
+                  setType(value)
+                }
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select wallet type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Purchasing">Purchasing wallet</SelectItem>
+                  <SelectItem value="Selling">Selling wallet</SelectItem>
+                </SelectContent>
+              </Select>
+              <WalletTypeBadge type={type} className="flex-shrink-0" />
+            </div>
             <p className="text-sm text-muted-foreground">
               {type === 'Purchasing'
                 ? 'A purchasing wallet is used to make payments for Agentic AI services. It will be used to send payments to sellers.'

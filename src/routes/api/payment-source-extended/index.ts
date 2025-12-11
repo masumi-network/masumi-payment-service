@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
+import { splitWalletsByType } from '@/utils/shared/transformers';
 
 export const paymentSourceExtendedSchemaInput = z.object({
   take: z
@@ -111,14 +112,10 @@ export const paymentSourceExtendedEndpointGet =
         },
       });
       const mappedPaymentSources = paymentSources.map((paymentSource) => {
+        const { HotWallets, ...rest } = paymentSource;
         return {
-          ...paymentSource,
-          SellingWallets: paymentSource.HotWallets.filter(
-            (wallet) => wallet.type == HotWalletType.Selling,
-          ),
-          PurchasingWallets: paymentSource.HotWallets.filter(
-            (wallet) => wallet.type == HotWalletType.Purchasing,
-          ),
+          ...rest,
+          ...splitWalletsByType(HotWallets),
         };
       });
       return { ExtendedPaymentSources: mappedPaymentSources };
@@ -395,14 +392,10 @@ export const paymentSourceExtendedEndpointPost =
           },
         });
 
+        const { HotWallets, ...rest } = paymentSource;
         return {
-          ...paymentSource,
-          SellingWallets: paymentSource.HotWallets.filter(
-            (wallet) => wallet.type == HotWalletType.Selling,
-          ),
-          PurchasingWallets: paymentSource.HotWallets.filter(
-            (wallet) => wallet.type == HotWalletType.Purchasing,
-          ),
+          ...rest,
+          ...splitWalletsByType(HotWallets),
         };
       });
     },
@@ -684,14 +677,10 @@ export const paymentSourceExtendedEndpointPatch =
 
         return paymentSource;
       });
+      const { HotWallets, ...rest } = result;
       return {
-        ...result,
-        PurchasingWallets: result.HotWallets.filter(
-          (wallet) => wallet.type == HotWalletType.Purchasing,
-        ),
-        SellingWallets: result.HotWallets.filter(
-          (wallet) => wallet.type == HotWalletType.Selling,
-        ),
+        ...rest,
+        ...splitWalletsByType(HotWallets),
       };
     },
   });
