@@ -138,13 +138,16 @@ export default function Overview() {
       if (!response) return;
 
       if (response.data?.data?.Assets) {
-        const newAgents = response.data.data.Assets;
+        // Filter out deregistered agents
+        const activeAgents = response.data.data.Assets.filter(
+          (agent) => agent.state !== 'DeregistrationConfirmed',
+        );
         if (cursor) {
-          setAgents((prev) => [...prev, ...newAgents]);
+          setAgents((prev) => [...prev, ...activeAgents]);
         } else {
-          setAgents(newAgents);
+          setAgents(activeAgents);
         }
-        setHasMore(newAgents.length === 10);
+        setHasMore(activeAgents.length === 10);
       } else {
         if (!cursor) {
           setAgents([]);
