@@ -30,8 +30,8 @@ import { dateRangeUtils } from '@/lib/utils';
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -123,6 +123,7 @@ export default function Transactions() {
   const [hasMorePayments, setHasMorePayments] = useState(true);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
+
 
   const tabs = useMemo(() => {
     // Apply the same deduplication logic as filterTransactions
@@ -229,7 +230,7 @@ export default function Transactions() {
   }, [allTransactions, searchQuery, activeTab]);
 
   const fetchTransactions = useCallback(
-    async (forceFetchPurchases = false, forceFetchPayments = false) => {
+    async (forceFetchPurchases = false, forceFetchPayments = false, resetCursor = false) => {
       try {
         setIsLoadingMore(true);
         const selectedPaymentSource = state.paymentSources.find(
@@ -246,7 +247,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: purchaseCursorId || undefined,
+              cursorId: resetCursor ? undefined : (purchaseCursorId || undefined),
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -277,7 +278,7 @@ export default function Transactions() {
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: paymentCursorId || undefined,
+              cursorId: resetCursor ? undefined : (paymentCursorId || undefined),
               includeHistory: 'true',
               limit: 10,
               filterSmartContractAddress: smartContractAddress
@@ -354,7 +355,8 @@ export default function Transactions() {
     setIsLoading(true);
     setAllTransactions([]);
     // Force fetch both purchases and payments
-    fetchTransactions(true, true);
+
+    fetchTransactions(true, true, true);
   };
 
   useEffect(() => {
@@ -420,53 +422,37 @@ export default function Transactions() {
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
-  // Calculate fee amount based on transaction amount and selected payment source fee rate
-  const calculateFeeAmount = (transaction: Transaction): number => {
-    const selectedPaymentSource = state.paymentSources.find(
-      (ps) => ps.id === selectedPaymentSourceId,
-    );
-
-    // Use selected payment source fee rate, return 0 if no fee rate set
-    const feeRatePermille = selectedPaymentSource?.feeRatePermille;
-    if (!feeRatePermille) {
-      return 0; // No fee applied
-    }
-
-    const feeRate = feeRatePermille / 1000; // Convert permille to decimal
-
-    let amount = 0;
-
-    if (transaction.type === 'payment' && transaction.RequestedFunds?.[0]) {
-      amount = parseInt(transaction.RequestedFunds[0].amount) / 1000000;
-    } else if (transaction.type === 'purchase' && transaction.PaidFunds?.[0]) {
-      amount = parseInt(transaction.PaidFunds[0].amount) / 1000000;
-    }
-
-    return amount * feeRate;
-  };
 
   // Generate CSV data for transactions
   const generateCSVData = (transactions: Transaction[]): string => {
     const headers = [
       'Transaction Type',
       'Transaction Hash',
-      'Payment Amount (₳)',
-      'Fee Amount (₳)',
+      'Payment Amounts',
       'Network',
       'Status',
       'Date',
+      'Fee Rate Permille',
     ];
     const rows = transactions.map((transaction) => {
-      const amount =
-        transaction.type === 'payment' && transaction.RequestedFunds?.[0]
-          ? (parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(
-              2,
-            )
-          : transaction.type === 'purchase' && transaction.PaidFunds?.[0]
-            ? (parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)
-            : '0.00';
+      const selectedPaymentSource = state.paymentSources.find(
+        (ps) => ps.id === transaction.PaymentSource.id,
+      );
+      const feeRatePermille = selectedPaymentSource?.feeRatePermille ?? "Unknown";
+      const paymentAmounts = [];
+      if (transaction.type === 'payment' && transaction.RequestedFunds) {
+        paymentAmounts.push(...transaction.RequestedFunds.map((fund) => ({
+          amount: formatPrice(fund.amount),
+          unit: formatFundUnit(fund.unit, state.network),
+        })));
+      } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
+        paymentAmounts.push(...transaction.PaidFunds.map((fund) => ({
+          amount: formatPrice(fund.amount),
+          unit: formatFundUnit(fund.unit, state.network),
+        })));
+      }
+      const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
 
-      const feeAmount = calculateFeeAmount(transaction).toFixed(2);
       const hash = transaction.CurrentTransaction?.txHash || '—';
       const status = formatStatus(transaction.onChainState);
       const date = new Date(transaction.createdAt).toLocaleString();
@@ -475,10 +461,10 @@ export default function Transactions() {
         transaction.type,
         hash,
         amount,
-        feeAmount,
         transaction.PaymentSource.network,
         status,
         date,
+        feeRatePermille
       ];
     });
 
@@ -600,7 +586,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                          filteredTransactions.length
+                        filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -610,9 +596,6 @@ export default function Transactions() {
                     Transaction Hash
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Amount</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Fee Amount
-                  </th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
                   <th className="p-4 text-left text-sm font-medium">
@@ -677,8 +660,22 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.length
+                          transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
+                            const amount = formatPrice(fund.amount);
+                            const unit = formatFundUnit(
+                              fund.unit,
+                              state.network,
+                            );
+                            return (
+                              <div key={index} className="text-sm">
+                                {amount} {unit}
+                              </div>
+                            );
+                          })
+                          : transaction.type === 'purchase' &&
+                            transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(
                                 fund.unit,
@@ -690,29 +687,6 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(
-                                  fund.unit,
-                                  state.network,
-                                );
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
-                            : '—'}
-                      </td>
-                      <td className="p-4">
-                        {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.[0]
-                          ? `${calculateFeeAmount(transaction).toFixed(2)} ₳`
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.[0]
-                            ? `${calculateFeeAmount(transaction).toFixed(2)} ₳`
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -760,8 +734,8 @@ export default function Transactions() {
               <Pagination
                 hasMore={
                   activeTab === 'All' ||
-                  activeTab === 'Refund Requests' ||
-                  activeTab === 'Disputes'
+                    activeTab === 'Refund Requests' ||
+                    activeTab === 'Disputes'
                     ? hasMorePurchases || hasMorePayments
                     : activeTab === 'Payments'
                       ? hasMorePayments

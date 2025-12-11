@@ -29,8 +29,8 @@ import { handleApiCall } from '@/lib/utils';
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface DownloadDetailsDialogProps {
   open: boolean;
@@ -63,9 +63,11 @@ export function DownloadDetailsDialog({
   const [customEndDate, setCustomEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
 
   const fetchAllTransactions = useCallback(async () => {
     setIsLoading(true);
+
     const allTx: Transaction[] = [];
     let purchaseCursor: string | null = null;
     let paymentCursor: string | null = null;
@@ -155,12 +157,41 @@ export function DownloadDetailsDialog({
       setIsLoading(false);
     }
   }, [apiClient]);
+  // Calculate filtered transactions for display
+  const getFilteredTransactions = useCallback(() => {
+    let startDate: Date;
+    let endDate: Date = new Date();
 
+    if (selectedPreset === 'custom') {
+      if (!customStartDate || !customEndDate) {
+        return [];
+      }
+      startDate = new Date(customStartDate);
+      endDate = new Date(customEndDate);
+    } else {
+      const range = dateRangeUtils.getPresetRange(selectedPreset);
+      startDate = range.start;
+      endDate = range.end;
+    }
+
+    const filtered = allTransactions.filter((tx) => {
+      const txDate = new Date(tx.createdAt);
+      return txDate >= startDate && txDate <= endDate;
+    });
+
+    return filtered;
+
+  }, [allTransactions, selectedPreset, customStartDate, customEndDate]);
   useEffect(() => {
     if (open) {
       fetchAllTransactions();
     }
   }, [open, fetchAllTransactions]);
+  useEffect(() => {
+    if (open) {
+      setFilteredTransactions(getFilteredTransactions());
+    }
+  }, [open, allTransactions, selectedPreset, customStartDate, customEndDate, getFilteredTransactions]);
 
   const handleDownload = () => {
     let startDate: Date;
@@ -192,30 +223,6 @@ export function DownloadDetailsDialog({
     setCustomEndDate('');
   };
 
-  // Calculate filtered transactions for display
-  const getFilteredTransactions = () => {
-    let startDate: Date;
-    let endDate: Date = new Date();
-
-    if (selectedPreset === 'custom') {
-      if (!customStartDate || !customEndDate) {
-        return [];
-      }
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
-    } else {
-      const range = dateRangeUtils.getPresetRange(selectedPreset);
-      startDate = range.start;
-      endDate = range.end;
-    }
-
-    return allTransactions.filter((tx) => {
-      const txDate = new Date(tx.createdAt);
-      return txDate >= startDate && txDate <= endDate;
-    });
-  };
-
-  const filteredTransactions = getFilteredTransactions();
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -302,7 +309,7 @@ export function DownloadDetailsDialog({
                     ? `${customStartDate} to ${customEndDate}`
                     : 'Please select dates'
                   : PRESET_OPTIONS.find((opt) => opt.value === selectedPreset)
-                      ?.label}
+                    ?.label}
               </span>
             </p>
           </div>
