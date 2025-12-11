@@ -146,7 +146,9 @@ export function RegisterAIAgentDialog({
   onSuccess,
 }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [sellingWallets, setSellingWallets] = useState<{ wallet: SellingWallet, balance: number }[]>([]);
+  const [sellingWallets, setSellingWallets] = useState<
+    { wallet: SellingWallet; balance: number }[]
+  >([]);
   const [isCheckingBalance, setIsCheckingBalance] = useState(false);
   const { apiClient, state } = useAppContext();
 
@@ -221,52 +223,76 @@ export function RegisterAIAgentDialog({
           (s) => s.network == state.network,
         );
         if (paymentSources.length > 0) {
-          const aggregatedWallets: { wallet: SellingWallet, balance: number }[] = [];
-          await Promise.allSettled(paymentSources.map(async (ps) => {
-            for (const sellingWallet of ps.SellingWallets) {
-              const balance = await getUtxos({
-                client: apiClient,
-                query: {
-                  address: sellingWallet.walletAddress,
-                  network: state.network,
-                },
-              });
+          const aggregatedWallets: {
+            wallet: SellingWallet;
+            balance: number;
+          }[] = [];
+          await Promise.allSettled(
+            paymentSources.map(async (ps) => {
+              for (const sellingWallet of ps.SellingWallets) {
+                const balance = await getUtxos({
+                  client: apiClient,
+                  query: {
+                    address: sellingWallet.walletAddress,
+                    network: state.network,
+                  },
+                });
 
-              if (balance.error || balance.data?.data?.Utxos == undefined || balance.data?.data?.Utxos?.length === 0) {
-                aggregatedWallets.push({ wallet: sellingWallet, balance: 0 });
-              } else {
-                const lovelaceBalance = balance.data.data.Utxos.reduce((acc, utxo) => {
-                  return acc + utxo.Amounts.reduce((acc, amount) => {
-                    if (amount.unit.toLowerCase() === 'lovelace' || amount.unit === '') {
-                      return acc + (amount.quantity ?? 0);
-                    }
-                    return acc;
-                  }, 0);
-                }, 0);
-                aggregatedWallets.push({ wallet: sellingWallet, balance: lovelaceBalance });
+                if (
+                  balance.error ||
+                  balance.data?.data?.Utxos == undefined ||
+                  balance.data?.data?.Utxos?.length === 0
+                ) {
+                  aggregatedWallets.push({ wallet: sellingWallet, balance: 0 });
+                } else {
+                  const lovelaceBalance = balance.data.data.Utxos.reduce(
+                    (acc, utxo) => {
+                      return (
+                        acc +
+                        utxo.Amounts.reduce((acc, amount) => {
+                          if (
+                            amount.unit.toLowerCase() === 'lovelace' ||
+                            amount.unit === ''
+                          ) {
+                            return acc + (amount.quantity ?? 0);
+                          }
+                          return acc;
+                        }, 0)
+                      );
+                    },
+                    0,
+                  );
+                  aggregatedWallets.push({
+                    wallet: sellingWallet,
+                    balance: lovelaceBalance,
+                  });
+                }
               }
-            }
-          }));
+            }),
+          );
           setSellingWallets(aggregatedWallets);
         }
       }
     } catch (error) {
       console.error('Error fetching selling wallets:', error);
       toast.error('Failed to load selling wallets');
-    }
-    finally {
+    } finally {
       setIsCheckingBalance(false);
     }
   };
-
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
         setIsLoading(true);
         const selectedWallet = data.selectedWallet;
-        const selectedWalletBalance = sellingWallets.find((w) => w.wallet.walletVkey == selectedWallet)?.balance;
-        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+        const selectedWalletBalance = sellingWallets.find(
+          (w) => w.wallet.walletVkey == selectedWallet,
+        )?.balance;
+        if (
+          selectedWalletBalance == undefined ||
+          selectedWalletBalance <= 3000000
+        ) {
           toast.error('Insufficient balance in selected wallet');
           return;
         }
@@ -301,9 +327,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-              name: data.capabilityName,
-              version: data.capabilityVersion,
-            }
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -462,14 +488,27 @@ export function RegisterAIAgentDialog({
                     disabled={isCheckingBalance}
                     className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isCheckingBalance ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <SelectValue placeholder={isCheckingBalance ? 'Loading wallets...' : 'Select a wallet'} />
+                    <SelectValue
+                      placeholder={
+                        isCheckingBalance
+                          ? 'Loading wallets...'
+                          : 'Select a wallet'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {sellingWallets.map((wallet) => (
-                      <SelectItem disabled={wallet.balance <= 3000000} key={wallet.wallet.id} value={wallet.wallet.walletVkey}>
+                      <SelectItem
+                        disabled={wallet.balance <= 3000000}
+                        key={wallet.wallet.id}
+                        value={wallet.wallet.walletVkey}
+                      >
                         {wallet.wallet.note
                           ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
-                          : shortenAddress(wallet.wallet.walletAddress)} {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
+                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                        {wallet.balance <= 3000000
+                          ? ' - Insufficient balance'
+                          : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -814,12 +853,7 @@ export function RegisterAIAgentDialog({
               Cancel
             </Button>
             <div className="flex items-center gap-2">
-              <Button
-                type="submit"
-                disabled={
-                  isLoading || isCheckingBalance
-                }
-              >
+              <Button type="submit" disabled={isLoading || isCheckingBalance}>
                 {isLoading ? 'Registering...' : 'Register'}
               </Button>
             </div>
