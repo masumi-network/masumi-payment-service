@@ -103,6 +103,16 @@ export const queryRegistryRequestSchemaOutput = z.object({
         .object({
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          confirmations: z.number().nullable(),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          outputAmount: z.string().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
         })
         .nullable(),
     }),
@@ -185,6 +195,12 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
                 pricingType: PricingType.Free,
               },
         Tags: item.tags,
+        CurrentTransaction: item.CurrentTransaction
+          ? {
+              ...item.CurrentTransaction,
+              fees: item.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
       })),
     };
   },

@@ -3,7 +3,7 @@ import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from 'zod';
 import { Permission, ApiKeyStatus, Network } from '@prisma/client';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 
 export const authMiddleware = (minPermission: Permission) =>
   new Middleware({
@@ -25,7 +25,7 @@ export const authMiddleware = (minPermission: Permission) =>
 
         const apiKey = await prisma.apiKey.findUnique({
           where: {
-            tokenHash: generateHash(sentKey),
+            tokenHash: generateSHA256Hash(sentKey),
           },
         });
 

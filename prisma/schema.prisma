@@ -76,9 +76,21 @@ model Transaction {
   updatedAt                DateTime          @updatedAt
   txHash                   String
   status                   TransactionStatus
+  confirmations            Int?
   lastCheckedAt            DateTime?
+  fees                     BigInt?
+  blockHeight              Int?
+  blockTime                Int?
+  outputAmount             String?           @db.Text
+  utxoCount                Int?
+  withdrawalCount          Int?
+  assetMintOrBurnCount     Int?
+  redeemerCount            Int?
+  validContract            Boolean?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
+  previousOnChainState     OnChainState?
+  newOnChainState          OnChainState?
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")

@@ -5,11 +5,16 @@ import {
   $Enums,
   PaymentAction,
   PaymentErrorType,
+  TransactionStatus,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import {
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
 
 export const postPaymentRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -63,6 +68,9 @@ export const postPaymentRequestSchemaOutput = z.object({
       createdAt: z.date(),
       updatedAt: z.date(),
       txHash: z.string().nullable(),
+      status: z.nativeEnum(TransactionStatus),
+      previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+      newOnChainState: z.nativeEnum(OnChainState).nullable(),
     })
     .nullable(),
   TransactionHistory: z
@@ -72,6 +80,9 @@ export const postPaymentRequestSchemaOutput = z.object({
         createdAt: z.date(),
         updatedAt: z.date(),
         txHash: z.string().nullable(),
+        status: z.nativeEnum(TransactionStatus),
+        previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+        newOnChainState: z.nativeEnum(OnChainState).nullable(),
       }),
     )
     .nullable(),
@@ -175,32 +186,8 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
       }
       return {
         ...result,
-        RequestedFunds: (
-          result.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        collateralReturnLovelace:
-          result.collateralReturnLovelace?.toString() ?? null,
-        payByTime: result.payByTime?.toString() ?? null,
-        submitResultTime: result.submitResultTime.toString(),
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        cooldownTime: Number(result.sellerCoolDownTime),
-        cooldownTimeOtherParty: Number(result.buyerCoolDownTime),
+        ...transformPaymentGetTimestamps(result),
+        ...transformPaymentGetAmounts(result),
       };
     },
   },

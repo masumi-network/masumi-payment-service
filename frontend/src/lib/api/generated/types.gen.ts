@@ -516,13 +516,39 @@ export type GetPaymentResponses = {
                     id: string;
                     createdAt: string;
                     updatedAt: string;
+                    fees: string | null;
+                    blockHeight: number | null;
+                    blockTime: number | null;
+                    utxoCount: number | null;
+                    withdrawalCount: number | null;
+                    assetMintOrBurnCount: number | null;
+                    redeemerCount: number | null;
+                    validContract: boolean | null;
+                    outputAmount: string | null;
                     txHash: string | null;
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    confirmations: number | null;
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
                     createdAt: string;
                     updatedAt: string;
-                    txHash: string | null;
+                    txHash: string;
+                    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    fees: string | null;
+                    blockHeight: number | null;
+                    blockTime: number | null;
+                    utxoCount: number | null;
+                    withdrawalCount: number | null;
+                    assetMintOrBurnCount: number | null;
+                    redeemerCount: number | null;
+                    validContract: boolean | null;
+                    outputAmount: string | null;
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    confirmations: number | null;
                 }> | null;
                 RequestedFunds: Array<{
                     /**
@@ -689,6 +715,38 @@ export type PostPaymentResponses = {
                 walletVkey: string;
                 walletAddress: string;
             } | null;
+            CurrentTransaction: {
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                txHash: string;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
+            } | null;
+            TransactionHistory: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                txHash: string;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
+            }> | null;
             metadata: string | null;
         };
         status: string;
@@ -974,6 +1032,18 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    fees: string | null;
+                    blockHeight: number | null;
+                    blockTime: number | null;
+                    utxoCount: number | null;
+                    withdrawalCount: number | null;
+                    assetMintOrBurnCount: number | null;
+                    redeemerCount: number | null;
+                    validContract: boolean | null;
+                    outputAmount: string | null;
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    confirmations: number | null;
                 } | null;
                 TransactionHistory: Array<{
                     id: string;
@@ -981,6 +1051,18 @@ export type GetPurchaseResponses = {
                     updatedAt: string;
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    fees: string | null;
+                    blockHeight: number | null;
+                    blockTime: number | null;
+                    utxoCount: number | null;
+                    withdrawalCount: number | null;
+                    assetMintOrBurnCount: number | null;
+                    redeemerCount: number | null;
+                    validContract: boolean | null;
+                    outputAmount: string | null;
+                    previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                    confirmations: number | null;
                 }>;
                 PaidFunds: Array<{
                     amount: string;
@@ -1119,7 +1201,32 @@ export type PostPurchaseErrors = {
                 updatedAt: string;
                 txHash: string;
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
             } | null;
+            TransactionHistory: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                txHash: string;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
+            }> | null;
             PaidFunds: Array<{
                 /**
                  * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
@@ -1194,7 +1301,32 @@ export type PostPurchaseResponses = {
                 updatedAt: string;
                 txHash: string;
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
             } | null;
+            TransactionHistory: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                txHash: string;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                fees: string | null;
+                blockHeight: number | null;
+                blockTime: number | null;
+                utxoCount: number | null;
+                withdrawalCount: number | null;
+                assetMintOrBurnCount: number | null;
+                redeemerCount: number | null;
+                validContract: boolean | null;
+                outputAmount: string | null;
+            }> | null;
             PaidFunds: Array<{
                 /**
                  * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
@@ -1517,12 +1649,18 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
                 createdAt: string;
                 updatedAt: string;
                 txHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             } | null;
             TransactionHistory: Array<{
                 id: string;
                 createdAt: string;
                 updatedAt: string;
                 txHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+                newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             }> | null;
             RequestedFunds: Array<{
                 /**
@@ -1909,6 +2047,16 @@ export type GetRegistryResponses = {
                 CurrentTransaction: {
                     txHash: string;
                     status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                    confirmations: number | null;
+                    fees: string | null;
+                    blockHeight: number | null;
+                    blockTime: number | null;
+                    outputAmount: string | null;
+                    utxoCount: number | null;
+                    withdrawalCount: number | null;
+                    assetMintOrBurnCount: number | null;
+                    redeemerCount: number | null;
+                    validContract: boolean | null;
                 } | null;
             }>;
         };

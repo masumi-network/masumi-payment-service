@@ -1,4 +1,4 @@
-export function convertErrorString(error: unknown) {
+export function errorToString(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }

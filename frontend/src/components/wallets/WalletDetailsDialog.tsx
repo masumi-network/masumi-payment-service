@@ -7,7 +7,12 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import {
+  handleApiCall,
+  shortenAddress,
+  getExplorerUrl,
+  validateCardanoAddress,
+} from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import useFormatBalance from '@/lib/hooks/useFormatBalance';
 import { useRate } from '@/lib/hooks/useRate';
@@ -265,13 +270,36 @@ export function WalletDetailsDialog({
   const handleSaveCollection = async () => {
     if (!wallet) return;
 
+    // Validate the address if provided
+    if (newCollectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        newCollectionAddress.trim(),
+        state.network,
+      );
+      if (!validation.isValid) {
+        toast.error('Invalid collection address: ' + validation.error);
+        return;
+      }
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: newCollectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
+    }
     await handleApiCall(
       () =>
         patchWallet({
           client: apiClient,
           body: {
             id: wallet.id,
-            newCollectionAddress: newCollectionAddress || null,
+            newCollectionAddress: newCollectionAddress.trim() || null,
           },
         }),
       {
@@ -280,7 +308,7 @@ export function WalletDetailsDialog({
           setIsEditingCollectionAddress(false);
 
           // Update the wallet object with the new collection address
-          wallet.collectionAddress = newCollectionAddress || null;
+          wallet.collectionAddress = newCollectionAddress.trim() || null;
         },
         onError: (error: any) => {
           toast.error(error.message || 'Failed to update collection address');
