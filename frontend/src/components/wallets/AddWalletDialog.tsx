@@ -23,6 +23,7 @@ import {
   patchPaymentSourceExtended,
   getPaymentSourceExtended,
   postWallet,
+  getUtxos,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -31,7 +32,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 
 interface AddWalletDialogProps {
@@ -158,6 +159,32 @@ export function AddWalletDialog({
 
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
+
+    // Validate collection address if provided
+    if (data.collectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        data.collectionAddress.trim(),
+        state.network,
+      );
+
+      if (!validation.isValid) {
+        setError('Invalid collection address: ' + validation.error);
+        return;
+      }
+
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: data.collectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
+    }
 
     if (!paymentSourceId) {
       setError('No payment source available');
