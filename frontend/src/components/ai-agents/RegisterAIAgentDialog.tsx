@@ -29,12 +29,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -862,37 +857,32 @@ export function RegisterAIAgentDialog({
             ))}
           </div>
 
-          <div className="flex justify-end gap-4">
+          <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-block">
-                    <Button
-                      type="submit"
-                      disabled={
-                        isLoading ||
-                        sellingWalletBalance === 0 ||
-                        isCheckingBalance
-                      }
-                    >
-                      {isLoading ? 'Registering...' : 'Register'}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {sellingWalletBalance === 0
+            <div className="flex items-center gap-2">
+              <Button
+                type="submit"
+                disabled={
+                  isLoading || sellingWalletBalance === 0 || isCheckingBalance
+                }
+              >
+                {isLoading ? 'Registering...' : 'Register'}
+              </Button>
+              {(sellingWalletBalance === 0 || isCheckingBalance) && (
+                <BadgeWithTooltip
+                  text="?"
+                  tooltipText={
+                    sellingWalletBalance === 0
                       ? 'Cannot register agent: No funds in selling wallets'
-                      : isLoading
-                        ? 'Registering agent...'
-                        : 'Register AI agent'}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                      : 'Checking wallet balance...'
+                  }
+                  variant="outline"
+                  className="text-xs w-5 h-5 rounded-full p-0 flex items-center justify-center cursor-help"
+                />
+              )}
+            </div>
           </div>
         </form>
       </DialogContent>
