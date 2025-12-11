@@ -108,6 +108,14 @@ import {
   postRevealDataSchemaOutput,
   postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
+import {
+  paymentErrorStateRecoverySchemaInput,
+  paymentErrorStateRecoverySchemaOutput,
+} from '@/routes/api/payments/error-state-recovery';
+import {
+  purchaseErrorStateRecoverySchemaInput,
+  purchaseErrorStateRecoverySchemaOutput,
+} from '@/routes/api/purchases/error-state-recovery';
 
 extendZodWithOpenApi(z);
 
@@ -967,6 +975,201 @@ export function generateOpenAPI() {
       },
       401: {
         description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* PAYMENT ERROR RECOVERY *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/payment/error-state-recovery/',
+    description:
+      'Clears error states for payment requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
+    summary: 'Clear error state for payment request (PAY access required)',
+    tags: ['error-state-recovery'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Payment error recovery request details',
+        content: {
+          'application/json': {
+            schema: paymentErrorStateRecoverySchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Error state cleared successfully for payment request',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: paymentErrorStateRecoverySchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    success: true,
+                    message:
+                      'Error state cleared successfully for payment request',
+                    id: 'cmf40vg7h0016ucj1u1ro6651',
+                    currentTransactionId: 'cmf41enan001qucj18mm1ipnj',
+                    nextAction: {
+                      requestedAction: PaymentAction.WaitingForExternalAction,
+                      errorType: null,
+                      errorNote: null,
+                    },
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description:
+          'Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: {
+                message:
+                  'Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
+              },
+            },
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Payment request not found',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: { message: 'Payment request not found' },
+            },
+          },
+        },
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* PURCHASE ERROR RECOVERY *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/purchase/error-state-recovery/',
+    description:
+      'Clears error states for purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
+    summary: 'Clear error state for purchase request (PAY access required)',
+    tags: ['error-state-recovery'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Purchase error recovery request details',
+        content: {
+          'application/json': {
+            schema: purchaseErrorStateRecoverySchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Error state cleared successfully for purchase request',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: purchaseErrorStateRecoverySchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    success: true,
+                    message:
+                      'Error state cleared successfully for purchase request',
+                    id: 'cmf40vg7h0016ucj1u1ro6651',
+                    currentTransactionId: 'cmf41enan001qucj18mm1ipnj',
+                    nextAction: {
+                      requestedAction:
+                        PurchasingAction.WaitingForExternalAction,
+                      errorType: null,
+                      errorNote: null,
+                    },
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description:
+          'Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: {
+                message:
+                  'Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
+              },
+            },
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Purchase request not found',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: { message: 'Purchase request not found' },
+            },
+          },
+        },
       },
       500: {
         description: 'Internal Server Error',
