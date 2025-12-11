@@ -7,7 +7,7 @@ import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Plus } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { cn, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import { useEffect, useState, useCallback } from 'react';
 import {
   getRegistry,
