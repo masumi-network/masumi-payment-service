@@ -12,7 +12,7 @@ const MasumiLogo = () => {
       <Image
         src={theme === 'dark' ? masumiWhite : masumiBlack}
         alt="Masumi Logo"
-        width={120}
+        width={100}
         height={32}
       />
       <Image src={theme === 'dark' ? kanjiWhite : kanjiBlack} alt="Kanji" />
