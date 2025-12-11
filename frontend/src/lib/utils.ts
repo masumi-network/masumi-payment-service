@@ -3,6 +3,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
+import { deserializeAddress } from '@meshsdk/core';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -199,3 +200,65 @@ export const dateRangeUtils = {
     return date.toISOString();
   },
 };
+ * Validates a Cardano wallet address based on network type using MeshJS
+ *
+ * @param address - The wallet address to validate
+ * @param network - The network type ('Mainnet' or 'Preprod')
+ * @returns An object with `isValid` boolean and optional `error` message
+ *
+ * Uses MeshJS's deserializeAddress for proper Bech32 checksum validation
+ */
+export function validateCardanoAddress(
+  address: string,
+  network: 'Mainnet' | 'Preprod',
+): { isValid: boolean; error?: string } {
+  if (!address || typeof address !== 'string') {
+    return {
+      isValid: false,
+      error: 'Address is required and must be a string',
+    };
+  }
+
+  const trimmedAddress = address.trim();
+
+  if (trimmedAddress.length === 0) {
+    return {
+      isValid: false,
+      error: 'Address cannot be empty',
+    };
+  }
+
+  // Normalize to lowercase (Bech32 addresses are case-insensitive but conventionally lowercase)
+  const normalizedAddress = trimmedAddress.toLowerCase();
+
+  // Network-specific prefix validation
+  let expectedPrefix: string;
+  if (network === 'Mainnet') {
+    expectedPrefix = 'addr1';
+  } else if (network === 'Preprod') {
+    expectedPrefix = 'addr_test1';
+  } else {
+    return {
+      isValid: false,
+      error: `Unsupported network: ${network}. Supported networks are 'Mainnet' and 'Preprod'`,
+    };
+  }
+
+  if (!normalizedAddress.startsWith(expectedPrefix)) {
+    return {
+      isValid: false,
+      error: `${network} address must start with "${expectedPrefix}"`,
+    };
+  }
+
+  // Use MeshJS to validate Bech32 encoding and checksum
+  try {
+    deserializeAddress(normalizedAddress);
+    return { isValid: true };
+  } catch {
+    return {
+      isValid: false,
+      error: 'Invalid Cardano address',
+    };
+  }
+}

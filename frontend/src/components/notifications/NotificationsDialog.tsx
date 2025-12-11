@@ -4,9 +4,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
-import { useRouter } from 'next/router';
 import { formatDistanceToNow } from 'date-fns';
+import { useRouter } from 'next/router';
 
 interface NotificationsDialogProps {
   open: boolean;
@@ -17,13 +18,13 @@ export function NotificationsDialog({
   open,
   onClose,
 }: NotificationsDialogProps) {
-  const router = useRouter();
   const { transactions, newTransactionsCount, markAllAsRead } =
     useTransactions();
+  const router = useRouter();
 
   const handleViewTransactions = () => {
-    onClose();
     markAllAsRead();
+    onClose();
     router.push('/transactions');
   };
 
@@ -71,12 +72,11 @@ export function NotificationsDialog({
                 </div>
               ))}
             </div>
-            <button
-              onClick={handleViewTransactions}
-              className="w-full text-sm text-primary hover:underline"
-            >
-              View all transactions
-            </button>
+            <div className="flex justify-center">
+              <Button variant="ghost" onClick={handleViewTransactions}>
+                View all transactions
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">

@@ -20,15 +20,16 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource } from '@/lib/api/generated';
+import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, handleApiCall } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
+import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -44,12 +45,11 @@ interface SellingWallet {
 }
 
 const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM', 'free'], {
+  unit: z.enum(['lovelace', 'USDM'], {
     required_error: 'Token is required',
   }),
   amount: z.string().refine((val) => {
-    if (val === 'free' || val === '0' || val === '0.0' || val === '0.00')
-      return true;
+    if (val === '0' || val === '0.0' || val === '0.00') return true;
     return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
   }, 'Amount must be a valid number >= 0'),
 });
@@ -148,6 +148,8 @@ export function RegisterAIAgentDialog({
 }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
+  const [sellingWalletBalance, setSellingWalletBalance] = useState<number>(0);
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
   const { apiClient, state } = useAppContext();
 
   const {
@@ -205,6 +207,7 @@ export function RegisterAIAgentDialog({
   useEffect(() => {
     if (open) {
       fetchSellingWallets();
+      fetchSellingWalletBalance();
       reset();
     }
   }, [open, reset]);
@@ -232,6 +235,82 @@ export function RegisterAIAgentDialog({
     } catch (error) {
       console.error('Error fetching selling wallets:', error);
       toast.error('Failed to load selling wallets');
+    }
+  };
+
+  const fetchSellingWalletBalance = async () => {
+    setIsCheckingBalance(true);
+    try {
+      const response = await getPaymentSource({
+        client: apiClient,
+      });
+
+      if (response.data?.data?.PaymentSources) {
+        const paymentSources = response.data.data.PaymentSources.filter(
+          (s) => s.network == state.network,
+        );
+
+        if (paymentSources.length > 0) {
+          // Aggregate all selling wallets from all payment sources
+          const allSellingWallets: SellingWallet[] = [];
+          paymentSources.forEach((ps) => {
+            ps.SellingWallets.forEach((w) => {
+              allSellingWallets.push(w);
+            });
+          });
+
+          if (allSellingWallets.length > 0) {
+            // Check balances for all selling wallets and aggregate
+            let totalBalance = 0;
+            const balancePromises = allSellingWallets.map((wallet) =>
+              handleApiCall(
+                () =>
+                  getUtxos({
+                    client: apiClient,
+                    query: {
+                      address: wallet.walletAddress,
+                      network: state.network,
+                    },
+                  }),
+                {
+                  onError: (error: any) => {
+                    console.error(
+                      'Error fetching selling wallet balance:',
+                      error,
+                    );
+                  },
+                  errorMessage: 'Failed to fetch selling wallet balance',
+                },
+              ),
+            );
+
+            const balanceResponses = await Promise.all(balancePromises);
+
+            balanceResponses.forEach((utxoResponse) => {
+              if (utxoResponse?.data?.data?.Utxos) {
+                utxoResponse.data.data.Utxos.forEach((utxo: any) => {
+                  utxo.Amounts.forEach((amount: any) => {
+                    if (amount.unit === 'lovelace' || amount.unit === '') {
+                      totalBalance += amount.quantity || 0;
+                    }
+                  });
+                });
+              }
+            });
+
+            setSellingWalletBalance(totalBalance);
+          } else {
+            setSellingWalletBalance(0);
+          }
+        } else {
+          setSellingWalletBalance(0);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching selling wallet balance:', error);
+      setSellingWalletBalance(0);
+    } finally {
+      setIsCheckingBalance(false);
     }
   };
 
@@ -405,7 +484,7 @@ export function RegisterAIAgentDialog({
                 {...register('description')}
                 placeholder="Describe what your agent does"
                 rows={3}
-                className={errors.description ? 'border-red-500' : ''}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
                 maxLength={250}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -464,13 +543,9 @@ export function RegisterAIAgentDialog({
                     checked={field.value || false}
                     onChange={(e) => {
                       field.onChange(e.target.checked);
-                      if (e.target.checked) {
-                        // Set to free pricing when checked
-                        setValue('prices', [{ unit: 'free', amount: '0' }]);
-                      } else {
-                        // Reset to default pricing when unchecked
-                        setValue('prices', [{ unit: 'lovelace', amount: '' }]);
-                      }
+                      setValue('prices', [
+                        { unit: 'lovelace', amount: '0.00' },
+                      ]);
                     }}
                     className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
                   />
@@ -514,7 +589,6 @@ export function RegisterAIAgentDialog({
                         <SelectContent>
                           <SelectItem value="lovelace">ADA</SelectItem>
                           <SelectItem value="USDM">USDM</SelectItem>
-                          <SelectItem value="free">Free</SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -523,15 +597,9 @@ export function RegisterAIAgentDialog({
                 <div className="flex-1 space-y-2">
                   <Input
                     type="number"
-                    placeholder={
-                      watch(`prices.${index}.unit`) === 'free' ? '0' : '0.00'
-                    }
-                    disabled={watch(`prices.${index}.unit`) === 'free'}
-                    value={
-                      watch(`prices.${index}.unit`) === 'free'
-                        ? '0'
-                        : watch(`prices.${index}.amount`) || ''
-                    }
+                    placeholder="0.00"
+                    disabled={watch('isFree')}
+                    value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"
                     step="0.000001"
@@ -789,13 +857,32 @@ export function RegisterAIAgentDialog({
             ))}
           </div>
 
-          <div className="flex justify-end gap-4">
+          <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Registering...' : 'Register'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="submit"
+                disabled={
+                  isLoading || sellingWalletBalance === 0 || isCheckingBalance
+                }
+              >
+                {isLoading ? 'Registering...' : 'Register'}
+              </Button>
+              {(sellingWalletBalance === 0 || isCheckingBalance) && (
+                <BadgeWithTooltip
+                  text="?"
+                  tooltipText={
+                    sellingWalletBalance === 0
+                      ? 'Cannot register agent: No funds in selling wallets'
+                      : 'Checking wallet balance...'
+                  }
+                  variant="outline"
+                  className="text-xs w-5 h-5 rounded-full p-0 flex items-center justify-center cursor-help"
+                />
+              )}
+            </div>
           </div>
         </form>
       </DialogContent>

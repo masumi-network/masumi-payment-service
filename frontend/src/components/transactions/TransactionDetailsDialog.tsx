@@ -11,6 +11,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
+import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   GetPaymentResponses,
@@ -391,15 +392,59 @@ export default function TransactionDetailsDialog({
 
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
-                <p className="text-sm">
+                <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds?.[0]
-                    ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                    : transaction.type === 'purchase' &&
-                        transaction.PaidFunds?.[0]
-                      ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                      : '—'}
-                </p>
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
+                    transaction.PaidFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p>—</p>
+                  )}
+                </div>
               </div>
 
               <div className="col-span-2">

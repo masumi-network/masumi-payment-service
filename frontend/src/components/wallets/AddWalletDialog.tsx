@@ -23,6 +23,7 @@ import {
   patchPaymentSourceExtended,
   getPaymentSourceExtended,
   postWallet,
+  getUtxos,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -31,7 +32,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -158,6 +160,32 @@ export function AddWalletDialog({
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
 
+    // Validate collection address if provided
+    if (data.collectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        data.collectionAddress.trim(),
+        state.network,
+      );
+
+      if (!validation.isValid) {
+        setError('Invalid collection address: ' + validation.error);
+        return;
+      }
+
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: data.collectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
+    }
+
     if (!paymentSourceId) {
       setError('No payment source available');
       return;
@@ -217,20 +245,23 @@ export function AddWalletDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Wallet type</label>
-            <Select
-              value={type}
-              onValueChange={(value: 'Purchasing' | 'Selling') =>
-                setType(value)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select wallet type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Purchasing">Purchasing wallet</SelectItem>
-                <SelectItem value="Selling">Selling wallet</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-4 flex-nowrap">
+              <Select
+                value={type}
+                onValueChange={(value: 'Purchasing' | 'Selling') =>
+                  setType(value)
+                }
+              >
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select wallet type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Purchasing">Purchasing wallet</SelectItem>
+                  <SelectItem value="Selling">Selling wallet</SelectItem>
+                </SelectContent>
+              </Select>
+              <WalletTypeBadge type={type} className="flex-shrink-0" />
+            </div>
             <p className="text-sm text-muted-foreground">
               {type === 'Purchasing'
                 ? 'A purchasing wallet is used to make payments for Agentic AI services. It will be used to send payments to sellers.'

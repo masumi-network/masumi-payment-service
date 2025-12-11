@@ -21,6 +21,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { parseError } from '@/lib/utils';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
@@ -57,6 +58,52 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 
 export default function Transactions() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+
+  // Format price helper function
+  const formatPrice = (amount: string | undefined) => {
+    if (!amount) return '—';
+    const numericAmount = parseInt(amount) / 1000000;
+    return new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+      useGrouping: true,
+    }).format(numericAmount);
+  };
+
+  // Format fund unit display helper function
+  const formatFundUnit = (
+    unit: string | undefined,
+    network: string | undefined,
+  ): string => {
+    if (!network) {
+      // If no network, fallback to basic unit formatting
+      if (unit === 'lovelace' || !unit) {
+        return 'ADA';
+      }
+      return unit;
+    }
+
+    if (!unit) {
+      return 'ADA';
+    }
+
+    const usdmConfig = getUsdmConfig(network);
+    const isUsdm =
+      unit === usdmConfig.fullAssetId ||
+      unit === usdmConfig.policyId ||
+      unit === 'USDM' ||
+      unit === 'tUSDM';
+
+    if (isUsdm) {
+      return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
+    }
+
+    const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
+    if (isTestUsdm) {
+      return 'tUSDM';
+    }
+    return unit ?? '—';
+  };
   const [activeTab, setActiveTab] = useState('All');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
     [],
@@ -568,6 +615,9 @@ export default function Transactions() {
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Unlock Time
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Date</th>
                   <th className="p-4 text-left text-sm font-medium"></th>
                 </tr>
@@ -627,11 +677,33 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.[0]
-                          ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
+                        transaction.RequestedFunds?.length
+                          ? transaction.RequestedFunds.map((fund, index) => {
+                              const amount = formatPrice(fund.amount);
+                              const unit = formatFundUnit(
+                                fund.unit,
+                                state.network,
+                              );
+                              return (
+                                <div key={index} className="text-sm">
+                                  {amount} {unit}
+                                </div>
+                              );
+                            })
                           : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.[0]
-                            ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
+                              transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
+                                const amount = formatPrice(fund.amount);
+                                const unit = formatFundUnit(
+                                  fund.unit,
+                                  state.network,
+                                );
+                                return (
+                                  <div key={index} className="text-sm">
+                                    {amount} {unit}
+                                  </div>
+                                );
+                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -662,6 +734,11 @@ export default function Transactions() {
                             formatStatus(transaction.onChainState)
                           )}
                         </span>
+                      </td>
+                      <td className="p-4">
+                        {transaction.onChainState === 'ResultSubmitted'
+                          ? formatTimestamp(transaction.unlockTime)
+                          : '—'}
                       </td>
                       <td className="p-4">
                         {new Date(transaction.createdAt).toLocaleString()}

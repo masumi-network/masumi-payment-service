@@ -9,8 +9,8 @@ import paymentPlutus from '@smart-contracts/payment/plutus.json';
 import registryPlutus from '@smart-contracts/registry/plutus.json';
 import { Network, OnChainState, PaymentSource } from '@prisma/client';
 import { applyParamsToScript } from '@meshsdk/core';
-import { convertNetworkToId } from '../../converter/network-convert';
-import { decodeBlockchainIdentifier } from '../blockchain-identifier-generator';
+import { convertNetworkToId } from '@/utils/converter/network-convert';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 
 export async function getPaymentScriptFromPaymentSourceV1(
   paymentSourceSupported: PaymentSource & {
