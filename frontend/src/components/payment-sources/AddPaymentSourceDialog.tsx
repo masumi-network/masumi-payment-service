@@ -23,7 +23,6 @@ import { Spinner } from '../ui/spinner';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
@@ -48,7 +47,6 @@ const adminWalletSchema = z.object({
 const formSchema = z
   .object({
     network: z.enum(['Mainnet', 'Preprod']),
-    paymentType: z.literal('Web3CardanoV1'),
     blockfrostApiKey: z.string().min(1, 'Blockfrost API key is required'),
     feeReceiverWallet: z.object({
       walletAddress: z.string().min(1, 'Fee receiver wallet is required'),
@@ -112,7 +110,7 @@ export function AddPaymentSourceDialog({
       network: state.network,
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+        walletAddress: '',
       },
       feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
       purchasingWallets: [
@@ -158,7 +156,7 @@ export function AddPaymentSourceDialog({
         network: state.network,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: '',
+          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
         },
         feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
         purchasingWallets: [
@@ -340,16 +338,14 @@ export function AddPaymentSourceDialog({
                   <label className="text-sm font-medium">
                     Network <span className="text-red-500">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.NETWORK}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.NETWORK}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <select
                   className="w-full p-2 rounded-md bg-background border"
@@ -370,16 +366,14 @@ export function AddPaymentSourceDialog({
                     Blockfrost API Key{' '}
                     <span className="text-destructive">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.BLOCKFROST_API_KEY}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.BLOCKFROST_API_KEY}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <input
                   type="text"
@@ -398,16 +392,14 @@ export function AddPaymentSourceDialog({
                   <label className="text-sm font-medium">
                     Fee Permille <span className="text-red-500">*</span>
                   </label>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.FEE_PERMILLE}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <input
                   type="number"
@@ -428,16 +420,14 @@ export function AddPaymentSourceDialog({
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">
@@ -461,16 +451,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Admin Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.ADMIN_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.ADMIN_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm">Use Custom Admin Wallets</label>
@@ -542,16 +530,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Purchasing Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.PURCHASING_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.PURCHASING_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <Button
                 type="button"
@@ -631,16 +617,14 @@ export function AddPaymentSourceDialog({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">Selling Wallets</h3>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{TOOLTIP_TEXTS.SELLING_WALLETS}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{TOOLTIP_TEXTS.SELLING_WALLETS}</p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <Button
                 type="button"
@@ -719,6 +703,39 @@ export function AddPaymentSourceDialog({
           {walletGenError && (
             <div className="text-xs text-destructive mt-1">
               {walletGenError}
+            </div>
+          )}
+
+          {Object.keys(errors).length > 0 && (
+            <div className="text-sm text-destructive mt-4 p-3 bg-destructive/10 rounded-md">
+              <p className="font-medium mb-1">
+                Please fix the following errors:
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                {errors.network && <li>{errors.network.message}</li>}
+                {errors.blockfrostApiKey && (
+                  <li>{errors.blockfrostApiKey.message}</li>
+                )}
+                {errors.feeReceiverWallet?.walletAddress && (
+                  <li>
+                    Fee receiver wallet:{' '}
+                    {errors.feeReceiverWallet.walletAddress.message}
+                  </li>
+                )}
+                {errors.feePermille && <li>{errors.feePermille.message}</li>}
+                {errors.purchasingWallets && (
+                  <li>At least one purchasing wallet is required</li>
+                )}
+                {errors.sellingWallets && (
+                  <li>At least one selling wallet is required</li>
+                )}
+                {errors.customAdminWallets && (
+                  <li>
+                    All admin wallet addresses are required when using custom
+                    admin wallets
+                  </li>
+                )}
+              </ul>
             </div>
           )}
 

@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,7 +16,6 @@ import {
   getRegistry,
   deleteRegistry,
   GetRegistryResponses,
-  getUtxos,
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -60,6 +60,7 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 };
 
 export default function AIAgentsPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -191,6 +192,15 @@ export default function AIAgentsPage() {
     searchQuery,
   ]);
 
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'register_agent') {
+      setIsRegisterDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/ai-agents', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleSelectAgent = (id: string) => {
     setSelectedAgents((prev) =>
       prev.includes(id)
@@ -309,60 +319,42 @@ export default function AIAgentsPage() {
     setSelectedAgentForDetails(agent);
   };
 
-  const handleWalletClick = async (walletAddress: string) => {
-    // Fetch wallet balance
-    const response = await handleApiCall(
-      () =>
-        getUtxos({
-          client: apiClient,
-          query: {
-            address: walletAddress,
-            network: state.network,
-          },
-        }),
-      {
-        onError: (error: any) => {
-          console.error('Error fetching wallet details:', error);
-          toast.error(error.message || 'Failed to fetch wallet details');
-        },
-        errorMessage: 'Failed to fetch wallet details',
-      },
+  const handleWalletClick = async (walletVkey: string) => {
+    // Find the wallet by vkey from payment sources in context
+    const filteredSources = state.paymentSources.filter(
+      (source: any) =>
+        source.network === state.network &&
+        (selectedPaymentSourceId
+          ? source.id === selectedPaymentSourceId
+          : true),
     );
 
-    if (!response) return;
+    // Flatten all wallets from filtered sources
+    const allWallets = filteredSources.flatMap((source: any) => [
+      ...(source.SellingWallets || []).map((wallet: any) => ({
+        ...wallet,
+        type: 'Selling' as const,
+        balance: '0',
+        usdmBalance: '0',
+      })),
+      ...(source.PurchasingWallets || []).map((wallet: any) => ({
+        ...wallet,
+        type: 'Purchasing' as const,
+        balance: '0',
+        usdmBalance: '0',
+      })),
+    ]);
 
-    let adaBalance = '0';
-    let usdmBalance = '0';
+    const foundWallet = allWallets.find(
+      (wallet: any) => wallet.walletVkey === walletVkey,
+    );
 
-    if (response.data?.data?.Utxos) {
-      response.data.data.Utxos.forEach((utxo) => {
-        utxo.Amounts.forEach((amount) => {
-          if (amount.unit === 'lovelace' || amount.unit === '') {
-            adaBalance = (
-              parseInt(adaBalance) + (amount.quantity || 0)
-            ).toString();
-          } else if (amount.unit === getUsdmConfig(state.network).fullAssetId) {
-            usdmBalance = (
-              parseInt(usdmBalance) + (amount.quantity || 0)
-            ).toString();
-          }
-        });
-      });
+    if (!foundWallet) {
+      toast.error('Wallet not found');
+      return;
     }
 
-    // Create wallet details object
-    const walletDetails: WalletWithBalance = {
-      id: walletAddress, // Using address as ID since we don't have the actual wallet ID
-      walletVkey: '', // We don't have this information
-      walletAddress,
-      collectionAddress: null,
-      note: null,
-      type: 'Selling', // AI agents use selling wallets
-      balance: adaBalance,
-      usdmBalance,
-    };
-
-    setSelectedWalletForDetails(walletDetails);
+    setSelectedWalletForDetails(foundWallet as WalletWithBalance);
   };
 
   return (
@@ -518,7 +510,7 @@ export default function AIAgentsPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               handleWalletClick(
-                                agent.SmartContractWallet.walletAddress,
+                                agent.SmartContractWallet.walletVkey,
                               );
                             }}
                           >

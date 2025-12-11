@@ -85,8 +85,17 @@ export const queryRegistryRequestSchemaOutput = z.object({
           Pricing: z
             .array(
               z.object({
-                amount: z.string(),
-                unit: z.string().max(250),
+                amount: z
+                  .string()
+                  .describe(
+                    'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+                  ),
+                unit: z
+                  .string()
+                  .max(250)
+                  .describe(
+                    'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+                  ),
               }),
             )
             .min(1),
@@ -104,6 +113,16 @@ export const queryRegistryRequestSchemaOutput = z.object({
         .object({
           txHash: z.string(),
           status: z.nativeEnum(TransactionStatus),
+          confirmations: z.number().nullable(),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          outputAmount: z.string().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
         })
         .nullable(),
     }),
@@ -298,6 +317,12 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
                 pricingType: PricingType.Free,
               },
         Tags: item.tags,
+        CurrentTransaction: item.CurrentTransaction
+          ? {
+              ...item.CurrentTransaction,
+              fees: item.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
       })),
     };
   },
@@ -379,8 +404,18 @@ export const registerAgentSchemaInput = z.object({
       Pricing: z
         .array(
           z.object({
-            unit: z.string().max(250),
-            amount: z.string().max(25),
+            unit: z
+              .string()
+              .max(250)
+              .describe(
+                'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+              ),
+            amount: z
+              .string()
+              .max(25)
+              .describe(
+                'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+              ),
           }),
         )
         .min(1)
