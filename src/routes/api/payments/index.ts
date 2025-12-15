@@ -178,6 +178,16 @@ export const queryPaymentsSchemaOutput = z.object({
         })
         .nullable(),
       metadata: z.string().nullable(),
+      ActionHistory: z
+        .array(
+          z.object({
+            id: z.string(),
+            createdAt: z.date(),
+            requestedAction: z.nativeEnum(PaymentAction),
+          }),
+        )
+        .optional()
+        .describe('History of previous NextAction states'),
     }),
   ),
 });
@@ -232,6 +242,14 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
           orderBy: { createdAt: 'desc' },
           take: input.includeHistory == true ? undefined : 0,
         },
+        ActionHistory: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            createdAt: true,
+            requestedAction: true,
+          },
+        },
       },
     });
     if (result == null) {
@@ -246,13 +264,16 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         CurrentTransaction: payment.CurrentTransaction
           ? {
               ...payment.CurrentTransaction,
-              fees: payment.CurrentTransaction.fees?.toString() ?? null,
+              fees:
+                payment.CurrentTransaction.fees !== null
+                  ? payment.CurrentTransaction.fees.toString()
+                  : null,
             }
           : null,
         TransactionHistory: payment.TransactionHistory
           ? payment.TransactionHistory.map((tx) => ({
               ...tx,
-              fees: tx.fees?.toString() ?? null,
+              fees: tx.fees !== null ? tx.fees.toString() : null,
             }))
           : null,
       })),

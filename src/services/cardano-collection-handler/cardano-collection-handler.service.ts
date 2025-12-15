@@ -6,6 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
+import { updatePaymentNextAction } from '@/utils/action-history';
 import {
   Asset,
   BlockfrostProvider,
@@ -265,33 +266,38 @@ async function processSinglePaymentCollection(
     );
 
   const signedTx = await wallet.signTx(unsignedTx);
-  await prisma.paymentRequest.update({
-    where: { id: request.id },
-    data: {
-      NextAction: {
-        update: {
-          requestedAction: PaymentAction.WithdrawInitiated,
-        },
-      },
-      CurrentTransaction: {
-        update: {
-          txHash: '',
-          status: TransactionStatus.Pending,
-          BlocksWallet: {
-            connect: {
-              id: request.SmartContractWallet.id,
+
+  await prisma.$transaction(async (tx) => {
+    await updatePaymentNextAction(
+      request.id,
+      PaymentAction.WithdrawInitiated,
+      {},
+      tx,
+    );
+
+    await tx.paymentRequest.update({
+      where: { id: request.id },
+      data: {
+        CurrentTransaction: {
+          update: {
+            txHash: '',
+            status: TransactionStatus.Pending,
+            BlocksWallet: {
+              connect: {
+                id: request.SmartContractWallet!.id,
+              },
             },
           },
         },
-      },
-      TransactionHistory: {
-        connect: {
-          id: request.CurrentTransaction!.id,
+        TransactionHistory: {
+          connect: {
+            id: request.CurrentTransaction!.id,
+          },
         },
       },
-    },
+    });
   });
-  //submit the transaction to the blockchain
+
   const newTxHash = await wallet.submitTx(signedTx);
 
   await prisma.paymentRequest.update({
@@ -381,23 +387,29 @@ export async function collectOutstandingPaymentsV1() {
             logger.error(`Error collecting payments ${request.id}`, {
               error: error,
             });
-            await prisma.paymentRequest.update({
-              where: { id: request.id },
-              data: {
-                NextAction: {
-                  update: {
-                    requestedAction: PaymentAction.WaitingForManualAction,
-                    errorType: PaymentErrorType.Unknown,
-                    errorNote:
-                      'Collecting payments failed: ' + errorToString(error),
+
+            await prisma.$transaction(async (tx) => {
+              await updatePaymentNextAction(
+                request.id,
+                PaymentAction.WaitingForManualAction,
+                {
+                  errorType: PaymentErrorType.Unknown,
+                  errorNote:
+                    'Collecting payments failed: ' + errorToString(error),
+                },
+                tx,
+              );
+
+              await tx.paymentRequest.update({
+                where: { id: request.id },
+                data: {
+                  SmartContractWallet: {
+                    update: {
+                      lockedAt: null,
+                    },
                   },
                 },
-                SmartContractWallet: {
-                  update: {
-                    lockedAt: null,
-                  },
-                },
-              },
+              });
             });
           }
           index++;

@@ -6,6 +6,10 @@ import {
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
+import {
+  updatePaymentNextAction,
+  updatePurchaseNextAction,
+} from '@/utils/action-history';
 import { CONFIG } from '@/utils/config';
 
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -70,16 +74,12 @@ async function handleInitializeAutoWithdrawPayments(
           await Promise.all(
             paymentRequests.map(async (paymentRequest) => {
               try {
-                await prisma.paymentRequest.update({
-                  where: { id: paymentRequest.id },
-                  data: {
-                    NextAction: {
-                      create: {
-                        requestedAction: PaymentAction.WithdrawRequested,
-                      },
-                    },
-                  },
-                });
+                await updatePaymentNextAction(
+                  paymentRequest.id,
+                  PaymentAction.WithdrawRequested,
+                  {},
+                  prisma,
+                );
               } catch (error) {
                 logger.error(`Error initializing auto withdraw payments`, {
                   paymentRequestId: paymentRequest.id,
@@ -129,18 +129,14 @@ async function handleInitializeAutoWithdrawRefunds(
           await Promise.all(
             purchaseRequests.map(async (purchaseRequest) => {
               try {
-                await prisma.purchaseRequest.update({
-                  where: { id: purchaseRequest.id },
-                  data: {
-                    NextAction: {
-                      create: {
-                        requestedAction:
-                          PurchasingAction.WithdrawRefundRequested,
-                        inputHash: purchaseRequest.inputHash,
-                      },
-                    },
+                await updatePurchaseNextAction(
+                  purchaseRequest.id,
+                  PurchasingAction.WithdrawRefundRequested,
+                  {
+                    inputHash: purchaseRequest.inputHash,
                   },
-                });
+                  prisma,
+                );
               } catch (error) {
                 logger.error(`Error initializing auto withdraw refunds`, {
                   purchaseRequestId: purchaseRequest.id,

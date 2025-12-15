@@ -168,6 +168,16 @@ export const queryPurchaseRequestSchemaOutput = z.object({
         })
         .nullable(),
       metadata: z.string().nullable(),
+      ActionHistory: z
+        .array(
+          z.object({
+            id: z.string(),
+            createdAt: z.date(),
+            requestedAction: z.nativeEnum(PurchasingAction),
+          }),
+        )
+        .optional()
+        .describe('History of previous NextAction states'),
     }),
   ),
 });
@@ -218,27 +228,41 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
           orderBy: { createdAt: 'desc' },
           take: input.includeHistory == true ? undefined : 0,
         },
+        ActionHistory: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            createdAt: true,
+            requestedAction: true,
+          },
+        },
       },
     });
     if (result == null) {
       throw createHttpError(404, 'Purchase not found');
     }
     return {
-      Purchases: result.map((purchase) => ({
-        ...purchase,
-        ...transformPurchaseGetTimestamps(purchase),
-        ...transformPurchaseGetAmounts(purchase),
-        CurrentTransaction: purchase.CurrentTransaction
-          ? {
-              ...purchase.CurrentTransaction,
-              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-            }
-          : null,
-        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
-      })),
+      Purchases: result.map((purchase) => {
+        const transformed = {
+          ...purchase,
+          ...transformPurchaseGetTimestamps(purchase),
+          ...transformPurchaseGetAmounts(purchase),
+          CurrentTransaction: purchase.CurrentTransaction
+            ? {
+                ...purchase.CurrentTransaction,
+                fees:
+                  purchase.CurrentTransaction.fees !== null
+                    ? purchase.CurrentTransaction.fees.toString()
+                    : null,
+              }
+            : null,
+          TransactionHistory: purchase.TransactionHistory.map((tx) => ({
+            ...tx,
+            fees: tx.fees !== null ? tx.fees.toString() : null,
+          })),
+        };
+        return transformed;
+      }),
     };
   },
 });
