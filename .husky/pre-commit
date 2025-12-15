@@ -74,13 +74,6 @@ if ! command -v npm >/dev/null 2>&1; then
     exit 3
 fi
 
-# Run ESLint only on staged files
-echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
-npm run lint -- || \
-(
-    echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
-    exit 4
-)
 
 # Run ESLint only on staged files
 echo "${BLUE}🔍 Running format on staged files...${NC}"

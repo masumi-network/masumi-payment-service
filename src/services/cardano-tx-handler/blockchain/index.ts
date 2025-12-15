@@ -5,6 +5,18 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 
+export type TransactionMetadata = {
+  fees: bigint;
+  block_height: number;
+  block_time: number;
+  output_amount: Array<{ unit: string; quantity: string }>;
+  utxo_count: number;
+  withdrawal_count: number;
+  asset_mint_or_burn_count: number;
+  redeemer_count: number;
+  valid_contract: boolean;
+};
+
 async function detectRollbackForTxPage(
   txs: Array<{ tx_hash: string }>,
   paymentContractAddress: string,
@@ -66,6 +78,7 @@ export async function getExtendedTxInformation(
     blockTime: number;
     tx: { tx_hash: string };
     block: { confirmations: number };
+    metadata: TransactionMetadata;
     utxos: {
       hash: string;
       inputs: Array<{
@@ -112,9 +125,23 @@ export async function getExtendedTxInformation(
         const transaction = Transaction.from_bytes(
           Buffer.from(cbor.cbor, 'hex'),
         );
+
+        const metadata: TransactionMetadata = {
+          fees: BigInt(txDetails.fees),
+          block_height: txDetails.block_height,
+          block_time: txDetails.block_time,
+          output_amount: txDetails.output_amount,
+          utxo_count: txDetails.utxo_count,
+          withdrawal_count: txDetails.withdrawal_count,
+          asset_mint_or_burn_count: txDetails.asset_mint_or_burn_count,
+          redeemer_count: txDetails.redeemer_count,
+          valid_contract: txDetails.valid_contract,
+        };
+
         return {
           tx: tx,
           block: block,
+          metadata: metadata,
           utxos: utxos,
           transaction: transaction,
           blockTime: tx.block_time,

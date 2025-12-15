@@ -110,10 +110,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             },
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             }
                                                         },
                                                         "required": [
@@ -677,10 +679,12 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         },
                                                                         "amount": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -786,10 +790,12 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150
+                                                    "maxLength": 150,
+                                                    "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                 },
                                                 "amount": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -970,10 +976,12 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "maxLength": 150
+                                                    "maxLength": 150,
+                                                    "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                 },
                                                 "amount": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -1027,8 +1035,8 @@
                                             "amount": "10000000"
                                         },
                                         {
-                                            "unit": "usdm_policy_and_asset_id",
-                                            "amount": "-10000000"
+                                            "unit": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d",
+                                            "amount": "-25000000"
                                         }
                                     ],
                                     "status": "Active"
@@ -1471,8 +1479,85 @@
                                                                     "updatedAt": {
                                                                         "type": "string"
                                                                     },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
                                                                     "txHash": {
                                                                         "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "status": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "Pending",
+                                                                            "Confirmed",
+                                                                            "FailedViaTimeout",
+                                                                            "RolledBack"
+                                                                        ]
+                                                                    },
+                                                                    "previousOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "newOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
                                                                         "nullable": true
                                                                     }
                                                                 },
@@ -1480,7 +1565,20 @@
                                                                     "id",
                                                                     "createdAt",
                                                                     "updatedAt",
-                                                                    "txHash"
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract",
+                                                                    "outputAmount",
+                                                                    "txHash",
+                                                                    "status",
+                                                                    "previousOnChainState",
+                                                                    "newOnChainState",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -1499,7 +1597,83 @@
                                                                             "type": "string"
                                                                         },
                                                                         "txHash": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "status": {
                                                                             "type": "string",
+                                                                            "enum": [
+                                                                                "Pending",
+                                                                                "Confirmed",
+                                                                                "FailedViaTimeout",
+                                                                                "RolledBack"
+                                                                            ]
+                                                                        },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "utxoCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "withdrawalCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "assetMintOrBurnCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "redeemerCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "validContract": {
+                                                                            "type": "boolean",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "outputAmount": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "previousOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "newOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
                                                                             "nullable": true
                                                                         }
                                                                     },
@@ -1507,7 +1681,20 @@
                                                                         "id",
                                                                         "createdAt",
                                                                         "updatedAt",
-                                                                        "txHash"
+                                                                        "txHash",
+                                                                        "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
+                                                                        "utxoCount",
+                                                                        "withdrawalCount",
+                                                                        "assetMintOrBurnCount",
+                                                                        "redeemerCount",
+                                                                        "validContract",
+                                                                        "outputAmount",
+                                                                        "previousOnChainState",
+                                                                        "newOnChainState",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -1517,10 +1704,12 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1740,8 +1929,8 @@
                                                     "TransactionHistory": [],
                                                     "RequestedFunds": [
                                                         {
-                                                            "amount": "10000000",
-                                                            "unit": ""
+                                                            "unit": "",
+                                                            "amount": "10000000"
                                                         }
                                                     ],
                                                     "PaymentSource": {
@@ -2043,10 +2232,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2155,6 +2346,167 @@
                                                         "walletAddress"
                                                     ]
                                                 },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
+                                                },
                                                 "metadata": {
                                                     "type": "string",
                                                     "nullable": true
@@ -2181,6 +2533,8 @@
                                                 "PaymentSource",
                                                 "BuyerWallet",
                                                 "SmartContractWallet",
+                                                "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "metadata"
                                             ]
                                         },
@@ -2216,8 +2570,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2228,6 +2582,8 @@
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
+                                            "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": []
@@ -2412,10 +2768,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2585,8 +2943,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -2774,10 +3132,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -2947,8 +3307,8 @@
                                             },
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -3202,6 +3562,74 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "previousOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "newOnChainState": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "FundsLocked",
+                                                                            "FundsOrDatumInvalid",
+                                                                            "ResultSubmitted",
+                                                                            "RefundRequested",
+                                                                            "Disputed",
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn"
+                                                                        ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3209,7 +3637,19 @@
                                                                     "createdAt",
                                                                     "updatedAt",
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract",
+                                                                    "outputAmount",
+                                                                    "previousOnChainState",
+                                                                    "newOnChainState",
+                                                                    "confirmations"
                                                                 ]
                                                             },
                                                             "TransactionHistory": {
@@ -3237,6 +3677,74 @@
                                                                                 "FailedViaTimeout",
                                                                                 "RolledBack"
                                                                             ]
+                                                                        },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "utxoCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "withdrawalCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "assetMintOrBurnCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "redeemerCount": {
+                                                                            "type": "number",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "validContract": {
+                                                                            "type": "boolean",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "outputAmount": {
+                                                                            "type": "string",
+                                                                            "nullable": true
+                                                                        },
+                                                                        "previousOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "newOnChainState": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "enum": [
+                                                                                "FundsLocked",
+                                                                                "FundsOrDatumInvalid",
+                                                                                "ResultSubmitted",
+                                                                                "RefundRequested",
+                                                                                "Disputed",
+                                                                                "Withdrawn",
+                                                                                "RefundWithdrawn",
+                                                                                "DisputedWithdrawn"
+                                                                            ]
+                                                                        },
+                                                                        "confirmations": {
+                                                                            "type": "number",
+                                                                            "nullable": true
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3244,7 +3752,19 @@
                                                                         "createdAt",
                                                                         "updatedAt",
                                                                         "txHash",
-                                                                        "status"
+                                                                        "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
+                                                                        "utxoCount",
+                                                                        "withdrawalCount",
+                                                                        "assetMintOrBurnCount",
+                                                                        "redeemerCount",
+                                                                        "validContract",
+                                                                        "outputAmount",
+                                                                        "previousOnChainState",
+                                                                        "newOnChainState",
+                                                                        "confirmations"
                                                                     ]
                                                                 }
                                                             },
@@ -3759,6 +4279,42 @@
                                                                 "FailedViaTimeout",
                                                                 "RolledBack"
                                                             ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
                                                         }
                                                     },
                                                     "required": [
@@ -3766,8 +4322,99 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
                                                     ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -3775,10 +4422,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -3908,6 +4557,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -3947,10 +4597,11 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4119,6 +4770,42 @@
                                                                 "FailedViaTimeout",
                                                                 "RolledBack"
                                                             ]
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "utxoCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "withdrawalCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "assetMintOrBurnCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "redeemerCount": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "validContract": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "outputAmount": {
+                                                            "type": "string",
+                                                            "nullable": true
                                                         }
                                                     },
                                                     "required": [
@@ -4126,8 +4813,99 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime",
+                                                        "utxoCount",
+                                                        "withdrawalCount",
+                                                        "assetMintOrBurnCount",
+                                                        "redeemerCount",
+                                                        "validContract",
+                                                        "outputAmount"
                                                     ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "utxoCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "withdrawalCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "assetMintOrBurnCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerCount": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "validContract": {
+                                                                "type": "boolean",
+                                                                "nullable": true
+                                                            },
+                                                            "outputAmount": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime",
+                                                            "utxoCount",
+                                                            "withdrawalCount",
+                                                            "assetMintOrBurnCount",
+                                                            "redeemerCount",
+                                                            "validContract",
+                                                            "outputAmount"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -4135,10 +4913,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -4268,6 +5048,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -4524,10 +5305,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -4696,8 +5479,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -4914,10 +5697,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -5086,8 +5871,8 @@
                                             "CurrentTransaction": null,
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5308,13 +6093,53 @@
                                                         "txHash": {
                                                             "type": "string",
                                                             "nullable": true
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ]
+                                                        },
+                                                        "previousOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn"
+                                                            ]
+                                                        },
+                                                        "newOnChainState": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "FundsLocked",
+                                                                "FundsOrDatumInvalid",
+                                                                "ResultSubmitted",
+                                                                "RefundRequested",
+                                                                "Disputed",
+                                                                "Withdrawn",
+                                                                "RefundWithdrawn",
+                                                                "DisputedWithdrawn"
+                                                            ]
                                                         }
                                                     },
                                                     "required": [
                                                         "id",
                                                         "createdAt",
                                                         "updatedAt",
-                                                        "txHash"
+                                                        "txHash",
+                                                        "status",
+                                                        "previousOnChainState",
+                                                        "newOnChainState"
                                                     ]
                                                 },
                                                 "TransactionHistory": {
@@ -5335,13 +6160,53 @@
                                                             "txHash": {
                                                                 "type": "string",
                                                                 "nullable": true
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "previousOnChainState": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "enum": [
+                                                                    "FundsLocked",
+                                                                    "FundsOrDatumInvalid",
+                                                                    "ResultSubmitted",
+                                                                    "RefundRequested",
+                                                                    "Disputed",
+                                                                    "Withdrawn",
+                                                                    "RefundWithdrawn",
+                                                                    "DisputedWithdrawn"
+                                                                ]
+                                                            },
+                                                            "newOnChainState": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "enum": [
+                                                                    "FundsLocked",
+                                                                    "FundsOrDatumInvalid",
+                                                                    "ResultSubmitted",
+                                                                    "RefundRequested",
+                                                                    "Disputed",
+                                                                    "Withdrawn",
+                                                                    "RefundWithdrawn",
+                                                                    "DisputedWithdrawn"
+                                                                ]
                                                             }
                                                         },
                                                         "required": [
                                                             "id",
                                                             "createdAt",
                                                             "updatedAt",
-                                                            "txHash"
+                                                            "txHash",
+                                                            "status",
+                                                            "previousOnChainState",
+                                                            "newOnChainState"
                                                         ]
                                                     }
                                                 },
@@ -5351,10 +6216,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -5531,8 +6398,8 @@
                                             "TransactionHistory": [],
                                             "RequestedFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -5818,10 +6685,12 @@
                                                         "type": "object",
                                                         "properties": {
                                                             "amount": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                             },
                                                             "unit": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                             }
                                                         },
                                                         "required": [
@@ -5998,8 +6867,8 @@
                                             "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
-                                                    "amount": "10000000",
-                                                    "unit": ""
+                                                    "unit": "",
+                                                    "amount": "10000000"
                                                 }
                                             ],
                                             "PaymentSource": {
@@ -6242,11 +7111,13 @@
                                                                                             "type": "object",
                                                                                             "properties": {
                                                                                                 "amount": {
-                                                                                                    "type": "string"
+                                                                                                    "type": "string",
+                                                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                                                 },
                                                                                                 "unit": {
                                                                                                     "type": "string",
-                                                                                                    "maxLength": 250
+                                                                                                    "maxLength": 250,
+                                                                                                    "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                                                 }
                                                                                             },
                                                                                             "required": [
@@ -6355,8 +7226,8 @@
                                                             "pricingType": "Fixed",
                                                             "Pricing": [
                                                                 {
-                                                                    "amount": "1000000",
-                                                                    "unit": "unit"
+                                                                    "unit": "",
+                                                                    "amount": "10000000"
                                                                 }
                                                             ]
                                                         },
@@ -6601,11 +7472,13 @@
                                                                                     "type": "object",
                                                                                     "properties": {
                                                                                         "amount": {
-                                                                                            "type": "string"
+                                                                                            "type": "string",
+                                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                                         },
                                                                                         "unit": {
                                                                                             "type": "string",
-                                                                                            "maxLength": 250
+                                                                                            "maxLength": 250,
+                                                                                            "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                                         }
                                                                                     },
                                                                                     "required": [
@@ -6667,11 +7540,61 @@
                                                                             "FailedViaTimeout",
                                                                             "RolledBack"
                                                                         ]
+                                                                    },
+                                                                    "confirmations": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "outputAmount": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "utxoCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "withdrawalCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "assetMintOrBurnCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "redeemerCount": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "validContract": {
+                                                                        "type": "boolean",
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
-                                                                    "status"
+                                                                    "status",
+                                                                    "confirmations",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
+                                                                    "outputAmount",
+                                                                    "utxoCount",
+                                                                    "withdrawalCount",
+                                                                    "assetMintOrBurnCount",
+                                                                    "redeemerCount",
+                                                                    "validContract"
                                                                 ]
                                                             }
                                                         },
@@ -6746,8 +7669,8 @@
                                                         "pricingType": "Fixed",
                                                         "Pricing": [
                                                             {
-                                                                "unit": "unit",
-                                                                "amount": "1000000"
+                                                                "unit": "",
+                                                                "amount": "10000000"
                                                             }
                                                         ]
                                                     },
@@ -6884,11 +7807,13 @@
                                                             "properties": {
                                                                 "unit": {
                                                                     "type": "string",
-                                                                    "maxLength": 250
+                                                                    "maxLength": 250,
+                                                                    "description": "Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                 },
                                                                 "amount": {
                                                                     "type": "string",
-                                                                    "maxLength": 25
+                                                                    "maxLength": 25,
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -9460,13 +10385,15 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "unit": {
-                                                                            "type": "string"
+                                                                            "type": "string",
+                                                                            "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
                                                                         },
                                                                         "quantity": {
                                                                             "type": "integer",
                                                                             "nullable": true,
                                                                             "minimum": 0,
-                                                                            "maximum": 100000000000000
+                                                                            "maximum": 100000000000000,
+                                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
                                                                         }
                                                                     },
                                                                     "required": [

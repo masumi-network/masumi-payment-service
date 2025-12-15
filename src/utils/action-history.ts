@@ -7,7 +7,9 @@ import {
   Prisma,
 } from '@prisma/client';
 
-function isTransactionClient(client: any): client is Prisma.TransactionClient {
+function isTransactionClient(
+  client: Prisma.TransactionClient | typeof prisma,
+): client is Prisma.TransactionClient {
   if (client === prisma) {
     return false;
   }
@@ -61,7 +63,9 @@ export async function updatePaymentNextAction(
     }
 
     // 3. Save complete snapshot to history
-    await tx.paymentActionHistory.create({
+    await (
+      tx.paymentActionHistory as Prisma.PaymentActionHistoryDelegate
+    ).create({
       data: {
         paymentRequestId: paymentRequestId,
         requestedAction: completeRecord.NextAction.requestedAction,
@@ -235,7 +239,9 @@ export async function upsertPaymentNextAction(
         );
       }
 
-      await tx.paymentActionHistory.create({
+      await (
+        tx.paymentActionHistory as Prisma.PaymentActionHistoryDelegate
+      ).create({
         data: {
           paymentRequestId: paymentRequestId,
           requestedAction: completeRecord.NextAction.requestedAction,
@@ -339,7 +345,9 @@ export async function updatePurchaseNextAction(
     }
 
     // 3. Save complete snapshot to history
-    await tx.purchaseActionHistory.create({
+    await (
+      tx.purchaseActionHistory as Prisma.PurchaseActionHistoryDelegate
+    ).create({
       data: {
         purchaseRequestId: purchaseRequestId,
         requestedAction: completeRecord.NextAction.requestedAction,
@@ -518,7 +526,9 @@ export async function upsertPurchaseNextAction(
         );
       }
 
-      await tx.purchaseActionHistory.create({
+      await (
+        tx.purchaseActionHistory as Prisma.PurchaseActionHistoryDelegate
+      ).create({
         data: {
           purchaseRequestId: purchaseRequestId,
           requestedAction: completeRecord.NextAction.requestedAction,
