@@ -201,36 +201,37 @@ async function processSinglePurchaseRequest(
 
   const signedTx = await wallet.signTx(unsignedTx);
 
-  // Update NextAction with history tracking
-  await updatePurchaseNextAction(
-    request.id,
-    PurchasingAction.SetRefundRequestedInitiated,
-    {
-      inputHash: request.inputHash,
-    },
-  );
+  await prisma.$transaction(async (tx) => {
+    await updatePurchaseNextAction(
+      request.id,
+      PurchasingAction.SetRefundRequestedInitiated,
+      {
+        inputHash: request.inputHash,
+      },
+      tx,
+    );
 
-  // Update other fields
-  await prisma.purchaseRequest.update({
-    where: { id: request.id },
-    data: {
-      CurrentTransaction: {
-        create: {
-          txHash: '',
-          status: TransactionStatus.Pending,
-          BlocksWallet: {
-            connect: {
-              id: purchasingWallet.id,
+    await tx.purchaseRequest.update({
+      where: { id: request.id },
+      data: {
+        CurrentTransaction: {
+          create: {
+            txHash: '',
+            status: TransactionStatus.Pending,
+            BlocksWallet: {
+              connect: {
+                id: purchasingWallet.id,
+              },
             },
           },
         },
-      },
-      TransactionHistory: {
-        connect: {
-          id: request.CurrentTransaction!.id,
+        TransactionHistory: {
+          connect: {
+            id: request.CurrentTransaction!.id,
+          },
         },
       },
-    },
+    });
   });
 
   //submit the transaction to the blockchain
@@ -319,26 +320,29 @@ export async function requestRefundsV1() {
               error: error,
             });
 
-            // Update NextAction with history tracking (error case)
-            await updatePurchaseNextAction(
-              request.id,
-              PurchasingAction.WaitingForManualAction,
-              {
-                inputHash: request.inputHash,
-                errorType: PurchaseErrorType.Unknown,
-                errorNote: 'Requesting refund failed: ' + errorToString(error),
-              },
-            );
+            await prisma.$transaction(async (tx) => {
+              await updatePurchaseNextAction(
+                request.id,
+                PurchasingAction.WaitingForManualAction,
+                {
+                  inputHash: request.inputHash,
+                  errorType: PurchaseErrorType.Unknown,
+                  errorNote:
+                    'Requesting refund failed: ' + errorToString(error),
+                },
+                tx,
+              );
 
-            await prisma.purchaseRequest.update({
-              where: { id: request.id },
-              data: {
-                SmartContractWallet: {
-                  update: {
-                    lockedAt: null,
+              await tx.purchaseRequest.update({
+                where: { id: request.id },
+                data: {
+                  SmartContractWallet: {
+                    update: {
+                      lockedAt: null,
+                    },
                   },
                 },
-              },
+              });
             });
           }
           index++;
