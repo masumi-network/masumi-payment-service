@@ -20,7 +20,7 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource } from '@/lib/api/generated';
+import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
@@ -44,8 +44,13 @@ interface SellingWallet {
 }
 
 const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM'], { required_error: 'Token is required' }),
-  amount: z.string().min(1, 'Amount is required'),
+  unit: z.enum(['lovelace', 'USDM'], {
+    required_error: 'Token is required',
+  }),
+  amount: z.string().refine((val) => {
+    if (val === '0' || val === '0.0' || val === '0.00') return true;
+    return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+  }, 'Amount must be a valid number >= 0'),
 });
 
 const exampleOutputSchema = z.object({
@@ -76,7 +81,7 @@ const agentSchema = z.object({
   selectedWallet: z.string().min(1, 'Wallet is required'),
   prices: z.array(priceSchema).min(1, 'At least one price is required'),
   tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-
+  isFree: z.boolean().optional(),
   // Additional Fields
   authorName: z
     .string()
@@ -141,7 +146,10 @@ export function RegisterAIAgentDialog({
   onSuccess,
 }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
+  const [sellingWallets, setSellingWallets] = useState<
+    { wallet: SellingWallet; balance: number }[]
+  >([]);
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
   const { apiClient, state } = useAppContext();
 
   const {
@@ -161,6 +169,7 @@ export function RegisterAIAgentDialog({
       selectedWallet: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
+      isFree: false,
       authorName: '',
       authorEmail: '',
       organization: '',
@@ -204,6 +213,7 @@ export function RegisterAIAgentDialog({
 
   const fetchSellingWallets = async () => {
     try {
+      setIsCheckingBalance(true);
       const response = await getPaymentSource({
         client: apiClient,
       });
@@ -213,18 +223,61 @@ export function RegisterAIAgentDialog({
           (s) => s.network == state.network,
         );
         if (paymentSources.length > 0) {
-          const aggregatedWallets: SellingWallet[] = [];
-          paymentSources.forEach((ps) => {
-            ps.SellingWallets.forEach((w) => {
-              aggregatedWallets.push(w);
-            });
-          });
+          const aggregatedWallets: {
+            wallet: SellingWallet;
+            balance: number;
+          }[] = [];
+          await Promise.allSettled(
+            paymentSources.map(async (ps) => {
+              for (const sellingWallet of ps.SellingWallets) {
+                const balance = await getUtxos({
+                  client: apiClient,
+                  query: {
+                    address: sellingWallet.walletAddress,
+                    network: state.network,
+                  },
+                });
+
+                if (
+                  balance.error ||
+                  balance.data?.data?.Utxos == undefined ||
+                  balance.data?.data?.Utxos?.length === 0
+                ) {
+                  aggregatedWallets.push({ wallet: sellingWallet, balance: 0 });
+                } else {
+                  const lovelaceBalance = balance.data.data.Utxos.reduce(
+                    (acc, utxo) => {
+                      return (
+                        acc +
+                        utxo.Amounts.reduce((acc, amount) => {
+                          if (
+                            amount.unit.toLowerCase() === 'lovelace' ||
+                            amount.unit === ''
+                          ) {
+                            return acc + (amount.quantity ?? 0);
+                          }
+                          return acc;
+                        }, 0)
+                      );
+                    },
+                    0,
+                  );
+                  aggregatedWallets.push({
+                    wallet: sellingWallet,
+                    balance: lovelaceBalance,
+                  });
+                }
+              }
+            }),
+          );
           setSellingWallets(aggregatedWallets);
         }
       }
     } catch (error) {
       console.error('Error fetching selling wallets:', error);
       toast.error('Failed to load selling wallets');
+    } finally {
+      setIsCheckingBalance(false);
     }
   };
 
@@ -233,6 +286,16 @@ export function RegisterAIAgentDialog({
       try {
         setIsLoading(true);
         const selectedWallet = data.selectedWallet;
+        const selectedWalletBalance = sellingWallets.find(
+          (w) => w.wallet.walletVkey == selectedWallet,
+        )?.balance;
+        if (
+          selectedWalletBalance == undefined ||
+          selectedWalletBalance <= 3000000
+        ) {
+          toast.error('Insufficient balance in selected wallet');
+          return;
+        }
         const paymentSource = state.paymentSources?.find((ps) =>
           ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
         );
@@ -279,19 +342,30 @@ export function RegisterAIAgentDialog({
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
             Capability: capability,
-            AgentPricing: {
-              pricingType: 'Fixed',
-              Pricing: data.prices.map((price) => {
-                const unit =
-                  price.unit === 'USDM'
-                    ? getUsdmConfig(state.network).fullAssetId
-                    : price.unit;
+            AgentPricing: (() => {
+              const isFreeAgent = data.isFree;
+
+              if (isFreeAgent) {
                 return {
-                  unit,
-                  amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  pricingType: 'Free',
+                  Pricing: [],
                 };
-              }),
-            },
+              }
+
+              return {
+                pricingType: 'Fixed',
+                Pricing: data.prices.map((price) => {
+                  const unit =
+                    price.unit === 'USDM'
+                      ? getUsdmConfig(state.network).fullAssetId
+                      : price.unit;
+                  return {
+                    unit,
+                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  };
+                }),
+              };
+            })(),
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs:
@@ -387,7 +461,7 @@ export function RegisterAIAgentDialog({
                 {...register('description')}
                 placeholder="Describe what your agent does"
                 rows={3}
-                className={errors.description ? 'border-red-500' : ''}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
                 maxLength={250}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -411,16 +485,30 @@ export function RegisterAIAgentDialog({
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
-                    className={errors.selectedWallet ? 'border-red-500' : ''}
+                    disabled={isCheckingBalance}
+                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isCheckingBalance ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <SelectValue placeholder="Select a wallet" />
+                    <SelectValue
+                      placeholder={
+                        isCheckingBalance
+                          ? 'Loading wallets...'
+                          : 'Select a wallet'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {sellingWallets.map((wallet) => (
-                      <SelectItem key={wallet.id} value={wallet.walletVkey}>
-                        {wallet.note
-                          ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
-                          : shortenAddress(wallet.walletAddress)}
+                      <SelectItem
+                        disabled={wallet.balance <= 3000000}
+                        key={wallet.wallet.id}
+                        value={wallet.wallet.walletVkey}
+                      >
+                        {wallet.wallet.note
+                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                        {wallet.balance <= 3000000
+                          ? ' - Insufficient balance'
+                          : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -433,7 +521,32 @@ export function RegisterAIAgentDialog({
               </p>
             )}
           </div>
-
+          {/* Free Agent Toggle */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Controller
+                control={control}
+                name="isFree"
+                render={({ field }) => (
+                  <input
+                    type="checkbox"
+                    id="isFree"
+                    checked={field.value || false}
+                    onChange={(e) => {
+                      field.onChange(e.target.checked);
+                      setValue('prices', [
+                        { unit: 'lovelace', amount: '0.00' },
+                      ]);
+                    }}
+                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                )}
+              />
+              <label htmlFor="isFree" className="text-sm font-medium">
+                This is a free agent (no cost for interactions)
+              </label>
+            </div>
+          </div>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
@@ -443,6 +556,7 @@ export function RegisterAIAgentDialog({
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={watch('isFree')}
                 onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
               >
                 Add Price
@@ -458,6 +572,7 @@ export function RegisterAIAgentDialog({
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
+                        disabled={watch('isFree')}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select token" />
@@ -474,6 +589,8 @@ export function RegisterAIAgentDialog({
                   <Input
                     type="number"
                     placeholder="0.00"
+                    disabled={watch('isFree')}
+                    value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"
                     step="0.000001"
@@ -731,13 +848,15 @@ export function RegisterAIAgentDialog({
             ))}
           </div>
 
-          <div className="flex justify-end gap-4">
+          <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Registering...' : 'Register'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={isLoading || isCheckingBalance}>
+                {isLoading ? 'Registering...' : 'Register'}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

@@ -2,7 +2,6 @@ import {
   ApiKeyStatus,
   HotWalletType,
   Network,
-  PaymentType,
   Permission,
   PrismaClient,
   RPCProvider,
@@ -21,7 +20,7 @@ import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import paymentPlutus from '../smart-contracts/payment/plutus.json';
-import { generateHash } from '../src/utils/crypto';
+import { generateSHA256Hash } from '../src/utils/crypto';
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -57,13 +56,13 @@ export const seed = async (prisma: PrismaClient) => {
   await prisma.apiKey.upsert({
     create: {
       token: adminKey,
-      tokenHash: generateHash(adminKey),
+      tokenHash: generateSHA256Hash(adminKey),
       permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },
     update: {
       token: adminKey,
-      tokenHash: generateHash(adminKey),
+      tokenHash: generateSHA256Hash(adminKey),
       permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },
@@ -237,7 +236,6 @@ export const seed = async (prisma: PrismaClient) => {
               rpcProvider: RPCProvider.Blockfrost,
             },
           },
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           lastIdentifierChecked:
             latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
@@ -424,7 +422,6 @@ export const seed = async (prisma: PrismaClient) => {
               rpcProvider: RPCProvider.Blockfrost,
             },
           },
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           FeeReceiverNetworkWallet: {
             create: {

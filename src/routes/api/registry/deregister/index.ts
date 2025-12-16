@@ -14,6 +14,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -68,15 +69,21 @@ export const unregisterAgentSchemaOutput = z.object({
       }),
     )
     .max(25),
-  AgentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    Pricing: z.array(
+  AgentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      Pricing: z.array(
+        z.object({
+          unit: z.string(),
+          amount: z.string(),
+        }),
+      ),
+    })
+    .or(
       z.object({
-        unit: z.string(),
-        amount: z.string(),
+        pricingType: z.enum([PricingType.Free]),
       }),
     ),
-  }),
 });
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
@@ -132,13 +139,13 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-    let assetName = input.agentIdentifier;
-    if (assetName.startsWith(policyId)) {
-      assetName = assetName.slice(policyId.length);
-    }
+    const assetName = extractAssetName(input.agentIdentifier);
     const holderWallet = await blockfrost.assetsAddresses(
       policyId + assetName,
-      { order: 'desc', count: 1 },
+      {
+        order: 'desc',
+        count: 1,
+      },
     );
     if (holderWallet.length == 0) {
       throw createHttpError(404, 'Asset not found');
@@ -195,14 +202,19 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         other: result.other,
       },
       Tags: result.tags,
-      AgentPricing: {
-        pricingType: PricingType.Fixed,
-        Pricing:
-          result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-            unit: pricing.unit,
-            amount: pricing.amount.toString(),
-          })) ?? [],
-      },
+      AgentPricing:
+        result.Pricing.pricingType == PricingType.Fixed
+          ? {
+              pricingType: PricingType.Fixed,
+              Pricing:
+                result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+                  unit: pricing.unit,
+                  amount: pricing.amount.toString(),
+                })) ?? [],
+            }
+          : {
+              pricingType: PricingType.Free,
+            },
     };
   },
 });

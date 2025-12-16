@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   Network,
-  PaymentType,
   PurchasingAction,
   TransactionStatus,
   PurchaseErrorType,
@@ -12,6 +11,10 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import {
+  transformPurchaseGetTimestamps,
+  transformPurchaseGetAmounts,
+} from '@/utils/shared/transformers';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -79,8 +82,16 @@ export const postPurchaseRequestSchemaOutput = z.object({
   ),
   PaidFunds: z.array(
     z.object({
-      amount: z.string(),
-      unit: z.string(),
+      amount: z
+        .string()
+        .describe(
+          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+        ),
+      unit: z
+        .string()
+        .describe(
+          'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+        ),
     }),
   ),
   WithdrawnForSeller: z.array(
@@ -100,7 +111,6 @@ export const postPurchaseRequestSchemaOutput = z.object({
     network: z.nativeEnum(Network),
     smartContractAddress: z.string(),
     policyId: z.string().nullable(),
-    paymentType: z.nativeEnum(PaymentType),
   }),
   SellerWallet: z
     .object({
@@ -170,32 +180,8 @@ export const resolvePurchaseRequestPost =
       }
       return {
         ...result,
-        PaidFunds: (
-          result.PaidFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        collateralReturnLovelace:
-          result.collateralReturnLovelace?.toString() ?? null,
-        payByTime: result.payByTime?.toString() ?? null,
-        submitResultTime: result.submitResultTime.toString(),
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        cooldownTime: Number(result.buyerCoolDownTime),
-        cooldownTimeOtherParty: Number(result.sellerCoolDownTime),
+        ...transformPurchaseGetTimestamps(result),
+        ...transformPurchaseGetAmounts(result),
       };
     },
   });

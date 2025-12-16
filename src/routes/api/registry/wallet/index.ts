@@ -9,6 +9,7 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
 
 export const metadataSchema = z.object({
   name: z
@@ -62,21 +63,27 @@ export const metadataSchema = z.object({
     })
     .optional(),
   tags: z.array(z.string().min(1)).min(1),
-  agentPricing: z.object({
-    pricingType: z.enum([PricingType.Fixed]),
-    fixedPricing: z
-      .array(
-        z.object({
-          amount: z.number({ coerce: true }).int().min(1),
-          unit: z
-            .string()
-            .min(1)
-            .or(z.array(z.string().min(1))),
-        }),
-      )
-      .min(1)
-      .max(25),
-  }),
+  agentPricing: z
+    .object({
+      pricingType: z.enum([PricingType.Fixed]),
+      fixedPricing: z
+        .array(
+          z.object({
+            amount: z.number({ coerce: true }).int().min(1),
+            unit: z
+              .string()
+              .min(1)
+              .or(z.array(z.string().min(1))),
+          }),
+        )
+        .min(1)
+        .max(25),
+    })
+    .or(
+      z.object({
+        pricingType: z.enum([PricingType.Free]),
+      }),
+    ),
   image: z.string().or(z.array(z.string())),
   metadata_version: z.number({ coerce: true }).int().min(1).max(1),
 });
@@ -139,17 +146,32 @@ export const queryAgentFromWalletSchemaOutput = z.object({
           })
           .nullable()
           .optional(),
-        AgentPricing: z.object({
-          pricingType: z.enum([PricingType.Fixed]),
-          Pricing: z
-            .array(
-              z.object({
-                amount: z.string(),
-                unit: z.string().max(250),
-              }),
-            )
-            .min(1),
-        }),
+        AgentPricing: z
+          .object({
+            pricingType: z.enum([PricingType.Fixed]),
+            Pricing: z
+              .array(
+                z.object({
+                  amount: z
+                    .string()
+                    .describe(
+                      'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+                    ),
+                  unit: z
+                    .string()
+                    .max(250)
+                    .describe(
+                      'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+                    ),
+                }),
+              )
+              .min(1),
+          })
+          .or(
+            z.object({
+              pricingType: z.enum([PricingType.Free]),
+            }),
+          ),
         image: z.string().max(250),
         metadataVersion: z.number({ coerce: true }).int().min(1).max(1),
       }),
@@ -291,15 +313,20 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
                 }
               : undefined,
             Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-            AgentPricing: {
-              pricingType: parsedMetadata.data.agentPricing.pricingType,
-              Pricing: parsedMetadata.data.agentPricing.fixedPricing.map(
-                (price) => ({
-                  amount: price.amount.toString(),
-                  unit: metadataToString(price.unit)!,
-                }),
-              ),
-            },
+            AgentPricing:
+              parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
+                ? {
+                    pricingType: parsedMetadata.data.agentPricing.pricingType,
+                    Pricing: parsedMetadata.data.agentPricing.fixedPricing.map(
+                      (price) => ({
+                        amount: price.amount.toString(),
+                        unit: metadataToString(price.unit)!,
+                      }),
+                    ),
+                  }
+                : {
+                    pricingType: parsedMetadata.data.agentPricing.pricingType,
+                  },
             image: metadataToString(parsedMetadata.data.image)!,
             metadataVersion: parsedMetadata.data.metadata_version,
           },
@@ -310,7 +337,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     return {
       Assets: detailedAssets.map((asset) => ({
         policyId: policyId,
-        assetName: asset.unit.slice(policyId.length),
+        assetName: extractAssetName(asset.unit),
         agentIdentifier: asset.unit,
         Metadata: asset.Metadata,
         Tags: asset.Metadata.Tags,

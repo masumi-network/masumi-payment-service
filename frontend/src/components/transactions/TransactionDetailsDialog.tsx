@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
+import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   GetPaymentResponses,
@@ -157,12 +158,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund request failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request submitted successfully');
         onRefresh();
         onClose();
@@ -185,26 +188,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.data &&
-        typeof response.data === 'object' &&
-        'error' in response.data &&
-        response.data.error &&
-        typeof response.data.error === 'object' &&
-        'message' in response.data.error &&
-        typeof response.data.error.message === 'string'
-      ) {
-        throw {
-          message: response.data.error.message,
-          error: response.data.error,
-        };
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund authorization failed');
+        return;
       }
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.data?.data) {
         toast.success('Refund authorized successfully');
         onRefresh();
         onClose();
@@ -227,12 +218,14 @@ export default function TransactionDetailsDialog({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund cancel failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request cancelled successfully');
         onRefresh();
         onClose();
@@ -253,7 +246,7 @@ export default function TransactionDetailsDialog({
         <DialogHeader>
           <DialogTitle>Transaction Details</DialogTitle>
         </DialogHeader>
-        <div className="space-y-6">
+        <div className="space-y-6 w-full">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <h4 className="font-semibold mb-1">Transaction ID</h4>
@@ -272,10 +265,10 @@ export default function TransactionDetailsDialog({
 
             <div className="col-span-2 w-full mb-4">
               <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
-              <p className="text-sm font-mono break-all flex gap-2 items-center">
-                {shortenAddress(transaction.blockchainIdentifier)}
+              <div className="text-sm font-mono break-all flex gap-2 items-center">
+                <span>{shortenAddress(transaction.blockchainIdentifier)}</span>
                 <CopyButton value={transaction.blockchainIdentifier} />
-              </p>
+              </div>
             </div>
 
             <div>
@@ -399,24 +392,77 @@ export default function TransactionDetailsDialog({
 
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
-                <p className="text-sm">
+                <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds?.[0]
-                    ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                    : transaction.type === 'purchase' &&
-                        transaction.PaidFunds?.[0]
-                      ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                      : '—'}
-                </p>
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
+                    transaction.PaidFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(state.network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p>—</p>
+                  )}
+                </div>
               </div>
 
               <div className="col-span-2">
                 <h5 className="text-sm font-medium mb-1">Transaction Hash</h5>
                 {transaction.CurrentTransaction?.txHash ? (
                   <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                    <p className="text-sm font-mono break-all">
+                    <a
+                      href={getExplorerUrl(
+                        transaction.CurrentTransaction.txHash,
+                        state.network,
+                        'transaction',
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono break-all hover:underline text-primary"
+                    >
                       {transaction.CurrentTransaction.txHash}
-                    </p>
+                    </a>
                     <CopyButton
                       value={transaction.CurrentTransaction?.txHash}
                     />
@@ -484,9 +530,18 @@ export default function TransactionDetailsDialog({
                       Collection Wallet
                     </h5>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-mono break-all">
+                      <a
+                        href={getExplorerUrl(
+                          transaction.SmartContractWallet.walletAddress,
+                          state.network,
+                          'address',
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-mono break-all hover:underline text-primary"
+                      >
                         {transaction.SmartContractWallet.walletAddress}
-                      </p>
+                      </a>
                       <CopyButton
                         value={transaction.SmartContractWallet?.walletAddress}
                       />
@@ -497,7 +552,7 @@ export default function TransactionDetailsDialog({
             )}
 
           {transaction.NextAction?.errorType && (
-            <div className="space-y-2">
+            <div className="space-y-2 break-all">
               <h4 className="font-semibold">Error Details</h4>
               <div className="space-y-2 rounded-md bg-destructive/20 p-4">
                 <div className="space-y-1">

@@ -2,8 +2,10 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase } from '@/lib/api/generated';
+import { handleApiCall } from '@/lib/utils';
 
 interface Transaction {
   id: string;
@@ -36,6 +38,7 @@ const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
 export function useTransactions() {
   const { apiClient } = useAppContext();
+  const router = useRouter();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -73,17 +76,27 @@ export function useTransactions() {
       try {
         const combined: Transaction[] = [];
 
-        const purchases = await getPurchase({
-          client: apiClient,
-          query: {
-            network: 'Preprod',
-            cursorId: cursor,
-            includeHistory: 'true',
-            limit: 10,
+        // Fetch purchases
+        const purchases = await handleApiCall(
+          () =>
+            getPurchase({
+              client: apiClient,
+              query: {
+                network: 'Preprod',
+                cursorId: cursor,
+                includeHistory: 'true',
+                limit: 100,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Failed to fetch purchases:', error);
+            },
+            errorMessage: 'Failed to fetch purchases',
           },
-        });
+        );
 
-        if (purchases.data?.data?.Purchases) {
+        if (purchases?.data?.data?.Purchases) {
           purchases.data.data.Purchases.forEach((purchase: any) => {
             combined.push({
               ...purchase,
@@ -92,17 +105,27 @@ export function useTransactions() {
           });
         }
 
-        const payments = await getPayment({
-          client: apiClient,
-          query: {
-            network: 'Preprod',
-            cursorId: cursor,
-            includeHistory: 'true',
-            limit: 10,
+        // Fetch payments
+        const payments = await handleApiCall(
+          () =>
+            getPayment({
+              client: apiClient,
+              query: {
+                network: 'Preprod',
+                cursorId: cursor,
+                includeHistory: 'true',
+                limit: 100,
+              },
+            }),
+          {
+            onError: (error: any) => {
+              console.error('Failed to fetch payments:', error);
+            },
+            errorMessage: 'Failed to fetch payments',
           },
-        });
+        );
 
-        if (payments.data?.data?.Payments) {
+        if (payments?.data?.data?.Payments) {
           payments.data.data.Payments.forEach((payment: any) => {
             combined.push({
               ...payment,
@@ -145,14 +168,15 @@ export function useTransactions() {
               : uniqueNewTransactions,
           );
           setHasMore(
-            purchases.data?.data?.Purchases?.length === 10 ||
-              payments.data?.data?.Payments?.length === 10,
+            purchases?.data?.data?.Purchases?.length === 100 ||
+              payments?.data?.data?.Payments?.length === 100,
           );
           setCursorId(newTransactions[newTransactions.length - 1]?.id ?? null);
         }
+
+        setIsLoading(false);
       } catch (error) {
-        console.error('Failed to fetch transactions:', error);
-      } finally {
+        console.error('Error fetching transactions:', error);
         setIsLoading(false);
       }
     },
@@ -173,6 +197,14 @@ export function useTransactions() {
 
     return () => clearInterval(interval);
   }, [fetchTransactions]);
+
+  useEffect(() => {
+    if (router.pathname === '/transactions' && newTransactionsCount > 0) {
+      setNewTransactionsCount(0);
+      setNewTransactionsCountInStorage(0);
+      setLastVisitTimestamp(new Date().toISOString());
+    }
+  }, [router.pathname, newTransactionsCount]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
