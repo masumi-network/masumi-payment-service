@@ -127,20 +127,6 @@ describe(`Agent Register and Deregister Flow E2E Tests (${testNetwork})`, () => 
     ✅ Agent complete lifecycle flow completed successfully!
     `);
     },
-    // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
-    (() => {
-      const { getTestEnvironment } = require('../fixtures/testData');
-      const configTimeout = getTestEnvironment().timeout.registration;
-      if (configTimeout === 0) {
-        console.log('🔧 Jest timeout set to 24 hours (effectively infinite)');
-        return 24 * 60 * 60 * 1000; // 24 hours - effectively infinite for Jest
-      } else {
-        const bufferTime = 10 * 60 * 1000; // 10 minute buffer
-        console.log(
-          `🔧 Jest timeout set to ${Math.floor((configTimeout + bufferTime) / 60000)} minutes`,
-        );
-        return configTimeout + bufferTime;
-      }
-    })(),
+    20 * 60 * 1000, // 20 minutes timeout
   );
 });
