@@ -22,11 +22,19 @@ import {
   queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
 import {
+  getPaymentEarningsSchemaInput,
+  getPaymentEarningsSchemaOutput,
+} from '@/routes/api/payments/earnings';
+import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
   queryPurchaseRequestSchemaInput,
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
+import {
+  getPurchaseEarningsSchemaInput,
+  getPurchaseEarningsSchemaOutput,
+} from '@/routes/api/purchases/earnings';
 import {
   queryRegistryRequestSchemaInput,
   queryRegistryRequestSchemaOutput,
@@ -2614,6 +2622,235 @@ export function generateOpenAPI() {
             }),
           },
         },
+      },
+    },
+  });
+
+  /********************* EARNINGS *****************************/
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/earnings',
+    description:
+      'Get agent earnings and fee analytics for Purchase Request transactions only, over specified time periods.',
+    summary: 'Get agent purchase earnings analytics. (READ access required)',
+    tags: ['purchase'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: getPurchaseEarningsSchemaInput.openapi({
+        example: {
+          agentIdentifier: 'example_agent_identifier_asset_id',
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
+          network: Network.Preprod,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Agent purchase earnings analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: getPurchaseEarningsSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    dateRange: '2024-01-01 to 2024-01-31',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalEarnings: [
+                      {
+                        unit: 'lovelace',
+                        amount: '45000000',
+                      },
+                    ],
+                    totalFeesPaid: [
+                      {
+                        unit: 'lovelace',
+                        amount: '2500000',
+                      },
+                    ],
+                    totalRevenue: [
+                      {
+                        unit: 'lovelace',
+                        amount: '47500000',
+                      },
+                    ],
+                    monthlyBreakdown: [
+                      {
+                        month: 'January',
+                        monthNumber: 1,
+                        year: 2024,
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '45000000',
+                          },
+                        ],
+                        transactions: 25,
+                      },
+                    ],
+                    dailyEarnings: [
+                      {
+                        date: '2024-09-15',
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '2000000',
+                          },
+                        ],
+                        revenue: [
+                          {
+                            unit: 'lovelace',
+                            amount: '2100000',
+                          },
+                        ],
+                        fees: [
+                          {
+                            unit: 'lovelace',
+                            amount: '100000',
+                          },
+                        ],
+                        transactions: 3,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no earnings data available',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/earnings',
+    description:
+      'Get agent earnings and fee analytics for Payment Request transactions only, over specified time periods.',
+    summary: 'Get agent payment earnings analytics. (READ access required)',
+    tags: ['payment'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: getPaymentEarningsSchemaInput.openapi({
+        example: {
+          agentIdentifier: 'example_agent_identifier_asset_id',
+          startDate: '2024-01-01',
+          endDate: '2024-01-31',
+          network: Network.Preprod,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Agent payment earnings analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: getPaymentEarningsSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    dateRange: '2024-01-01 to 2024-01-31',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalEarnings: [
+                      {
+                        unit: 'lovelace',
+                        amount: '45000000',
+                      },
+                    ],
+                    totalFeesPaid: [
+                      {
+                        unit: 'lovelace',
+                        amount: '2500000',
+                      },
+                    ],
+                    totalRevenue: [
+                      {
+                        unit: 'lovelace',
+                        amount: '47500000',
+                      },
+                    ],
+                    monthlyBreakdown: [
+                      {
+                        month: 'January',
+                        monthNumber: 1,
+                        year: 2024,
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '45000000',
+                          },
+                        ],
+                        transactions: 25,
+                      },
+                    ],
+                    dailyEarnings: [
+                      {
+                        date: '2024-09-15',
+                        earnings: [
+                          {
+                            unit: 'lovelace',
+                            amount: '2000000',
+                          },
+                        ],
+                        revenue: [
+                          {
+                            unit: 'lovelace',
+                            amount: '2100000',
+                          },
+                        ],
+                        fees: [
+                          {
+                            unit: 'lovelace',
+                            amount: '100000',
+                          },
+                        ],
+                        transactions: 3,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no earnings data available',
+      },
+      500: {
+        description: 'Internal Server Error',
       },
     },
   });
