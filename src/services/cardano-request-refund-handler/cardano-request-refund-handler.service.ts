@@ -27,6 +27,7 @@ import {
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 
@@ -176,24 +177,11 @@ async function processSinglePurchaseRequest(
     ) + 3;
   const invalidAfter = Math.min(initialInvalid, secondaryInvalid);
 
-  //sort by biggest lovelace first
-  const sortedUtxosByLovelaceDesc = utxos.sort((a, b) => {
-    const aLovelace = parseInt(
-      a.output.amount.find(
-        (asset) => asset.unit == 'lovelace' || asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    const bLovelace = parseInt(
-      b.output.amount.find(
-        (asset) => asset.unit == 'lovelace' || asset.unit == '',
-      )?.quantity ?? '0',
-    );
-    return bLovelace - aLovelace;
-  });
-  const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
-    0,
-    Math.min(4, sortedUtxosByLovelaceDesc.length),
-  );
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+  const collateralUtxo = limitedFilteredUtxos[0];
+  if (collateralUtxo == null) {
+    throw new Error('Collateral UTXO not found');
+  }
 
   const unsignedTx =
     await generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -203,8 +191,8 @@ async function processSinglePurchaseRequest(
       script,
       address,
       utxo,
-      sortedUtxosByLovelaceDesc[0],
-      limitedUtxos,
+      limitedFilteredUtxos[0],
+      limitedFilteredUtxos,
       datum.value,
       invalidBefore,
       invalidAfter,

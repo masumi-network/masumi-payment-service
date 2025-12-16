@@ -1563,10 +1563,24 @@
                                                                         "type": "string",
                                                                         "description": "Timestamp when the transaction was last updated"
                                                                     },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block height of the transaction"
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block time of the transaction"
+                                                                    },
                                                                     "txHash": {
                                                                         "type": "string",
                                                                         "nullable": true,
-                                                                        "description": "Cardano transaction hash. Null if transaction not yet submitted"
+                                                                        "description": "Cardano transaction hash"
                                                                     },
                                                                     "status": {
                                                                         "type": "string",
@@ -1591,7 +1605,7 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ],
-                                                                        "description": "Previous on-chain state before this transaction. Null if not applicable"
+                                                                        "description": "Previous on-chain state before this transaction"
                                                                     },
                                                                     "newOnChainState": {
                                                                         "type": "string",
@@ -1606,18 +1620,21 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ],
-                                                                        "description": "New on-chain state after this transaction. Null if not applicable"
+                                                                        "description": "New on-chain state of this transaction"
                                                                     },
                                                                     "confirmations": {
                                                                         "type": "number",
                                                                         "nullable": true,
-                                                                        "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                                                                        "description": "Number of block confirmations for this transaction"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "id",
                                                                     "createdAt",
                                                                     "updatedAt",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
                                                                     "txHash",
                                                                     "status",
                                                                     "previousOnChainState",
@@ -1646,8 +1663,7 @@
                                                                         },
                                                                         "txHash": {
                                                                             "type": "string",
-                                                                            "nullable": true,
-                                                                            "description": "Cardano transaction hash. Null if transaction not yet submitted"
+                                                                            "description": "Cardano transaction hash"
                                                                         },
                                                                         "status": {
                                                                             "type": "string",
@@ -1658,6 +1674,21 @@
                                                                                 "RolledBack"
                                                                             ],
                                                                             "description": "Current status of the transaction"
+                                                                        },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "description": "Fees of the transaction"
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true,
+                                                                            "description": "Block height of the transaction"
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true,
+                                                                            "description": "Block time of the transaction"
                                                                         },
                                                                         "previousOnChainState": {
                                                                             "type": "string",
@@ -1672,7 +1703,7 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ],
-                                                                            "description": "Previous on-chain state before this transaction. Null if not applicable"
+                                                                            "description": "Previous on-chain state before this transaction"
                                                                         },
                                                                         "newOnChainState": {
                                                                             "type": "string",
@@ -1687,12 +1718,12 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ],
-                                                                            "description": "New on-chain state after this transaction. Null if not applicable"
+                                                                            "description": "New on-chain state of this transaction"
                                                                         },
                                                                         "confirmations": {
                                                                             "type": "number",
                                                                             "nullable": true,
-                                                                            "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                                                                            "description": "Number of block confirmations for this transaction"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -1701,6 +1732,9 @@
                                                                         "updatedAt",
                                                                         "txHash",
                                                                         "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
                                                                         "previousOnChainState",
                                                                         "newOnChainState",
                                                                         "confirmations"
@@ -2375,13 +2409,128 @@
                                                         "id",
                                                         "walletVkey",
                                                         "walletAddress"
-                                                    ],
-                                                    "description": "Smart contract wallet (seller wallet) managing this payment. Null if not set"
+                                                    ]
+                                                },
+                                                "CurrentTransaction": {
+                                                    "type": "object",
+                                                    "nullable": true,
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string",
+                                                            "description": "Unique identifier for the transaction"
+                                                        },
+                                                        "createdAt": {
+                                                            "type": "string",
+                                                            "description": "Timestamp when the transaction was created"
+                                                        },
+                                                        "updatedAt": {
+                                                            "type": "string",
+                                                            "description": "Timestamp when the transaction was last updated"
+                                                        },
+                                                        "txHash": {
+                                                            "type": "string",
+                                                            "description": "Cardano transaction hash"
+                                                        },
+                                                        "status": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Pending",
+                                                                "Confirmed",
+                                                                "FailedViaTimeout",
+                                                                "RolledBack"
+                                                            ],
+                                                            "description": "Current status of the transaction"
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Fees of the transaction"
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block height of the transaction"
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block time of the transaction"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "createdAt",
+                                                        "updatedAt",
+                                                        "txHash",
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string",
+                                                                "description": "Unique identifier for the transaction"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was created"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was last updated"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "description": "Cardano transaction hash"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ],
+                                                                "description": "Current status of the transaction"
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Fees of the transaction"
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block height of the transaction"
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block time of the transaction"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime"
+                                                        ]
+                                                    }
                                                 },
                                                 "metadata": {
                                                     "type": "string",
-                                                    "nullable": true,
-                                                    "description": "Optional metadata stored with the payment for additional context. Null if not provided"
+                                                    "nullable": true
                                                 }
                                             },
                                             "required": [
@@ -2405,6 +2554,8 @@
                                                 "PaymentSource",
                                                 "BuyerWallet",
                                                 "SmartContractWallet",
+                                                "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "metadata"
                                             ]
                                         },
@@ -2452,6 +2603,8 @@
                                             },
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
+                                            "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": []
@@ -3531,6 +3684,21 @@
                                                                         ],
                                                                         "description": "Current status of the transaction"
                                                                     },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "Fees of the transaction"
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block height of the transaction"
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block time of the transaction"
+                                                                    },
                                                                     "previousOnChainState": {
                                                                         "type": "string",
                                                                         "nullable": true,
@@ -3544,7 +3712,7 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ],
-                                                                        "description": "Previous on-chain state before this transaction. Null if not applicable"
+                                                                        "description": "Previous on-chain state before this transaction"
                                                                     },
                                                                     "newOnChainState": {
                                                                         "type": "string",
@@ -3559,12 +3727,12 @@
                                                                             "RefundWithdrawn",
                                                                             "DisputedWithdrawn"
                                                                         ],
-                                                                        "description": "New on-chain state after this transaction. Null if not applicable"
+                                                                        "description": "New on-chain state of this transaction"
                                                                     },
                                                                     "confirmations": {
                                                                         "type": "number",
                                                                         "nullable": true,
-                                                                        "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                                                                        "description": "Number of block confirmations for this transaction"
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3573,6 +3741,9 @@
                                                                     "updatedAt",
                                                                     "txHash",
                                                                     "status",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime",
                                                                     "previousOnChainState",
                                                                     "newOnChainState",
                                                                     "confirmations"
@@ -3610,6 +3781,21 @@
                                                                             ],
                                                                             "description": "Current status of the transaction"
                                                                         },
+                                                                        "fees": {
+                                                                            "type": "string",
+                                                                            "nullable": true,
+                                                                            "description": "Fees of the transaction"
+                                                                        },
+                                                                        "blockHeight": {
+                                                                            "type": "number",
+                                                                            "nullable": true,
+                                                                            "description": "Block height of the transaction"
+                                                                        },
+                                                                        "blockTime": {
+                                                                            "type": "number",
+                                                                            "nullable": true,
+                                                                            "description": "Block time of the transaction"
+                                                                        },
                                                                         "previousOnChainState": {
                                                                             "type": "string",
                                                                             "nullable": true,
@@ -3623,7 +3809,7 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ],
-                                                                            "description": "Previous on-chain state before this transaction. Null if not applicable"
+                                                                            "description": "Previous on-chain state before this transaction"
                                                                         },
                                                                         "newOnChainState": {
                                                                             "type": "string",
@@ -3638,12 +3824,12 @@
                                                                                 "RefundWithdrawn",
                                                                                 "DisputedWithdrawn"
                                                                             ],
-                                                                            "description": "New on-chain state after this transaction. Null if not applicable"
+                                                                            "description": "New on-chain state of this transaction"
                                                                         },
                                                                         "confirmations": {
                                                                             "type": "number",
                                                                             "nullable": true,
-                                                                            "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                                                                            "description": "Number of block confirmations for this transaction"
                                                                         }
                                                                     },
                                                                     "required": [
@@ -3652,12 +3838,15 @@
                                                                         "updatedAt",
                                                                         "txHash",
                                                                         "status",
+                                                                        "fees",
+                                                                        "blockHeight",
+                                                                        "blockTime",
                                                                         "previousOnChainState",
                                                                         "newOnChainState",
                                                                         "confirmations"
                                                                     ]
                                                                 },
-                                                                "description": "Historical list of all transactions for this purchase. Empty if includeHistory is false"
+                                                                "description": "Historical list of all transactions for this purchase"
                                                             },
                                                             "PaidFunds": {
                                                                 "type": "array",
@@ -3665,20 +3854,17 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount of the asset paid"
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Asset policy id + asset name concatenated. Empty string for ADA/lovelace"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "amount",
                                                                         "unit"
                                                                     ]
-                                                                },
-                                                                "description": "List of assets and amounts paid by the buyer"
+                                                                }
                                                             },
                                                             "WithdrawnForSeller": {
                                                                 "type": "array",
@@ -3686,20 +3872,17 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount of the asset withdrawn"
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Asset policy id + asset name concatenated. Empty string for ADA/lovelace"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "amount",
                                                                         "unit"
                                                                     ]
-                                                                },
-                                                                "description": "List of assets and amounts withdrawn for the seller"
+                                                                }
                                                             },
                                                             "WithdrawnForBuyer": {
                                                                 "type": "array",
@@ -3707,44 +3890,37 @@
                                                                     "type": "object",
                                                                     "properties": {
                                                                         "amount": {
-                                                                            "type": "string",
-                                                                            "description": "Amount of the asset withdrawn"
+                                                                            "type": "string"
                                                                         },
                                                                         "unit": {
-                                                                            "type": "string",
-                                                                            "description": "Asset policy id + asset name concatenated. Empty string for ADA/lovelace"
+                                                                            "type": "string"
                                                                         }
                                                                     },
                                                                     "required": [
                                                                         "amount",
                                                                         "unit"
                                                                     ]
-                                                                },
-                                                                "description": "List of assets and amounts withdrawn for the buyer (refunds)"
+                                                                }
                                                             },
                                                             "PaymentSource": {
                                                                 "type": "object",
                                                                 "properties": {
                                                                     "id": {
-                                                                        "type": "string",
-                                                                        "description": "Unique identifier for the payment source"
+                                                                        "type": "string"
                                                                     },
                                                                     "network": {
                                                                         "type": "string",
                                                                         "enum": [
                                                                             "Preprod",
                                                                             "Mainnet"
-                                                                        ],
-                                                                        "description": "The Cardano network "
+                                                                        ]
                                                                     },
                                                                     "smartContractAddress": {
-                                                                        "type": "string",
-                                                                        "description": "Address of the smart contract managing this purchase"
+                                                                        "type": "string"
                                                                     },
                                                                     "policyId": {
                                                                         "type": "string",
-                                                                        "nullable": true,
-                                                                        "description": "Policy ID for the agent registry NFTs. Null if not applicable"
+                                                                        "nullable": true
                                                                     }
                                                                 },
                                                                 "required": [
@@ -3752,8 +3928,7 @@
                                                                     "network",
                                                                     "smartContractAddress",
                                                                     "policyId"
-                                                                ],
-                                                                "description": "Payment source configuration for this purchase"
+                                                                ]
                                                             },
                                                             "SellerWallet": {
                                                                 "type": "object",
@@ -4179,6 +4354,21 @@
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Fees of the transaction"
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block height of the transaction"
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block time of the transaction"
                                                         }
                                                     },
                                                     "required": [
@@ -4186,9 +4376,71 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
-                                                    ],
-                                                    "description": "Current active transaction for this purchase. Null if no transaction in progress"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string",
+                                                                "description": "Unique identifier for the transaction"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was created"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was last updated"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "description": "Cardano transaction hash"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ],
+                                                                "description": "Current status of the transaction"
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Fees of the transaction"
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block height of the transaction"
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block time of the transaction"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -4350,6 +4602,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -4389,6 +4642,7 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
+                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
                                                     "unit": "",
@@ -4583,6 +4837,21 @@
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
+                                                        },
+                                                        "fees": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Fees of the transaction"
+                                                        },
+                                                        "blockHeight": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block height of the transaction"
+                                                        },
+                                                        "blockTime": {
+                                                            "type": "number",
+                                                            "nullable": true,
+                                                            "description": "Block time of the transaction"
                                                         }
                                                     },
                                                     "required": [
@@ -4590,9 +4859,71 @@
                                                         "createdAt",
                                                         "updatedAt",
                                                         "txHash",
-                                                        "status"
-                                                    ],
-                                                    "description": "Current active transaction for this purchase. Null if no transaction in progress"
+                                                        "status",
+                                                        "fees",
+                                                        "blockHeight",
+                                                        "blockTime"
+                                                    ]
+                                                },
+                                                "TransactionHistory": {
+                                                    "type": "array",
+                                                    "nullable": true,
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string",
+                                                                "description": "Unique identifier for the transaction"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was created"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string",
+                                                                "description": "Timestamp when the transaction was last updated"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "description": "Cardano transaction hash"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "RolledBack"
+                                                                ],
+                                                                "description": "Current status of the transaction"
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Fees of the transaction"
+                                                            },
+                                                            "blockHeight": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block height of the transaction"
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "Block time of the transaction"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "txHash",
+                                                            "status",
+                                                            "fees",
+                                                            "blockHeight",
+                                                            "blockTime"
+                                                        ]
+                                                    }
                                                 },
                                                 "PaidFunds": {
                                                     "type": "array",
@@ -4754,6 +5085,7 @@
                                                 "onChainState",
                                                 "NextAction",
                                                 "CurrentTransaction",
+                                                "TransactionHistory",
                                                 "PaidFunds",
                                                 "WithdrawnForSeller",
                                                 "WithdrawnForBuyer",
@@ -7507,14 +7839,31 @@
                                                                         "type": "number",
                                                                         "nullable": true,
                                                                         "description": "Number of block confirmations for this transaction. Null if not yet confirmed"
+                                                                    },
+                                                                    "fees": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "description": "Fees of the transaction"
+                                                                    },
+                                                                    "blockHeight": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block height of the transaction"
+                                                                    },
+                                                                    "blockTime": {
+                                                                        "type": "number",
+                                                                        "nullable": true,
+                                                                        "description": "Block time of the transaction"
                                                                     }
                                                                 },
                                                                 "required": [
                                                                     "txHash",
                                                                     "status",
-                                                                    "confirmations"
-                                                                ],
-                                                                "description": "Current transaction for this registration. Null if no transaction in progress"
+                                                                    "confirmations",
+                                                                    "fees",
+                                                                    "blockHeight",
+                                                                    "blockTime"
+                                                                ]
                                                             }
                                                         },
                                                         "required": [
@@ -7537,8 +7886,7 @@
                                                             "SmartContractWallet",
                                                             "CurrentTransaction"
                                                         ]
-                                                    },
-                                                    "description": "List of agent registrations"
+                                                    }
                                                 }
                                             },
                                             "required": [

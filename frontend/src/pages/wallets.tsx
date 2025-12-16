@@ -36,8 +36,7 @@ import {
   WalletWithBalance as BaseWalletWithBalance,
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
-import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type Wallet =
@@ -400,15 +399,7 @@ export default function WalletsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold">Wallets</h1>
-              <BadgeWithTooltip
-                text="?"
-                tooltipText={TOOLTIP_TEXTS.WALLETS}
-                variant="outline"
-                className="text-xs w-5 h-5 rounded-full p-0 flex items-center justify-center cursor-help"
-              />
-            </div>
+            <h1 className="text-2xl font-semibold">Wallets</h1>
             <p className="text-sm text-muted-foreground">
               Manage your buying and selling wallets.{' '}
               <Link
@@ -506,16 +497,13 @@ export default function WalletsPage() {
                         />
                       </td>
                       <td className="p-4">
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                            wallet.type === 'Purchasing'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                          )}
-                        >
-                          {wallet.type === 'Purchasing' ? 'Buying' : 'Selling'}
-                        </span>
+                        {wallet.type === 'Collection' ? (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
+                            Collection
+                          </span>
+                        ) : (
+                          <WalletTypeBadge type={wallet.type} />
+                        )}
                       </td>
                       <td className="p-4">
                         <div className="text-sm font-medium truncate">

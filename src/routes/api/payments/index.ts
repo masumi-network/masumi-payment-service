@@ -160,33 +160,31 @@ export const queryPaymentsSchemaOutput = z.object({
           updatedAt: z
             .date()
             .describe('Timestamp when the transaction was last updated'),
-          txHash: z
-            .string()
+          fees: z.string().nullable(),
+          blockHeight: z
+            .number()
             .nullable()
-            .describe(
-              'Cardano transaction hash. Null if transaction not yet submitted',
-            ),
+            .describe('Block height of the transaction'),
+          blockTime: z
+            .number()
+            .nullable()
+            .describe('Block time of the transaction'),
+          txHash: z.string().nullable().describe('Cardano transaction hash'),
           status: z
             .nativeEnum(TransactionStatus)
             .describe('Current status of the transaction'),
           previousOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
-            .describe(
-              'Previous on-chain state before this transaction. Null if not applicable',
-            ),
+            .describe('Previous on-chain state before this transaction'),
           newOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
-            .describe(
-              'New on-chain state after this transaction. Null if not applicable',
-            ),
+            .describe('New on-chain state of this transaction'),
           confirmations: z
             .number()
             .nullable()
-            .describe(
-              'Number of block confirmations for this transaction. Null if not yet confirmed',
-            ),
+            .describe('Number of block confirmations for this transaction'),
         })
         .nullable()
         .describe(
@@ -202,33 +200,31 @@ export const queryPaymentsSchemaOutput = z.object({
             updatedAt: z
               .date()
               .describe('Timestamp when the transaction was last updated'),
-            txHash: z
-              .string()
-              .nullable()
-              .describe(
-                'Cardano transaction hash. Null if transaction not yet submitted',
-              ),
+            txHash: z.string().describe('Cardano transaction hash'),
             status: z
               .nativeEnum(TransactionStatus)
               .describe('Current status of the transaction'),
+            fees: z.string().nullable().describe('Fees of the transaction'),
+            blockHeight: z
+              .number()
+              .nullable()
+              .describe('Block height of the transaction'),
+            blockTime: z
+              .number()
+              .nullable()
+              .describe('Block time of the transaction'),
             previousOnChainState: z
               .nativeEnum(OnChainState)
               .nullable()
-              .describe(
-                'Previous on-chain state before this transaction. Null if not applicable',
-              ),
+              .describe('Previous on-chain state before this transaction'),
             newOnChainState: z
               .nativeEnum(OnChainState)
               .nullable()
-              .describe(
-                'New on-chain state after this transaction. Null if not applicable',
-              ),
+              .describe('New on-chain state of this transaction'),
             confirmations: z
               .number()
               .nullable()
-              .describe(
-                'Number of block confirmations for this transaction. Null if not yet confirmed',
-              ),
+              .describe('Number of block confirmations for this transaction'),
           }),
         )
         .nullable()
@@ -398,6 +394,18 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         ...payment,
         ...transformPaymentGetTimestamps(payment),
         ...transformPaymentGetAmounts(payment),
+        CurrentTransaction: payment.CurrentTransaction
+          ? {
+              ...payment.CurrentTransaction,
+              fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory: payment.TransactionHistory
+          ? payment.TransactionHistory.map((tx) => ({
+              ...tx,
+              fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
       })),
     };
   },
@@ -628,16 +636,58 @@ export const createPaymentSchemaOutput = z.object({
         .string()
         .describe('Cardano address of the smart contract wallet'),
     })
-    .nullable()
-    .describe(
-      'Smart contract wallet (seller wallet) managing this payment. Null if not set',
-    ),
-  metadata: z
-    .string()
-    .nullable()
-    .describe(
-      'Optional metadata stored with the payment for additional context. Null if not provided',
-    ),
+    .nullable(),
+  CurrentTransaction: z
+    .object({
+      id: z.string().describe('Unique identifier for the transaction'),
+      createdAt: z
+        .date()
+        .describe('Timestamp when the transaction was created'),
+      updatedAt: z
+        .date()
+        .describe('Timestamp when the transaction was last updated'),
+      txHash: z.string().describe('Cardano transaction hash'),
+      status: z
+        .nativeEnum(TransactionStatus)
+        .describe('Current status of the transaction'),
+      fees: z.string().nullable().describe('Fees of the transaction'),
+      blockHeight: z
+        .number()
+        .nullable()
+        .describe('Block height of the transaction'),
+      blockTime: z
+        .number()
+        .nullable()
+        .describe('Block time of the transaction'),
+    })
+    .nullable(),
+  TransactionHistory: z
+    .array(
+      z.object({
+        id: z.string().describe('Unique identifier for the transaction'),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the transaction was last updated'),
+        txHash: z.string().describe('Cardano transaction hash'),
+        status: z
+          .nativeEnum(TransactionStatus)
+          .describe('Current status of the transaction'),
+        fees: z.string().nullable().describe('Fees of the transaction'),
+        blockHeight: z
+          .number()
+          .nullable()
+          .describe('Block height of the transaction'),
+        blockTime: z
+          .number()
+          .nullable()
+          .describe('Block time of the transaction'),
+      }),
+    )
+    .nullable(),
+  metadata: z.string().nullable(),
 });
 
 export const paymentInitPost = readAuthenticatedEndpointFactory.build({
@@ -908,6 +958,41 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     }
     return {
       ...payment,
+      CurrentTransaction: payment.CurrentTransaction
+        ? {
+            id: payment.CurrentTransaction.id,
+            createdAt: payment.CurrentTransaction.createdAt,
+            updatedAt: payment.CurrentTransaction.updatedAt,
+            txHash: payment.CurrentTransaction.txHash,
+            status: payment.CurrentTransaction.status,
+            fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            blockHeight: payment.CurrentTransaction.blockHeight,
+            blockTime: payment.CurrentTransaction.blockTime,
+            utxoCount: payment.CurrentTransaction.utxoCount,
+            withdrawalCount: payment.CurrentTransaction.withdrawalCount,
+            assetMintOrBurnCount:
+              payment.CurrentTransaction.assetMintOrBurnCount,
+            redeemerCount: payment.CurrentTransaction.redeemerCount,
+            validContract: payment.CurrentTransaction.validContract,
+            outputAmount: payment.CurrentTransaction.outputAmount,
+          }
+        : null,
+      TransactionHistory: payment.TransactionHistory.map((tx) => ({
+        id: tx.id,
+        createdAt: tx.createdAt,
+        updatedAt: tx.updatedAt,
+        txHash: tx.txHash,
+        status: tx.status,
+        fees: tx.fees?.toString() ?? null,
+        blockHeight: tx.blockHeight,
+        blockTime: tx.blockTime,
+        utxoCount: tx.utxoCount,
+        withdrawalCount: tx.withdrawalCount,
+        assetMintOrBurnCount: tx.assetMintOrBurnCount,
+        redeemerCount: tx.redeemerCount,
+        validContract: tx.validContract,
+        outputAmount: tx.outputAmount,
+      })),
       payByTime: payment.payByTime!.toString(),
       submitResultTime: payment.submitResultTime.toString(),
       unlockTime: payment.unlockTime.toString(),

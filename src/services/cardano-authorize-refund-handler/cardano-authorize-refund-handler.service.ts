@@ -27,6 +27,7 @@ import {
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { SERVICE_CONSTANTS } from '@/utils/config';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
@@ -215,24 +216,7 @@ export async function authorizeRefundV1() {
             const { invalidBefore, invalidAfter } =
               calculateTransactionTimeWindow(network);
 
-            //sort by biggest lovelace first
-            const sortedUtxosByLovelaceDesc = utxos.sort((a, b) => {
-              const aLovelace = parseInt(
-                a.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              const bLovelace = parseInt(
-                b.output.amount.find(
-                  (asset) => asset.unit == 'lovelace' || asset.unit == '',
-                )?.quantity ?? '0',
-              );
-              return bLovelace - aLovelace;
-            });
-            const limitedUtxos = sortedUtxosByLovelaceDesc.slice(
-              0,
-              Math.min(4, sortedUtxosByLovelaceDesc.length),
-            );
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
 
             const unsignedTx =
               await generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -242,8 +226,8 @@ export async function authorizeRefundV1() {
                 script,
                 address,
                 utxo,
-                sortedUtxosByLovelaceDesc[0],
-                limitedUtxos,
+                limitedFilteredUtxos[0],
+                limitedFilteredUtxos,
                 datum.value,
                 invalidBefore,
                 invalidAfter,

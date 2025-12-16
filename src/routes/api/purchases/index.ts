@@ -163,24 +163,28 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           status: z
             .nativeEnum(TransactionStatus)
             .describe('Current status of the transaction'),
+          fees: z.string().nullable().describe('Fees of the transaction'),
+          blockHeight: z
+            .number()
+            .nullable()
+            .describe('Block height of the transaction'),
+          blockTime: z
+            .number()
+            .nullable()
+            .describe('Block time of the transaction'),
           previousOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
-            .describe(
-              'Previous on-chain state before this transaction. Null if not applicable',
-            ),
+            .describe('Previous on-chain state before this transaction'),
+
           newOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
-            .describe(
-              'New on-chain state after this transaction. Null if not applicable',
-            ),
+            .describe('New on-chain state of this transaction'),
           confirmations: z
             .number()
             .nullable()
-            .describe(
-              'Number of block confirmations for this transaction. Null if not yet confirmed',
-            ),
+            .describe('Number of block confirmations for this transaction'),
         })
         .nullable()
         .describe(
@@ -200,82 +204,54 @@ export const queryPurchaseRequestSchemaOutput = z.object({
             status: z
               .nativeEnum(TransactionStatus)
               .describe('Current status of the transaction'),
+            fees: z.string().nullable().describe('Fees of the transaction'),
+            blockHeight: z
+              .number()
+              .nullable()
+              .describe('Block height of the transaction'),
+            blockTime: z
+              .number()
+              .nullable()
+              .describe('Block time of the transaction'),
             previousOnChainState: z
               .nativeEnum(OnChainState)
               .nullable()
-              .describe(
-                'Previous on-chain state before this transaction. Null if not applicable',
-              ),
+              .describe('Previous on-chain state before this transaction'),
             newOnChainState: z
               .nativeEnum(OnChainState)
               .nullable()
-              .describe(
-                'New on-chain state after this transaction. Null if not applicable',
-              ),
+              .describe('New on-chain state of this transaction'),
             confirmations: z
               .number()
               .nullable()
-              .describe(
-                'Number of block confirmations for this transaction. Null if not yet confirmed',
-              ),
+              .describe('Number of block confirmations for this transaction'),
           }),
         )
-        .describe(
-          'Historical list of all transactions for this purchase. Empty if includeHistory is false',
-        ),
-      PaidFunds: z
-        .array(
-          z.object({
-            amount: z.string().describe('Amount of the asset paid'),
-            unit: z
-              .string()
-              .describe(
-                'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-              ),
-          }),
-        )
-        .describe('List of assets and amounts paid by the buyer'),
-      WithdrawnForSeller: z
-        .array(
-          z.object({
-            amount: z.string().describe('Amount of the asset withdrawn'),
-            unit: z
-              .string()
-              .describe(
-                'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-              ),
-          }),
-        )
-        .describe('List of assets and amounts withdrawn for the seller'),
-      WithdrawnForBuyer: z
-        .array(
-          z.object({
-            amount: z.string().describe('Amount of the asset withdrawn'),
-            unit: z
-              .string()
-              .describe(
-                'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-              ),
-          }),
-        )
-        .describe(
-          'List of assets and amounts withdrawn for the buyer (refunds)',
-        ),
-      PaymentSource: z
-        .object({
-          id: z.string().describe('Unique identifier for the payment source'),
-          network: z.nativeEnum(Network).describe('The Cardano network '),
-          smartContractAddress: z
-            .string()
-            .describe('Address of the smart contract managing this purchase'),
-          policyId: z
-            .string()
-            .nullable()
-            .describe(
-              'Policy ID for the agent registry NFTs. Null if not applicable',
-            ),
-        })
-        .describe('Payment source configuration for this purchase'),
+        .describe('Historical list of all transactions for this purchase'),
+      PaidFunds: z.array(
+        z.object({
+          amount: z.string(),
+          unit: z.string(),
+        }),
+      ),
+      WithdrawnForSeller: z.array(
+        z.object({
+          amount: z.string(),
+          unit: z.string(),
+        }),
+      ),
+      WithdrawnForBuyer: z.array(
+        z.object({
+          amount: z.string(),
+          unit: z.string(),
+        }),
+      ),
+      PaymentSource: z.object({
+        id: z.string(),
+        network: z.nativeEnum(Network),
+        smartContractAddress: z.string(),
+        policyId: z.string().nullable(),
+      }),
       SellerWallet: z
         .object({
           id: z.string().describe('Unique identifier for the seller wallet'),
@@ -367,6 +343,16 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
         ...transformPurchaseGetAmounts(purchase),
+        CurrentTransaction: purchase.CurrentTransaction
+          ? {
+              ...purchase.CurrentTransaction,
+              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
+          ...tx,
+          fees: tx.fees?.toString() ?? null,
+        })),
       })),
     };
   },
@@ -525,11 +511,43 @@ export const createPurchaseInitSchemaOutput = z.object({
       status: z
         .nativeEnum(TransactionStatus)
         .describe('Current status of the transaction'),
+      fees: z.string().nullable().describe('Fees of the transaction'),
+      blockHeight: z
+        .number()
+        .nullable()
+        .describe('Block height of the transaction'),
+      blockTime: z
+        .number()
+        .nullable()
+        .describe('Block time of the transaction'),
     })
-    .nullable()
-    .describe(
-      'Current active transaction for this purchase. Null if no transaction in progress',
-    ),
+    .nullable(),
+  TransactionHistory: z
+    .array(
+      z.object({
+        id: z.string().describe('Unique identifier for the transaction'),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the transaction was last updated'),
+        txHash: z.string().describe('Cardano transaction hash'),
+        status: z
+          .nativeEnum(TransactionStatus)
+          .describe('Current status of the transaction'),
+        fees: z.string().nullable().describe('Fees of the transaction'),
+        blockHeight: z
+          .number()
+          .nullable()
+          .describe('Block height of the transaction'),
+        blockTime: z
+          .number()
+          .nullable()
+          .describe('Block time of the transaction'),
+      }),
+    )
+    .nullable(),
   PaidFunds: z.array(
     z.object({
       amount: z
@@ -662,6 +680,38 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           existingPurchaseRequest.id,
           {
             ...existingPurchaseRequest,
+            CurrentTransaction: existingPurchaseRequest.CurrentTransaction
+              ? {
+                  id: existingPurchaseRequest.CurrentTransaction.id,
+                  createdAt:
+                    existingPurchaseRequest.CurrentTransaction.createdAt,
+                  updatedAt:
+                    existingPurchaseRequest.CurrentTransaction.updatedAt,
+                  txHash: existingPurchaseRequest.CurrentTransaction.txHash,
+                  status: existingPurchaseRequest.CurrentTransaction.status,
+                  fees:
+                    existingPurchaseRequest.CurrentTransaction.fees?.toString() ??
+                    null,
+                  blockHeight:
+                    existingPurchaseRequest.CurrentTransaction.blockHeight,
+                  blockTime:
+                    existingPurchaseRequest.CurrentTransaction.blockTime,
+                  utxoCount:
+                    existingPurchaseRequest.CurrentTransaction.utxoCount,
+                  withdrawalCount:
+                    existingPurchaseRequest.CurrentTransaction.withdrawalCount,
+                  assetMintOrBurnCount:
+                    existingPurchaseRequest.CurrentTransaction
+                      .assetMintOrBurnCount,
+                  redeemerCount:
+                    existingPurchaseRequest.CurrentTransaction.redeemerCount,
+                  validContract:
+                    existingPurchaseRequest.CurrentTransaction.validContract,
+                  outputAmount:
+                    existingPurchaseRequest.CurrentTransaction.outputAmount,
+                }
+              : null,
+            TransactionHistory: [],
             payByTime: existingPurchaseRequest.payByTime?.toString() ?? null,
             PaidFunds: (
               existingPurchaseRequest.PaidFunds as Array<{
@@ -1030,6 +1080,33 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 
       const result = {
         ...initialPurchaseRequest,
+        CurrentTransaction: initialPurchaseRequest.CurrentTransaction
+          ? {
+              id: initialPurchaseRequest.CurrentTransaction.id,
+              createdAt: initialPurchaseRequest.CurrentTransaction.createdAt,
+              updatedAt: initialPurchaseRequest.CurrentTransaction.updatedAt,
+              txHash: initialPurchaseRequest.CurrentTransaction.txHash,
+              status: initialPurchaseRequest.CurrentTransaction.status,
+              fees:
+                initialPurchaseRequest.CurrentTransaction.fees?.toString() ??
+                null,
+              blockHeight:
+                initialPurchaseRequest.CurrentTransaction.blockHeight,
+              blockTime: initialPurchaseRequest.CurrentTransaction.blockTime,
+              utxoCount: initialPurchaseRequest.CurrentTransaction.utxoCount,
+              withdrawalCount:
+                initialPurchaseRequest.CurrentTransaction.withdrawalCount,
+              assetMintOrBurnCount:
+                initialPurchaseRequest.CurrentTransaction.assetMintOrBurnCount,
+              redeemerCount:
+                initialPurchaseRequest.CurrentTransaction.redeemerCount,
+              validContract:
+                initialPurchaseRequest.CurrentTransaction.validContract,
+              outputAmount:
+                initialPurchaseRequest.CurrentTransaction.outputAmount,
+            }
+          : null,
+        TransactionHistory: [],
         payByTime: initialPurchaseRequest.payByTime?.toString() ?? null,
         PaidFunds: (
           initialPurchaseRequest.PaidFunds as Array<{

@@ -123,6 +123,28 @@ input[type='number'] {
   animation: spin 1s linear infinite;
 }
 
+@keyframes scaleIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes rotateIn {
+  0% {
+    transform: rotate(-360deg);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(0deg);
+    opacity: 1;
+  }
+}
+
 /* Highlight animation for searched elements */
 @keyframes highlight {
   0% {
