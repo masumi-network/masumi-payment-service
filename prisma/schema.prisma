@@ -18,10 +18,10 @@ model ApiKey {
   permission            Permission
   networkLimit          Network[]
   usageLimited          Boolean           @default(false)
-  RemainingUsageCredits UnitValue[]
-  PurchaseRequest       PurchaseRequest[]
-  PaymentRequest        PaymentRequest[]
   deletedAt             DateTime?
+  PaymentRequest        PaymentRequest[]
+  PurchaseRequest       PurchaseRequest[]
+  RemainingUsageCredits UnitValue[]
 }
 
 model UnitValue {
@@ -30,22 +30,314 @@ model UnitValue {
   updatedAt                        DateTime           @updatedAt
   unit                             String
   amount                           BigInt
-  ApiKey                           ApiKey?            @relation(fields: [apiKeyId], references: [id])
   apiKeyId                         String?
-  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
   agentFixedPricingId              String?
-  PaymentRequest                   PaymentRequest?    @relation(fields: [paymentRequestId], references: [id])
   paymentRequestId                 String?
-  PurchaseRequest                  PurchaseRequest?   @relation(fields: [purchaseRequestId], references: [id])
   purchaseRequestId                String?
-  SellerWithdrawnPaymentRequest    PaymentRequest?    @relation(name: "SellerWithdrawnPaymentRequest", fields: [sellerWithdrawnPaymentRequestId], references: [id])
-  sellerWithdrawnPaymentRequestId  String?
-  BuyerWithdrawnPaymentRequest     PaymentRequest?    @relation(name: "BuyerWithdrawnPaymentRequest", fields: [buyerWithdrawnPaymentRequestId], references: [id])
   buyerWithdrawnPaymentRequestId   String?
-  SellerWithdrawnPurchaseRequest   PurchaseRequest?   @relation(name: "SellerWithdrawnPurchaseRequest", fields: [sellerWithdrawnPurchaseRequestId], references: [id])
-  sellerWithdrawnPurchaseRequestId String?
-  BuyerWithdrawnPurchaseRequest    PurchaseRequest?   @relation(name: "BuyerWithdrawnPurchaseRequest", fields: [buyerWithdrawnPurchaseRequestId], references: [id])
   buyerWithdrawnPurchaseRequestId  String?
+  sellerWithdrawnPaymentRequestId  String?
+  sellerWithdrawnPurchaseRequestId String?
+  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
+  ApiKey                           ApiKey?            @relation(fields: [apiKeyId], references: [id])
+  BuyerWithdrawnPaymentRequest     PaymentRequest?    @relation("BuyerWithdrawnPaymentRequest", fields: [buyerWithdrawnPaymentRequestId], references: [id])
+  BuyerWithdrawnPurchaseRequest    PurchaseRequest?   @relation("BuyerWithdrawnPurchaseRequest", fields: [buyerWithdrawnPurchaseRequestId], references: [id])
+  PaymentRequest                   PaymentRequest?    @relation(fields: [paymentRequestId], references: [id])
+  PurchaseRequest                  PurchaseRequest?   @relation(fields: [purchaseRequestId], references: [id])
+  SellerWithdrawnPaymentRequest    PaymentRequest?    @relation("SellerWithdrawnPaymentRequest", fields: [sellerWithdrawnPaymentRequestId], references: [id])
+  SellerWithdrawnPurchaseRequest   PurchaseRequest?   @relation("SellerWithdrawnPurchaseRequest", fields: [sellerWithdrawnPurchaseRequestId], references: [id])
+}
+
+model HotWallet {
+  id                   String            @id @default(cuid())
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  walletVkey           String            @unique
+  walletAddress        String
+  type                 HotWalletType
+  secretId             String
+  collectionAddress    String?
+  pendingTransactionId String?           @unique
+  paymentSourceId      String
+  lockedAt             DateTime?
+  note                 String?
+  deletedAt            DateTime?
+  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
+  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
+  PaymentRequest       PaymentRequest[]
+  PurchaseRequest      PurchaseRequest[]
+  RegistryRequest      RegistryRequest[]
+}
+
+model Transaction {
+  id                       String            @id @default(cuid())
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  txHash                   String
+  status                   TransactionStatus
+  confirmations            Int?
+  lastCheckedAt            DateTime?
+  fees                     BigInt?
+  blockHeight              Int?
+  blockTime                Int?
+  outputAmount             String?           @db.Text
+  utxoCount                Int?
+  withdrawalCount          Int?
+  assetMintOrBurnCount     Int?
+  redeemerCount            Int?
+  validContract            Boolean?
+  paymentRequestHistoryId  String?
+  purchaseRequestHistoryId String?
+  previousOnChainState     OnChainState?
+  newOnChainState          OnChainState?
+  BlocksWallet             HotWallet?
+  PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
+  RegistryRequest          RegistryRequest[]
+  PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
+  PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+}
+
+model WalletSecret {
+  id                String      @id @default(cuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  encryptedMnemonic String
+  HotWallet         HotWallet[]
+}
+
+model WalletBase {
+  id              String            @id @default(cuid())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  walletVkey      String
+  note            String?
+  type            WalletType
+  paymentSourceId String
+  walletAddress   String            @default("")
+  PaymentRequest  PaymentRequest[]
+  PurchaseRequest PurchaseRequest[]
+  PaymentSource   PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+
+  @@unique([paymentSourceId, walletVkey, walletAddress, type])
+}
+
+model RegistryRequest {
+  id                    String            @id @default(cuid())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  lastCheckedAt         DateTime?
+  paymentSourceId       String
+  smartContractWalletId String
+  name                  String
+  apiBaseUrl            String
+  capabilityName        String?
+  capabilityVersion     String?
+  description           String?
+  privacyPolicy         String?
+  terms                 String?
+  other                 String?
+  authorName            String
+  authorContactEmail    String?
+  authorContactOther    String?
+  authorOrganization    String?
+  metadataVersion       Int
+  tags                  String[]
+  agentPricingId        String            @unique
+  agentIdentifier       String?           @unique
+  state                 RegistrationState
+  currentTransactionId  String?
+  error                 String?
+  paymentType           PaymentType       @default(Web3CardanoV1)
+  ExampleOutputs        ExampleOutput[]
+  Pricing               AgentPricing      @relation(fields: [agentPricingId], references: [id])
+  CurrentTransaction    Transaction?      @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource         PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet   HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+}
+
+model ExampleOutput {
+  id                String           @id @default(cuid())
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  name              String
+  mimeType          String
+  url               String
+  registryRequestId String?
+  RegistryRequest   RegistryRequest? @relation(fields: [registryRequestId], references: [id])
+}
+
+model AgentPricing {
+  id                  String             @id @default(cuid())
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  pricingType         PricingType
+  agentFixedPricingId String?            @unique
+  FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
+  RegistryRequest     RegistryRequest?
+}
+
+model AgentFixedPricing {
+  id           String        @id @default(cuid())
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  AgentPricing AgentPricing?
+  Amounts      UnitValue[]
+}
+
+model PaymentRequest {
+  id                        String            @id @default(cuid())
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  lastCheckedAt             DateTime?
+  paymentSourceId           String
+  smartContractWalletId     String?
+  buyerWalletId             String?
+  nextActionId              String            @unique
+  metadata                  String?
+  blockchainIdentifier      String            @unique
+  submitResultTime          BigInt
+  unlockTime                BigInt
+  externalDisputeUnlockTime BigInt
+  inputHash                 String
+  resultHash                String
+  onChainState              OnChainState?
+  sellerCoolDownTime        BigInt
+  buyerCoolDownTime         BigInt
+  requestedById             String
+  currentTransactionId      String?           @unique
+  collateralReturnLovelace  BigInt?
+  payByTime                 BigInt?
+  BuyerWallet               WalletBase?       @relation(fields: [buyerWalletId], references: [id])
+  CurrentTransaction        Transaction?      @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
+  NextAction                PaymentActionData @relation("NextAction", fields: [nextActionId], references: [id])
+  PaymentSource             PaymentSource     @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  requestedBy               ApiKey            @relation(fields: [requestedById], references: [id])
+  SmartContractWallet       HotWallet?        @relation(fields: [smartContractWalletId], references: [id])
+  TransactionHistory        Transaction[]     @relation("PaymentTransactionHistory")
+  WithdrawnForBuyer         UnitValue[]       @relation("BuyerWithdrawnPaymentRequest")
+  RequestedFunds            UnitValue[]
+  WithdrawnForSeller        UnitValue[]       @relation("SellerWithdrawnPaymentRequest")
+}
+
+model PaymentActionData {
+  id                    String            @id @default(cuid())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  requestedAction       PaymentAction
+  resultHash            String?
+  submittedTxHash       String?
+  errorType             PaymentErrorType?
+  errorNote             String?
+  PaymentRequestCurrent PaymentRequest?   @relation("NextAction")
+}
+
+model PurchaseRequest {
+  id                        String             @id @default(cuid())
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  lastCheckedAt             DateTime?
+  paymentSourceId           String
+  sellerWalletId            String
+  smartContractWalletId     String?
+  metadata                  String?
+  blockchainIdentifier      String             @unique
+  submitResultTime          BigInt
+  unlockTime                BigInt
+  externalDisputeUnlockTime BigInt
+  inputHash                 String
+  resultHash                String
+  onChainState              OnChainState?
+  sellerCoolDownTime        BigInt
+  buyerCoolDownTime         BigInt
+  nextActionId              String             @unique
+  requestedById             String
+  currentTransactionId      String?            @unique
+  collateralReturnLovelace  BigInt?
+  payByTime                 BigInt?
+  CurrentTransaction        Transaction?       @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
+  NextAction                PurchaseActionData @relation("NextAction", fields: [nextActionId], references: [id])
+  PaymentSource             PaymentSource      @relation("PurchaseRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  requestedBy               ApiKey             @relation(fields: [requestedById], references: [id])
+  SellerWallet              WalletBase         @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
+  SmartContractWallet       HotWallet?         @relation(fields: [smartContractWalletId], references: [id])
+  TransactionHistory        Transaction[]      @relation("PurchaseTransactionHistory")
+  WithdrawnForBuyer         UnitValue[]        @relation("BuyerWithdrawnPurchaseRequest")
+  PaidFunds                 UnitValue[]
+  WithdrawnForSeller        UnitValue[]        @relation("SellerWithdrawnPurchaseRequest")
+}
+
+model PurchaseActionData {
+  id                     String             @id @default(cuid())
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  requestedAction        PurchasingAction
+  inputHash              String
+  submittedTxHash        String?
+  errorType              PurchaseErrorType?
+  errorNote              String?
+  PurchaseRequestCurrent PurchaseRequest?   @relation("NextAction")
+}
+
+model PaymentSourceIdentifiers {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  txHash          String        @unique
+  paymentSourceId String
+  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id])
+}
+
+model PaymentSource {
+  id                       String                     @id @default(cuid())
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  network                  Network
+  lastCheckedAt            DateTime?
+  lastIdentifierChecked    String?
+  syncInProgress           Boolean                    @default(false)
+  smartContractAddress     String
+  adminWalletId            String
+  feeRatePermille          Int
+  cooldownTime             Int
+  paymentSourceConfigId    String                     @unique
+  deletedAt                DateTime?
+  policyId                 String?
+  disablePaymentAt         DateTime?
+  disableSyncAt            DateTime?
+  AdminWallets             AdminWallet[]              @relation("AdminWallets")
+  HotWallets               HotWallet[]
+  PaymentRequests          PaymentRequest[]           @relation("PaymentRequestPaymentSource")
+  FeeReceiverNetworkWallet AdminWallet                @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
+  PaymentSourceConfig      PaymentSourceConfig        @relation(fields: [paymentSourceConfigId], references: [id])
+  PaymentSourceIdentifiers PaymentSourceIdentifiers[]
+  PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
+  RegistryRequest          RegistryRequest[]
+  WalletBases              WalletBase[]
+
+  @@unique([network, smartContractAddress])
+  @@unique([network, policyId])
+}
+
+model AdminWallet {
+  id                       String          @id @default(cuid())
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  walletAddress            String
+  paymentSourceAdminId     String?
+  order                    Int
+  PaymentSourceAdmin       PaymentSource?  @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id])
+  PaymentSourceFeeReceiver PaymentSource[] @relation("FeeReceiverNetworkWallet")
+}
+
+model PaymentSourceConfig {
+  id                String         @id @default(cuid())
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  rpcProviderApiKey String
+  rpcProvider       RPCProvider
+  PaymentSource     PaymentSource?
 }
 
 enum ApiKeyStatus {
@@ -64,86 +356,9 @@ enum HotWalletType {
   Purchasing
 }
 
-model HotWallet {
-  id            String        @id @default(cuid())
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  walletVkey    String        @unique
-  walletAddress String
-  type          HotWalletType
-
-  Secret   WalletSecret @relation(fields: [secretId], references: [id])
-  secretId String
-
-  collectionAddress String?
-
-  PendingTransaction   Transaction? @relation(fields: [pendingTransactionId], references: [id], onDelete: SetNull)
-  pendingTransactionId String?      @unique
-
-  PurchaseRequest PurchaseRequest[]
-  PaymentRequest  PaymentRequest[]
-
-  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  paymentSourceId String
-
-  lockedAt DateTime?
-
-  note            String?
-  RegistryRequest RegistryRequest[]
-  deletedAt       DateTime?
-}
-
-model Transaction {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  txHash String
-
-  status TransactionStatus
-
-  lastCheckedAt           DateTime?
-  BlocksWallet            HotWallet?
-  PaymentRequestCurrent   PaymentRequest? @relation("CurrentPaymentTransaction")
-  PaymentRequestHistory   PaymentRequest? @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
-  paymentRequestHistoryId String?
-
-  PurchaseRequestCurrent   PurchaseRequest? @relation("CurrentPurchaseTransaction")
-  PurchaseRequestHistory   PurchaseRequest? @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
-  purchaseRequestHistoryId String?
-
-  RegistryRequest RegistryRequest[]
-}
-
-model WalletSecret {
-  id                String   @id @default(cuid())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  encryptedMnemonic String //encrypted mnemonic
-
-  HotWallet HotWallet[]
-}
-
 enum WalletType {
   Buyer
   Seller
-}
-
-model WalletBase {
-  id            String     @id @default(cuid())
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  walletVkey    String
-  walletAddress String     @default("")
-  note          String?
-  type          WalletType
-
-  PaymentRequest  PaymentRequest[]
-  PurchaseRequest PurchaseRequest[]
-  PaymentSource   PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  paymentSourceId String
-
-  @@unique([paymentSourceId, walletVkey, walletAddress, type])
 }
 
 enum RegistrationState {
@@ -151,217 +366,15 @@ enum RegistrationState {
   RegistrationInitiated
   RegistrationConfirmed
   RegistrationFailed
-
   DeregistrationRequested
   DeregistrationInitiated
   DeregistrationConfirmed
   DeregistrationFailed
 }
 
-model RegistryRequest {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastCheckedAt DateTime?
-
-  paymentSourceId String
-  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id])
-
-  SmartContractWallet   HotWallet @relation(fields: [smartContractWalletId], references: [id], onDelete: Restrict)
-  smartContractWalletId String
-
-  name              String
-  apiBaseUrl        String
-  capabilityName    String?
-  capabilityVersion String?
-
-  description String?
-
-  privacyPolicy String?
-  terms         String?
-  other         String?
-
-  authorName         String
-  authorContactEmail String?
-  authorContactOther String?
-  authorOrganization String?
-
-  metadataVersion Int
-
-  tags String[]
-
-  ExampleOutputs ExampleOutput[]
-
-  Pricing        AgentPricing @relation(fields: [agentPricingId], references: [id])
-  agentPricingId String       @unique
-
-  agentIdentifier String?           @unique
-  state           RegistrationState
-
-  CurrentTransaction   Transaction? @relation(fields: [currentTransactionId], references: [id])
-  currentTransactionId String?
-
-  paymentType PaymentType @default(Web3CardanoV1)
-
-  error String?
-}
-
-model ExampleOutput {
-  id                String           @id @default(cuid())
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  name              String
-  mimeType          String
-  url               String
-  RegistryRequest   RegistryRequest? @relation(fields: [registryRequestId], references: [id])
-  registryRequestId String?
-}
-
-model AgentPricing {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  RegistryRequest RegistryRequest?
-
-  pricingType         PricingType
-  FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
-  agentFixedPricingId String?            @unique
-}
-
 enum PricingType {
   Fixed
   Free
-}
-
-model AgentFixedPricing {
-  id           String        @id @default(cuid())
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  AgentPricing AgentPricing?
-  Amounts      UnitValue[]
-}
-
-model PaymentRequest {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  lastCheckedAt   DateTime?
-  PaymentSource   PaymentSource @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  paymentSourceId String
-
-  SmartContractWallet   HotWallet? @relation(fields: [smartContractWalletId], references: [id], onDelete: SetNull)
-  smartContractWalletId String?
-
-  BuyerWallet   WalletBase? @relation(fields: [buyerWalletId], references: [id], onDelete: SetNull)
-  buyerWalletId String?
-
-  NextAction   PaymentActionData @relation("NextAction", fields: [nextActionId], references: [id])
-  nextActionId String            @unique
-
-  metadata String?
-
-  RequestedFunds UnitValue[]
-
-  collateralReturnLovelace  BigInt?
-  blockchainIdentifier      String        @unique
-  payByTime                 BigInt?
-  submitResultTime          BigInt
-  unlockTime                BigInt
-  externalDisputeUnlockTime BigInt
-  inputHash                 String
-  resultHash                String
-  onChainState              OnChainState?
-
-  WithdrawnForSeller UnitValue[] @relation("SellerWithdrawnPaymentRequest")
-  WithdrawnForBuyer  UnitValue[] @relation("BuyerWithdrawnPaymentRequest")
-
-  sellerCoolDownTime BigInt
-  buyerCoolDownTime  BigInt
-
-  requestedBy          ApiKey        @relation(fields: [requestedById], references: [id])
-  requestedById        String
-  TransactionHistory   Transaction[] @relation("PaymentTransactionHistory")
-  CurrentTransaction   Transaction?  @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
-  currentTransactionId String?       @unique
-}
-
-model PaymentActionData {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  requestedAction PaymentAction
-  resultHash      String?
-
-  submittedTxHash String?
-
-  errorType PaymentErrorType?
-  errorNote String?
-
-  PaymentRequestCurrent PaymentRequest? @relation("NextAction")
-}
-
-model PurchaseRequest {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  lastCheckedAt   DateTime?
-  PaymentSource   PaymentSource @relation("PurchaseRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  paymentSourceId String
-
-  SellerWallet   WalletBase @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
-  sellerWalletId String
-
-  SmartContractWallet   HotWallet? @relation(fields: [smartContractWalletId], references: [id], onDelete: SetNull)
-  smartContractWalletId String?
-
-  metadata String?
-
-  PaidFunds UnitValue[]
-
-  blockchainIdentifier String @unique
-
-  collateralReturnLovelace  BigInt?
-  payByTime                 BigInt?
-  submitResultTime          BigInt
-  unlockTime                BigInt
-  externalDisputeUnlockTime BigInt
-  inputHash                 String
-  resultHash                String
-  onChainState              OnChainState?
-
-  sellerCoolDownTime BigInt
-  buyerCoolDownTime  BigInt
-  WithdrawnForSeller UnitValue[] @relation("SellerWithdrawnPurchaseRequest")
-  WithdrawnForBuyer  UnitValue[] @relation("BuyerWithdrawnPurchaseRequest")
-
-  NextAction   PurchaseActionData @relation("NextAction", fields: [nextActionId], references: [id])
-  nextActionId String             @unique
-
-  requestedBy          ApiKey        @relation(fields: [requestedById], references: [id])
-  requestedById        String
-  CurrentTransaction   Transaction?  @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
-  currentTransactionId String?       @unique
-  TransactionHistory   Transaction[] @relation("PurchaseTransactionHistory")
-}
-
-model PurchaseActionData {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  requestedAction PurchasingAction
-
-  inputHash       String
-  submittedTxHash String?
-
-  errorType PurchaseErrorType?
-  errorNote String?
-
-  PurchaseRequestCurrent PurchaseRequest? @relation("NextAction")
 }
 
 enum PaymentErrorType {
@@ -403,13 +416,10 @@ enum PaymentAction {
   Ignore
   WaitingForManualAction
   WaitingForExternalAction
-
   SubmitResultRequested
   SubmitResultInitiated
-
   WithdrawRequested
   WithdrawInitiated
-
   AuthorizeRefundRequested
   AuthorizeRefundInitiated
 }
@@ -419,79 +429,14 @@ enum PurchasingAction {
   Ignore
   WaitingForManualAction
   WaitingForExternalAction
-
   FundsLockingRequested
   FundsLockingInitiated
-
   SetRefundRequestedRequested
   SetRefundRequestedInitiated
-
   UnSetRefundRequestedRequested
   UnSetRefundRequestedInitiated
-
   WithdrawRefundRequested
   WithdrawRefundInitiated
-}
-
-model PaymentSourceIdentifiers {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  txHash String @unique
-
-  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id])
-  paymentSourceId String
-}
-
-model PaymentSource {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  network       Network
-  lastCheckedAt DateTime?
-
-  lastIdentifierChecked String?
-  syncInProgress        Boolean @default(false)
-
-  policyId                 String? //optional for now until migration is completed
-  smartContractAddress     String
-  AdminWallets             AdminWallet[] @relation("AdminWallets")
-  FeeReceiverNetworkWallet AdminWallet   @relation("FeeReceiverNetworkWallet", fields: [adminWalletId], references: [id], onDelete: Cascade)
-  adminWalletId            String
-  feeRatePermille          Int
-  cooldownTime             Int
-
-  PaymentSourceConfig   PaymentSourceConfig @relation(fields: [paymentSourceConfigId], references: [id])
-  paymentSourceConfigId String              @unique
-
-  PaymentRequests  PaymentRequest[]  @relation("PaymentRequestPaymentSource")
-  PurchaseRequests PurchaseRequest[] @relation("PurchaseRequestPaymentSource")
-
-  HotWallets       HotWallet[]
-  WalletBases      WalletBase[]
-  RegistryRequest  RegistryRequest[]
-  deletedAt        DateTime?
-  disablePaymentAt DateTime?
-  disableSyncAt    DateTime?
-
-  PaymentSourceIdentifiers PaymentSourceIdentifiers[]
-
-  @@unique([network, smartContractAddress])
-  @@unique([network, policyId])
-}
-
-model AdminWallet {
-  id                   String         @id @default(cuid())
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  walletAddress        String
-  PaymentSourceAdmin   PaymentSource? @relation("AdminWallets", fields: [paymentSourceAdminId], references: [id], onDelete: SetNull)
-  paymentSourceAdminId String?
-  order                Int
-
-  PaymentSourceFeeReceiver PaymentSource[] @relation("FeeReceiverNetworkWallet")
 }
 
 enum Network {
@@ -501,14 +446,4 @@ enum Network {
 
 enum RPCProvider {
   Blockfrost
-}
-
-model PaymentSourceConfig {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  rpcProviderApiKey String
-  rpcProvider       RPCProvider
-  PaymentSource     PaymentSource?
 }

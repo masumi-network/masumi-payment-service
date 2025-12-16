@@ -1,5 +1,6 @@
 import {
   Asset,
+  BlockfrostProvider,
   Data,
   IFetcher,
   LanguageVersion,
@@ -9,7 +10,7 @@ import {
   UTxO,
 } from '@meshsdk/core';
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
-import { convertNetworkToId } from '../../converter/network-convert';
+import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@prisma/client';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
@@ -23,7 +24,58 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
   }
 }
 
-export async function generateMasumiSmartContractInteractionTransaction(
+export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
+  type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
+  blockchainProvider: BlockfrostProvider,
+  network: Network,
+  script: {
+    version: LanguageVersion;
+    code: string;
+  },
+  walletAddress: string,
+  smartContractUtxo: UTxO,
+  collateralUtxo: UTxO,
+  walletUtxos: UTxO[],
+  newInlineDatum: Data,
+  invalidBefore: number,
+  invalidAfter: number,
+) {
+  const evaluationTx =
+    await generateMasumiSmartContractInteractionTransactionCustomFee(
+      type,
+      blockchainProvider,
+      network,
+      script,
+      walletAddress,
+      smartContractUtxo,
+      collateralUtxo,
+      walletUtxos,
+      newInlineDatum,
+      invalidBefore,
+      invalidAfter,
+    );
+
+  const estimatedFee = (await blockchainProvider.evaluateTx(
+    evaluationTx,
+  )) as Array<{ budget: { mem: number; steps: number } }>;
+
+  return await generateMasumiSmartContractInteractionTransactionCustomFee(
+    type,
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    smartContractUtxo,
+    collateralUtxo,
+    walletUtxos,
+    newInlineDatum,
+    invalidBefore,
+    invalidAfter,
+    estimatedFee[0].budget,
+  );
+}
+
+export async function generateMasumiSmartContractInteractionTransactionCustomFee(
   type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
   blockchainProvider: IFetcher,
   network: Network,
@@ -140,7 +192,77 @@ function generateRedeemerData(
   }
 }
 
-export async function generateMasumiSmartContractWithdrawTransaction(
+export async function generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+  type: 'CollectCompleted' | 'CollectRefund',
+  blockchainProvider: BlockfrostProvider,
+  network: Network,
+  script: {
+    version: LanguageVersion;
+    code: string;
+  },
+  walletAddress: string,
+  smartContractUtxo: UTxO,
+  collateralUtxo: UTxO,
+  walletUtxos: UTxO[],
+  collection: {
+    collectAssets: Asset[];
+    collectionAddress: string;
+  },
+  fee: {
+    feeAssets: Asset[];
+    feeAddress: string;
+    txHash: string;
+    outputIndex: number;
+  } | null,
+  collateralReturn: {
+    lovelace: bigint;
+    address: string;
+    txHash: string;
+    outputIndex: number;
+  } | null,
+  invalidBefore: number,
+  invalidAfter: number,
+) {
+  const evaluationTx =
+    await generateMasumiSmartContractWithdrawTransactionCustomFee(
+      type,
+      blockchainProvider,
+      network,
+      script,
+      walletAddress,
+      smartContractUtxo,
+      collateralUtxo,
+      walletUtxos,
+      collection,
+      fee,
+      collateralReturn,
+      invalidBefore,
+      invalidAfter,
+    );
+
+  const estimatedFee = (await blockchainProvider.evaluateTx(
+    evaluationTx,
+  )) as Array<{ budget: { mem: number; steps: number } }>;
+
+  return await generateMasumiSmartContractWithdrawTransactionCustomFee(
+    type,
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    smartContractUtxo,
+    collateralUtxo,
+    walletUtxos,
+    collection,
+    fee,
+    collateralReturn,
+    invalidBefore,
+    invalidAfter,
+    estimatedFee[0].budget,
+  );
+}
+
+export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
   type: 'CollectCompleted' | 'CollectRefund',
   blockchainProvider: IFetcher,
   network: Network,

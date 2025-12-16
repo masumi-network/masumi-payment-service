@@ -17,6 +17,9 @@
         "test": "jest",
         "test:watch": "jest --watch",
         "test:coverage": "jest --coverage",
+        "test:e2e": "jest --config jest.e2e.config.ts --bail",
+        "test:e2e:watch": "jest --config jest.e2e.config.ts --watch",
+        "test:e2e:verbose": "jest --config jest.e2e.config.ts --verbose",
         "prisma:generate": "npx prisma generate",
         "prisma:migrate": "npx prisma migrate deploy",
         "prisma:migrate:dev": "npx prisma migrate dev",
@@ -25,8 +28,8 @@
         "build": "npx prisma generate && tsc --noEmit && pkgroll",
         "start:trace": "tsx --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
         "dev:trace": "tsx watch --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
-        "start": "NODE_ENV=production node ./dist/index.js",
-        "swagger-json": "export DATABASE_URL='postgresql://test@localhost:5432/masumi_payment_service' && export ENCRYPTION_KEY=set-mock-enc-key-for-generation && tsx ./src/utils/generator/swagger-generator/cli.ts",
+        "start": "cross-env NODE_ENV=production node ./dist/index.js",
+        "swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation tsx ./src/utils/generator/swagger-generator/cli.ts",
         "knip": "knip"
     },
     "dependencies": {
@@ -34,8 +37,6 @@
         "@blockfrost/blockfrost-js": "^6.0.0",
         "@emurgo/cardano-serialization-lib-nodejs": "^14.1.1",
         "@harmoniclabs/cbor": "1.3.0",
-        "@jest/globals": "^29.7.0",
-        "@jest/types": "^29.6.3",
         "@meshsdk/core": "1.9.0-beta.65",
         "@meshsdk/core-cst": "1.9.0-beta.65",
         "@opentelemetry/auto-instrumentations-node": "^0.62.0",
@@ -57,6 +58,7 @@
         "async-mutex": "^0.5.0",
         "canonical-json": "^0.2.0",
         "cbor": "^10.0.3",
+        "cross-env": "^10.1.0",
         "dotenv": "^16.4.7",
         "ethereum-cryptography": "^3.1.0",
         "express": "^5.1.0",
@@ -73,6 +75,8 @@
         "@commitlint/config-conventional": "^19.8.0",
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.24.0",
+        "@jest/globals": "^29.7.0",
+        "@jest/types": "^29.6.3",
         "@types/jest": "^29.5.14",
         "@types/node": "^22.14.0",
         "@typescript-eslint/eslint-plugin": "^8.30.1",
@@ -88,8 +92,11 @@
         "prettier": "^3.5.3",
         "prisma": "^6.6.0",
         "ts-jest": "^29.3.1",
+        "ts-node": "^10.9.2",
         "tsx": "^4.19.3",
-        "typescript": "^5.8.3"
+        "typescript": "^5.8.3",
+        "wait-for-expect": "^4.0.0",
+        "wait-on": "^9.0.3"
     },
     "lint-staged": {
         "*.{js,ts}": [

@@ -4,8 +4,9 @@ import { ApiKeyStatus, Network, Permission } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
+import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
   limit: z
@@ -31,8 +32,16 @@ export const getAPIKeySchemaOutput = z.object({
       networkLimit: z.array(z.nativeEnum(Network)),
       RemainingUsageCredits: z.array(
         z.object({
-          unit: z.string(),
-          amount: z.string(),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+            ),
+          amount: z
+            .string()
+            .describe(
+              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+            ),
         }),
       ),
       status: z.nativeEnum(ApiKeyStatus),
@@ -55,17 +64,12 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
       include: { RemainingUsageCredits: true },
     });
     return {
-      ApiKeys: result.map((data) => {
-        return {
-          ...data,
-          RemainingUsageCredits: data.RemainingUsageCredits.map(
-            (usageCredit) => ({
-              unit: usageCredit.unit,
-              amount: usageCredit.amount.toString(),
-            }),
-          ),
-        };
-      }),
+      ApiKeys: result.map((data) => ({
+        ...data,
+        RemainingUsageCredits: transformBigIntAmounts(
+          data.RemainingUsageCredits,
+        ),
+      })),
     };
   },
 });
@@ -81,8 +85,17 @@ export const addAPIKeySchemaInput = z.object({
   UsageCredits: z
     .array(
       z.object({
-        unit: z.string().max(150),
-        amount: z.string(),
+        unit: z
+          .string()
+          .max(150)
+          .describe(
+            'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+          ),
+        amount: z
+          .string()
+          .describe(
+            'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+          ),
       }),
     )
     .describe(
@@ -122,7 +135,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.create({
       data: {
         token: apiKey,
-        tokenHash: generateHash(apiKey),
+        tokenHash: generateSHA256Hash(apiKey),
         status: ApiKeyStatus.Active,
         permission: input.permission,
         usageLimited: isAdmin ? false : input.usageLimited,
@@ -160,8 +173,17 @@ export const updateAPIKeySchemaInput = z.object({
   UsageCreditsToAddOrRemove: z
     .array(
       z.object({
-        unit: z.string().max(150),
-        amount: z.string(),
+        unit: z
+          .string()
+          .max(150)
+          .describe(
+            'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+          ),
+        amount: z
+          .string()
+          .describe(
+            'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+          ),
       }),
     )
     .max(25)

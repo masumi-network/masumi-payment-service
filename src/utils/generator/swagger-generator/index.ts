@@ -167,7 +167,12 @@ export function generateOpenAPI() {
                     permission: Permission.Admin,
                     networkLimit: [Network.Preprod],
                     usageLimited: true,
-                    RemainingUsageCredits: [{ unit: '', amount: '10000000' }],
+                    RemainingUsageCredits: [
+                      {
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                      },
+                    ],
                   },
                 },
               }),
@@ -382,7 +387,10 @@ export function generateOpenAPI() {
                         permission: Permission.Admin,
                         usageLimited: true,
                         RemainingUsageCredits: [
-                          { unit: '', amount: '10000000' },
+                          {
+                            unit: '', // Empty string = ADA/lovelace
+                            amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                          },
                         ],
                         status: ApiKeyStatus.Active,
                         networkLimit: [Network.Mainnet],
@@ -421,7 +429,12 @@ export function generateOpenAPI() {
             schema: addAPIKeySchemaInput.openapi({
               example: {
                 usageLimited: 'true',
-                UsageCredits: [{ unit: '', amount: '10000000' }],
+                UsageCredits: [
+                  {
+                    unit: '', // Empty string = ADA/lovelace
+                    amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                  },
+                ],
                 permission: Permission.Admin,
               },
             }),
@@ -481,8 +494,14 @@ export function generateOpenAPI() {
                 id: 'unique_cuid_v2_of_entry_to_update',
                 token: 'api_key_to_change_to',
                 UsageCreditsToAddOrRemove: [
-                  { unit: '', amount: '10000000' },
-                  { unit: 'usdm_policy_and_asset_id', amount: '-10000000' },
+                  {
+                    unit: '', // Empty string = ADA/lovelace
+                    amount: '10000000', // ADD 10 ADA (positive amount adds credits: 10 * 1,000,000 lovelace)
+                  },
+                  {
+                    unit: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d', // USDM token (policyId + assetName concatenated in hex)
+                    amount: '-25000000', // REMOVE 25 USDM (negative amount removes credits: -25 * 1,000,000)
+                  },
                 ],
                 status: ApiKeyStatus.Active,
               },
@@ -642,8 +661,8 @@ export function generateOpenAPI() {
                         TransactionHistory: [],
                         RequestedFunds: [
                           {
-                            amount: '10000000',
-                            unit: '',
+                            unit: '', // Empty string = ADA/lovelace
+                            amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                           },
                         ],
                         PaymentSource: {
@@ -739,8 +758,8 @@ export function generateOpenAPI() {
                     },
                     RequestedFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -751,6 +770,8 @@ export function generateOpenAPI() {
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
+                    CurrentTransaction: null,
+                    TransactionHistory: [],
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
@@ -833,8 +854,8 @@ export function generateOpenAPI() {
                     },
                     RequestedFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -924,8 +945,8 @@ export function generateOpenAPI() {
                     },
                     RequestedFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1114,10 +1135,11 @@ export function generateOpenAPI() {
                       errorNote: null,
                     },
                     CurrentTransaction: null,
+                    TransactionHistory: [],
                     PaidFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1263,8 +1285,8 @@ export function generateOpenAPI() {
                     CurrentTransaction: null,
                     PaidFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1353,8 +1375,8 @@ export function generateOpenAPI() {
                     CurrentTransaction: null,
                     PaidFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1450,8 +1472,8 @@ export function generateOpenAPI() {
                     TransactionHistory: [],
                     RequestedFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1550,8 +1572,8 @@ export function generateOpenAPI() {
                     TransactionHistory: [],
                     PaidFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1649,8 +1671,8 @@ export function generateOpenAPI() {
                             pricingType: PricingType.Fixed,
                             Pricing: [
                               {
-                                amount: '1000000',
-                                unit: 'unit',
+                                unit: '', // Empty string = ADA/lovelace
+                                amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                               },
                             ],
                           },
@@ -1730,8 +1752,8 @@ export function generateOpenAPI() {
                           pricingType: PricingType.Fixed,
                           Pricing: [
                             {
-                              unit: 'unit',
-                              amount: '1000000',
+                              unit: '', // Empty string = ADA/lovelace
+                              amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                             },
                           ],
                         },
@@ -1794,8 +1816,8 @@ export function generateOpenAPI() {
                   pricingType: PricingType.Fixed,
                   Pricing: [
                     {
-                      unit: '',
-                      amount: '10000000',
+                      unit: '', // Empty string = ADA/lovelace
+                      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                     },
                   ],
                 },
@@ -2766,7 +2788,12 @@ export function generateOpenAPI() {
                       {
                         txHash: 'tx_hash',
                         address: 'addr1qx2ej34k567890',
-                        Amounts: [{ unit: '', quantity: 10000000 }],
+                        Amounts: [
+                          {
+                            unit: '', // Empty string = ADA/lovelace
+                            quantity: 10000000, // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                          },
+                        ],
                         outputIndex: 1,
                         block: '1',
                         dataHash: 'data_hash',

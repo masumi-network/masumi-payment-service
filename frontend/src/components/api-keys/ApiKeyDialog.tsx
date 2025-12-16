@@ -1,10 +1,10 @@
-import { Button } from './ui/button';
-import { Input } from './ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getApiKeyStatus, getPaymentSource } from '@/lib/api/generated';
-import { Header } from './Header';
-import { Footer } from './Footer';
+import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
@@ -47,7 +47,6 @@ export function ApiKeyDialog() {
 
       const hexKey = Buffer.from(key).toString('hex');
       localStorage.setItem('payment_api_key', hexKey);
-      dispatch({ type: 'SET_API_KEY', payload: key });
 
       const sourcesResponse = await getPaymentSource({
         client: apiClient,
@@ -64,6 +63,8 @@ export function ApiKeyDialog() {
       } else {
         router.push('/');
       }
+
+      dispatch({ type: 'SET_API_KEY', payload: key });
     } catch (error: unknown) {
       const apiError = error as ApiError;
       const errorMessage =

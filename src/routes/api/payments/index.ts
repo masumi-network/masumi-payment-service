@@ -8,6 +8,7 @@ import {
   PaymentAction,
   PaymentErrorType,
   PricingType,
+  TransactionStatus,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -20,18 +21,15 @@ import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
-import { generateHash } from '@/utils/crypto';
+import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
 import {
-  parseDateRange,
-  filterByAgentIdentifier,
-  aggregatePaymentEarnings,
-  mapUnitAmountToResponse,
-  TransactionWithFunds,
-} from '@/utils/earnings-helpers';
-import { recordBusinessEndpointError } from '@/utils/metrics';
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
+import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -95,7 +93,20 @@ export const queryPaymentsSchemaOutput = z.object({
           id: z.string(),
           createdAt: z.date(),
           updatedAt: z.date(),
+          fees: z.string().nullable(),
+          blockHeight: z.number().nullable(),
+          blockTime: z.number().nullable(),
+          utxoCount: z.number().nullable(),
+          withdrawalCount: z.number().nullable(),
+          assetMintOrBurnCount: z.number().nullable(),
+          redeemerCount: z.number().nullable(),
+          validContract: z.boolean().nullable(),
+          outputAmount: z.string().nullable(),
           txHash: z.string().nullable(),
+          status: z.nativeEnum(TransactionStatus),
+          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+          newOnChainState: z.nativeEnum(OnChainState).nullable(),
+          confirmations: z.number().nullable(),
         })
         .nullable(),
       TransactionHistory: z
@@ -104,14 +115,35 @@ export const queryPaymentsSchemaOutput = z.object({
             id: z.string(),
             createdAt: z.date(),
             updatedAt: z.date(),
-            txHash: z.string().nullable(),
+            txHash: z.string(),
+            status: z.nativeEnum(TransactionStatus),
+            fees: z.string().nullable(),
+            blockHeight: z.number().nullable(),
+            blockTime: z.number().nullable(),
+            utxoCount: z.number().nullable(),
+            withdrawalCount: z.number().nullable(),
+            assetMintOrBurnCount: z.number().nullable(),
+            redeemerCount: z.number().nullable(),
+            validContract: z.boolean().nullable(),
+            outputAmount: z.string().nullable(),
+            previousOnChainState: z.nativeEnum(OnChainState).nullable(),
+            newOnChainState: z.nativeEnum(OnChainState).nullable(),
+            confirmations: z.number().nullable(),
           }),
         )
         .nullable(),
       RequestedFunds: z.array(
         z.object({
-          amount: z.string(),
-          unit: z.string(),
+          amount: z
+            .string()
+            .describe(
+              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+            ),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+            ),
         }),
       ),
       WithdrawnForSeller: z.array(
@@ -209,32 +241,20 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     return {
       Payments: result.map((payment) => ({
         ...payment,
-        submitResultTime: payment.submitResultTime.toString(),
-        cooldownTime: Number(payment.sellerCoolDownTime),
-        cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
-        payByTime: payment.payByTime?.toString() ?? null,
-        unlockTime: payment.unlockTime.toString(),
-        externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-        collateralReturnLovelace:
-          payment.collateralReturnLovelace?.toString() ?? null,
-        RequestedFunds: (
-          payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
+        ...transformPaymentGetTimestamps(payment),
+        ...transformPaymentGetAmounts(payment),
+        CurrentTransaction: payment.CurrentTransaction
+          ? {
+              ...payment.CurrentTransaction,
+              fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory: payment.TransactionHistory
+          ? payment.TransactionHistory.map((tx) => ({
+              ...tx,
+              fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
       })),
     };
   },
@@ -317,8 +337,16 @@ export const createPaymentSchemaOutput = z.object({
   }),
   RequestedFunds: z.array(
     z.object({
-      amount: z.string(),
-      unit: z.string(),
+      amount: z
+        .string()
+        .describe(
+          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+        ),
+      unit: z
+        .string()
+        .describe(
+          'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+        ),
     }),
   ),
   WithdrawnForSeller: z.array(
@@ -352,6 +380,44 @@ export const createPaymentSchemaOutput = z.object({
       walletAddress: z.string(),
     })
     .nullable(),
+  CurrentTransaction: z
+    .object({
+      id: z.string(),
+      createdAt: z.date(),
+      updatedAt: z.date(),
+      txHash: z.string(),
+      status: z.nativeEnum(TransactionStatus),
+      fees: z.string().nullable(),
+      blockHeight: z.number().nullable(),
+      blockTime: z.number().nullable(),
+      utxoCount: z.number().nullable(),
+      withdrawalCount: z.number().nullable(),
+      assetMintOrBurnCount: z.number().nullable(),
+      redeemerCount: z.number().nullable(),
+      validContract: z.boolean().nullable(),
+      outputAmount: z.string().nullable(),
+    })
+    .nullable(),
+  TransactionHistory: z
+    .array(
+      z.object({
+        id: z.string(),
+        createdAt: z.date(),
+        updatedAt: z.date(),
+        txHash: z.string(),
+        status: z.nativeEnum(TransactionStatus),
+        fees: z.string().nullable(),
+        blockHeight: z.number().nullable(),
+        blockTime: z.number().nullable(),
+        utxoCount: z.number().nullable(),
+        withdrawalCount: z.number().nullable(),
+        assetMintOrBurnCount: z.number().nullable(),
+        redeemerCount: z.number().nullable(),
+        validContract: z.boolean().nullable(),
+        outputAmount: z.string().nullable(),
+      }),
+    )
+    .nullable(),
   metadata: z.string().nullable(),
 });
 
@@ -376,7 +442,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       input.network,
       options.permission,
     );
-    const policyId = input.agentIdentifier.slice(0, 56);
+    const policyId = extractPolicyId(input.agentIdentifier);
 
     const specifiedPaymentContract = await prisma.paymentSource.findFirst({
       where: {
@@ -539,7 +605,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     const sellerCUID = cuid2.createId();
-    const sellerId = generateHash(sellerCUID) + input.agentIdentifier;
+    const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
       agentIdentifier: input.agentIdentifier,
@@ -561,7 +627,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       },
     });
 
-    const hashedBlockchainIdentifier = generateHash(
+    const hashedBlockchainIdentifier = generateSHA256Hash(
       stringify(blockchainIdentifier),
     );
     const signedBlockchainIdentifier = await meshWallet.signData(
@@ -623,6 +689,41 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     }
     return {
       ...payment,
+      CurrentTransaction: payment.CurrentTransaction
+        ? {
+            id: payment.CurrentTransaction.id,
+            createdAt: payment.CurrentTransaction.createdAt,
+            updatedAt: payment.CurrentTransaction.updatedAt,
+            txHash: payment.CurrentTransaction.txHash,
+            status: payment.CurrentTransaction.status,
+            fees: payment.CurrentTransaction.fees?.toString() ?? null,
+            blockHeight: payment.CurrentTransaction.blockHeight,
+            blockTime: payment.CurrentTransaction.blockTime,
+            utxoCount: payment.CurrentTransaction.utxoCount,
+            withdrawalCount: payment.CurrentTransaction.withdrawalCount,
+            assetMintOrBurnCount:
+              payment.CurrentTransaction.assetMintOrBurnCount,
+            redeemerCount: payment.CurrentTransaction.redeemerCount,
+            validContract: payment.CurrentTransaction.validContract,
+            outputAmount: payment.CurrentTransaction.outputAmount,
+          }
+        : null,
+      TransactionHistory: payment.TransactionHistory.map((tx) => ({
+        id: tx.id,
+        createdAt: tx.createdAt,
+        updatedAt: tx.updatedAt,
+        txHash: tx.txHash,
+        status: tx.status,
+        fees: tx.fees?.toString() ?? null,
+        blockHeight: tx.blockHeight,
+        blockTime: tx.blockTime,
+        utxoCount: tx.utxoCount,
+        withdrawalCount: tx.withdrawalCount,
+        assetMintOrBurnCount: tx.assetMintOrBurnCount,
+        redeemerCount: tx.redeemerCount,
+        validContract: tx.validContract,
+        outputAmount: tx.outputAmount,
+      })),
       payByTime: payment.payByTime!.toString(),
       submitResultTime: payment.submitResultTime.toString(),
       unlockTime: payment.unlockTime.toString(),
