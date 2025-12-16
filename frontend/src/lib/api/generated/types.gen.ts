@@ -2738,6 +2738,210 @@ export type GetRpcApiKeysResponses = {
 
 export type GetRpcApiKeysResponse = GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
 
+export type GetPurchaseEarningsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The unique identifier of the agent to get purchase earnings for
+         */
+        agentIdentifier: string;
+        /**
+         * Start date for earnings calculation (date format: 2024-01-01). If null, uses earliest available data
+         */
+        startDate?: Date | null;
+        /**
+         * End date for earnings calculation (date format: 2024-01-31). If null, uses current date
+         */
+        endDate?: Date | null;
+        /**
+         * The Cardano network to query earnings from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/purchase/earnings';
+};
+
+export type GetPurchaseEarningsErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no earnings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseEarningsResponses = {
+    /**
+     * Agent purchase earnings analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string;
+            /**
+             * Actual date range used for calculation
+             */
+            dateRange: string;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalEarnings: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalFeesPaid: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalRevenue: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            monthlyBreakdown: Array<{
+                month: string;
+                monthNumber: number;
+                year: number;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+            dailyEarnings: Array<{
+                date: string;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                revenue: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                fees: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+        };
+    };
+};
+
+export type GetPurchaseEarningsResponse = GetPurchaseEarningsResponses[keyof GetPurchaseEarningsResponses];
+
+export type GetPaymentEarningsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The unique identifier of the agent to get payment earnings for
+         */
+        agentIdentifier: string;
+        /**
+         * Start date for earnings calculation (date format: 2024-01-01). If null, uses earliest available data
+         */
+        startDate?: Date | null;
+        /**
+         * End date for earnings calculation (date format: 2024-01-31). If null, uses current date
+         */
+        endDate?: Date | null;
+        /**
+         * The Cardano network to query earnings from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/payment/earnings';
+};
+
+export type GetPaymentEarningsErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no earnings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentEarningsResponses = {
+    /**
+     * Agent payment earnings analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string;
+            /**
+             * Actual date range used for calculation
+             */
+            dateRange: string;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalEarnings: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalFeesPaid: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            totalRevenue: Array<{
+                unit: string;
+                amount: string;
+            }>;
+            monthlyBreakdown: Array<{
+                month: string;
+                monthNumber: number;
+                year: number;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+            dailyEarnings: Array<{
+                date: string;
+                earnings: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                revenue: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                fees: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+                transactions: number;
+            }>;
+        };
+    };
+};
+
+export type GetPaymentEarningsResponse = GetPaymentEarningsResponses[keyof GetPaymentEarningsResponses];
+
 export type ClientOptions = {
     baseURL: `${string}://${string}` | (string & {});
 };
