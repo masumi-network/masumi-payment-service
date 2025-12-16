@@ -213,20 +213,6 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
         console.log(`Deregistration failed (non-critical): ${error.message}`);
       });
     },
-    // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
-    (() => {
-      const { getTestEnvironment } = require('../fixtures/testData');
-      const configTimeout = getTestEnvironment().timeout.registration;
-      if (configTimeout === 0) {
-        console.log('🔧 Jest timeout set to 24 hours (effectively infinite)');
-        return 24 * 60 * 60 * 1000; // 24 hours - effectively infinite for Jest
-      } else {
-        const bufferTime = 10 * 60 * 1000; // 10 minute buffer
-        console.log(
-          `🔧 Jest timeout set to ${Math.floor((configTimeout + bufferTime) / 60000)} minutes`,
-        );
-        return configTimeout + bufferTime;
-      }
-    })(),
+    20 * 60 * 1000, // 20 minutes timeout
   );
 });
