@@ -45,7 +45,7 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
     );
 
     // Wait for global setup to complete
-    if (!(global as any).testConfig) {
+    if (!global.testConfig) {
       throw new Error(
         'Global test configuration not available. Check testEnvironment.ts setup.',
       );
@@ -62,7 +62,7 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
     }
 
     // Verify API client is available
-    if (!(global as any).testApiClient) {
+    if (!global.testApiClient) {
       throw new Error(
         'Test API client not initialized. Make sure test setup ran correctly.',
       );
@@ -94,20 +94,23 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
       // ============================
       // STEP 1: REGISTER AGENT (Using Helper Function)
       // ============================
-      console.log('📝 Step 1: Agent registration and confirmation...');
-      const agent = await registerAndConfirmAgent(testNetwork);
+      console.log('📝 Step 1: Check if test agent is available...');
+      const agent = global.testAgent;
+
+      if (!agent) {
+        throw new Error('Test agent not available.');
+      }
+
+      testCleanupData.push({
+        agentId: agent.id,
+        agentIdentifier: agent.agentIdentifier,
+      });
 
       console.log(`✅ Agent registered and confirmed:
         - Agent Name: ${agent.name}
         - Agent ID: ${agent.id}
         - Agent Identifier: ${agent.agentIdentifier}
       `);
-
-      // Track for cleanup
-      testCleanupData.push({
-        agentId: agent.id,
-        agentIdentifier: agent.agentIdentifier,
-      });
 
       // ============================
       // STEP 2: CREATE PAYMENT WITH CUSTOM TIMING (Using Helper Function)
@@ -221,14 +224,6 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
         
         🎯 Complete 9-step refund flow successfully executed using helper functions!
       `);
-
-      // ============================
-      // CLEANUP: DEREGISTER AGENT
-      // ============================
-      console.log('Initiating agent deregistration ');
-      deregisterAgent(testNetwork, agent.agentIdentifier).catch((error) => {
-        console.log(`Deregistration failed (non-critical): ${error.message}`);
-      });
     },
     20 * 60 * 1000, // 20 minutes timeout
   );

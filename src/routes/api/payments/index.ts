@@ -119,11 +119,13 @@ export const queryPaymentsSchemaOutput = z.object({
         .describe('ID of the API key that created this payment'),
       resultHash: z
         .string()
+        .nullable()
         .describe(
           'SHA256 hash of the result submitted by the seller (hex string)',
         ),
       inputHash: z
         .string()
+        .nullable()
         .describe('SHA256 hash of the input data for the payment (hex string)'),
       cooldownTime: z
         .number()
@@ -207,7 +209,7 @@ export const queryPaymentsSchemaOutput = z.object({
             updatedAt: z
               .date()
               .describe('Timestamp when the transaction was last updated'),
-            txHash: z.string().describe('Cardano transaction hash'),
+            txHash: z.string().nullable().describe('Cardano transaction hash'),
             status: z
               .nativeEnum(TransactionStatus)
               .describe('Current status of the transaction'),
@@ -529,9 +531,11 @@ export const createPaymentSchemaOutput = z.object({
     .describe('ID of the API key that created this payment'),
   inputHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the input data for the payment (hex string)'),
   resultHash: z
     .string()
+    .nullable()
     .describe(
       'SHA256 hash of the result submitted by the seller (hex string). Empty string if not yet submitted',
     ),
@@ -656,7 +660,7 @@ export const createPaymentSchemaOutput = z.object({
       updatedAt: z
         .date()
         .describe('Timestamp when the transaction was last updated'),
-      txHash: z.string().describe('Cardano transaction hash'),
+      txHash: z.string().nullable().describe('Cardano transaction hash'),
       status: z
         .nativeEnum(TransactionStatus)
         .describe('Current status of the transaction'),
@@ -681,7 +685,7 @@ export const createPaymentSchemaOutput = z.object({
         updatedAt: z
           .date()
           .describe('Timestamp when the transaction was last updated'),
-        txHash: z.string().describe('Cardano transaction hash'),
+        txHash: z.string().nullable().describe('Cardano transaction hash'),
         status: z
           .nativeEnum(TransactionStatus)
           .describe('Current status of the transaction'),

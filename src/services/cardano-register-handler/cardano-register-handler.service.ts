@@ -236,7 +236,7 @@ export async function registerAgentV1() {
                 state: RegistrationState.RegistrationInitiated,
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {

@@ -74,7 +74,7 @@ model Transaction {
   id                       String            @id @default(cuid())
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
-  txHash                   String
+  txHash                   String?
   status                   TransactionStatus
   confirmations            Int?
   lastCheckedAt            DateTime?
@@ -200,8 +200,8 @@ model PaymentRequest {
   submitResultTime          BigInt
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
-  inputHash                 String
-  resultHash                String
+  inputHash                 String?
+  resultHash                String?
   onChainState              OnChainState?
   sellerCoolDownTime        BigInt
   buyerCoolDownTime         BigInt
@@ -247,7 +247,7 @@ model PurchaseRequest {
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
   inputHash                 String
-  resultHash                String
+  resultHash                String?
   onChainState              OnChainState?
   sellerCoolDownTime        BigInt
   buyerCoolDownTime         BigInt
@@ -273,7 +273,6 @@ model PurchaseActionData {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
   requestedAction        PurchasingAction
-  inputHash              String
   submittedTxHash        String?
   errorType              PurchaseErrorType?
   errorNote              String?

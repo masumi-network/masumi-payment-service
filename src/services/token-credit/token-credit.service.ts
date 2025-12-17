@@ -32,27 +32,35 @@ export async function handlePurchaseCreditInit({
   unlockTime: bigint;
   inputHash: string;
 }) {
-  try {
-    return await creditTokenRepository.handlePurchaseCreditInit({
-      id,
-      cost,
-      metadata,
-      network,
-      blockchainIdentifier,
-      contractAddress,
-      sellerVkey,
-      sellerAddress,
-      payByTime,
-      submitResultTime,
-      externalDisputeUnlockTime,
-      unlockTime,
-      inputHash,
-    });
-  } catch (error) {
-    if (error instanceof InsufficientFundsError) {
-      throw createHttpError(400, 'Insufficient funds');
+  let remainingAttempts = 5;
+  while (remainingAttempts > 0) {
+    try {
+      return await creditTokenRepository.handlePurchaseCreditInit({
+        id,
+        cost,
+        metadata,
+        network,
+        blockchainIdentifier,
+        contractAddress,
+        sellerVkey,
+        sellerAddress,
+        payByTime,
+        submitResultTime,
+        externalDisputeUnlockTime,
+        unlockTime,
+        inputHash,
+      });
+    } catch (error) {
+      if (error instanceof InsufficientFundsError) {
+        throw createHttpError(400, 'Insufficient funds');
+      }
+      logger.warn(error);
+      await new Promise((resolve) => setTimeout(resolve, Math.random() * 300));
+      remainingAttempts--;
     }
-    logger.error(error);
-    throw createHttpError(500, 'Error handling payment credit initialization');
   }
+  throw createHttpError(
+    500,
+    'Error handling payment credit initialization, after please try again later',
+  );
 }

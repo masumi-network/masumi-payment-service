@@ -37,7 +37,7 @@ const mutex = new Mutex();
 function validatePurchaseRequestFields(request: {
   payByTime: bigint | null;
   collateralReturnLovelace: bigint | null;
-  CurrentTransaction: { txHash: string } | null;
+  CurrentTransaction: { txHash: string | null } | null;
   SmartContractWallet: object | null;
 }): void {
   if (request.payByTime == null) {
@@ -110,6 +110,7 @@ function createCancelRefundDatum(params: {
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(params.cooldownTime),
     state:
+      params.decodedContract.resultHash == null ||
       params.decodedContract.resultHash == ''
         ? SmartContractState.FundsLocked
         : SmartContractState.ResultSubmitted,
@@ -281,7 +282,7 @@ export async function cancelRefundsV1() {
                 },
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {

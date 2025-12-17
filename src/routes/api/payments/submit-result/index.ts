@@ -67,6 +67,7 @@ export const submitPaymentResultSchemaOutput = z.object({
     .describe('ID of the API key that created this payment'),
   resultHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the result submitted by the seller '),
   inputHash: z
     .string()
@@ -282,9 +283,16 @@ export const submitPaymentResultEndpointPost =
           WithdrawnForBuyer: true,
         },
       });
+      if (result.inputHash == null) {
+        throw createHttpError(
+          500,
+          'Internal server error: Payment has no input hash',
+        );
+      }
 
       return {
         ...result,
+        inputHash: result.inputHash,
         payByTime: result.payByTime?.toString() ?? null,
         submitResultTime: result.submitResultTime.toString(),
         unlockTime: result.unlockTime.toString(),

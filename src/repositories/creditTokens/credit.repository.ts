@@ -4,6 +4,7 @@ import {
   Network,
   Permission,
   PurchasingAction,
+  WalletBase,
   WalletType,
 } from '@prisma/client';
 
@@ -37,8 +38,31 @@ async function handlePurchaseCreditInit({
   inputHash: string;
 }) {
   return await prisma.$transaction(
-    async (transaction) => {
-      const result = await transaction.apiKey.findUnique({
+    async (prisma) => {
+      const paymentSource = await prisma.paymentSource.findUnique({
+        where: {
+          network_smartContractAddress: {
+            network: network,
+            smartContractAddress: contractAddress,
+          },
+          deletedAt: null,
+        },
+      });
+      if (!paymentSource) {
+        throw Error('Invalid paymentSource: ' + paymentSource);
+      }
+      let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
+        where: {
+          paymentSourceId_walletVkey_walletAddress_type: {
+            paymentSourceId: paymentSource.id,
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+          },
+        },
+      });
+
+      const result = await prisma.apiKey.findUnique({
         where: { id: id },
         include: {
           RemainingUsageCredits: true,
@@ -52,6 +76,17 @@ async function handlePurchaseCreditInit({
         !result.networkLimit.includes(network)
       ) {
         throw Error('No permission for network: ' + network + ' for id: ' + id);
+      }
+
+      if (!sellerWallet) {
+        sellerWallet = await prisma.walletBase.create({
+          data: {
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+            PaymentSource: { connect: { id: paymentSource.id } },
+          },
+        });
       }
 
       const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<
@@ -111,7 +146,7 @@ async function handlePurchaseCreditInit({
         unit: unit,
       }));
       if (result.usageLimited) {
-        await transaction.apiKey.update({
+        await prisma.apiKey.update({
           where: { id: id },
           data: {
             RemainingUsageCredits: {
@@ -120,30 +155,6 @@ async function handlePurchaseCreditInit({
           },
         });
       }
-
-      const paymentSource = await transaction.paymentSource.findUnique({
-        where: {
-          network_smartContractAddress: {
-            network: network,
-            smartContractAddress: contractAddress,
-          },
-          deletedAt: null,
-        },
-      });
-      if (!paymentSource) {
-        throw Error('Invalid paymentSource: ' + paymentSource);
-      }
-
-      const sellerWallet = await transaction.walletBase.findUnique({
-        where: {
-          paymentSourceId_walletVkey_walletAddress_type: {
-            paymentSourceId: paymentSource.id,
-            walletVkey: sellerVkey,
-            walletAddress: sellerAddress,
-            type: WalletType.Seller,
-          },
-        },
-      });
 
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
@@ -157,28 +168,17 @@ async function handlePurchaseCreditInit({
           payByTime: payByTime,
           submitResultTime: submitResultTime,
           PaymentSource: { connect: { id: paymentSource.id } },
-          resultHash: '',
+          resultHash: null,
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
           SellerWallet: {
-            connectOrCreate: {
-              where: {
-                id: sellerWallet?.id ?? 'not-found',
-              },
-              create: {
-                walletVkey: sellerVkey,
-                walletAddress: sellerAddress,
-                paymentSourceId: paymentSource.id,
-                type: WalletType.Seller,
-              },
-            },
+            connect: { id: sellerWallet.id },
           },
           blockchainIdentifier: blockchainIdentifier,
           inputHash: inputHash,
           NextAction: {
             create: {
               requestedAction: PurchasingAction.FundsLockingRequested,
-              inputHash: inputHash,
             },
           },
           externalDisputeUnlockTime: externalDisputeUnlockTime,
@@ -199,7 +199,7 @@ async function handlePurchaseCreditInit({
 
       return purchaseRequest;
     },
-    { isolationLevel: 'ReadCommitted', maxWait: 15000, timeout: 15000 },
+    { isolationLevel: 'Serializable', maxWait: 15000, timeout: 15000 },
   );
 }
 

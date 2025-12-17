@@ -60,6 +60,7 @@ export const cancelPurchaseRefundRequestSchemaOutput = z.object({
     .describe('ID of the API key that created this purchase'),
   resultHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the result submitted by the seller (hex string)'),
   onChainState: z
     .nativeEnum(OnChainState)
@@ -91,7 +92,7 @@ export const cancelPurchaseRefundRequestSchemaOutput = z.object({
       updatedAt: z
         .date()
         .describe('Timestamp when the transaction was last updated'),
-      txHash: z.string().describe('Cardano transaction hash'),
+      txHash: z.string().nullable().describe('Cardano transaction hash'),
       status: z
         .nativeEnum(TransactionStatus)
         .describe('Current status of the transaction'),

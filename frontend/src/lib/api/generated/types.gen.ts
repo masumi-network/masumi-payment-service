@@ -721,11 +721,11 @@ export type GetPaymentResponses = {
                 /**
                  * SHA256 hash of the result submitted by the seller (hex string)
                  */
-                resultHash: string;
+                resultHash: string | null;
                 /**
                  * SHA256 hash of the input data for the payment (hex string)
                  */
-                inputHash: string;
+                inputHash: string | null;
                 /**
                  * Cooldown period in milliseconds for the seller to dispute
                  */
@@ -824,7 +824,7 @@ export type GetPaymentResponses = {
                     /**
                      * Cardano transaction hash
                      */
-                    txHash: string;
+                    txHash: string | null;
                     /**
                      * Current status of the transaction
                      */
@@ -1073,11 +1073,11 @@ export type PostPaymentResponses = {
             /**
              * SHA256 hash of the input data for the payment (hex string)
              */
-            inputHash: string;
+            inputHash: string | null;
             /**
              * SHA256 hash of the result submitted by the seller (hex string). Empty string if not yet submitted
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
@@ -1203,7 +1203,7 @@ export type PostPaymentResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -1237,7 +1237,7 @@ export type PostPaymentResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -1347,7 +1347,7 @@ export type PostPaymentSubmitResultResponses = {
             /**
              * SHA256 hash of the result submitted by the seller
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * SHA256 hash of the input data for the payment
              */
@@ -1555,7 +1555,7 @@ export type PostPaymentAuthorizeRefundResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * SHA256 hash of the input data for the payment (hex string)
              */
@@ -1801,15 +1801,11 @@ export type GetPurchaseResponses = {
                 /**
                  * SHA256 hash of the result submitted by the seller (hex string)
                  */
-                resultHash: string;
+                resultHash: string | null;
                 /**
                  * Next action required for this purchase
                  */
                 NextAction: {
-                    /**
-                     * SHA256 hash of the input data (hex string)
-                     */
-                    inputHash: string;
                     /**
                      * Next action required for this purchase
                      */
@@ -1842,7 +1838,7 @@ export type GetPurchaseResponses = {
                     /**
                      * Cardano transaction hash
                      */
-                    txHash: string;
+                    txHash: string | null;
                     /**
                      * Current status of the transaction
                      */
@@ -1891,7 +1887,7 @@ export type GetPurchaseResponses = {
                     /**
                      * Cardano transaction hash
                      */
-                    txHash: string;
+                    txHash: string | null;
                     /**
                      * Current status of the transaction
                      */
@@ -2107,7 +2103,7 @@ export type PostPurchaseErrors = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * SHA256 hash of the input data for the purchase (hex string)
              */
@@ -2149,7 +2145,7 @@ export type PostPurchaseErrors = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -2183,7 +2179,7 @@ export type PostPurchaseErrors = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -2351,7 +2347,7 @@ export type PostPurchaseResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * SHA256 hash of the input data for the purchase (hex string)
              */
@@ -2393,7 +2389,7 @@ export type PostPurchaseResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -2427,7 +2423,7 @@ export type PostPurchaseResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -2623,7 +2619,7 @@ export type PostPurchaseRequestRefundResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
@@ -2664,7 +2660,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -2848,7 +2844,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
@@ -2889,7 +2885,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -3090,11 +3086,11 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * SHA256 hash of the input data for the payment (hex string)
              */
-            inputHash: string;
+            inputHash: string | null;
             /**
              * Cooldown period in milliseconds for the seller to dispute
              */
@@ -3404,15 +3400,11 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
             /**
              * SHA256 hash of the result submitted by the seller (hex string)
              */
-            resultHash: string;
+            resultHash: string | null;
             /**
              * Next action required for this purchase
              */
             NextAction: {
-                /**
-                 * SHA256 hash of the input data (hex string)
-                 */
-                inputHash: string;
                 /**
                  * Next action required for this purchase
                  */
@@ -3445,7 +3437,7 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -3470,7 +3462,7 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
                 /**
                  * Cardano transaction hash
                  */
-                txHash: string;
+                txHash: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -3991,7 +3983,7 @@ export type GetRegistryResponses = {
                     /**
                      * Cardano transaction hash
                      */
-                    txHash: string;
+                    txHash: string | null;
                     /**
                      * Current status of the transaction
                      */

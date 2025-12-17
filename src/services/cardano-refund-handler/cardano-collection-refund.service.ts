@@ -187,7 +187,7 @@ async function processSingleRefundCollection(
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -245,7 +245,7 @@ export async function collectRefundV1() {
       onChainState: {
         in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
       },
-      resultHash: '',
+      resultHash: null,
       submitResultTime: {
         lte: Date.now() - 1000 * 60 * 10, //add 10 minutes for block time
       },
