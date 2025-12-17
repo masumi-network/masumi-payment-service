@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/rules-of-hooks */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -37,11 +37,11 @@ type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
-      type: 'Purchasing';
-    })
+    type: 'Purchasing';
+  })
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
-      type: 'Selling';
-    });
+    type: 'Selling';
+  });
 type WalletWithBalance = Wallet & {
   balance: string;
   usdmBalance: string;
@@ -398,10 +398,10 @@ export default function Overview() {
             Showing data for{' '}
             {selectedPaymentSourceId
               ? shortenAddress(
-                  state.paymentSources.find(
-                    (source) => source.id === selectedPaymentSourceId,
-                  )?.smartContractAddress ?? 'invalid',
-                )
+                state.paymentSources.find(
+                  (source) => source.id === selectedPaymentSourceId,
+                )?.smartContractAddress ?? 'invalid',
+              )
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -536,8 +536,8 @@ export default function Overview() {
                             </span>
                           )}
                         {agent.AgentPricing &&
-                        agent.AgentPricing.pricingType == 'Fixed' &&
-                        agent.AgentPricing.Pricing?.[0] ? (
+                          agent.AgentPricing.pricingType == 'Fixed' &&
+                          agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {
