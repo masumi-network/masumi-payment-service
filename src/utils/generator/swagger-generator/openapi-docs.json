@@ -1939,6 +1939,7 @@
                                                 {
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -4038,6 +4039,7 @@
                                                 {
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
                                                     "lastCheckedAt": null,
                                                     "onChainState": null,
                                                     "metadata": null,
