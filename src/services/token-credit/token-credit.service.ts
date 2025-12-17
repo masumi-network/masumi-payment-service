@@ -1,4 +1,5 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { logger } from '@/utils/logger';
 import { Network } from '@prisma/client';
@@ -53,6 +54,30 @@ export async function handlePurchaseCreditInit({
       throw createHttpError(400, 'Insufficient funds');
     }
     logger.error(error);
-    throw createHttpError(500, 'Error handling payment credit initialization');
+    throw createHttpError(
+      500,
+      'Error handling payment credit initialization' +
+        errorToString(error) +
+        ' id: ' +
+        id +
+        ' blockchainIdentifier: ' +
+        blockchainIdentifier +
+        ' contractAddress: ' +
+        contractAddress +
+        ' sellerVkey: ' +
+        sellerVkey +
+        ' sellerAddress: ' +
+        sellerAddress +
+        ' payByTime: ' +
+        payByTime +
+        ' submitResultTime: ' +
+        submitResultTime +
+        ' externalDisputeUnlockTime: ' +
+        externalDisputeUnlockTime +
+        ' unlockTime: ' +
+        unlockTime +
+        ' inputHash: ' +
+        inputHash,
+    );
   }
 }
