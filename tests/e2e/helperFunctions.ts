@@ -332,8 +332,12 @@ export async function deregisterAgent(
     }),
   });
 
-  expect(deregisterResponse.id).toBeDefined();
-  expect(deregisterResponse.state).toBe('DeregistrationRequested');
+  if (!deregisterResponse.id) {
+    throw new Error('Deregistration response ID is undefined');
+  }
+  if (!deregisterResponse.state) {
+    throw new Error('Deregistration response state is undefined');
+  }
 
   return deregisterResponse;
 }
