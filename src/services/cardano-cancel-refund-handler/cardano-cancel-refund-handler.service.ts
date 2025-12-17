@@ -110,6 +110,7 @@ function createCancelRefundDatum(params: {
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(params.cooldownTime),
     state:
+      params.decodedContract.resultHash == null ||
       params.decodedContract.resultHash == ''
         ? SmartContractState.FundsLocked
         : SmartContractState.ResultSubmitted,

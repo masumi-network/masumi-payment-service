@@ -718,7 +718,7 @@ export async function updateInitialPurchaseTransaction(
         );
         return;
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         logger.warn('Result hash was set. This likely is a spoofing attempt.', {
           purchaseRequest: dbEntry,
           resultHash: decodedNewContract.resultHash,
@@ -1019,7 +1019,7 @@ export async function updateInitialPaymentTransaction(
         newState = OnChainState.FundsOrDatumInvalid;
         errorNote.push(errorMessage);
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         const errorMessage =
           'Result hash was set. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {

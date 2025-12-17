@@ -134,7 +134,10 @@ export function redeemerToOnChainState(
     }
   } else if (redeemerVersion == 2) {
     //CancelRefundRequest
-    if (decodedNewContract?.resultHash != '') {
+    if (
+      decodedNewContract?.resultHash != null &&
+      decodedNewContract?.resultHash != ''
+    ) {
       return OnChainState.ResultSubmitted;
     } else {
       //Ensure the amounts match, to prevent state change attacks

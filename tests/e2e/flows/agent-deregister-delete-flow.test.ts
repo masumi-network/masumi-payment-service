@@ -12,7 +12,10 @@
 
 import { Network } from '@prisma/client';
 import { validateTestWallets } from '../fixtures/testWallets';
-import { registerAndConfirmAgent, deregisterAgent } from '../helperFunctions';
+import {
+  registerAndConfirmAgent,
+  deregisterAndConfirmAgent,
+} from '../helperFunctions';
 
 const testNetwork = (process.env.TEST_NETWORK as Network) || Network.Preprod;
 
@@ -27,7 +30,7 @@ describe(`Agent Register and Deregister Flow E2E Tests (${testNetwork})`, () => 
   }> = [{}];
 
   beforeAll(async () => {
-    if (!(global as any).testConfig) {
+    if (!global.testConfig) {
       throw new Error('Global test configuration not available.');
     }
 
@@ -37,7 +40,7 @@ describe(`Agent Register and Deregister Flow E2E Tests (${testNetwork})`, () => 
       throw new Error('Test wallets not properly configured.');
     }
 
-    if (!(global as any).testApiClient) {
+    if (!global.testApiClient) {
       throw new Error('Test API client not initialized.');
     }
 
@@ -71,31 +74,32 @@ describe(`Agent Register and Deregister Flow E2E Tests (${testNetwork})`, () => 
       console.log('📝 Step 1: Agent registration and confirmation...');
       const agent = await registerAndConfirmAgent(testNetwork);
 
+      testCleanupData.push({
+        agentId: agent.id,
+        agentIdentifier: agent.agentIdentifier,
+        agentName: agent.name,
+        registered: true,
+        confirmed: true,
+      });
+
       console.log(`✅ Agent registered and confirmed:
         - Agent Name: ${agent.name}
         - Agent ID: ${agent.id}
         - Agent Identifier: ${agent.agentIdentifier}
       `);
 
-      // Track for cleanup
-      testCleanupData[0].agentId = agent.id;
-      testCleanupData[0].agentIdentifier = agent.agentIdentifier;
-      testCleanupData[0].agentName = agent.name;
-      testCleanupData[0].registered = true;
-      testCleanupData[0].confirmed = true;
-
       // ============================
       // STEP 2: DEREGISTER AGENT (Using Helper Function)
       // ============================
       console.log('🔄 Step 2: Agent deregistration...');
-      const deregisterResponse = await deregisterAgent(
+      const deregisterResponse = await deregisterAndConfirmAgent(
         testNetwork,
         agent.agentIdentifier,
       );
 
       console.log(`✅ Deregistration completed:
         - Agent ID: ${deregisterResponse.id}  
-        - State: ${deregisterResponse.state}
+        - State: DeregistrationConfirmed
         - Agent Identifier: ${agent.agentIdentifier}
       `);
 
@@ -111,7 +115,7 @@ describe(`Agent Register and Deregister Flow E2E Tests (${testNetwork})`, () => 
     🎊 AGENT REGISTER AND DEREGISTER FLOW SUCCESSFUL! (${totalFlowMinutes}m total)
     
     ✅ Step 1: Agent registration → RegistrationRequested → RegistrationConfirmed → Agent Identifier Generated
-    ✅ Step 2: Deregistration initiated → DeregistrationRequested
+    ✅ Step 2: Deregistration initiated → DeregistrationRequested → DeregistrationConfirmed
     
     📊 Summary:
       - Agent Name: ${agent.name}

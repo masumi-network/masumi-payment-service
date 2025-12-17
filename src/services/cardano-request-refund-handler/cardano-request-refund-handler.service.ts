@@ -158,7 +158,7 @@ async function processSinglePurchaseRequest(
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(BigInt(paymentContract.cooldownTime)),
     state:
-      decodedContract.resultHash == ''
+      decodedContract.resultHash == null || decodedContract.resultHash == ''
         ? SmartContractState.RefundRequested
         : SmartContractState.Disputed,
   });
