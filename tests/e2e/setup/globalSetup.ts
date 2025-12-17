@@ -61,8 +61,6 @@ Example setup:
       console.error('❌ Server is not ready:', serverResult.error?.message);
       console.error(`
 🔧 Make sure the server is running:
-   npm run dev
-
 And accessible at: ${config.apiUrl}
 `);
       process.exit(1);
