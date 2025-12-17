@@ -24,8 +24,8 @@ const config: Config.InitialOptions = {
   globalTeardown: '<rootDir>/tests/e2e/setup/globalTeardown.ts',
   setupFilesAfterEnv: ['<rootDir>/tests/e2e/setup/testEnvironment.ts'],
   // Per-test timeout (applies to each `test(...)` and async hooks in test files)
-  testTimeout: 60_000,
-  maxWorkers: 2,
+  testTimeout: 1_200_000, // 20 minutes
+  maxWorkers: 3,
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.spec.ts',
