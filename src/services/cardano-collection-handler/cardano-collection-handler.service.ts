@@ -275,7 +275,7 @@ async function processSinglePaymentCollection(
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {

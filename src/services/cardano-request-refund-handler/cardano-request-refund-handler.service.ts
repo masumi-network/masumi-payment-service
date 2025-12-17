@@ -210,7 +210,7 @@ async function processSinglePurchaseRequest(
       },
       CurrentTransaction: {
         create: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {

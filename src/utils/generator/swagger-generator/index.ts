@@ -1028,7 +1028,6 @@ export function generateOpenAPI() {
                             PurchasingAction.FundsLockingRequested,
                           errorType: null,
                           errorNote: null,
-                          inputHash: 'input_hash',
                         },
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
@@ -1561,7 +1560,6 @@ export function generateOpenAPI() {
                     inputHash: 'input_hash',
                     resultHash: '',
                     NextAction: {
-                      inputHash: 'input_hash',
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: null,
                       errorNote: null,

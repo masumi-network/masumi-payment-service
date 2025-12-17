@@ -133,14 +133,12 @@ export const queryPurchaseRequestSchemaOutput = z.object({
         ),
       resultHash: z
         .string()
+        .nullable()
         .describe(
           'SHA256 hash of the result submitted by the seller (hex string)',
         ),
       NextAction: z
         .object({
-          inputHash: z
-            .string()
-            .describe('SHA256 hash of the input data (hex string)'),
           requestedAction: z
             .nativeEnum(PurchasingAction)
             .describe('Next action required for this purchase'),
@@ -163,7 +161,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
           updatedAt: z
             .date()
             .describe('Timestamp when the transaction was last updated'),
-          txHash: z.string().describe('Cardano transaction hash'),
+          txHash: z.string().nullable().describe('Cardano transaction hash'),
           status: z
             .nativeEnum(TransactionStatus)
             .describe('Current status of the transaction'),
@@ -204,7 +202,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
             updatedAt: z
               .date()
               .describe('Timestamp when the transaction was last updated'),
-            txHash: z.string().describe('Cardano transaction hash'),
+            txHash: z.string().nullable().describe('Cardano transaction hash'),
             status: z
               .nativeEnum(TransactionStatus)
               .describe('Current status of the transaction'),
@@ -480,6 +478,7 @@ export const createPurchaseInitSchemaOutput = z.object({
     .describe('ID of the API key that created this purchase'),
   resultHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the result submitted by the seller (hex string)'),
   inputHash: z
     .string()
@@ -514,7 +513,7 @@ export const createPurchaseInitSchemaOutput = z.object({
       updatedAt: z
         .date()
         .describe('Timestamp when the transaction was last updated'),
-      txHash: z.string().describe('Cardano transaction hash'),
+      txHash: z.string().nullable().describe('Cardano transaction hash'),
       status: z
         .nativeEnum(TransactionStatus)
         .describe('Current status of the transaction'),
@@ -539,7 +538,7 @@ export const createPurchaseInitSchemaOutput = z.object({
         updatedAt: z
           .date()
           .describe('Timestamp when the transaction was last updated'),
-        txHash: z.string().describe('Cardano transaction hash'),
+        txHash: z.string().nullable().describe('Cardano transaction hash'),
         status: z
           .nativeEnum(TransactionStatus)
           .describe('Current status of the transaction'),

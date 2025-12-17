@@ -116,7 +116,10 @@ export function checkPaymentAmountsMatch(
 
 export function redeemerToOnChainState(
   redeemerVersion: number,
-  decodedNewContract: { resultHash: string; state: SmartContractState } | null,
+  decodedNewContract: {
+    resultHash: string | null;
+    state: SmartContractState;
+  } | null,
   valueMatches: boolean,
 ) {
   if (redeemerVersion == 0) {
@@ -379,7 +382,7 @@ export function extractOnChainTransactionData(
 export async function checkIfTxIsInHistory(
   currentTxHash: string | undefined,
   transactionHistory: Array<{
-    txHash: string;
+    txHash: string | null;
   }>,
   blockfrost: BlockFrostAPI,
   smartContractAddress: string,

@@ -187,7 +187,7 @@ async function processSingleRefundCollection(
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {

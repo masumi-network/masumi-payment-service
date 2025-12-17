@@ -181,7 +181,7 @@ export const queryRegistryRequestSchemaOutput = z.object({
         .describe('Smart contract wallet managing this agent registration'),
       CurrentTransaction: z
         .object({
-          txHash: z.string().describe('Cardano transaction hash'),
+          txHash: z.string().nullable().describe('Cardano transaction hash'),
           status: z
             .nativeEnum(TransactionStatus)
             .describe('Current status of the transaction'),

@@ -37,7 +37,7 @@ const mutex = new Mutex();
 function validatePaymentRequestFields(request: {
   payByTime: bigint | null;
   collateralReturnLovelace: bigint | null;
-  CurrentTransaction: { txHash: string } | null;
+  CurrentTransaction: { txHash: string | null } | null;
 }): void {
   if (request.payByTime == null) {
     throw new Error('Pay by time is null, this is deprecated');
@@ -246,7 +246,7 @@ export async function authorizeRefundV1() {
                 },
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {

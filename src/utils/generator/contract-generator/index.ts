@@ -203,8 +203,8 @@ export function getDatumFromBlockchainIdentifier({
   sellerAddress: string;
   blockchainIdentifier: string;
   collateralReturnLovelace: bigint;
-  inputHash: string;
-  resultHash: string;
+  inputHash: string | null;
+  resultHash: string | null;
   payByTime: bigint;
   resultTime: bigint;
   unlockTime: bigint;
@@ -226,8 +226,8 @@ export function getDatumFromBlockchainIdentifier({
     sellerNonce: decoded.sellerId,
     buyerNonce: decoded.purchaserId,
     collateralReturnLovelace,
-    inputHash,
-    resultHash,
+    inputHash: inputHash ?? '',
+    resultHash: resultHash ?? '',
     payByTime,
     resultTime,
     unlockTime,

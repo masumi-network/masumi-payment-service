@@ -150,7 +150,7 @@ async function executeSpecificBatchPayment(
         },
         CurrentTransaction: {
           create: {
-            txHash: '',
+            txHash: null,
             status: TransactionStatus.Pending,
             BlocksWallet: {
               connect: {
@@ -196,8 +196,6 @@ async function executeSpecificBatchPayment(
   logger.info('Batching payments, tx submitted', {
     txHash: txHash,
   });
-
-  //submit the transaction to the blockchain
 
   //update purchase requests
   for (const request of batchedRequests) {
@@ -287,7 +285,24 @@ export async function batchLatestPaymentEntriesV1() {
           for (const purchaseRequest of paymentContract.PurchaseRequests) {
             //if the purchase request times out in less than 5 minutes, we ignore it
             const maxSubmitResultTime = Date.now() - 1000 * 60 * 5;
-            if (purchaseRequest.submitResultTime < maxSubmitResultTime) {
+            if (purchaseRequest.inputHash == null) {
+              logger.info('Purchase request has no input hash, ignoring', {
+                purchaseRequest: purchaseRequest,
+              });
+              await prisma.purchaseRequest.update({
+                where: { id: purchaseRequest.id },
+                data: {
+                  NextAction: {
+                    create: {
+                      requestedAction: PurchasingAction.WaitingForManualAction,
+                      errorType: PurchaseErrorType.Unknown,
+                      errorNote: 'Purchase request has no input hash',
+                    },
+                  },
+                },
+              });
+              continue;
+            } else if (purchaseRequest.submitResultTime < maxSubmitResultTime) {
               logger.info(
                 'Purchase request times out in less than 5 minutes, ignoring',
                 { purchaseRequest: purchaseRequest },
@@ -297,7 +312,6 @@ export async function batchLatestPaymentEntriesV1() {
                 data: {
                   NextAction: {
                     create: {
-                      inputHash: purchaseRequest.inputHash,
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote: 'Transaction timeout before sending',
@@ -621,11 +635,13 @@ export async function batchLatestPaymentEntriesV1() {
                   data: {
                     NextAction: {
                       create: {
-                        inputHash: paymentRequest.inputHash,
                         requestedAction:
                           PurchasingAction.WaitingForManualAction,
                         errorType: PurchaseErrorType.InsufficientFunds,
-                        errorNote: 'Not enough funds in wallets',
+                        errorNote:
+                          paymentRequest.inputHash == null
+                            ? 'Purchase request has no input hash and not enough funds in wallets'
+                            : 'Not enough funds in wallets',
                       },
                     },
                   },

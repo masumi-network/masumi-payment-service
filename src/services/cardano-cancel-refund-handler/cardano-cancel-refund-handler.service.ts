@@ -37,7 +37,7 @@ const mutex = new Mutex();
 function validatePurchaseRequestFields(request: {
   payByTime: bigint | null;
   collateralReturnLovelace: bigint | null;
-  CurrentTransaction: { txHash: string } | null;
+  CurrentTransaction: { txHash: string | null } | null;
   SmartContractWallet: object | null;
 }): void {
   if (request.payByTime == null) {
@@ -281,7 +281,7 @@ export async function cancelRefundsV1() {
                 },
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {

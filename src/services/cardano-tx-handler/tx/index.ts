@@ -71,7 +71,7 @@ export async function handlePaymentTransactionCardanoV1(
   newState: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PaymentAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
@@ -224,7 +224,7 @@ export async function handlePurchasingTransactionCardanoV1(
   newStatus: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PurchasingAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
@@ -265,7 +265,6 @@ export async function handlePurchasingTransactionCardanoV1(
           inputHash: purchasingRequest.inputHash,
           NextAction: {
             create: {
-              inputHash: purchasingRequest.inputHash,
               requestedAction: newAction.action,
               errorNote:
                 purchasingRequest.NextAction.errorNote != null
@@ -462,9 +461,6 @@ export async function updateRolledBackTransaction(
                   errorNote:
                     'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
                   errorType: PurchaseErrorType.Unknown,
-                  inputHash:
-                    transaction.PurchaseRequestCurrent?.inputHash ??
-                    transaction.PurchaseRequestHistory!.inputHash,
                 },
               },
             },
@@ -578,7 +574,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No smart contract wallet set for purchase request in db. This is likely an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -600,7 +595,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No seller wallet set for purchase request in db. This seems like an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -612,6 +606,17 @@ export async function updateInitialPurchaseTransaction(
         logger.warn(
           'Reference script hash is not null, this should not be set',
           { tx: tx.tx.tx_hash },
+        );
+        return;
+      }
+      if (dbEntry.inputHash !== decodedNewContract.inputHash) {
+        logger.error(
+          'Purchase request input hash does not match input hash in contract. This is likely a spoofing attempt.',
+          {
+            purchaseRequest: dbEntry,
+            inputHash: dbEntry.inputHash,
+            inputHashContract: decodedNewContract.inputHash,
+          },
         );
         return;
       }
@@ -781,10 +786,8 @@ export async function updateInitialPurchaseTransaction(
       await prisma.purchaseRequest.update({
         where: { id: dbEntry.id },
         data: {
-          inputHash: decodedNewContract.inputHash,
           NextAction: {
             create: {
-              inputHash: decodedNewContract.inputHash,
               requestedAction: PurchasingAction.WaitingForExternalAction,
             },
           },

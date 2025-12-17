@@ -136,7 +136,6 @@ async function handleInitializeAutoWithdrawRefunds(
                       create: {
                         requestedAction:
                           PurchasingAction.WithdrawRefundRequested,
-                        inputHash: purchaseRequest.inputHash,
                       },
                     },
                   },
