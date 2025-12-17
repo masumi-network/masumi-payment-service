@@ -79,7 +79,7 @@ export function AIAgentDetailsDialog({
   const { apiClient, state } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false);
+  const [isPurchaseDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
@@ -189,10 +189,10 @@ export function AIAgentDetailsDialog({
                 {activeTab === 'Details' && (
                   <>
                     {/* Status and Description */}
-                    <div className="flex items-start justify-between">
-                      <div>
+                    <div className="flex items-start justify-between w-full gap-4">
+                      <div className="w-full truncate">
                         <h3 className="font-medium mb-2">Description</h3>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground truncate">
                           {agent.description || 'No description provided'}
                         </p>
                       </div>
@@ -200,217 +200,138 @@ export function AIAgentDetailsDialog({
                         variant={getStatusBadgeVariant(agent.state)}
                         className={cn(
                           agent.state === 'RegistrationConfirmed' &&
-                            'bg-green-50 text-green-700 hover:bg-green-50/80',
+                          'bg-green-50 text-green-700 hover:bg-green-50/80',
+                          'w-fit min-w-fit truncate',
                         )}
                       >
                         {parseAgentStatus(agent.state)}
                       </Badge>
                     </div>
 
+                    {/* Error Message */}
+                    {(agent.state === 'RegistrationFailed' ||
+                      agent.state === 'DeregistrationFailed') &&
+                      agent.error && (
+                        <Card className="border-destructive bg-destructive/10">
+                          <CardHeader>
+                            <CardTitle className="text-sm font-medium text-destructive">
+                              Error Details
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-sm text-destructive whitespace-pre-wrap">
+                              {agent.error}
+                            </p>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                    {/* API Base URL */}
+                    {agent.apiBaseUrl && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm font-medium">
+                            API Base URL
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex items-center justify-between py-2 gap-2 bg-muted/40 p-2 rounded-lg border">
+                            <span className="text-sm text-muted-foreground">
+                              Endpoint
+                            </span>
+                            <div className="font-mono text-sm flex items-center gap-2 truncate">
+                              <a
+                                href={agent.apiBaseUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline text-primary truncate"
+                              >
+                                {agent.apiBaseUrl}
+                              </a>
+                              <CopyButton value={agent.apiBaseUrl} />
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
                     {/* Tags */}
-                    <div>
-                      <h3 className="font-medium mb-2">Tags</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {agent.Tags && agent.Tags.length > 0 ? (
-                          agent.Tags.map((tag, index) => (
-                            <Badge key={index} variant="secondary">
-                              {tag}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            No tags
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium">Tags</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-wrap gap-2">
+                          {agent.Tags && agent.Tags.length > 0 ? (
+                            agent.Tags.map((tag, index) => (
+                              <Badge key={index} variant="secondary">
+                                {tag}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              No tags
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
 
                     {/* Pricing */}
-                    <div>
-                      <h3 className="font-medium mb-2">Pricing Details</h3>
-                      <div className="space-y-2 p-2 bg-muted/40 rounded-md">
-                        {agent.AgentPricing?.Pricing?.map(
-                          (price, index, arr) => (
-                            <div
-                              key={index}
-                              className={cn(
-                                'flex items-center justify-between py-2',
-                                index < arr.length - 1 && 'border-b',
-                              )}
-                            >
-                              <span className="text-sm text-muted-foreground">
-                                Price (
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? 'ADA'
-                                  : price.unit ===
-                                      getUsdmConfig(state.network).fullAssetId
-                                    ? 'USDM'
-                                    : price.unit === TESTUSDM_CONFIG.unit
-                                      ? 'tUSDM'
-                                      : price.unit}
-                                )
-                              </span>
-                              <span className="font-medium">
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                              </span>
-                            </div>
-                          ),
-                        )}
-                        {(!agent.AgentPricing?.Pricing ||
-                          agent.AgentPricing.Pricing.length === 0) && (
-                          <div className="text-sm text-muted-foreground">
-                            No pricing information available
-                          </div>
-                        )}
-                      </div>
-                    </div>
-              <div className="space-y-6 py-4 px-6 max-h-[600px] overflow-y-auto pb-20">
-                {/* Status and Description */}
-                <div className="flex items-start justify-between w-full gap-4">
-                  <div className="w-full truncate">
-                    <h3 className="font-medium mb-2">Description</h3>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {agent.description || 'No description provided'}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={getStatusBadgeVariant(agent.state)}
-                    className={cn(
-                      agent.state === 'RegistrationConfirmed' &&
-                        'bg-green-50 text-green-700 hover:bg-green-50/80',
-                      'w-fit min-w-fit truncate',
-                    )}
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
-                </div>
-
-                {/* Error Message */}
-                {(agent.state === 'RegistrationFailed' ||
-                  agent.state === 'DeregistrationFailed') &&
-                  agent.error && (
-                    <Card className="border-destructive bg-destructive/10">
+                    <Card>
                       <CardHeader>
-                        <CardTitle className="text-sm font-medium text-destructive">
-                          Error Details
+                        <CardTitle className="text-sm font-medium">
+                          Pricing Details
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-destructive whitespace-pre-wrap">
-                          {agent.error}
-                        </p>
+                        <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
+                          {agent.AgentPricing?.pricingType == 'Free' && (
+                            <div className="text-sm text-muted-foreground">
+                              <span className="font-medium">Free</span>
+                            </div>
+                          )}
+                          {agent.AgentPricing &&
+                            agent.AgentPricing?.pricingType == 'Fixed' &&
+                            agent.AgentPricing?.Pricing?.map(
+                              (price, index, arr) => (
+                                <div
+                                  key={index}
+                                  className={cn(
+                                    'flex items-center justify-between py-2',
+                                    index < arr.length - 1 && 'border-b',
+                                  )}
+                                >
+                                  <span className="text-sm text-muted-foreground">
+                                    Price (
+                                    {price.unit === 'lovelace' || !price.unit
+                                      ? 'ADA'
+                                      : price.unit ===
+                                        getUsdmConfig(state.network).fullAssetId
+                                        ? 'USDM'
+                                        : price.unit === TESTUSDM_CONFIG.unit
+                                          ? 'tUSDM'
+                                          : price.unit}
+                                    )
+                                  </span>
+                                  <span className="font-medium">
+                                    {price.unit === 'lovelace' || !price.unit
+                                      ? `${useFormatPrice(price.amount)} ADA`
+                                      : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                  </span>
+                                </div>
+                              ),
+                            )}
+                          {(!agent.AgentPricing ||
+                            (agent.AgentPricing.pricingType == 'Fixed' &&
+                              agent.AgentPricing.Pricing.length === 0)) && (
+                              <div className="text-sm text-muted-foreground">
+                                No pricing information available
+                              </div>
+                            )}
+                        </div>
                       </CardContent>
                     </Card>
-                  )}
-
-                {/* API Base URL */}
-                {agent.apiBaseUrl && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm font-medium">
-                        API Base URL
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center justify-between py-2 gap-2 bg-muted/40 p-2 rounded-lg border">
-                        <span className="text-sm text-muted-foreground">
-                          Endpoint
-                        </span>
-                        <div className="font-mono text-sm flex items-center gap-2 truncate">
-                          <a
-                            href={agent.apiBaseUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline text-primary truncate"
-                          >
-                            {agent.apiBaseUrl}
-                          </a>
-                          <CopyButton value={agent.apiBaseUrl} />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Tags */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium">Tags</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {agent.Tags && agent.Tags.length > 0 ? (
-                        agent.Tags.map((tag, index) => (
-                          <Badge key={index} variant="secondary">
-                            {tag}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          No tags
-                        </span>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Pricing */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-medium">
-                      Pricing Details
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
-                      {agent.AgentPricing?.pricingType == 'Free' && (
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium">Free</span>
-                        </div>
-                      )}
-                      {agent.AgentPricing &&
-                        agent.AgentPricing?.pricingType == 'Fixed' &&
-                        agent.AgentPricing?.Pricing?.map(
-                          (price, index, arr) => (
-                            <div
-                              key={index}
-                              className={cn(
-                                'flex items-center justify-between py-2',
-                                index < arr.length - 1 && 'border-b',
-                              )}
-                            >
-                              <span className="text-sm text-muted-foreground">
-                                Price (
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? 'ADA'
-                                  : price.unit ===
-                                      getUsdmConfig(state.network).fullAssetId
-                                    ? 'USDM'
-                                    : price.unit === TESTUSDM_CONFIG.unit
-                                      ? 'tUSDM'
-                                      : price.unit}
-                                )
-                              </span>
-                              <span className="font-medium">
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                              </span>
-                            </div>
-                          ),
-                        )}
-                      {(!agent.AgentPricing ||
-                        (agent.AgentPricing.pricingType == 'Fixed' &&
-                          agent.AgentPricing.Pricing.length === 0)) && (
-                        <div className="text-sm text-muted-foreground">
-                          No pricing information available
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
 
                     <div className="flex items-center gap-4 pt-2">
                       <Separator className="flex-1" />
@@ -518,10 +439,10 @@ export function AIAgentDetailsDialog({
                           )}
                           {(!agent.Legal ||
                             Object.values(agent.Legal).every((v) => !v)) && (
-                            <span className="text-muted-foreground">
-                              No legal information provided.
-                            </span>
-                          )}
+                              <span className="text-muted-foreground">
+                                No legal information provided.
+                              </span>
+                            )}
                         </div>
                       </div>
                     </div>
@@ -596,9 +517,19 @@ export function AIAgentDetailsDialog({
                             Linked Wallet Address
                           </span>
                           <div className="font-mono text-sm flex items-center gap-2">
-                            {shortenAddress(
-                              agent.SmartContractWallet.walletAddress,
-                            )}
+                            <a
+                              href={getExplorerUrl(
+                                agent.SmartContractWallet.walletAddress,
+                                state.network,
+                              )}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline text-primary"
+                            >
+                              {shortenAddress(
+                                agent.SmartContractWallet.walletAddress,
+                              )}
+                            </a>
                             <CopyButton
                               value={agent.SmartContractWallet.walletAddress}
                             />
@@ -627,45 +558,6 @@ export function AIAgentDetailsDialog({
                             {formatDate(agent.updatedAt)}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Wallet Information */}
-                <div>
-                  <h3 className="font-medium mb-2">Wallet Information</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between py-2 border-b">
-                      <span className="text-sm text-muted-foreground">
-                        Agent Identifier
-                      </span>
-                      <div className="font-mono text-sm flex items-center gap-2">
-                        {shortenAddress(agent.agentIdentifier || '')}
-                        <CopyButton value={agent.agentIdentifier || ''} />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between py-2">
-                      <span className="text-sm text-muted-foreground">
-                        Linked Wallet Address
-                      </span>
-                      <div className="font-mono text-sm flex items-center gap-2">
-                        <a
-                          href={getExplorerUrl(
-                            agent.SmartContractWallet.walletAddress,
-                            state.network,
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline text-primary"
-                        >
-                          {shortenAddress(
-                            agent.SmartContractWallet.walletAddress,
-                          )}
-                        </a>
-                        <CopyButton
-                          value={agent.SmartContractWallet.walletAddress}
-                        />
                       </div>
                     </div>
                   </>
