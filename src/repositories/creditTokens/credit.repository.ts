@@ -133,23 +133,6 @@ async function handlePurchaseCreditInit({
       if (!paymentSource) {
         throw Error('Invalid paymentSource: ' + paymentSource);
       }
-      const sellerWallet = await prisma.walletBase.upsert({
-        where: {
-          paymentSourceId_walletVkey_walletAddress_type: {
-            paymentSourceId: paymentSource.id,
-            walletVkey: sellerVkey,
-            walletAddress: sellerAddress,
-            type: WalletType.Seller,
-          },
-        },
-        create: {
-          walletVkey: sellerVkey,
-          walletAddress: sellerAddress,
-          type: WalletType.Seller,
-          paymentSourceId: paymentSource.id,
-        },
-        update: {},
-      });
 
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
@@ -166,7 +149,24 @@ async function handlePurchaseCreditInit({
           resultHash: null,
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
-          SellerWallet: { connect: { id: sellerWallet.id } },
+          SellerWallet: {
+            connectOrCreate: {
+              where: {
+                paymentSourceId_walletVkey_walletAddress_type: {
+                  paymentSourceId: paymentSource.id,
+                  walletVkey: sellerVkey,
+                  walletAddress: sellerAddress,
+                  type: WalletType.Seller,
+                },
+              },
+              create: {
+                walletVkey: sellerVkey,
+                walletAddress: sellerAddress,
+                type: WalletType.Seller,
+                PaymentSource: { connect: { id: paymentSource.id } },
+              },
+            },
+          },
           blockchainIdentifier: blockchainIdentifier,
           inputHash: inputHash,
           NextAction: {
@@ -192,7 +192,7 @@ async function handlePurchaseCreditInit({
 
       return purchaseRequest;
     },
-    { isolationLevel: 'Serializable', maxWait: 15000, timeout: 15000 },
+    { isolationLevel: 'ReadCommitted', maxWait: 15000, timeout: 15000 },
   );
 }
 
