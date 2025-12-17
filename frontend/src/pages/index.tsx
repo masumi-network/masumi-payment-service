@@ -25,7 +25,7 @@ import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
@@ -437,7 +437,7 @@ export default function Overview() {
                   <span className="text-xs font-normal text-muted-foreground">
                     $
                   </span>
-                  {useFormatBalance(
+                  {formatBalance(
                     (parseInt(totalUsdmBalance) / 1000000)
                       .toFixed(2)
                       ?.toString(),
@@ -454,7 +454,7 @@ export default function Overview() {
               ) : (
                 <div className="flex flex-col gap-2">
                   <div className="text-2xl font-semibold flex items-center gap-1">
-                    {useFormatBalance(
+                    {formatBalance(
                       (parseInt(totalBalance) / 1000000).toFixed(2)?.toString(),
                     ) ?? ''}
                     <span className="text-xs font-normal text-muted-foreground">
@@ -464,7 +464,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
+                      : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}
@@ -661,7 +661,7 @@ export default function Overview() {
                                   <Spinner className="h-3 w-3" />
                                 ) : (
                                   <>
-                                    {useFormatBalance(
+                                    {formatBalance(
                                       (
                                         parseInt(wallet.balance || '0') /
                                         1000000
@@ -678,7 +678,7 @@ export default function Overview() {
                               <div className="text-xs flex items-center gap-1">
                                 {!wallet.isLoadingBalance && (
                                   <>
-                                    {useFormatBalance(
+                                    {formatBalance(
                                       (
                                         parseInt(wallet.usdmBalance || '0') /
                                         1000000

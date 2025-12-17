@@ -22,7 +22,7 @@ import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
@@ -282,7 +282,7 @@ export default function AIAgentsPage() {
 
   const useFormatPrice = (amount: string | undefined) => {
     if (!amount) return '—';
-    return useFormatBalance((parseInt(amount) / 1000000).toFixed(2));
+    return formatBalance((parseInt(amount) / 1000000).toFixed(2));
   };
 
   const handleDeleteClick = (agent: AIAgent) => {

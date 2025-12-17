@@ -23,7 +23,10 @@ import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import {
+  decodeBlockchainIdentifier,
+  generateBlockchainIdentifier,
+} from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
 import {
   transformPaymentGetTimestamps,
@@ -70,6 +73,7 @@ export const queryPaymentsSchemaOutput = z.object({
       createdAt: z.date(),
       updatedAt: z.date(),
       blockchainIdentifier: z.string(),
+      agentIdentifier: z.string().nullable(),
       lastCheckedAt: z.date().nullable(),
       payByTime: z.string().nullable(),
       submitResultTime: z.string(),
@@ -243,6 +247,9 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         ...payment,
         ...transformPaymentGetTimestamps(payment),
         ...transformPaymentGetAmounts(payment),
+        agentIdentifier:
+          decodeBlockchainIdentifier(payment.blockchainIdentifier)
+            ?.agentIdentifier ?? null,
         CurrentTransaction: payment.CurrentTransaction
           ? {
               ...payment.CurrentTransaction,

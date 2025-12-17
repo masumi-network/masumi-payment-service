@@ -1374,6 +1374,10 @@
                                                             "blockchainIdentifier": {
                                                                 "type": "string"
                                                             },
+                                                            "agentIdentifier": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
                                                             "lastCheckedAt": {
                                                                 "type": "string",
                                                                 "nullable": true
@@ -1828,6 +1832,7 @@
                                                             "createdAt",
                                                             "updatedAt",
                                                             "blockchainIdentifier",
+                                                            "agentIdentifier",
                                                             "lastCheckedAt",
                                                             "payByTime",
                                                             "submitResultTime",
@@ -3409,6 +3414,10 @@
                                                             "blockchainIdentifier": {
                                                                 "type": "string"
                                                             },
+                                                            "agentIdentifier": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
                                                             "lastCheckedAt": {
                                                                 "type": "string",
                                                                 "nullable": true
@@ -3861,6 +3870,7 @@
                                                             "createdAt",
                                                             "updatedAt",
                                                             "blockchainIdentifier",
+                                                            "agentIdentifier",
                                                             "lastCheckedAt",
                                                             "payByTime",
                                                             "submitResultTime",

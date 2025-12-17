@@ -70,6 +70,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
       createdAt: z.date(),
       updatedAt: z.date(),
       blockchainIdentifier: z.string(),
+      agentIdentifier: z.string().nullable(),
       lastCheckedAt: z.date().nullable(),
       payByTime: z.string().nullable(),
       submitResultTime: z.string(),
@@ -228,6 +229,9 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
         ...transformPurchaseGetAmounts(purchase),
+        agentIdentifier:
+          decodeBlockchainIdentifier(purchase.blockchainIdentifier)
+            ?.agentIdentifier ?? null,
         CurrentTransaction: purchase.CurrentTransaction
           ? {
               ...purchase.CurrentTransaction,

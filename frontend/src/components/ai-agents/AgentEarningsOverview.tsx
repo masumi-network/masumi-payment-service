@@ -1,28 +1,22 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, getPurchase } from '@/lib/api/generated';
+import { getPayment, GetPaymentResponses } from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from 'lucide-react';
+import formatBalance from '@/lib/formatBalance';
+import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 interface AgentEarningsData {
-  totalEarnings: number;
-  totalFees: number;
-  transactionCount: number;
-  averageEarningPerTransaction: number;
-  periodEarnings: number;
-  periodFees: number;
-  periodTransactions: number;
+  totalPayments: number;
+  totalEarnings: Map<string, number>;
 }
 
 interface AgentEarningsOverviewProps {
   agentIdentifier: string;
   agentName: string;
 }
-
-type Transaction = (any & { type: 'payment' }) | (any & { type: 'purchase' });
 
 type TimePeriod = '1d' | '7d' | '30d' | 'all';
 
@@ -37,36 +31,6 @@ export function AgentEarningsOverview({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30d');
-
-  // Calculate fee amount based on transaction amount and selected payment source fee rate
-  const calculateFeeAmount = useCallback(
-    (transaction: Transaction): number => {
-      const selectedPaymentSource = state.paymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-
-      const feeRatePermille = selectedPaymentSource?.feeRatePermille;
-      if (!feeRatePermille) {
-        return 0; // No fee applied
-      }
-
-      const feeRate = feeRatePermille / 1000; // Convert permille to decimal
-
-      let amount = 0;
-
-      if (transaction.type === 'payment' && transaction.RequestedFunds?.[0]) {
-        amount = parseInt(transaction.RequestedFunds[0].amount) / 1000000;
-      } else if (
-        transaction.type === 'purchase' &&
-        transaction.PaidFunds?.[0]
-      ) {
-        amount = parseInt(transaction.PaidFunds[0].amount) / 1000000;
-      }
-
-      return amount * feeRate;
-    },
-    [state.paymentSources, selectedPaymentSourceId],
-  );
 
   const fetchAgentEarnings = useCallback(async () => {
     try {
@@ -90,94 +54,67 @@ export function AgentEarningsOverview({
               return date;
             })();
 
-      // Fetch all payments for this agent
-      const paymentsResponse = await getPayment({
-        client: apiClient,
-        query: {
-          network: state.network,
-          includeHistory: 'true',
-          limit: 100, // Get more transactions for better accuracy
-          filterSmartContractAddress: smartContractAddress || undefined,
-        },
-      });
-
-      // Fetch all purchases for this agent
-      const purchasesResponse = await getPurchase({
-        client: apiClient,
-        query: {
-          network: state.network,
-          includeHistory: 'true',
-          limit: 100, // Get more transactions for better accuracy
-          filterSmartContractAddress: smartContractAddress || undefined,
-        },
-      });
-
       // Filter transactions by agent identifier and last 30 days
-      const allTransactions: Transaction[] = [];
-
-      if (paymentsResponse.data?.data?.Payments) {
-        paymentsResponse.data.data.Payments.forEach((payment: any) => {
-          if (payment.agentIdentifier === agentIdentifier) {
-            allTransactions.push({ ...payment, type: 'payment' });
-          }
+      const allPayments: GetPaymentResponses['200']['data']['Payments'] = [];
+      let morePages = true;
+      while (morePages) {
+        // Fetch all payments for this agent
+        const paymentsResponse = await getPayment({
+          client: apiClient,
+          query: {
+            network: state.network,
+            includeHistory: 'true',
+            limit: 100, // Get more transactions for better accuracy
+            filterSmartContractAddress: smartContractAddress || undefined,
+          },
         });
-      }
 
-      if (purchasesResponse.data?.data?.Purchases) {
-        purchasesResponse.data.data.Purchases.forEach((purchase: any) => {
-          if (purchase.agentIdentifier === agentIdentifier) {
-            allTransactions.push({ ...purchase, type: 'purchase' });
-          }
-        });
-      }
+        if (
+          paymentsResponse.data?.data !== undefined &&
+          paymentsResponse.data?.data?.Payments.length < 100
+        ) {
+          morePages = false;
+        }
 
-      // Filter for selected period
-      const periodTransactions = allTransactions.filter((transaction) => {
-        const transactionDate = new Date(transaction.createdAt);
-        return transactionDate >= periodStartDate;
-      });
+        if (paymentsResponse.data?.data?.Payments) {
+          paymentsResponse.data.data.Payments.filter(
+            (payment) =>
+              new Date(parseInt(payment.unlockTime || '0')) >=
+                periodStartDate &&
+              new Date(parseInt(payment.unlockTime || '0')) <= new Date() &&
+              (payment.onChainState === 'Withdrawn' ||
+                payment.onChainState === 'ResultSubmitted' ||
+                payment.onChainState === 'DisputedWithdrawn'),
+          ).forEach((payment) => {
+            allPayments.push(payment);
+          });
+        }
+      }
 
       // Calculate earnings and fees
-      let totalEarnings = 0;
-      let totalFees = 0;
-      let periodEarnings = 0;
-      let periodFees = 0;
+      const totalEarnings = new Map<string, number>();
 
-      // Process all transactions
-      allTransactions.forEach((transaction) => {
-        let amount = 0;
-        if (transaction.type === 'payment' && transaction.RequestedFunds?.[0]) {
-          amount = parseInt(transaction.RequestedFunds[0].amount) / 1000000;
-        } else if (
-          transaction.type === 'purchase' &&
-          transaction.PaidFunds?.[0]
-        ) {
-          amount = parseInt(transaction.PaidFunds[0].amount) / 1000000;
+      allPayments.forEach((payment) => {
+        if (payment.onChainState === 'DisputedWithdrawn') {
+          payment.WithdrawnForSeller.forEach((fund) => {
+            totalEarnings.set(
+              fund.unit,
+              (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount),
+            );
+          });
+          return;
         }
-
-        const fee = calculateFeeAmount(transaction);
-        totalEarnings += amount;
-        totalFees += fee;
-
-        // Check if transaction is in selected period
-        const transactionDate = new Date(transaction.createdAt);
-        if (transactionDate >= periodStartDate) {
-          periodEarnings += amount;
-          periodFees += fee;
-        }
+        payment.RequestedFunds.forEach((fund) => {
+          totalEarnings.set(
+            fund.unit,
+            (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount),
+          );
+        });
       });
 
-      const averageEarningPerTransaction =
-        allTransactions.length > 0 ? totalEarnings / allTransactions.length : 0;
-
       setEarningsData({
+        totalPayments: allPayments.length,
         totalEarnings,
-        totalFees,
-        transactionCount: allTransactions.length,
-        averageEarningPerTransaction,
-        periodEarnings,
-        periodFees,
-        periodTransactions: periodTransactions.length,
       });
     } catch (err) {
       console.error('Error fetching agent earnings:', err);
@@ -186,12 +123,10 @@ export function AgentEarningsOverview({
       setIsLoading(false);
     }
   }, [
-    agentIdentifier,
     apiClient,
     state.network,
     state.paymentSources,
     selectedPaymentSourceId,
-    calculateFeeAmount,
     selectedPeriod,
   ]);
 
@@ -247,6 +182,28 @@ export function AgentEarningsOverview({
     }
   };
 
+  const formatTokenBalance = (token: { unit: string; quantity: number }) => {
+    if (token.unit === 'lovelace' || token.unit === '') {
+      const ada = token.quantity / 1000000;
+      const formattedAmount = ada === 0 ? '0' : formatBalance(ada.toFixed(2));
+      return formattedAmount + ' ₳';
+    }
+
+    // For USDM, match by policyId and assetName (hex) - network aware
+    const usdmConfig = getUsdmConfig(state.network);
+    const isUSDM = token.unit === usdmConfig.fullAssetId;
+    if (isUSDM) {
+      const usdm = token.quantity / 1000000;
+      const formattedAmount = usdm === 0 ? '0' : formatBalance(usdm.toFixed(2));
+      return formattedAmount + ' USDM';
+    }
+
+    const amount = token.quantity;
+    const formattedAmount =
+      amount === 0 ? '0' : formatBalance(amount.toFixed(0));
+    return formattedAmount + ' ' + token.unit;
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -283,43 +240,26 @@ export function AgentEarningsOverview({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {selectedPeriod === 'all'
-                  ? earningsData.totalEarnings.toFixed(2)
-                  : earningsData.periodEarnings.toFixed(2)}{' '}
-                ₳
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Total Earnings
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">
-                {selectedPeriod === 'all'
-                  ? earningsData.totalFees.toFixed(2)
-                  : earningsData.periodFees.toFixed(2)}{' '}
-                ₳
-              </div>
-              <div className="text-sm text-muted-foreground">Total Fees</div>
+            <div className="flex flex-col gap-2">
+              {Array.from(earningsData.totalEarnings.entries()).map(
+                ([key, value]) => (
+                  <div key={key} className="text-sm text-muted-foreground">
+                    {formatTokenBalance({ unit: key, quantity: value })}
+                  </div>
+                ),
+              )}
+              {earningsData.totalPayments === 0 && (
+                <div className="text-sm text-muted-foreground">
+                  No earnings data available in the selected period
+                </div>
+              )}
             </div>
           </div>
           <div className="text-center">
             <Badge variant="secondary">
-              {selectedPeriod === 'all'
-                ? earningsData.transactionCount
-                : earningsData.periodTransactions}{' '}
-              transactions
+              {earningsData.totalPayments} transactions
             </Badge>
           </div>
-          {selectedPeriod === 'all' && (
-            <div className="text-center">
-              <div className="text-sm text-muted-foreground">
-                Avg: {earningsData.averageEarningPerTransaction.toFixed(2)} ₳
-                per transaction
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 

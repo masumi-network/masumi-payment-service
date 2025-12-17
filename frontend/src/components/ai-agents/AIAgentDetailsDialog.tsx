@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
@@ -67,7 +67,7 @@ const getStatusBadgeVariant = (status: AIAgent['state']) => {
 
 const useFormatPrice = (amount: string | undefined) => {
   if (!amount) return '—';
-  return useFormatBalance((parseInt(amount) / 1000000).toFixed(2));
+  return formatBalance((parseInt(amount) / 1000000).toFixed(2));
 };
 
 export function AIAgentDetailsDialog({
