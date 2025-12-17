@@ -4,6 +4,7 @@ import {
   Network,
   Permission,
   PurchasingAction,
+  WalletBase,
   WalletType,
 } from '@prisma/client';
 
@@ -38,6 +39,29 @@ async function handlePurchaseCreditInit({
 }) {
   return await prisma.$transaction(
     async (prisma) => {
+      const paymentSource = await prisma.paymentSource.findUnique({
+        where: {
+          network_smartContractAddress: {
+            network: network,
+            smartContractAddress: contractAddress,
+          },
+          deletedAt: null,
+        },
+      });
+      if (!paymentSource) {
+        throw Error('Invalid paymentSource: ' + paymentSource);
+      }
+      let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
+        where: {
+          paymentSourceId_walletVkey_walletAddress_type: {
+            paymentSourceId: paymentSource.id,
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+          },
+        },
+      });
+
       const result = await prisma.apiKey.findUnique({
         where: { id: id },
         include: {
@@ -52,6 +76,17 @@ async function handlePurchaseCreditInit({
         !result.networkLimit.includes(network)
       ) {
         throw Error('No permission for network: ' + network + ' for id: ' + id);
+      }
+
+      if (!sellerWallet) {
+        sellerWallet = await prisma.walletBase.create({
+          data: {
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+            PaymentSource: { connect: { id: paymentSource.id } },
+          },
+        });
       }
 
       const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<
@@ -121,19 +156,6 @@ async function handlePurchaseCreditInit({
         });
       }
 
-      const paymentSource = await prisma.paymentSource.findUnique({
-        where: {
-          network_smartContractAddress: {
-            network: network,
-            smartContractAddress: contractAddress,
-          },
-          deletedAt: null,
-        },
-      });
-      if (!paymentSource) {
-        throw Error('Invalid paymentSource: ' + paymentSource);
-      }
-
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
           requestedBy: { connect: { id: id } },
@@ -150,22 +172,7 @@ async function handlePurchaseCreditInit({
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
           SellerWallet: {
-            connectOrCreate: {
-              where: {
-                paymentSourceId_walletVkey_walletAddress_type: {
-                  paymentSourceId: paymentSource.id,
-                  walletVkey: sellerVkey,
-                  walletAddress: sellerAddress,
-                  type: WalletType.Seller,
-                },
-              },
-              create: {
-                walletVkey: sellerVkey,
-                walletAddress: sellerAddress,
-                type: WalletType.Seller,
-                PaymentSource: { connect: { id: paymentSource.id } },
-              },
-            },
+            connect: { id: sellerWallet.id },
           },
           blockchainIdentifier: blockchainIdentifier,
           inputHash: inputHash,
