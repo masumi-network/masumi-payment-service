@@ -1,11 +1,9 @@
-import { errorToString } from '@/utils/converter/error-string-convert';
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import {
   Network,
   Permission,
   PurchasingAction,
-  WalletBase,
   WalletType,
 } from '@prisma/client';
 

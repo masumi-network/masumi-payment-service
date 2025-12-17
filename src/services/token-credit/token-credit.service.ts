@@ -1,5 +1,4 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
-import { errorToString } from '@/utils/converter/error-string-convert';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { logger } from '@/utils/logger';
 import { Network } from '@prisma/client';
