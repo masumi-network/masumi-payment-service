@@ -173,7 +173,7 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
       // ============================
       // STEP 8: CANCEL REFUND REQUEST (Using Helper Function)
       // ============================
-      console.log('❌ Step 9: Cancelling refund request...');
+      console.log('⏳ Step 9: Cancelling refund request...');
       await cancelRefundRequest(payment.blockchainIdentifier, testNetwork);
 
       // Track cancellation

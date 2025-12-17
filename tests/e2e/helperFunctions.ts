@@ -1183,7 +1183,7 @@ export async function cancelRefundRequest(
   blockchainIdentifier: string,
   network: Network,
 ): Promise<PurchaseResponse> {
-  console.log('❌ E2E: cancelling refund request...');
+  console.log('ℹ️ E2E: cancelling refund request...');
 
   const cancelRefundResponse =
     await global.testApiClient.request<PurchaseResponse>(
