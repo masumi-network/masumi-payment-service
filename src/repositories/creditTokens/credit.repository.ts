@@ -134,7 +134,7 @@ async function handlePurchaseCreditInit({
         throw Error('Invalid paymentSource: ' + paymentSource);
       }
 
-      const sellerWallet = await transaction.walletBase.findUnique({
+      const sellerWallet = await transaction.walletBase.upsert({
         where: {
           paymentSourceId_walletVkey_walletAddress_type: {
             paymentSourceId: paymentSource.id,
@@ -143,6 +143,13 @@ async function handlePurchaseCreditInit({
             type: WalletType.Seller,
           },
         },
+        create: {
+          walletVkey: sellerVkey,
+          walletAddress: sellerAddress,
+          type: WalletType.Seller,
+          paymentSourceId: paymentSource.id,
+        },
+        update: {},
       });
 
       const purchaseRequest = await prisma.purchaseRequest.create({
@@ -160,19 +167,7 @@ async function handlePurchaseCreditInit({
           resultHash: null,
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
-          SellerWallet: {
-            connectOrCreate: {
-              where: {
-                id: sellerWallet?.id ?? 'not-found',
-              },
-              create: {
-                walletVkey: sellerVkey,
-                walletAddress: sellerAddress,
-                paymentSourceId: paymentSource.id,
-                type: WalletType.Seller,
-              },
-            },
-          },
+          SellerWallet: { connect: { id: sellerWallet.id } },
           blockchainIdentifier: blockchainIdentifier,
           inputHash: inputHash,
           NextAction: {
