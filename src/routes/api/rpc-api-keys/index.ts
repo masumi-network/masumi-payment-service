@@ -19,16 +19,26 @@ export const getRpcProviderKeysSchemaInput = z.object({
 });
 
 export const getRpcProviderKeysSchemaOutput = z.object({
-  RpcProviderKeys: z.array(
-    z.object({
-      id: z.string(),
-      rpcProviderApiKey: z.string(),
-      rpcProvider: z.nativeEnum(RPCProvider),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      network: z.nativeEnum(Network),
-    }),
-  ),
+  RpcProviderKeys: z
+    .array(
+      z.object({
+        id: z.string().describe('Unique identifier for the RPC provider key'),
+        rpcProviderApiKey: z.string().describe('The RPC provider API key '),
+        rpcProvider: z
+          .nativeEnum(RPCProvider)
+          .describe('The RPC provider type '),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the RPC provider key was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the RPC provider key was last updated'),
+        network: z
+          .nativeEnum(Network)
+          .describe('The Cardano network this RPC provider key is for'),
+      }),
+    )
+    .describe('List of RPC provider keys'),
 });
 
 export const queryRpcProviderKeysEndpointGet =
