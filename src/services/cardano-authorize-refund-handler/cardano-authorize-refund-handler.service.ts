@@ -80,7 +80,7 @@ export async function authorizeRefundV1() {
   try {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.AuthorizeRefundRequested,
-      resultHash: { not: '' },
+      resultHash: { not: null },
       onChainState: { in: [OnChainState.Disputed] },
     });
 
@@ -198,7 +198,7 @@ export async function authorizeRefundV1() {
               sellerAddress: sellerAddress,
               blockchainIdentifier: request.blockchainIdentifier,
               inputHash: decodedContract.inputHash,
-              resultHash: '',
+              resultHash: null,
               payByTime: decodedContract.payByTime,
               collateralReturnLovelace:
                 decodedContract.collateralReturnLovelace,

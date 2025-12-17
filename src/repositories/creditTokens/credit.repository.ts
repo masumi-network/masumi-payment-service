@@ -157,7 +157,7 @@ async function handlePurchaseCreditInit({
           payByTime: payByTime,
           submitResultTime: submitResultTime,
           PaymentSource: { connect: { id: paymentSource.id } },
-          resultHash: '',
+          resultHash: null,
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
           SellerWallet: {

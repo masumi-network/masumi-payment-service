@@ -106,7 +106,7 @@ async function executeSpecificBatchPayment(
       inputHash: data.paymentRequest.inputHash,
       payByTime: data.paymentRequest.payByTime,
       collateralReturnLovelace: data.overpaidLovelace,
-      resultHash: '',
+      resultHash: null,
       resultTime: submitResultTime,
       unlockTime: unlockTime,
       externalDisputeUnlockTime: externalDisputeUnlockTime,
