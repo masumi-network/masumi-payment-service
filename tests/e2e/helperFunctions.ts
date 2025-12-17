@@ -632,14 +632,14 @@ export async function waitForFundsLocked(
         currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
       if (
         currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
       }
 
@@ -757,14 +757,14 @@ export async function waitForResultSubmitted(
         currentPayment!.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment!.NextAction.errorNote}`,
         );
       }
       if (
         currentPurchase!.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase!.NextAction.errorNote}`,
         );
       }
 
@@ -861,14 +861,14 @@ export async function waitForDisputed(
         currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
       if (
         currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
       }
 
@@ -986,14 +986,14 @@ export async function waitForRefundRequested(
         currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
       if (
         currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
       ) {
         throw new FatalE2EError(
-          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier})`,
+          `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
       }
 
