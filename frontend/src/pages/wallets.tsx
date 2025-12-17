@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -18,7 +17,6 @@ import {
   GetPaymentSourceResponses,
   getUtxos,
   GetUtxosResponses,
-  //getWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
@@ -29,7 +27,7 @@ import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { FaExchangeAlt } from 'react-icons/fa';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
 import {
   WalletDetailsDialog,
@@ -553,7 +551,7 @@ export default function WalletsPage() {
                             ) : (
                               <span>
                                 {wallet.balance
-                                  ? useFormatBalance(
+                                  ? formatBalance(
                                       (
                                         parseInt(wallet.balance) / 1000000
                                       ).toFixed(2),
@@ -568,7 +566,7 @@ export default function WalletsPage() {
                             rate && (
                               <span className="text-xs text-muted-foreground">
                                 $
-                                {useFormatBalance(
+                                {formatBalance(
                                   (
                                     (parseInt(wallet.balance) / 1000000) *
                                     rate
@@ -586,7 +584,7 @@ export default function WalletsPage() {
                           ) : (
                             <span>
                               {wallet.usdmBalance
-                                ? `$${useFormatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
+                                ? `$${formatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
                                 : '$0'}
                             </span>
                           )}

@@ -22,7 +22,7 @@ import { MaestroProvider } from '@meshsdk/core';
 import { shortenAddress } from '@/lib/utils';
 import { Token } from '@/types/token';
 import { Spinner } from '../ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
@@ -498,7 +498,7 @@ export function SwapDialog({
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Balance:{' '}
-                        {useFormatBalance(
+                        {formatBalance(
                           getBalanceForToken(selectedFromToken.symbol).toFixed(
                             6,
                           ),
@@ -525,7 +525,7 @@ export function SwapDialog({
                           onClick={handleMaxClick}
                         >
                           Max:{' '}
-                          {useFormatBalance(
+                          {formatBalance(
                             getMaxAmount(selectedFromToken.symbol).toFixed(2),
                           ) || ''}
                         </span>
@@ -571,7 +571,7 @@ export function SwapDialog({
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Balance:{' '}
-                        {useFormatBalance(
+                        {formatBalance(
                           getBalanceForToken(selectedToToken.symbol).toFixed(6),
                         ) ?? ''}
                       </div>

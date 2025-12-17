@@ -632,6 +632,7 @@ export function generateOpenAPI() {
                       {
                         id: 'cuid_v2_auto_generated',
                         blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         submitResultTime: '0',
@@ -1011,6 +1012,7 @@ export function generateOpenAPI() {
                       {
                         id: 'cuid_v2_auto_generated',
                         blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
                         lastCheckedAt: null,
                         onChainState: null,
                         metadata: null,

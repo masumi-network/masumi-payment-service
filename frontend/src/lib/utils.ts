@@ -264,3 +264,12 @@ export function validateCardanoAddress(
     };
   }
 }
+
+export function hexToAscii(hex: string) {
+  try {
+    const bytes = hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [];
+    return bytes.map((byte) => String.fromCharCode(byte)).join('');
+  } catch {
+    return hex;
+  }
+}
