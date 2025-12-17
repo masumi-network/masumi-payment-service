@@ -1,9 +1,11 @@
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import {
   Network,
   Permission,
   PurchasingAction,
+  WalletBase,
   WalletType,
 } from '@prisma/client';
 
@@ -133,24 +135,37 @@ async function handlePurchaseCreditInit({
       if (!paymentSource) {
         throw Error('Invalid paymentSource: ' + paymentSource);
       }
-
-      const sellerWallet = await transaction.walletBase.upsert({
-        where: {
-          paymentSourceId_walletVkey_walletAddress_type: {
-            paymentSourceId: paymentSource.id,
+      let sellerWallet: WalletBase;
+      try {
+        sellerWallet = await transaction.walletBase.upsert({
+          where: {
+            paymentSourceId_walletVkey_walletAddress_type: {
+              paymentSourceId: paymentSource.id,
+              walletVkey: sellerVkey,
+              walletAddress: sellerAddress,
+              type: WalletType.Seller,
+            },
+          },
+          create: {
             walletVkey: sellerVkey,
             walletAddress: sellerAddress,
             type: WalletType.Seller,
+            paymentSourceId: paymentSource.id,
           },
-        },
-        create: {
-          walletVkey: sellerVkey,
-          walletAddress: sellerAddress,
-          type: WalletType.Seller,
-          paymentSourceId: paymentSource.id,
-        },
-        update: {},
-      });
+          update: {},
+        });
+      } catch (error) {
+        throw Error(
+          'Error upserting seller wallet: ' +
+            errorToString(error) +
+            ' sellerVkey: ' +
+            sellerVkey +
+            ' sellerAddress: ' +
+            sellerAddress +
+            ' paymentSourceId: ' +
+            paymentSource.id,
+        );
+      }
 
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
