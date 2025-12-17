@@ -59,5 +59,8 @@ export async function handlePurchaseCreditInit({
       remainingAttempts--;
     }
   }
-  throw createHttpError(500, 'Error handling payment credit initialization');
+  throw createHttpError(
+    500,
+    'Error handling payment credit initialization, after please try again later',
+  );
 }
