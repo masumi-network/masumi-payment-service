@@ -84,9 +84,11 @@ export const postPaymentRequestSchemaOutput = z.object({
     .describe('ID of the API key that created this payment'),
   resultHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the result submitted by the seller (hex string)'),
   inputHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the input data for the payment (hex string)'),
   cooldownTime: z
     .number()

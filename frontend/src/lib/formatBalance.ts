@@ -1,4 +1,4 @@
-const useFormatBalance = (balance: string): string => {
+const formatBalance = (balance: string): string => {
   if (!balance) return '';
 
   const cleanValue = balance.replace(/[^\d.]/g, '');
@@ -12,4 +12,4 @@ const useFormatBalance = (balance: string): string => {
   return decimalPart ? `${formattedInteger}.${decimalPart}` : formattedInteger;
 };
 
-export default useFormatBalance;
+export default formatBalance;

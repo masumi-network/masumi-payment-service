@@ -23,7 +23,10 @@ import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import {
+  decodeBlockchainIdentifier,
+  generateBlockchainIdentifier,
+} from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/generator/contract-generator';
 import {
   transformPaymentGetTimestamps,
@@ -74,6 +77,10 @@ export const queryPaymentsSchemaOutput = z.object({
       blockchainIdentifier: z
         .string()
         .describe('Unique blockchain identifier for the payment'),
+      agentIdentifier: z
+        .string()
+        .nullable()
+        .describe('Identifier of the agent that is being paid'),
       lastCheckedAt: z
         .date()
         .nullable()
@@ -112,11 +119,13 @@ export const queryPaymentsSchemaOutput = z.object({
         .describe('ID of the API key that created this payment'),
       resultHash: z
         .string()
+        .nullable()
         .describe(
           'SHA256 hash of the result submitted by the seller (hex string)',
         ),
       inputHash: z
         .string()
+        .nullable()
         .describe('SHA256 hash of the input data for the payment (hex string)'),
       cooldownTime: z
         .number()
@@ -200,7 +209,7 @@ export const queryPaymentsSchemaOutput = z.object({
             updatedAt: z
               .date()
               .describe('Timestamp when the transaction was last updated'),
-            txHash: z.string().describe('Cardano transaction hash'),
+            txHash: z.string().nullable().describe('Cardano transaction hash'),
             status: z
               .nativeEnum(TransactionStatus)
               .describe('Current status of the transaction'),
@@ -394,6 +403,9 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         ...payment,
         ...transformPaymentGetTimestamps(payment),
         ...transformPaymentGetAmounts(payment),
+        agentIdentifier:
+          decodeBlockchainIdentifier(payment.blockchainIdentifier)
+            ?.agentIdentifier ?? null,
         CurrentTransaction: payment.CurrentTransaction
           ? {
               ...payment.CurrentTransaction,
@@ -519,9 +531,11 @@ export const createPaymentSchemaOutput = z.object({
     .describe('ID of the API key that created this payment'),
   inputHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the input data for the payment (hex string)'),
   resultHash: z
     .string()
+    .nullable()
     .describe(
       'SHA256 hash of the result submitted by the seller (hex string). Empty string if not yet submitted',
     ),
@@ -646,7 +660,7 @@ export const createPaymentSchemaOutput = z.object({
       updatedAt: z
         .date()
         .describe('Timestamp when the transaction was last updated'),
-      txHash: z.string().describe('Cardano transaction hash'),
+      txHash: z.string().nullable().describe('Cardano transaction hash'),
       status: z
         .nativeEnum(TransactionStatus)
         .describe('Current status of the transaction'),
@@ -671,7 +685,7 @@ export const createPaymentSchemaOutput = z.object({
         updatedAt: z
           .date()
           .describe('Timestamp when the transaction was last updated'),
-        txHash: z.string().describe('Cardano transaction hash'),
+        txHash: z.string().nullable().describe('Cardano transaction hash'),
         status: z
           .nativeEnum(TransactionStatus)
           .describe('Current status of the transaction'),

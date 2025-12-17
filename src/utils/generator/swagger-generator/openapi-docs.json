@@ -1438,6 +1438,11 @@
                                                                 "type": "string",
                                                                 "description": "Unique blockchain identifier for the payment"
                                                             },
+                                                            "agentIdentifier": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Identifier of the agent that is being paid"
+                                                            },
                                                             "lastCheckedAt": {
                                                                 "type": "string",
                                                                 "nullable": true,
@@ -1471,10 +1476,12 @@
                                                             },
                                                             "resultHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                             },
                                                             "inputHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "SHA256 hash of the input data for the payment (hex string)"
                                                             },
                                                             "cooldownTime": {
@@ -1663,6 +1670,7 @@
                                                                         },
                                                                         "txHash": {
                                                                             "type": "string",
+                                                                            "nullable": true,
                                                                             "description": "Cardano transaction hash"
                                                                         },
                                                                         "status": {
@@ -1891,6 +1899,7 @@
                                                             "createdAt",
                                                             "updatedAt",
                                                             "blockchainIdentifier",
+                                                            "agentIdentifier",
                                                             "lastCheckedAt",
                                                             "payByTime",
                                                             "submitResultTime",
@@ -1933,6 +1942,7 @@
                                                 {
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
                                                     "submitResultTime": "0",
@@ -2206,10 +2216,12 @@
                                                 },
                                                 "inputHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the input data for the payment (hex string)"
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string). Empty string if not yet submitted"
                                                 },
                                                 "onChainState": {
@@ -2429,6 +2441,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -2488,6 +2501,7 @@
                                                             },
                                                             "txHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "Cardano transaction hash"
                                                             },
                                                             "status": {
@@ -2733,6 +2747,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller "
                                                 },
                                                 "inputHash": {
@@ -3134,6 +3149,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "inputHash": {
@@ -3543,6 +3559,11 @@
                                                                 "type": "string",
                                                                 "description": "Unique blockchain identifier for the purchase"
                                                             },
+                                                            "agentIdentifier": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Identifier of the agent that is being purchased"
+                                                            },
                                                             "lastCheckedAt": {
                                                                 "type": "string",
                                                                 "nullable": true,
@@ -3603,15 +3624,12 @@
                                                             },
                                                             "resultHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                             },
                                                             "NextAction": {
                                                                 "type": "object",
                                                                 "properties": {
-                                                                    "inputHash": {
-                                                                        "type": "string",
-                                                                        "description": "SHA256 hash of the input data (hex string)"
-                                                                    },
                                                                     "requestedAction": {
                                                                         "type": "string",
                                                                         "enum": [
@@ -3647,7 +3665,6 @@
                                                                     }
                                                                 },
                                                                 "required": [
-                                                                    "inputHash",
                                                                     "requestedAction",
                                                                     "errorType",
                                                                     "errorNote"
@@ -3672,6 +3689,7 @@
                                                                     },
                                                                     "txHash": {
                                                                         "type": "string",
+                                                                        "nullable": true,
                                                                         "description": "Cardano transaction hash"
                                                                     },
                                                                     "status": {
@@ -3769,6 +3787,7 @@
                                                                         },
                                                                         "txHash": {
                                                                             "type": "string",
+                                                                            "nullable": true,
                                                                             "description": "Cardano transaction hash"
                                                                         },
                                                                         "status": {
@@ -3984,6 +4003,7 @@
                                                             "createdAt",
                                                             "updatedAt",
                                                             "blockchainIdentifier",
+                                                            "agentIdentifier",
                                                             "lastCheckedAt",
                                                             "payByTime",
                                                             "submitResultTime",
@@ -4026,6 +4046,7 @@
                                                 {
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
                                                     "lastCheckedAt": null,
                                                     "onChainState": null,
                                                     "metadata": null,
@@ -4039,8 +4060,7 @@
                                                     "NextAction": {
                                                         "requestedAction": "FundsLockingRequested",
                                                         "errorType": null,
-                                                        "errorNote": null,
-                                                        "inputHash": "input_hash"
+                                                        "errorNote": null
                                                     },
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -4260,6 +4280,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "inputHash": {
@@ -4343,6 +4364,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -4402,6 +4424,7 @@
                                                             },
                                                             "txHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "Cardano transaction hash"
                                                             },
                                                             "status": {
@@ -4743,6 +4766,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "inputHash": {
@@ -4826,6 +4850,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -4885,6 +4910,7 @@
                                                             },
                                                             "txHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "Cardano transaction hash"
                                                             },
                                                             "status": {
@@ -5257,6 +5283,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "onChainState": {
@@ -5336,6 +5363,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -5690,6 +5718,7 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "onChainState": {
@@ -5769,6 +5798,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -6141,10 +6171,12 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "inputHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the input data for the payment (hex string)"
                                                 },
                                                 "cooldownTime": {
@@ -6754,15 +6786,12 @@
                                                 },
                                                 "resultHash": {
                                                     "type": "string",
+                                                    "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
                                                 "NextAction": {
                                                     "type": "object",
                                                     "properties": {
-                                                        "inputHash": {
-                                                            "type": "string",
-                                                            "description": "SHA256 hash of the input data (hex string)"
-                                                        },
                                                         "requestedAction": {
                                                             "type": "string",
                                                             "enum": [
@@ -6798,7 +6827,6 @@
                                                         }
                                                     },
                                                     "required": [
-                                                        "inputHash",
                                                         "requestedAction",
                                                         "errorType",
                                                         "errorNote"
@@ -6823,6 +6851,7 @@
                                                         },
                                                         "txHash": {
                                                             "type": "string",
+                                                            "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
                                                         "status": {
@@ -6864,6 +6893,7 @@
                                                             },
                                                             "txHash": {
                                                                 "type": "string",
+                                                                "nullable": true,
                                                                 "description": "Cardano transaction hash"
                                                             },
                                                             "status": {
@@ -7085,7 +7115,6 @@
                                             "inputHash": "input_hash",
                                             "resultHash": "",
                                             "NextAction": {
-                                                "inputHash": "input_hash",
                                                 "requestedAction": "FundsLockingRequested",
                                                 "errorType": null,
                                                 "errorNote": null
@@ -7823,6 +7852,7 @@
                                                                 "properties": {
                                                                     "txHash": {
                                                                         "type": "string",
+                                                                        "nullable": true,
                                                                         "description": "Cardano transaction hash"
                                                                     },
                                                                     "status": {

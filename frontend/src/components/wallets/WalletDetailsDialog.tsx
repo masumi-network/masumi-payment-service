@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,10 @@ import {
   shortenAddress,
   getExplorerUrl,
   validateCardanoAddress,
+  hexToAscii,
 } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -28,7 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-interface TokenBalance {
+export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
@@ -162,21 +163,11 @@ export function WalletDetailsDialog({
     }
   }, [isOpen, wallet?.walletAddress]);
 
-  const hexToAscii = (hex: string) => {
-    try {
-      const bytes =
-        hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [];
-      return bytes.map((byte) => String.fromCharCode(byte)).join('');
-    } catch {
-      return hex;
-    }
-  };
-
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
       const ada = token.quantity / 1000000;
       const formattedAmount =
-        ada === 0 ? 'zero' : useFormatBalance(ada.toFixed(6));
+        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
@@ -191,7 +182,7 @@ export function WalletDetailsDialog({
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
       const formattedAmount =
-        usdm === 0 ? 'zero' : useFormatBalance(usdm.toFixed(6));
+        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: `≈ $${usdm.toFixed(2)}`,
@@ -201,7 +192,7 @@ export function WalletDetailsDialog({
     // For other tokens, divide by 10^6 as a default
     const amount = token.quantity / 1000000;
     const formattedAmount =
-      amount === 0 ? 'zero' : useFormatBalance(amount.toFixed(6));
+      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
     return {
       amount: formattedAmount,
       usdValue: undefined,

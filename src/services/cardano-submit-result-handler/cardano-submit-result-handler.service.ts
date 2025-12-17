@@ -255,7 +255,7 @@ async function processSinglePaymentRequest(
     payByTime: decodedContract.payByTime,
     collateralReturnLovelace: decodedContract.collateralReturnLovelace,
     inputHash: decodedContract.inputHash,
-    resultHash: request.NextAction.resultHash ?? '',
+    resultHash: request.NextAction.resultHash,
     resultTime: decodedContract.resultTime,
     unlockTime: decodedContract.unlockTime,
     externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
@@ -309,7 +309,7 @@ async function processSinglePaymentRequest(
       },
       CurrentTransaction: {
         create: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {

@@ -61,6 +61,7 @@ export const authorizePaymentRefundSchemaOutput = z.object({
     .describe('ID of the API key that created this payment'),
   resultHash: z
     .string()
+    .nullable()
     .describe('SHA256 hash of the result submitted by the seller (hex string)'),
   inputHash: z
     .string()
@@ -281,12 +282,19 @@ export const authorizePaymentRefundEndpointPost =
           WithdrawnForBuyer: true,
         },
       });
+      if (result.inputHash == null) {
+        throw createHttpError(
+          500,
+          'Internal server error: Payment has no input hash',
+        );
+      }
 
       return {
         ...result,
         submitResultTime: result.submitResultTime.toString(),
         payByTime: result.payByTime?.toString() ?? null,
         unlockTime: result.unlockTime.toString(),
+        inputHash: result.inputHash,
         externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
         RequestedFunds: (
           result.RequestedFunds as Array<{ unit: string; amount: bigint }>

@@ -255,8 +255,8 @@ export const updateAPIKeyEndpointPatch =
       input: z.infer<typeof updateAPIKeySchemaInput>;
     }) => {
       const apiKey = await prisma.$transaction(
-        async (tx) => {
-          const apiKey = await tx.apiKey.findUnique({
+        async (prisma) => {
+          const apiKey = await prisma.apiKey.findUnique({
             where: { id: input.id },
             include: { RemainingUsageCredits: true },
           });
@@ -272,13 +272,13 @@ export const updateAPIKeyEndpointPatch =
               if (existingCredit) {
                 existingCredit.amount += parsedAmount;
                 if (existingCredit.amount == 0n) {
-                  await tx.unitValue.delete({
+                  await prisma.unitValue.delete({
                     where: { id: existingCredit.id },
                   });
                 } else if (existingCredit.amount < 0) {
                   throw createHttpError(400, 'Invalid amount');
                 } else {
-                  await tx.unitValue.update({
+                  await prisma.unitValue.update({
                     where: { id: existingCredit.id },
                     data: { amount: existingCredit.amount },
                   });
@@ -287,7 +287,7 @@ export const updateAPIKeyEndpointPatch =
                 if (parsedAmount <= 0) {
                   throw createHttpError(400, 'Invalid amount');
                 }
-                await tx.unitValue.create({
+                await prisma.unitValue.create({
                   data: {
                     unit: usageCredit.unit,
                     amount: parsedAmount,
@@ -300,7 +300,7 @@ export const updateAPIKeyEndpointPatch =
               }
             }
           }
-          const result = await tx.apiKey.update({
+          const result = await prisma.apiKey.update({
             where: { id: input.id },
             data: {
               token: input.token,
