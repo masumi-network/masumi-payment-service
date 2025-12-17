@@ -47,12 +47,12 @@ export function AgentEarningsOverview({
         selectedPeriod === 'all'
           ? new Date(0) // Start from epoch for all time
           : (() => {
-              const periodDays =
-                selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
-              const date = new Date();
-              date.setDate(date.getDate() - periodDays);
-              return date;
-            })();
+            const periodDays =
+              selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
+            const date = new Date();
+            date.setDate(date.getDate() - periodDays);
+            return date;
+          })();
 
       // Filter transactions by agent identifier and last 30 days
       const allPayments: GetPaymentResponses['200']['data']['Payments'] = [];
@@ -81,7 +81,7 @@ export function AgentEarningsOverview({
             (payment) =>
               payment.agentIdentifier === agentIdentifier &&
               new Date(parseInt(payment.unlockTime || '0')) >=
-                periodStartDate &&
+              periodStartDate &&
               new Date(parseInt(payment.unlockTime || '0')) <= new Date() &&
               (payment.onChainState === 'Withdrawn' ||
                 payment.onChainState === 'ResultSubmitted' ||
@@ -123,13 +123,7 @@ export function AgentEarningsOverview({
     } finally {
       setIsLoading(false);
     }
-  }, [
-    apiClient,
-    state.network,
-    state.paymentSources,
-    selectedPaymentSourceId,
-    selectedPeriod,
-  ]);
+  }, [state.paymentSources, state.network, selectedPeriod, selectedPaymentSourceId, apiClient, agentIdentifier]);
 
   useEffect(() => {
     if (agentIdentifier) {
@@ -219,11 +213,10 @@ export function AgentEarningsOverview({
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                selectedPeriod === period
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${selectedPeriod === period
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               {getPeriodLabel(period)}
             </button>
