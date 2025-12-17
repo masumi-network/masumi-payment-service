@@ -79,6 +79,7 @@ export function AgentEarningsOverview({
         if (paymentsResponse.data?.data?.Payments) {
           paymentsResponse.data.data.Payments.filter(
             (payment) =>
+              payment.agentIdentifier === agentIdentifier &&
               new Date(parseInt(payment.unlockTime || '0')) >=
                 periodStartDate &&
               new Date(parseInt(payment.unlockTime || '0')) <= new Date() &&
