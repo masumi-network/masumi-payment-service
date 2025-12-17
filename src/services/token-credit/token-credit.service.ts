@@ -54,30 +54,6 @@ export async function handlePurchaseCreditInit({
       throw createHttpError(400, 'Insufficient funds');
     }
     logger.error(error);
-    throw createHttpError(
-      500,
-      'Error handling payment credit initialization' +
-        errorToString(error) +
-        ' id: ' +
-        id +
-        ' blockchainIdentifier: ' +
-        blockchainIdentifier +
-        ' contractAddress: ' +
-        contractAddress +
-        ' sellerVkey: ' +
-        sellerVkey +
-        ' sellerAddress: ' +
-        sellerAddress +
-        ' payByTime: ' +
-        payByTime +
-        ' submitResultTime: ' +
-        submitResultTime +
-        ' externalDisputeUnlockTime: ' +
-        externalDisputeUnlockTime +
-        ' unlockTime: ' +
-        unlockTime +
-        ' inputHash: ' +
-        inputHash,
-    );
+    throw createHttpError(500, 'Error handling payment credit initialization');
   }
 }

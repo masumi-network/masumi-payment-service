@@ -198,7 +198,7 @@ async function handlePurchaseCreditInit({
 
       return purchaseRequest;
     },
-    { isolationLevel: 'ReadCommitted', maxWait: 15000, timeout: 15000 },
+    { isolationLevel: 'Serializable', maxWait: 15000, timeout: 15000 },
   );
 }
 
