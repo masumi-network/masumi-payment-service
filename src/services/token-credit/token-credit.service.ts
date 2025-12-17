@@ -54,9 +54,6 @@ export async function handlePurchaseCreditInit({
       throw createHttpError(400, 'Insufficient funds');
     }
     logger.error(error);
-    throw createHttpError(
-      500,
-      'Error handling payment credit initialization' + errorToString(error),
-    );
+    throw createHttpError(500, 'Error handling payment credit initialization');
   }
 }
