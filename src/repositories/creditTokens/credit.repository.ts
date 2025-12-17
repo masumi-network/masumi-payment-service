@@ -39,8 +39,8 @@ async function handlePurchaseCreditInit({
   inputHash: string;
 }) {
   return await prisma.$transaction(
-    async (transaction) => {
-      const result = await transaction.apiKey.findUnique({
+    async (prisma) => {
+      const result = await prisma.apiKey.findUnique({
         where: { id: id },
         include: {
           RemainingUsageCredits: true,
@@ -113,7 +113,7 @@ async function handlePurchaseCreditInit({
         unit: unit,
       }));
       if (result.usageLimited) {
-        await transaction.apiKey.update({
+        await prisma.apiKey.update({
           where: { id: id },
           data: {
             RemainingUsageCredits: {
@@ -123,7 +123,7 @@ async function handlePurchaseCreditInit({
         });
       }
 
-      const paymentSource = await transaction.paymentSource.findUnique({
+      const paymentSource = await prisma.paymentSource.findUnique({
         where: {
           network_smartContractAddress: {
             network: network,
@@ -135,37 +135,23 @@ async function handlePurchaseCreditInit({
       if (!paymentSource) {
         throw Error('Invalid paymentSource: ' + paymentSource);
       }
-      let sellerWallet: WalletBase;
-      try {
-        sellerWallet = await transaction.walletBase.upsert({
-          where: {
-            paymentSourceId_walletVkey_walletAddress_type: {
-              paymentSourceId: paymentSource.id,
-              walletVkey: sellerVkey,
-              walletAddress: sellerAddress,
-              type: WalletType.Seller,
-            },
-          },
-          create: {
+      const sellerWallet = await prisma.walletBase.upsert({
+        where: {
+          paymentSourceId_walletVkey_walletAddress_type: {
+            paymentSourceId: paymentSource.id,
             walletVkey: sellerVkey,
             walletAddress: sellerAddress,
             type: WalletType.Seller,
-            paymentSourceId: paymentSource.id,
           },
-          update: {},
-        });
-      } catch (error) {
-        throw Error(
-          'Error upserting seller wallet: ' +
-            errorToString(error) +
-            ' sellerVkey: ' +
-            sellerVkey +
-            ' sellerAddress: ' +
-            sellerAddress +
-            ' paymentSourceId: ' +
-            paymentSource.id,
-        );
-      }
+        },
+        create: {
+          walletVkey: sellerVkey,
+          walletAddress: sellerAddress,
+          type: WalletType.Seller,
+          paymentSourceId: paymentSource.id,
+        },
+        update: {},
+      });
 
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
