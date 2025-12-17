@@ -20,6 +20,7 @@ import {
   PurchaseResponse,
   RegistrationResponse,
 } from './utils/apiClient';
+import './setup/globals';
 import {
   getTestWalletFromDatabase,
   getActiveSmartContractAddress,
@@ -477,9 +478,8 @@ export async function createPaymentWithCustomTiming(
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
 
-  const paymentResponse: PaymentResponse = await (
-    global as any
-  ).testApiClient.createPayment(paymentData);
+  const paymentResponse: PaymentResponse =
+    await global.testApiClient.createPayment(paymentData);
 
   expect(paymentResponse).toBeDefined();
   expect(paymentResponse.id).toBeDefined();
@@ -543,9 +543,8 @@ export async function createPurchase(
     `🔄 E2E: purchase payload prepared — blockchainId=${paymentResult.blockchainIdentifier.substring(0, 50)}...`,
   );
 
-  const purchaseResponse: PurchaseResponse = await (
-    global as any
-  ).testApiClient.createPurchase(purchaseData);
+  const purchaseResponse: PurchaseResponse =
+    await global.testApiClient.createPurchase(purchaseData);
 
   expect(purchaseResponse).toBeDefined();
   expect(purchaseResponse.id).toBeDefined();
