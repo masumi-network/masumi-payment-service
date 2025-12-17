@@ -26,7 +26,9 @@ jobs:
         id: create-branch
         run: |
           BRANCH_NAME="e2e-ci-pr-${{ github.event.pull_request.number }}-run-${{ github.run_id }}"
+          EXPIRES_AT="$(date -u -d '+24 hours' +'%Y-%m-%dT%H:%M:%SZ')"
           echo "Creating database branch: $BRANCH_NAME"
+          echo "Branch will expire at (UTC): $EXPIRES_AT"
 
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches" \
@@ -40,7 +42,8 @@ jobs:
                 }
               ],
               \"branch\": {
-                \"name\": \"$BRANCH_NAME\"
+                \"name\": \"$BRANCH_NAME\",
+                \"expires_at\": \"$EXPIRES_AT\"
               }
             }")
 
@@ -173,23 +176,3 @@ jobs:
             kill $(cat server.pid) || true
             rm server.pid
           fi
-
-      - name: Upload Server Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-failure-logs
-          path: |
-            server.log
-            **/*.log
-          retention-days: 3
-
-      - name: Delete Neon Database Branch
-        if: always()
-        run: |
-          echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
-          curl -X DELETE \
-            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
-            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
-            -H "Accept: application/json"
-          echo "✅ Database branch deleted"
