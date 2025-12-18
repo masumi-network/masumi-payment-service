@@ -7,20 +7,45 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
   output: z.object({
-    monitoringStatus: z.object({
-      isMonitoring: z.boolean(),
-      stats: z
-        .object({
-          trackedEntities: z.number(),
-          lastCheckTime: z.string(),
-          memoryUsage: z.object({
-            heapUsed: z.string(),
-            heapTotal: z.string(),
-            external: z.string(),
-          }),
-        })
-        .nullable(),
-    }),
+    monitoringStatus: z
+      .object({
+        isMonitoring: z
+          .boolean()
+          .describe(
+            'Whether the blockchain state monitoring service is currently running',
+          ),
+        stats: z
+          .object({
+            trackedEntities: z
+              .number()
+              .describe(
+                'Number of entities being tracked by the monitoring service',
+              ),
+            lastCheckTime: z
+              .string()
+              .describe('ISO timestamp of the last monitoring check'),
+            memoryUsage: z
+              .object({
+                heapUsed: z
+                  .string()
+                  .describe(
+                    'Heap memory currently used by the monitoring service ',
+                  ),
+                heapTotal: z
+                  .string()
+                  .describe(
+                    'Total heap memory allocated for the monitoring service ',
+                  ),
+                external: z
+                  .string()
+                  .describe('External memory used by the monitoring service '),
+              })
+              .describe('Memory usage statistics for the monitoring service'),
+          })
+          .nullable()
+          .describe('Monitoring statistics. Null if monitoring is not active'),
+      })
+      .describe('Current status of the blockchain state monitoring service'),
   }),
   handler: async ({ options: _options }) => {
     const status = blockchainStateMonitorService.getStatus();
@@ -48,8 +73,12 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
   output: z.object({
-    message: z.string(),
-    triggered: z.boolean(),
+    message: z
+      .string()
+      .describe('Status message about the monitoring cycle trigger'),
+    triggered: z
+      .boolean()
+      .describe('Whether the monitoring cycle was successfully triggered'),
   }),
   handler: async ({ options: _options }) => {
     try {
@@ -70,11 +99,20 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
 export const startMonitoring = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({
-    intervalMs: z.number().min(5000).max(300000).default(30000),
+    intervalMs: z
+      .number()
+      .min(5000)
+      .max(300000)
+      .default(30000)
+      .describe('Monitoring interval in milliseconds'),
   }),
   output: z.object({
-    message: z.string(),
-    started: z.boolean(),
+    message: z
+      .string()
+      .describe('Status message about starting the monitoring service'),
+    started: z
+      .boolean()
+      .describe('Whether the monitoring service was successfully started'),
   }),
   handler: async ({ input }) => {
     try {
@@ -96,8 +134,12 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
   output: z.object({
-    message: z.string(),
-    stopped: z.boolean(),
+    message: z
+      .string()
+      .describe('Status message about stopping the monitoring service'),
+    stopped: z
+      .boolean()
+      .describe('Whether the monitoring service was successfully stopped'),
   }),
   handler: async ({ options: _options }) => {
     try {
@@ -119,16 +161,27 @@ export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
   output: z.object({
-    recentCount: z.number(),
-    recentRequests: z.array(
-      z.object({
-        id: z.string(),
-        state: z.string(),
-        updatedAt: z.string(),
-        network: z.string().optional(),
-      }),
-    ),
-    allStates: z.array(z.string()),
+    recentCount: z.number().describe('Number of recent registry requests'),
+    recentRequests: z
+      .array(
+        z.object({
+          id: z.string().describe('Unique identifier for the registry request'),
+          state: z.string().describe('Current state of the registry request'),
+          updatedAt: z
+            .string()
+            .describe(
+              'ISO timestamp when the registry request was last updated',
+            ),
+          network: z
+            .string()
+            .optional()
+            .describe('The Cardano network for this registry request'),
+        }),
+      )
+      .describe('List of recent registry requests'),
+    allStates: z
+      .array(z.string())
+      .describe('List of all possible registry request states'),
   }),
   handler: async ({ options: _options }) => {
     const diagnostic = await checkRegistryData();

@@ -21,6 +21,7 @@ interface AppState {
     smartContractAddress: string;
     network: string;
     paymentType: string;
+    feeRatePermille: number;
     CollectionWallet: {
       walletAddress: string;
       note?: string;

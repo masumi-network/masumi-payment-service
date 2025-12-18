@@ -8,10 +8,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
+import {
+  getUtxos,
+  postPaymentSourceExtended,
+  postWallet,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { X, Copy, Check } from 'lucide-react';
-import { shortenAddress, copyToClipboard, handleApiCall } from '@/lib/utils';
+import {
+  shortenAddress,
+  copyToClipboard,
+  handleApiCall,
+  validateCardanoAddress,
+} from '@/lib/utils';
 import {
   DEFAULT_ADMIN_WALLETS,
   DEFAULT_FEE_CONFIG,
@@ -200,6 +209,99 @@ export function AddPaymentSourceDialog({
     const adminWallets = data.useCustomAdminWallets
       ? data.customAdminWallets
       : DEFAULT_ADMIN_WALLETS[data.network];
+
+    for (let index = 0; index < data.purchasingWallets.length; index++) {
+      const wallet = data.purchasingWallets[index];
+      if (wallet.collectionAddress) {
+        const validation = validateCardanoAddress(
+          wallet.collectionAddress.trim(),
+          data.network,
+        );
+        if (!validation.isValid) {
+          toast.error(
+            'Invalid collection address for purchasing wallet ' +
+              (index + 1) +
+              ': ' +
+              validation.error,
+          );
+          return;
+        }
+        const balance = await getUtxos({
+          client: apiClient,
+          query: {
+            address: wallet.collectionAddress.trim(),
+            network: data.network,
+          },
+        });
+        if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+          toast.warning(
+            'Collection address for purchasing wallet ' +
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
+          );
+        }
+      }
+    }
+    for (let index = 0; index < data.sellingWallets.length; index++) {
+      const wallet = data.sellingWallets[index];
+      if (wallet.collectionAddress) {
+        const validation = validateCardanoAddress(
+          wallet.collectionAddress.trim(),
+          data.network,
+        );
+        if (!validation.isValid) {
+          toast.error(
+            'Invalid collection address for selling wallet ' +
+              (index + 1) +
+              ': ' +
+              validation.error,
+          );
+          return;
+        }
+        const balance = await getUtxos({
+          client: apiClient,
+          query: {
+            address: wallet.collectionAddress.trim(),
+            network: data.network,
+          },
+        });
+        if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+          toast.warning(
+            'Collection address for selling wallet ' +
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
+          );
+        }
+      }
+    }
+    for (let index = 0; index < adminWallets.length; index++) {
+      const wallet = adminWallets[index];
+      const validation = validateCardanoAddress(
+        wallet.walletAddress.trim(),
+        data.network,
+      );
+      if (!validation.isValid) {
+        toast.error(
+          'Invalid admin wallet address for admin wallet ' +
+            (index + 1) +
+            ': ' +
+            validation.error,
+        );
+        return;
+      }
+    }
+
+    const feeReceiverWalletValidation = validateCardanoAddress(
+      data.feeReceiverWallet.walletAddress.trim(),
+      data.network,
+    );
+    if (!feeReceiverWalletValidation.isValid) {
+      toast.error(
+        'Invalid fee receiver wallet address: ' +
+          feeReceiverWalletValidation.error,
+      );
+      return;
+    }
 
     await handleApiCall(
       () =>

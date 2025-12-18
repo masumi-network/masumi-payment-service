@@ -17,7 +17,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:e2e": "jest --config jest.e2e.config.ts --bail",
+    "test:e2e": "jest --config jest.e2e.config.ts --bail --forceExit",
     "test:e2e:watch": "jest --config jest.e2e.config.ts --watch",
     "test:e2e:verbose": "jest --config jest.e2e.config.ts --verbose",
     "prisma:generate": "npx prisma generate",

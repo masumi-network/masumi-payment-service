@@ -275,7 +275,7 @@ async function processSinglePaymentCollection(
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -328,7 +328,7 @@ export async function collectOutstandingPaymentsV1() {
   try {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.WithdrawRequested,
-      resultHash: { not: '' },
+      resultHash: { not: null },
       unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
       onChainState: { in: [OnChainState.ResultSubmitted] },
     });

@@ -156,7 +156,7 @@ export async function deRegisterAgentV1() {
                 state: RegistrationState.DeregistrationInitiated,
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {
