@@ -6138,6 +6138,11 @@
                                                     "type": "string",
                                                     "description": "Unique blockchain identifier for the payment"
                                                 },
+                                                "agentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Identifier of the agent that is being paid"
+                                                },
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -6547,6 +6552,7 @@
                                                 "createdAt",
                                                 "updatedAt",
                                                 "blockchainIdentifier",
+                                                "agentIdentifier",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -6583,6 +6589,7 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "blockchainIdentifier": "blockchain_identifier",
+                                            "agentIdentifier": "agent_identifier",
                                             "lastCheckedAt": null,
                                             "payByTime": null,
                                             "submitResultTime": "0",
@@ -6725,6 +6732,11 @@
                                                 "blockchainIdentifier": {
                                                     "type": "string",
                                                     "description": "Unique blockchain identifier for the purchase"
+                                                },
+                                                "agentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Identifier of the agent that is being purchased"
                                                 },
                                                 "lastCheckedAt": {
                                                     "type": "string",
@@ -7066,6 +7078,7 @@
                                                 "createdAt",
                                                 "updatedAt",
                                                 "blockchainIdentifier",
+                                                "agentIdentifier",
                                                 "lastCheckedAt",
                                                 "payByTime",
                                                 "submitResultTime",
@@ -7102,6 +7115,7 @@
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
                                             "blockchainIdentifier": "blockchain_identifier",
+                                            "agentIdentifier": "agent_identifier",
                                             "lastCheckedAt": null,
                                             "payByTime": null,
                                             "submitResultTime": "0",
