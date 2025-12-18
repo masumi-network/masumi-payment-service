@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -50,6 +50,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
   const { state, dispatch, isChangingNetwork } = useAppContext();
+  const prevCollapsedRef = useRef(collapsed);
+  const prevHoveredRef = useRef(isHovered);
+  const [shouldAnimateIcon, setShouldAnimateIcon] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -130,6 +133,24 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [collapsed]);
 
   useEffect(() => {
+    const isCollapsing = collapsed && !prevCollapsedRef.current;
+    const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
+
+    if (isCollapsing || isHoverEnding) {
+      setShouldAnimateIcon(true);
+      const timer = setTimeout(() => {
+        setShouldAnimateIcon(false);
+      }, 300);
+      prevCollapsedRef.current = collapsed;
+      prevHoveredRef.current = isHovered;
+      return () => clearTimeout(timer);
+    }
+
+    prevCollapsedRef.current = collapsed;
+    prevHoveredRef.current = isHovered;
+  }, [collapsed, isHovered]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -141,7 +162,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Check if user has payment sources
   const hasPaymentSources =
     state.paymentSources && state.paymentSources.length > 0;
 
@@ -183,7 +203,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
-    // Don't mark as read immediately, let user view notifications first
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
@@ -272,22 +291,20 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!(collapsed && !isHovered) ? (
-              <Link
-                href="/"
-                style={{
-                  animation: 'scaleIn 0.3s ease-out',
-                  transformOrigin: 'left center',
-                }}
-              >
+              <Link href="/">
                 <MasumiLogo />
               </Link>
             ) : (
               <Link
                 href="/"
                 className="flex items-center justify-center w-8 h-8"
-                style={{
-                  animation: 'rotateIn 0.3s ease-out',
-                }}
+                style={
+                  shouldAnimateIcon && collapsed && !isHovered
+                    ? {
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
+                    : undefined
+                }
               >
                 <MasumiIconFlat className="w-6 h-6" />
               </Link>
