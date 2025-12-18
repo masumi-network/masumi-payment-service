@@ -10,6 +10,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
   transformPaymentGetTimestamps,
@@ -306,6 +307,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -341,6 +343,18 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
       if (result == null) {
         throw createHttpError(404, 'Payment not found');
       }
+
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        result.SmartContractWallet
+          ? { smartContractWalletId: result.SmartContractWallet.id }
+          : null,
+      );
+
       return {
         ...result,
         ...transformPaymentGetTimestamps(result),

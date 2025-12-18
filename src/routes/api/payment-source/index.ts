@@ -3,6 +3,7 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import { $Enums, Network } from '@prisma/client';
 import { z } from 'zod';
 import { splitWalletsByType } from '@/utils/shared/transformers';
+import createHttpError from 'http-errors';
 
 export const paymentSourceSchemaInput = z.object({
   take: z
@@ -143,8 +144,16 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
+    if (options.permission === $Enums.Permission.WalletScoped) {
+      throw createHttpError(
+        403,
+        'Forbidden: WalletScoped keys cannot access PaymentSource endpoints',
+      );
+    }
+
     const paymentSources = await prisma.paymentSource.findMany({
       take: input.take,
       orderBy: {

@@ -75,7 +75,26 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: true,
+        ApiKeyHotWallets: {
+          where: {
+            HotWallet: {
+              deletedAt: null,
+            },
+          },
+          include: {
+            HotWallet: {
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+              },
+            },
+          },
+        },
+      },
     });
     return {
       ApiKeys: result.map((data) => ({
@@ -124,6 +143,12 @@ export const addAPIKeySchemaInput = z.object({
     .nativeEnum(Permission)
     .default(Permission.Read)
     .describe('The permission of the API key'),
+  hotWalletIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'List of HotWallet IDs to assign to this API key. Required if permission is WalletScoped.',
+    ),
 });
 
 export const addAPIKeySchemaOutput = z.object({
@@ -151,6 +176,57 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     input: z.infer<typeof addAPIKeySchemaInput>;
   }) => {
     const isAdmin = input.permission == Permission.Admin;
+    const isWalletScoped = input.permission === Permission.WalletScoped;
+
+    if (isWalletScoped) {
+      const hotWalletIds = input.hotWalletIds || [];
+
+      if (hotWalletIds.length > 0) {
+        const wallets = await prisma.hotWallet.findMany({
+          where: {
+            id: { in: hotWalletIds },
+            deletedAt: null,
+          },
+          include: {
+            PaymentSource: {
+              select: {
+                id: true,
+                network: true,
+                deletedAt: true,
+              },
+            },
+          },
+        });
+
+        if (wallets.length !== hotWalletIds.length) {
+          throw createHttpError(
+            404,
+            'One or more HotWallets not found or deleted',
+          );
+        }
+
+        // Validate wallets belong to non-deleted PaymentSources
+        const invalidWallets = wallets.filter(
+          (w) => w.PaymentSource.deletedAt !== null,
+        );
+        if (invalidWallets.length > 0) {
+          throw createHttpError(
+            400,
+            'One or more HotWallets belong to deleted PaymentSources',
+          );
+        }
+
+        // Auto-detect network from wallets
+        const networks = new Set<Network>();
+        for (const wallet of wallets) {
+          networks.add(wallet.PaymentSource.network);
+        }
+        input.networkLimit = Array.from(networks);
+      } else {
+        input.networkLimit = [];
+      }
+    }
+
     const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
     const result = await prisma.apiKey.create({
       data: {
@@ -173,6 +249,17 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
             }),
           },
         },
+        ...(isWalletScoped && input.hotWalletIds
+          ? {
+              ApiKeyHotWallets: {
+                createMany: {
+                  data: input.hotWalletIds.map((hotWalletId) => ({
+                    hotWalletId,
+                  })),
+                },
+              },
+            }
+          : {}),
       },
     });
     return result;

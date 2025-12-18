@@ -15,6 +15,8 @@ import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import { WalletAccess } from '@/services/wallet-access';
+import { Prisma } from '@prisma/client';
 
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
@@ -220,6 +222,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -228,15 +231,26 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.registryRequest.findMany({
-      where: {
-        PaymentSource: {
-          network: input.network,
-          deletedAt: null,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-        },
-        SmartContractWallet: { deletedAt: null },
+    const baseFilter: Prisma.RegistryRequestWhereInput = {
+      PaymentSource: {
+        network: input.network,
+        deletedAt: null,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
+      SmartContractWallet: { deletedAt: null },
+    };
+
+    const secureFilter = WalletAccess.buildFilter(
+      {
+        apiKeyId: options.id,
+        permission: options.permission,
+        allowedWalletIds: options.allowedWalletIds,
+      },
+      baseFilter,
+    );
+
+    const result = await prisma.registryRequest.findMany({
+      where: secureFilter,
       orderBy: {
         createdAt: 'desc',
       },
@@ -538,6 +552,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     const startTime = Date.now();
@@ -586,6 +601,15 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           'Network and Address combination not supported',
         );
       }
+
+      WalletAccess.requireWalletAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        sellingWallet.id,
+      );
       await checkIsAllowedNetworkOrThrowUnauthorized(
         options.networkLimit,
         input.network,

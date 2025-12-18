@@ -33,6 +33,8 @@ import {
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { WalletAccess } from '@/services/wallet-access';
+import { Prisma } from '@prisma/client';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -356,6 +358,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -364,14 +367,25 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.paymentRequest.findMany({
-      where: {
-        PaymentSource: {
-          network: input.network,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-          deletedAt: null,
-        },
+    const baseFilter: Prisma.PaymentRequestWhereInput = {
+      PaymentSource: {
+        network: input.network,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        deletedAt: null,
       },
+    };
+
+    const secureFilter = WalletAccess.buildFilter(
+      {
+        apiKeyId: options.id,
+        permission: options.permission,
+        allowedWalletIds: options.allowedWalletIds,
+      },
+      baseFilter,
+    );
+
+    const result = await prisma.paymentRequest.findMany({
+      where: secureFilter,
       orderBy: { createdAt: 'desc' },
       cursor: input.cursorId
         ? {
@@ -718,6 +732,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -887,6 +902,15 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         'Agent identifier not found in selling wallets',
       );
     }
+
+    WalletAccess.requireWalletAccess(
+      {
+        apiKeyId: options.id,
+        permission: options.permission,
+        allowedWalletIds: options.allowedWalletIds,
+      },
+      sellingWallet.id,
+    );
     const sellerCUID = cuid2.createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {

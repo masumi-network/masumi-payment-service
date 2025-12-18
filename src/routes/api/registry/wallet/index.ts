@@ -8,6 +8,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 
@@ -292,6 +293,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -335,6 +337,15 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     if (wallet == null) {
       throw createHttpError(404, 'Wallet not found');
     }
+
+    WalletAccess.requireWalletAccess(
+      {
+        apiKeyId: options.id,
+        permission: options.permission,
+        allowedWalletIds: options.allowedWalletIds,
+      },
+      wallet.id,
+    );
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 

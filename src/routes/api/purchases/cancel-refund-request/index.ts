@@ -12,6 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 
 export const cancelPurchaseRefundRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -210,6 +211,7 @@ export const cancelPurchaseRefundRequestPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -276,6 +278,17 @@ export const cancelPurchaseRefundRequestPost =
       if (purchase.CurrentTransaction.txHash == null) {
         throw createHttpError(400, 'Purchase in invalid state');
       }
+
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        purchase.SmartContractWallet
+          ? { smartContractWalletId: purchase.SmartContractWallet.id }
+          : null,
+      );
       if (purchase.SmartContractWallet == null) {
         throw createHttpError(404, 'Smart contract wallet not set on purchase');
       }

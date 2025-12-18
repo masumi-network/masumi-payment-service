@@ -26,6 +26,8 @@ import { validateHexString } from '@/utils/generator/contract-generator';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import { WalletAccess } from '@/services/wallet-access';
+import { Prisma } from '@prisma/client';
 import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
@@ -303,6 +305,7 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -311,14 +314,28 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.purchaseRequest.findMany({
-      where: {
-        PaymentSource: {
-          deletedAt: null,
-          network: input.network,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-        },
+    const baseFilter: Prisma.PurchaseRequestWhereInput = {
+      PaymentSource: {
+        deletedAt: null,
+        network: input.network,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
+      ...(options.permission === $Enums.Permission.WalletScoped && {
+        smartContractWalletId: { not: null },
+      }),
+    };
+
+    const secureFilter = WalletAccess.buildFilter(
+      {
+        apiKeyId: options.id,
+        permission: options.permission,
+        allowedWalletIds: options.allowedWalletIds,
+      },
+      baseFilter,
+    );
+
+    const result = await prisma.purchaseRequest.findMany({
+      where: secureFilter,
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       take: input.limit,
       orderBy: { createdAt: 'desc' },
@@ -652,6 +669,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     const startTime = Date.now();
@@ -809,6 +827,24 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           404,
           'No payment source found for agent identifiers policy id',
         );
+      }
+
+      if (options.permission === $Enums.Permission.WalletScoped) {
+        const purchasingWallets = await prisma.hotWallet.findMany({
+          where: {
+            paymentSourceId: paymentSource.id,
+            type: HotWalletType.Purchasing,
+            deletedAt: null,
+            id: { in: options.allowedWalletIds },
+          },
+        });
+
+        if (purchasingWallets.length === 0) {
+          throw createHttpError(
+            403,
+            'Forbidden: No purchasing wallets in this PaymentSource are assigned to your API key',
+          );
+        }
       }
 
       const wallets = await prisma.hotWallet.aggregate({

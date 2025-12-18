@@ -11,6 +11,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 
 export const submitPaymentResultSchemaInput = z.object({
   network: z
@@ -200,6 +201,7 @@ export const submitPaymentResultEndpointPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -262,6 +264,17 @@ export const submitPaymentResultEndpointPost =
       if (payment.SmartContractWallet == null) {
         throw createHttpError(404, 'Smart contract wallet not found');
       }
+
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        payment.SmartContractWallet
+          ? { smartContractWalletId: payment.SmartContractWallet.id }
+          : null,
+      );
 
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },

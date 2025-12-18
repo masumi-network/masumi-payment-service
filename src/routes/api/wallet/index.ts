@@ -1,4 +1,6 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { WalletAccess } from '@/services/wallet-access';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -69,7 +71,7 @@ export const getWalletSchemaOutput = z.object({
   walletAddress: z.string().describe('Cardano address of the wallet'),
 });
 
-export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
+export const queryWalletEndpointGet = readAuthenticatedEndpointFactory.build({
   method: 'get',
   input: getWalletSchemaInput,
   output: getWalletSchemaOutput,
@@ -83,11 +85,23 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     const startTime = Date.now();
     try {
       if (input.walletType == 'Selling') {
+        if (options.permission === $Enums.Permission.WalletScoped) {
+          WalletAccess.requireWalletAccess(
+            {
+              apiKeyId: options.id,
+              permission: options.permission,
+              allowedWalletIds: options.allowedWalletIds,
+            },
+            input.id,
+          );
+        }
+
         const result = await prisma.hotWallet.findFirst({
           where: {
             id: input.id,
@@ -155,6 +169,17 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
           walletAddress: result.walletAddress,
         };
       } else if (input.walletType == 'Purchasing') {
+        if (options.permission === $Enums.Permission.WalletScoped) {
+          WalletAccess.requireWalletAccess(
+            {
+              apiKeyId: options.id,
+              permission: options.permission,
+              allowedWalletIds: options.allowedWalletIds,
+            },
+            input.id,
+          );
+        }
+
         const result = await prisma.hotWallet.findFirst({
           where: {
             id: input.id,

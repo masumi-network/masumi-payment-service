@@ -11,6 +11,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 
 export const authorizePaymentRefundSchemaInput = z.object({
   blockchainIdentifier: z
@@ -196,6 +197,7 @@ export const authorizePaymentRefundEndpointPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -263,6 +265,18 @@ export const authorizePaymentRefundEndpointPost =
           'You are not authorized to authorize a refund for this payment',
         );
       }
+
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        payment.SmartContractWallet
+          ? { smartContractWalletId: payment.SmartContractWallet.id }
+          : null,
+      );
+
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },
         data: {

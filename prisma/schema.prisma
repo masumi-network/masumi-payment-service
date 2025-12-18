@@ -22,6 +22,7 @@ model ApiKey {
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
+  ApiKeyHotWallets      ApiKeyHotWallet[] @relation("ApiKeyHotWallet")
 }
 
 model UnitValue {
@@ -68,6 +69,7 @@ model HotWallet {
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
+  ApiKeyHotWallets     ApiKeyHotWallet[] @relation("ApiKeyHotWallet")
 }
 
 model Transaction {
@@ -339,6 +341,19 @@ model PaymentSourceConfig {
   PaymentSource     PaymentSource?
 }
 
+model ApiKeyHotWallet {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  apiKeyId    String
+  hotWalletId String
+  ApiKey      ApiKey    @relation("ApiKeyHotWallet", fields: [apiKeyId], references: [id], onDelete: Cascade)
+  HotWallet   HotWallet @relation("ApiKeyHotWallet", fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, hotWalletId])
+  @@index([apiKeyId])
+  @@index([hotWalletId])
+}
+
 enum ApiKeyStatus {
   Active
   Revoked
@@ -348,6 +363,7 @@ enum Permission {
   Read
   ReadAndPay
   Admin
+  WalletScoped
 }
 
 enum HotWalletType {
