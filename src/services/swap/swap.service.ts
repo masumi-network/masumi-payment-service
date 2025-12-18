@@ -19,7 +19,6 @@ export interface SwapResult {
 export interface SwapParams {
   mnemonic: string;
   fromAmount: number;
-  isFromAda?: boolean;
   fromToken: Token;
   toToken: Token;
   poolId: string;
@@ -56,7 +55,6 @@ export async function swapTokens(
   try {
     logger.info('Initializing swap transaction', {
       component: 'swap-service',
-      isFromAda: params.isFromAda,
       amount: params.fromAmount,
       poolId: params.poolId,
     });
@@ -92,10 +90,9 @@ export async function swapTokens(
     });
 
     const isFromAda =
-      params.isFromAda ??
-      (!params.fromToken.policyId ||
-        params.fromToken.policyId === '' ||
-        params.fromToken.policyId.toLowerCase() === 'native');
+      !params.fromToken.policyId ||
+      params.fromToken.policyId === '' ||
+      params.fromToken.policyId.toLowerCase() === 'native';
 
     const suppliedAsset = new AssetAmount(
       BigInt(params.fromAmount * 1_000_000),

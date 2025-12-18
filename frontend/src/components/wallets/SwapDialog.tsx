@@ -375,7 +375,6 @@ export function SwapDialog({
         );
       }
 
-      const isFromAda = selectedFromToken.symbol === 'ADA';
       const poolId = selectedFromToken.poolId || selectedToToken.poolId || '';
 
       if (!poolId) {
@@ -417,7 +416,6 @@ export function SwapDialog({
             body: {
               walletVkey,
               amount: fromAmount,
-              isFromAda,
               fromToken,
               toToken,
               poolId,

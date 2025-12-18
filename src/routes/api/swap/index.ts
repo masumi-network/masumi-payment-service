@@ -18,23 +18,33 @@ export const swapTokensSchemaInput = z.object({
     .number()
     .positive()
     .describe('Amount to swap (in ADA or token units)'),
-  isFromAda: z
-    .boolean()
-    .optional()
-    .describe(
-      'true for ADA → Token, false for Token → ADA. If not provided, will be inferred from fromToken (ADA has no policyId)',
-    ),
   fromToken: z
     .object({
-      policyId: z.string().describe('Policy ID of the source token'),
-      assetName: z.string().describe('Asset name of the source token'),
+      policyId: z
+        .string()
+        .describe(
+          'Policy ID of the source token. Use empty string "" for ADA (native token)',
+        ),
+      assetName: z
+        .string()
+        .describe(
+          'Asset name of the source token. Use empty string "" for ADA',
+        ),
       name: z.string().describe('Name of the source token'),
     })
     .describe('Source token information'),
   toToken: z
     .object({
-      policyId: z.string().describe('Policy ID of the destination token'),
-      assetName: z.string().describe('Asset name of the destination token'),
+      policyId: z
+        .string()
+        .describe(
+          'Policy ID of the destination token. Use empty string "" for ADA (native token)',
+        ),
+      assetName: z
+        .string()
+        .describe(
+          'Asset name of the destination token. Use empty string "" for ADA',
+        ),
       name: z.string().describe('Name of the destination token'),
     })
     .describe('Destination token information'),
@@ -111,7 +121,6 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
         {
           mnemonic: mnemonic,
           fromAmount: input.amount,
-          isFromAda: input.isFromAda,
           fromToken: input.fromToken as Token,
           toToken: input.toToken as Token,
           poolId: input.poolId,
