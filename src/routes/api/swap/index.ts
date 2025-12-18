@@ -49,10 +49,6 @@ export const swapTokensSchemaInput = z.object({
     })
     .describe('Destination token information'),
   poolId: z.string().describe('SundaeSwap pool identifier'),
-  blockfrostApiKey: z
-    .string()
-    .min(1)
-    .describe('Blockfrost API key for mainnet'),
   slippage: z
     .number()
     .min(0)
@@ -96,7 +92,11 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
         },
         include: {
           Secret: true,
-          PaymentSource: true,
+          PaymentSource: {
+            include: {
+              PaymentSourceConfig: true,
+            },
+          },
         },
       });
 
@@ -115,6 +115,20 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
         );
       }
 
+      if (!wallet.PaymentSource.PaymentSourceConfig) {
+        throw createHttpError(400, 'Payment source configuration not found');
+      }
+
+      const blockfrostApiKey =
+        wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+
+      if (!blockfrostApiKey) {
+        throw createHttpError(
+          400,
+          'Blockfrost API key not found in payment source configuration',
+        );
+      }
+
       const mnemonic = decrypt(wallet.Secret.encryptedMnemonic);
 
       const result = await swapTokens(
@@ -126,7 +140,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
           poolId: input.poolId,
           slippage: input.slippage,
         },
-        input.blockfrostApiKey,
+        blockfrostApiKey,
       );
 
       return result;

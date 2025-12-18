@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
 import { FaExchangeAlt } from 'react-icons/fa';
 import { RefreshCw } from 'lucide-react';
-import { getUtxos, getRpcApiKeys, postSwap } from '@/lib/api/generated';
+import { getUtxos, postSwap } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
@@ -28,7 +28,6 @@ import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
-import { BlockfrostProvider } from '@meshsdk/core';
 
 interface SwapDialogProps {
   isOpen: boolean;
@@ -46,7 +45,6 @@ export function SwapDialog({
   network,
 }: SwapDialogProps) {
   const { state, apiClient } = useAppContext();
-  const [blockfrostApiKey, setBlockfrostApiKey] = useState<string>('');
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
   const [nmkrBalance, setNmkrBalance] = useState<number>(0);
@@ -60,8 +58,6 @@ export function SwapDialog({
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
   const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [blockfrostProvider, setBlockfrostProvider] =
-    useState<BlockfrostProvider | null>(null);
 
   const adaIndex = swappableTokens.findIndex((token) => token.symbol === 'ADA');
   const usdmIndex = swappableTokens.findIndex(
@@ -118,7 +114,6 @@ export function SwapDialog({
       setSwapStatus('idle');
       setIsSwapping(false);
       setShowConfirmation(false);
-      fetchBlockfrostApiKey();
       fetchBalance();
       fetchTokenRates();
 
@@ -130,48 +125,6 @@ export function SwapDialog({
     }
   }, [isOpen]);
 
-  const initializeBlockfrostProvider = (apiKey: string) => {
-    if (!apiKey) {
-      setBlockfrostProvider(null);
-      return;
-    }
-    try {
-      const provider = new BlockfrostProvider(apiKey);
-      setBlockfrostProvider(provider);
-    } catch (error) {
-      console.error('Error initializing Blockfrost provider:', error);
-      setBlockfrostProvider(null);
-    }
-  };
-
-  const fetchBlockfrostApiKey = async () => {
-    try {
-      const response = await getRpcApiKeys({
-        client: apiClient,
-      });
-
-      if (response.error) {
-        console.error('Failed to fetch RPC API keys:', response.error);
-        setBlockfrostApiKey('');
-        setBlockfrostProvider(null);
-        return;
-      }
-
-      const mainnetKey = (response.data as any)?.data?.RpcProviderKeys?.find(
-        (key: any) =>
-          key.network === 'Mainnet' && key.rpcProvider === 'Blockfrost',
-      );
-      const apiKey = mainnetKey?.rpcProviderApiKey || '';
-      setBlockfrostApiKey(apiKey);
-
-      // Initialize provider using the function
-      initializeBlockfrostProvider(apiKey);
-    } catch (error) {
-      console.error('Error fetching Blockfrost API key:', error);
-      setBlockfrostApiKey('');
-      setBlockfrostProvider(null);
-    }
-  };
 
   const fetchBalance = async () => {
     try {
@@ -369,12 +322,6 @@ export function SwapDialog({
         throw new Error('API key not found');
       }
 
-      if (!blockfrostApiKey) {
-        throw new Error(
-          'Blockfrost API key not found in selected payment source',
-        );
-      }
-
       const poolId = selectedFromToken.poolId || selectedToToken.poolId || '';
 
       if (!poolId) {
@@ -419,7 +366,6 @@ export function SwapDialog({
               fromToken,
               toToken,
               poolId,
-              blockfrostApiKey,
               slippage: 0.03,
             },
           }),
@@ -438,28 +384,19 @@ export function SwapDialog({
             setSwapStatus('submitted');
             toast.info('Swap transaction submitted!', { theme: 'dark' });
 
-            if (transactionHash && blockfrostProvider) {
-              blockfrostProvider.onTxConfirmed(transactionHash, () => {
-                fetchBalance();
+            if (transactionHash) {
+              // Use timeout fallback for transaction confirmation
+              setTimeout(async () => {
+                await fetchBalance();
                 setSwapStatus('confirmed');
                 toast.success('Swap completed successfully!', {
                   theme: 'dark',
                 });
                 setIsSwapping(false);
                 setTimeout(() => setSwapStatus('idle'), 2000);
-              });
+              }, 3000);
             } else {
-              if (!transactionHash) {
-                console.error(
-                  'Transaction hash not found in response:',
-                  result,
-                );
-              }
-              if (!blockfrostProvider) {
-                console.warn(
-                  'Blockfrost provider not available, using timeout fallback',
-                );
-              }
+              console.error('Transaction hash not found in response:', result);
               setTimeout(async () => {
                 await fetchBalance();
                 setSwapStatus('confirmed');

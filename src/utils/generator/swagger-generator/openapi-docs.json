@@ -652,20 +652,16 @@
                                         "exclusiveMinimum": true,
                                         "description": "Amount to swap (in ADA or token units)"
                                     },
-                                    "isFromAda": {
-                                        "type": "boolean",
-                                        "description": "true for ADA → Token, false for Token → ADA. If not provided, will be inferred from fromToken (ADA has no policyId)"
-                                    },
                                     "fromToken": {
                                         "type": "object",
                                         "properties": {
                                             "policyId": {
                                                 "type": "string",
-                                                "description": "Policy ID of the source token"
+                                                "description": "Policy ID of the source token. Use empty string \"\" for ADA (native token)"
                                             },
                                             "assetName": {
                                                 "type": "string",
-                                                "description": "Asset name of the source token"
+                                                "description": "Asset name of the source token. Use empty string \"\" for ADA"
                                             },
                                             "name": {
                                                 "type": "string",
@@ -684,11 +680,11 @@
                                         "properties": {
                                             "policyId": {
                                                 "type": "string",
-                                                "description": "Policy ID of the destination token"
+                                                "description": "Policy ID of the destination token. Use empty string \"\" for ADA (native token)"
                                             },
                                             "assetName": {
                                                 "type": "string",
-                                                "description": "Asset name of the destination token"
+                                                "description": "Asset name of the destination token. Use empty string \"\" for ADA"
                                             },
                                             "name": {
                                                 "type": "string",
@@ -706,11 +702,6 @@
                                         "type": "string",
                                         "description": "SundaeSwap pool identifier"
                                     },
-                                    "blockfrostApiKey": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Blockfrost API key for mainnet"
-                                    },
                                     "slippage": {
                                         "type": "number",
                                         "minimum": 0,
@@ -723,8 +714,7 @@
                                     "amount",
                                     "fromToken",
                                     "toToken",
-                                    "poolId",
-                                    "blockfrostApiKey"
+                                    "poolId"
                                 ],
                                 "example": {
                                     "walletVkey": "wallet_verification_key_here",
