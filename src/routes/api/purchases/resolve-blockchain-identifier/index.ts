@@ -15,6 +15,7 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -46,6 +47,10 @@ export const postPurchaseRequestSchemaOutput = z.object({
   blockchainIdentifier: z
     .string()
     .describe('Unique blockchain identifier for the purchase'),
+  agentIdentifier: z
+    .string()
+    .nullable()
+    .describe('Identifier of the agent that is being purchased'),
   lastCheckedAt: z
     .date()
     .nullable()
@@ -297,6 +302,9 @@ export const resolvePurchaseRequestPost =
       }
       return {
         ...result,
+        agentIdentifier:
+          decodeBlockchainIdentifier(result.blockchainIdentifier)
+            ?.agentIdentifier ?? null,
         ...transformPurchaseGetTimestamps(result),
         ...transformPurchaseGetAmounts(result),
       };

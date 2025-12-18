@@ -3056,6 +3056,10 @@ export type PostPaymentResolveBlockchainIdentifierResponses = {
              */
             blockchainIdentifier: string;
             /**
+             * Identifier of the agent that is being paid
+             */
+            agentIdentifier: string | null;
+            /**
              * Timestamp when the payment was last checked on-chain. Null if never checked
              */
             lastCheckedAt: string | null;
@@ -3353,6 +3357,10 @@ export type PostPurchaseResolveBlockchainIdentifierResponses = {
              * Unique blockchain identifier for the purchase
              */
             blockchainIdentifier: string;
+            /**
+             * Identifier of the agent that is being purchased
+             */
+            agentIdentifier: string | null;
             /**
              * Timestamp when the purchase was last checked on-chain. Null if never checked
              */
