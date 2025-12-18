@@ -387,7 +387,6 @@ export function generateOpenAPI() {
                 },
                 poolId:
                   '64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
-                blockfrostApiKey: 'your_blockfrost_api_key_here',
                 slippage: 0.03,
               },
             }),
