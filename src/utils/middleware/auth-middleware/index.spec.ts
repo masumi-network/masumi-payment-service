@@ -134,6 +134,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: true,
       networkLimit: [],
+      ApiKeyHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -149,6 +150,7 @@ describe('authMiddleware', () => {
       permission: mockApiKey.permission,
       usageLimited: mockApiKey.usageLimited,
       networkLimit: mockApiKey.networkLimit,
+      allowedWalletIds: [],
     });
   });
 
@@ -159,6 +161,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: true,
       networkLimit: [],
+      ApiKeyHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -174,6 +177,7 @@ describe('authMiddleware', () => {
       permission: mockApiKey.permission,
       usageLimited: mockApiKey.usageLimited,
       networkLimit: [],
+      allowedWalletIds: [],
     });
   });
   it('should pass validation with valid admin token', async () => {
@@ -183,6 +187,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [],
+      ApiKeyHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -198,6 +203,7 @@ describe('authMiddleware', () => {
       permission: mockApiKey.permission,
       networkLimit: [Network.Mainnet, Network.Preprod],
       usageLimited: false,
+      allowedWalletIds: [],
     });
   });
   it('should pass validation with valid network ', async () => {
@@ -207,6 +213,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [Network.Preprod, Network.Mainnet],
+      ApiKeyHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -222,6 +229,7 @@ describe('authMiddleware', () => {
       permission: mockApiKey.permission,
       networkLimit: mockApiKey.networkLimit,
       usageLimited: mockApiKey.usageLimited,
+      allowedWalletIds: [],
     });
   });
 });

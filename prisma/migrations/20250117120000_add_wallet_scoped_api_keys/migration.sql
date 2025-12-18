@@ -1,5 +1,11 @@
 -- AlterEnum
-ALTER TYPE "Permission" ADD VALUE 'WalletScoped';
+-- Check if WalletScoped already exists to avoid errors on re-run
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'WalletScoped' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'Permission')) THEN
+        ALTER TYPE "Permission" ADD VALUE 'WalletScoped';
+    END IF;
+END $$;
 
 -- CreateTable
 CREATE TABLE "ApiKeyHotWallet" (
