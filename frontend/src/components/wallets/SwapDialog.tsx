@@ -125,7 +125,6 @@ export function SwapDialog({
     }
   }, [isOpen]);
 
-
   const fetchBalance = async () => {
     try {
       const result = await getUtxos({
