@@ -166,7 +166,8 @@ export default function Transactions() {
         // Fetch purchases
         let purchases: Transaction[] = [];
         let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = (forceFetchPurchases || hasMorePurchases) && shouldFetchPurchases;
+        let morePurchases =
+          (forceFetchPurchases || hasMorePurchases) && shouldFetchPurchases;
         if (morePurchases) {
           const purchaseRes = await getPurchase({
             client: apiClient,
@@ -199,7 +200,8 @@ export default function Transactions() {
         // Fetch payments
         let payments: Transaction[] = [];
         let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = (forceFetchPayments || hasMorePayments) && shouldFetchPayments;
+        let morePayments =
+          (forceFetchPayments || hasMorePayments) && shouldFetchPayments;
         if (morePayments) {
           const paymentRes = await getPayment({
             client: apiClient,
@@ -298,7 +300,13 @@ export default function Transactions() {
       );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
-  }, [state.network, apiClient, selectedPaymentSourceId, activeTab, searchQuery]);
+  }, [
+    state.network,
+    apiClient,
+    selectedPaymentSourceId,
+    activeTab,
+    searchQuery,
+  ]);
 
   const handleLoadMore = () => {
     if (!isLoadingMore && (hasMorePurchases || hasMorePayments)) {
@@ -470,7 +478,7 @@ export default function Transactions() {
             </div>
             <Button
               onClick={() => setShowDownloadDialog(true)}
-              disabled={filteredTransactions.length === 0}
+              disabled={allTransactions.length === 0}
               className="flex items-center gap-2"
             >
               <Download className="h-4 w-4" />
