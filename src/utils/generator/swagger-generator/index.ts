@@ -638,6 +638,7 @@ export function generateOpenAPI() {
                       {
                         id: 'cuid_v2_auto_generated',
                         blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         submitResultTime: '0',
@@ -1056,6 +1057,7 @@ export function generateOpenAPI() {
                       {
                         id: 'cuid_v2_auto_generated',
                         blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
                         lastCheckedAt: null,
                         onChainState: null,
                         metadata: null,
@@ -1071,7 +1073,6 @@ export function generateOpenAPI() {
                             PurchasingAction.FundsLockingRequested,
                           errorType: null,
                           errorNote: null,
-                          inputHash: 'input_hash',
                         },
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
@@ -1530,6 +1531,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1630,6 +1632,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1643,7 +1646,6 @@ export function generateOpenAPI() {
                     inputHash: 'input_hash',
                     resultHash: '',
                     NextAction: {
-                      inputHash: 'input_hash',
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: null,
                       errorNote: null,

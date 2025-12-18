@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
@@ -22,7 +22,7 @@ import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
@@ -76,6 +76,9 @@ export default function AIAgentsPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
+  const [initialDialogTab, setInitialDialogTab] = useState<
+    'Details' | 'Earnings'
+  >('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -237,7 +240,7 @@ export default function AIAgentsPage() {
 
   const useFormatPrice = (amount: string | undefined) => {
     if (!amount) return '—';
-    return useFormatBalance((parseInt(amount) / 1000000).toFixed(2));
+    return formatBalance((parseInt(amount) / 1000000).toFixed(2));
   };
 
   const handleDeleteClick = (agent: AIAgent) => {
@@ -558,17 +561,32 @@ export default function AIAgentsPage() {
                       </td>
                       <td className="p-4">
                         {['RegistrationConfirmed'].includes(agent.state) ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(agent);
-                            }}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInitialDialogTab('Earnings');
+                                handleAgentClick(agent);
+                              }}
+                              className="text-white hover:text-gray-200 hover:bg-gray-600"
+                              title="View Details & Earnings"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(agent);
+                              }}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         ) : agent.state === 'RegistrationInitiated' ||
                           agent.state === 'DeregistrationInitiated' ? (
                           <div className="flex items-center justify-center w-8 h-8">
@@ -613,12 +631,16 @@ export default function AIAgentsPage() {
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
-          onClose={() => setSelectedAgentForDetails(null)}
+          onClose={() => {
+            setSelectedAgentForDetails(null);
+            setInitialDialogTab('Details'); // Reset to default tab
+          }}
           onSuccess={() => {
             setTimeout(() => {
               fetchAgents();
             }, 2000);
           }}
+          initialTab={initialDialogTab}
         />
 
         <ConfirmDialog

@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,9 +7,15 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import {
+  handleApiCall,
+  shortenAddress,
+  getExplorerUrl,
+  validateCardanoAddress,
+  hexToAscii,
+} from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -23,7 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-interface TokenBalance {
+export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
@@ -157,21 +163,11 @@ export function WalletDetailsDialog({
     }
   }, [isOpen, wallet?.walletAddress]);
 
-  const hexToAscii = (hex: string) => {
-    try {
-      const bytes =
-        hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [];
-      return bytes.map((byte) => String.fromCharCode(byte)).join('');
-    } catch {
-      return hex;
-    }
-  };
-
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
       const ada = token.quantity / 1000000;
       const formattedAmount =
-        ada === 0 ? 'zero' : useFormatBalance(ada.toFixed(6));
+        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
@@ -186,7 +182,7 @@ export function WalletDetailsDialog({
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
       const formattedAmount =
-        usdm === 0 ? 'zero' : useFormatBalance(usdm.toFixed(6));
+        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: `≈ $${usdm.toFixed(2)}`,
@@ -196,7 +192,7 @@ export function WalletDetailsDialog({
     // For other tokens, divide by 10^6 as a default
     const amount = token.quantity / 1000000;
     const formattedAmount =
-      amount === 0 ? 'zero' : useFormatBalance(amount.toFixed(6));
+      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
     return {
       amount: formattedAmount,
       usdValue: undefined,
@@ -265,13 +261,36 @@ export function WalletDetailsDialog({
   const handleSaveCollection = async () => {
     if (!wallet) return;
 
+    // Validate the address if provided
+    if (newCollectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        newCollectionAddress.trim(),
+        state.network,
+      );
+      if (!validation.isValid) {
+        toast.error('Invalid collection address: ' + validation.error);
+        return;
+      }
+      const balance = await getUtxos({
+        client: apiClient,
+        query: {
+          address: newCollectionAddress.trim(),
+          network: state.network,
+        },
+      });
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
+    }
     await handleApiCall(
       () =>
         patchWallet({
           client: apiClient,
           body: {
             id: wallet.id,
-            newCollectionAddress: newCollectionAddress || null,
+            newCollectionAddress: newCollectionAddress.trim() || null,
           },
         }),
       {
@@ -280,7 +299,7 @@ export function WalletDetailsDialog({
           setIsEditingCollectionAddress(false);
 
           // Update the wallet object with the new collection address
-          wallet.collectionAddress = newCollectionAddress || null;
+          wallet.collectionAddress = newCollectionAddress.trim() || null;
         },
         onError: (error: any) => {
           toast.error(error.message || 'Failed to update collection address');

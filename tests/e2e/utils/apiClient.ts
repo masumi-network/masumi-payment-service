@@ -364,6 +364,14 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Public, typed request helper for E2E tests.
+   * Some flows need to call endpoints that don't yet have dedicated methods here.
+   */
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    return this.makeRequest<T>(endpoint, options);
+  }
+
   async registerAgent(data: RegistrationData): Promise<RegistrationResponse> {
     return this.makeRequest<RegistrationResponse>('/api/v1/registry', {
       method: 'POST',
