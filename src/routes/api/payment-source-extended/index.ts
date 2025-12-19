@@ -8,7 +8,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { HotWalletType, RPCProvider, Network, $Enums } from '@prisma/client';
 import createHttpError from 'http-errors';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
@@ -27,132 +27,128 @@ export const paymentSourceExtendedSchemaInput = z.object({
     .optional()
     .describe('Used to paginate through the payment sources'),
 });
+
+export const paymentSourceExtendedOutputSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the payment source'),
+    createdAt: z
+      .date()
+      .describe('Timestamp when the payment source was created'),
+    updatedAt: z
+      .date()
+      .describe('Timestamp when the payment source was last updated'),
+    network: z.nativeEnum(Network).describe('The Cardano network'),
+    policyId: z
+      .string()
+      .nullable()
+      .describe(
+        'Policy ID for the agent registry NFTs. Null if not applicable',
+      ),
+    smartContractAddress: z
+      .string()
+      .describe('Address of the smart contract for this payment source'),
+    PaymentSourceConfig: z
+      .object({
+        rpcProviderApiKey: z
+          .string()
+          .describe('The RPC provider API key (e.g., Blockfrost project ID)'),
+        rpcProvider: z
+          .nativeEnum(RPCProvider)
+          .describe('The RPC provider type (e.g., Blockfrost)'),
+      })
+      .describe('RPC provider configuration for blockchain interactions'),
+    lastIdentifierChecked: z
+      .string()
+      .nullable()
+      .describe(
+        'Last agent identifier checked during registry sync. Null if not synced yet',
+      ),
+    syncInProgress: z
+      .boolean()
+      .describe('Whether a registry sync is currently in progress'),
+    lastCheckedAt: z
+      .date()
+      .nullable()
+      .describe(
+        'Timestamp when the registry was last synced. Null if never synced',
+      ),
+    AdminWallets: z
+      .array(
+        z.object({
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the admin wallet'),
+          order: z.number().describe('Order/index of this admin wallet (0-2)'),
+        }),
+      )
+      .describe(
+        'List of admin wallets for dispute resolution (exactly 3 required)',
+      ),
+    PurchasingWallets: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .describe('Unique identifier for the purchasing wallet'),
+          walletVkey: z
+            .string()
+            .describe('Payment key hash of the purchasing wallet'),
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the purchasing wallet'),
+          collectionAddress: z
+            .string()
+            .nullable()
+            .describe(
+              'Optional collection address for this wallet. Null if not set',
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe('Optional note about this wallet. Null if not set'),
+        }),
+      )
+      .describe('List of wallets used for purchasing (buyer side)'),
+    SellingWallets: z
+      .array(
+        z.object({
+          id: z.string().describe('Unique identifier for the selling wallet'),
+          walletVkey: z
+            .string()
+            .describe('Payment key hash of the selling wallet'),
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the selling wallet'),
+          collectionAddress: z
+            .string()
+            .nullable()
+            .describe(
+              'Optional collection address for this wallet. Null if not set',
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe('Optional note about this wallet. Null if not set'),
+        }),
+      )
+      .describe('List of wallets used for selling (seller side)'),
+    FeeReceiverNetworkWallet: z
+      .object({
+        walletAddress: z
+          .string()
+          .describe('Cardano address that receives network fees'),
+      })
+      .describe('Wallet that receives network fees from transactions'),
+    feeRatePermille: z
+      .number()
+      .min(0)
+      .max(1000)
+      .describe('Fee rate in permille (per thousand). Example: 50 = 5%'),
+  })
+  .openapi('PaymentSourceExtended');
 export const paymentSourceExtendedSchemaOutput = z.object({
   ExtendedPaymentSources: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the payment source'),
-        createdAt: z
-          .date()
-          .describe('Timestamp when the payment source was created'),
-        updatedAt: z
-          .date()
-          .describe('Timestamp when the payment source was last updated'),
-        network: z.nativeEnum(Network).describe('The Cardano network'),
-        policyId: z
-          .string()
-          .nullable()
-          .describe(
-            'Policy ID for the agent registry NFTs. Null if not applicable',
-          ),
-        smartContractAddress: z
-          .string()
-          .describe('Address of the smart contract for this payment source'),
-        PaymentSourceConfig: z
-          .object({
-            rpcProviderApiKey: z
-              .string()
-              .describe(
-                'The RPC provider API key (e.g., Blockfrost project ID)',
-              ),
-            rpcProvider: z
-              .nativeEnum(RPCProvider)
-              .describe('The RPC provider type (e.g., Blockfrost)'),
-          })
-          .describe('RPC provider configuration for blockchain interactions'),
-        lastIdentifierChecked: z
-          .string()
-          .nullable()
-          .describe(
-            'Last agent identifier checked during registry sync. Null if not synced yet',
-          ),
-        syncInProgress: z
-          .boolean()
-          .describe('Whether a registry sync is currently in progress'),
-        lastCheckedAt: z
-          .date()
-          .nullable()
-          .describe(
-            'Timestamp when the registry was last synced. Null if never synced',
-          ),
-        AdminWallets: z
-          .array(
-            z.object({
-              walletAddress: z
-                .string()
-                .describe('Cardano address of the admin wallet'),
-              order: z
-                .number()
-                .describe('Order/index of this admin wallet (0-2)'),
-            }),
-          )
-          .describe(
-            'List of admin wallets for dispute resolution (exactly 3 required)',
-          ),
-        PurchasingWallets: z
-          .array(
-            z.object({
-              id: z
-                .string()
-                .describe('Unique identifier for the purchasing wallet'),
-              walletVkey: z
-                .string()
-                .describe('Payment key hash of the purchasing wallet'),
-              walletAddress: z
-                .string()
-                .describe('Cardano address of the purchasing wallet'),
-              collectionAddress: z
-                .string()
-                .nullable()
-                .describe(
-                  'Optional collection address for this wallet. Null if not set',
-                ),
-              note: z
-                .string()
-                .nullable()
-                .describe('Optional note about this wallet. Null if not set'),
-            }),
-          )
-          .describe('List of wallets used for purchasing (buyer side)'),
-        SellingWallets: z
-          .array(
-            z.object({
-              id: z
-                .string()
-                .describe('Unique identifier for the selling wallet'),
-              walletVkey: z
-                .string()
-                .describe('Payment key hash of the selling wallet'),
-              walletAddress: z
-                .string()
-                .describe('Cardano address of the selling wallet'),
-              collectionAddress: z
-                .string()
-                .nullable()
-                .describe(
-                  'Optional collection address for this wallet. Null if not set',
-                ),
-              note: z
-                .string()
-                .nullable()
-                .describe('Optional note about this wallet. Null if not set'),
-            }),
-          )
-          .describe('List of wallets used for selling (seller side)'),
-        FeeReceiverNetworkWallet: z
-          .object({
-            walletAddress: z
-              .string()
-              .describe('Cardano address that receives network fees'),
-          })
-          .describe('Wallet that receives network fees from transactions'),
-        feeRatePermille: z
-          .number()
-          .min(0)
-          .max(1000)
-          .describe('Fee rate in permille (per thousand). Example: 50 = 5%'),
-      }),
-    )
+    .array(paymentSourceExtendedOutputSchema)
     .describe(
       'List of payment sources with extended details including RPC configuration',
     ),
@@ -297,110 +293,8 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
       'The mnemonic of the selling wallets to be added. Please backup the mnemonic of the wallets.',
     ),
 });
-export const paymentSourceExtendedCreateSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier for the payment source'),
-  createdAt: z.date().describe('Timestamp when the payment source was created'),
-  updatedAt: z
-    .date()
-    .describe('Timestamp when the payment source was last updated'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network (Mainnet, Preprod, or Preview)'),
-  smartContractAddress: z
-    .string()
-    .describe('Address of the smart contract for this payment source'),
-  PaymentSourceConfig: z
-    .object({
-      rpcProviderApiKey: z
-        .string()
-        .describe('The RPC provider API key (e.g., Blockfrost project ID)'),
-      rpcProvider: z
-        .nativeEnum(RPCProvider)
-        .describe('The RPC provider type (e.g., Blockfrost)'),
-    })
-    .describe('RPC provider configuration for blockchain interactions'),
-  lastIdentifierChecked: z
-    .string()
-    .nullable()
-    .describe(
-      'Last agent identifier checked during registry sync. Null if not synced yet',
-    ),
-  syncInProgress: z
-    .boolean()
-    .describe('Whether a registry sync is currently in progress'),
-  lastCheckedAt: z
-    .date()
-    .nullable()
-    .describe(
-      'Timestamp when the registry was last synced. Null if never synced',
-    ),
-  AdminWallets: z
-    .array(
-      z.object({
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the admin wallet'),
-        order: z.number().describe('Order/index of this admin wallet (0-2)'),
-      }),
-    )
-    .describe(
-      'List of admin wallets for dispute resolution (exactly 3 required)',
-    ),
-  PurchasingWallets: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the purchasing wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the purchasing wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the purchasing wallet'),
-        collectionAddress: z
-          .string()
-          .nullable()
-          .describe(
-            'Optional collection address for this wallet. Null if not set',
-          ),
-        note: z
-          .string()
-          .nullable()
-          .describe('Optional note about this wallet. Null if not set'),
-      }),
-    )
-    .describe('List of wallets used for purchasing (buyer side)'),
-  SellingWallets: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the selling wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the selling wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the selling wallet'),
-        collectionAddress: z
-          .string()
-          .nullable()
-          .describe(
-            'Optional collection address for this wallet. Null if not set',
-          ),
-        note: z
-          .string()
-          .nullable()
-          .describe('Optional note about this wallet. Null if not set'),
-      }),
-    )
-    .describe('List of wallets used for selling (seller side)'),
-  FeeReceiverNetworkWallet: z
-    .object({
-      walletAddress: z
-        .string()
-        .describe('Cardano address that receives network fees'),
-    })
-    .describe('Wallet that receives network fees from transactions'),
-  feeRatePermille: z.number().min(0).max(1000).describe('Fee rate in permille'),
-});
+export const paymentSourceExtendedCreateSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointPost =
   adminAuthenticatedEndpointFactory.build({
@@ -649,112 +543,8 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
       'The latest identifier of the payment source. Usually should not be changed',
     ),
 });
-export const paymentSourceExtendedUpdateSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier for the payment source'),
-  createdAt: z.date().describe('Timestamp when the payment source was created'),
-  updatedAt: z
-    .date()
-    .describe('Timestamp when the payment source was last updated'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network (Mainnet, Preprod, or Preview)'),
-  smartContractAddress: z
-    .string()
-    .describe('Address of the smart contract for this payment source'),
-  PaymentSourceConfig: z
-    .object({
-      rpcProviderApiKey: z
-        .string()
-        .describe('The RPC provider API key (e.g., Blockfrost project ID)'),
-      rpcProvider: z
-        .nativeEnum(RPCProvider)
-        .describe('The RPC provider type (e.g., Blockfrost)'),
-    })
-    .describe('RPC provider configuration for blockchain interactions'),
-  lastIdentifierChecked: z
-    .string()
-    .nullable()
-    .describe(
-      'Last agent identifier checked during registry sync. Null if not synced yet',
-    ),
-  syncInProgress: z
-    .boolean()
-    .describe('Whether a registry sync is currently in progress'),
-  lastCheckedAt: z
-    .date()
-    .nullable()
-    .describe(
-      'Timestamp when the registry was last synced. Null if never synced',
-    ),
-  AdminWallets: z
-    .array(
-      z.object({
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the admin wallet'),
-        order: z.number().describe('Order/index of this admin wallet'),
-      }),
-    )
-    .describe('List of admin wallets for dispute resolution '),
-  PurchasingWallets: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the purchasing wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the purchasing wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the purchasing wallet'),
-        collectionAddress: z
-          .string()
-          .nullable()
-          .describe(
-            'Optional collection address for this wallet. Null if not set',
-          ),
-        note: z
-          .string()
-          .nullable()
-          .describe('Optional note about this wallet. Null if not set'),
-      }),
-    )
-    .describe('List of wallets used for purchasing (buyer side)'),
-  SellingWallets: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the selling wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the selling wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the selling wallet'),
-        collectionAddress: z
-          .string()
-          .nullable()
-          .describe(
-            'Optional collection address for this wallet. Null if not set',
-          ),
-        note: z
-          .string()
-          .nullable()
-          .describe('Optional note about this wallet. Null if not set'),
-      }),
-    )
-    .describe('List of wallets used for selling (seller side)'),
-  FeeReceiverNetworkWallet: z
-    .object({
-      walletAddress: z
-        .string()
-        .describe('Cardano address that receives network fees'),
-    })
-    .describe('Wallet that receives network fees from transactions'),
-  feeRatePermille: z
-    .number()
-    .min(0)
-    .max(1000)
-    .describe('Fee rate in permille (per thousand). Example: 50 = 5%'),
-});
+export const paymentSourceExtendedUpdateSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointPatch =
   adminAuthenticatedEndpointFactory.build({
@@ -915,12 +705,12 @@ export const paymentSourceExtendedEndpointPatch =
       };
     },
   });
+
 export const paymentSourceExtendedDeleteSchemaInput = z.object({
   id: z.string().describe('The id of the payment source to be deleted'),
 });
-export const paymentSourceExtendedDeleteSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier of the deleted payment source'),
-});
+export const paymentSourceExtendedDeleteSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointDelete =
   adminAuthenticatedEndpointFactory.build({
@@ -939,9 +729,20 @@ export const paymentSourceExtendedEndpointDelete =
         usageLimited: boolean;
       };
     }) => {
-      return await prisma.paymentSource.update({
+      const paymentSource = await prisma.paymentSource.update({
         where: { id: input.id, network: { in: options.networkLimit } },
         data: { deletedAt: new Date() },
+        include: {
+          HotWallets: { where: { deletedAt: null } },
+          PaymentSourceConfig: true,
+          AdminWallets: true,
+          FeeReceiverNetworkWallet: true,
+        },
       });
+      const { HotWallets, ...rest } = paymentSource;
+      return {
+        ...rest,
+        ...splitWalletsByType(HotWallets),
+      };
     },
   });
