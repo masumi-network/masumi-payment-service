@@ -304,7 +304,6 @@ export function RegisterAIAgentDialog({
           return;
         }
 
-
         const legal: {
           privacyPolicy?: string;
           terms?: string;
@@ -329,9 +328,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-              name: data.capabilityName,
-              version: data.capabilityVersion,
-            }
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -396,7 +395,15 @@ export function RegisterAIAgentDialog({
         setIsLoading(false);
       }
     },
-    [apiClient, state.network, state.paymentSources, onSuccess, onClose, reset, sellingWallets],
+    [
+      apiClient,
+      state.network,
+      state.paymentSources,
+      onSuccess,
+      onClose,
+      reset,
+      sellingWallets,
+    ],
   );
 
   // Tag management
