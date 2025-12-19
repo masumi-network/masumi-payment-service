@@ -89,7 +89,6 @@ export function AIAgentDetailsDialog({
 
   // Ensure activeTab is set when dialog opens
   useEffect(() => {
-    console.log(activeTab);
     if (agent && !activeTab) {
       setActiveTab('Details');
     }
@@ -391,44 +390,6 @@ export function AIAgentDetailsDialog({
                             </div>
                           )}
                         </div>
-                      )}
-                      {agent.AgentPricing &&
-                        agent.AgentPricing?.pricingType == 'Fixed' &&
-                        agent.AgentPricing?.Pricing?.map(
-                          (price, index, arr) => (
-                            <div
-                              key={index}
-                              className={cn(
-                                'flex items-center justify-between py-2',
-                                index < arr.length - 1 && 'border-b',
-                              )}
-                            >
-                              <span className="text-sm text-muted-foreground">
-                                Price (
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? 'ADA'
-                                  : price.unit ===
-                                      getUsdmConfig(state.network).fullAssetId
-                                    ? state.network === 'Mainnet'
-                                      ? 'USDM'
-                                      : 'tUSDM'
-                                    : price.unit === TESTUSDM_CONFIG.unit
-                                      ? 'tUSDM'
-                                      : price.unit}
-                                )
-                              </span>
-                              <span
-                                className="font-medium"
-                                onClick={() => {
-                                  console.log(price.unit);
-                                  console.log(
-                                    getUsdmConfig(state.network).fullAssetId,
-                                  );
-                                }}
-                              >
-                                {price.unit === 'lovelace' || !price.unit
-                                  ? `${useFormatPrice(price.amount)} ADA`
-                                  : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? (state.network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                       </div>
                       <div>
                         <h3 className="font-medium mb-4">Legal</h3>
