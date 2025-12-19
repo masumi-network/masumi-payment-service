@@ -1,12 +1,10 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import { checkRegistryData } from '@/utils/monitoring/diagnostic';
 
-export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: z.object({}),
-  output: z.object({
+export const monitoringStatusResponseSchema = z
+  .object({
     monitoringStatus: z
       .object({
         isMonitoring: z
@@ -46,7 +44,13 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
           .describe('Monitoring statistics. Null if monitoring is not active'),
       })
       .describe('Current status of the blockchain state monitoring service'),
-  }),
+  })
+  .openapi('MonitoringStatus');
+
+export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: z.object({}),
+  output: monitoringStatusResponseSchema,
   handler: async ({ options: _options }) => {
     const status = blockchainStateMonitorService.getStatus();
 
@@ -69,17 +73,21 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   },
 });
 
-export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
-  method: 'post',
-  input: z.object({}),
-  output: z.object({
+export const triggerMonitoringCycleResponseSchema = z
+  .object({
     message: z
       .string()
       .describe('Status message about the monitoring cycle trigger'),
     triggered: z
       .boolean()
       .describe('Whether the monitoring cycle was successfully triggered'),
-  }),
+  })
+  .openapi('TriggeredMonitoringCycle');
+
+export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
+  method: 'post',
+  input: z.object({}),
+  output: triggerMonitoringCycleResponseSchema,
   handler: async ({ options: _options }) => {
     try {
       await blockchainStateMonitorService.forceMonitoringCycle();
@@ -96,24 +104,30 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
   },
 });
 
-export const startMonitoring = adminAuthenticatedEndpointFactory.build({
-  method: 'post',
-  input: z.object({
-    intervalMs: z
-      .number()
-      .min(5000)
-      .max(300000)
-      .default(30000)
-      .describe('Monitoring interval in milliseconds'),
-  }),
-  output: z.object({
+export const startMonitoringSchemaInput = z.object({
+  intervalMs: z
+    .number()
+    .min(5000)
+    .max(300000)
+    .default(30000)
+    .describe('Monitoring interval in milliseconds'),
+});
+
+export const startMonitoringResponseSchema = z
+  .object({
     message: z
       .string()
       .describe('Status message about starting the monitoring service'),
     started: z
       .boolean()
       .describe('Whether the monitoring service was successfully started'),
-  }),
+  })
+  .openapi('StartedMonitoring');
+
+export const startMonitoring = adminAuthenticatedEndpointFactory.build({
+  method: 'post',
+  input: startMonitoringSchemaInput,
+  output: startMonitoringResponseSchema,
   handler: async ({ input }) => {
     try {
       await blockchainStateMonitorService.startMonitoring(input.intervalMs);
@@ -130,17 +144,21 @@ export const startMonitoring = adminAuthenticatedEndpointFactory.build({
   },
 });
 
-export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
-  method: 'post',
-  input: z.object({}),
-  output: z.object({
+export const stopMonitoringResponseSchema = z
+  .object({
     message: z
       .string()
       .describe('Status message about stopping the monitoring service'),
     stopped: z
       .boolean()
       .describe('Whether the monitoring service was successfully stopped'),
-  }),
+  })
+  .openapi('StoppedMonitoring');
+
+export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
+  method: 'post',
+  input: z.object({}),
+  output: stopMonitoringResponseSchema,
   handler: async ({ options: _options }) => {
     try {
       blockchainStateMonitorService.stopMonitoring();
@@ -157,10 +175,8 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   },
 });
 
-export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: z.object({}),
-  output: z.object({
+export const getDiagnosticsResponseSchema = z
+  .object({
     recentCount: z.number().describe('Number of recent registry requests'),
     recentRequests: z
       .array(
@@ -182,7 +198,13 @@ export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
     allStates: z
       .array(z.string())
       .describe('List of all possible registry request states'),
-  }),
+  })
+  .openapi('DiagnosticsData');
+
+export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: z.object({}),
+  output: getDiagnosticsResponseSchema,
   handler: async ({ options: _options }) => {
     const diagnostic = await checkRegistryData();
 

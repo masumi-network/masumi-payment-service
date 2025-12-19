@@ -1,12 +1,20 @@
 import LZString from 'lz-string';
 import { validateHexString } from '../contract-generator';
 
+export type DecodedBlockchainIdentifier = {
+  sellerId: string;
+  purchaserId: string;
+  signature: string;
+  key: string;
+  agentIdentifier: string | null;
+};
+
 export function generateBlockchainIdentifier(
   referenceKey: string,
   referenceSignature: string,
   sellerNonce: string,
   buyerNonce: string,
-) {
+): string {
   const signedEncodedBlockchainIdentifier = Buffer.from(
     sellerNonce +
       '.' +
@@ -22,11 +30,17 @@ export function generateBlockchainIdentifier(
   ).toString('hex');
 }
 
-export function decodeBlockchainIdentifier(blockchainIdentifier: string) {
-  const decompressedEncodedBlockchainIdentifier =
-    LZString.decompressFromUint8Array(Buffer.from(blockchainIdentifier, 'hex'));
-  const blockchainIdentifierSplit =
-    decompressedEncodedBlockchainIdentifier.split('.');
+export function decodeBlockchainIdentifier(
+  blockchainIdentifier: string,
+): DecodedBlockchainIdentifier | null {
+  const decompressed = LZString.decompressFromUint8Array(
+    Buffer.from(blockchainIdentifier, 'hex'),
+  );
+  if (typeof decompressed !== 'string') {
+    return null;
+  }
+
+  const blockchainIdentifierSplit = decompressed.split('.');
   if (blockchainIdentifierSplit.length != 4) {
     return null;
   }
