@@ -4,6 +4,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
 import { deserializeAddress } from '@meshsdk/core';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -272,4 +273,47 @@ export function hexToAscii(hex: string) {
   } catch {
     return hex;
   }
+}
+
+/**
+ * Format fund unit for display
+ * Converts unit identifiers (lovelace, USDM, tUSDM, policy IDs) to user-friendly display names
+ *
+ * @param unit - The unit identifier (e.g., 'lovelace', 'USDM', policy ID, etc.)
+ * @param network - The network type ('Mainnet' or 'Preprod')
+ * @returns Formatted unit string for display (e.g., 'ADA', 'USDM', 'tUSDM')
+ */
+export function formatFundUnit(
+  unit: string | undefined,
+  network: string | undefined,
+): string {
+  if (!network) {
+    // If no network, fallback to basic unit formatting
+    if (unit === 'lovelace' || !unit) {
+      return 'ADA';
+    }
+    return unit;
+  }
+
+  if (!unit) {
+    return 'ADA';
+  }
+
+  const usdmConfig = getUsdmConfig(network);
+  const isUsdm =
+    unit === usdmConfig.fullAssetId ||
+    unit === usdmConfig.policyId ||
+    unit === 'USDM' ||
+    unit === 'tUSDM';
+
+  if (isUsdm) {
+    return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
+  }
+
+  const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
+  if (isTestUsdm) {
+    return 'tUSDM';
+  }
+
+  return unit ?? '—';
 }

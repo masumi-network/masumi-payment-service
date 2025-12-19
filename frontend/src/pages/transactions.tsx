@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -70,40 +70,6 @@ export default function Transactions() {
     }).format(numericAmount);
   };
 
-  // Format fund unit display helper function
-  const formatFundUnit = (
-    unit: string | undefined,
-    network: string | undefined,
-  ): string => {
-    if (!network) {
-      // If no network, fallback to basic unit formatting
-      if (unit === 'lovelace' || !unit) {
-        return 'ADA';
-      }
-      return unit;
-    }
-
-    if (!unit) {
-      return 'ADA';
-    }
-
-    const usdmConfig = getUsdmConfig(network);
-    const isUsdm =
-      unit === usdmConfig.fullAssetId ||
-      unit === usdmConfig.policyId ||
-      unit === 'USDM' ||
-      unit === 'tUSDM';
-
-    if (isUsdm) {
-      return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
-    }
-
-    const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
-    if (isTestUsdm) {
-      return 'tUSDM';
-    }
-    return unit ?? '—';
-  };
   const [activeTab, setActiveTab] = useState('All');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
     [],

@@ -22,7 +22,7 @@ import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
@@ -587,13 +587,18 @@ export function RegisterAIAgentDialog({
                           <SelectValue placeholder="Select token" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lovelace">ADA</SelectItem>
+                          <SelectItem value="lovelace">
+                            {formatFundUnit('lovelace', state.network)}
+                          </SelectItem>
                           <SelectItem
                             value={
                               state.network === 'Mainnet' ? 'USDM' : 'tUSDM'
                             }
                           >
-                            {state.network === 'Mainnet' ? 'USDM' : 'tUSDM'}
+                            {formatFundUnit(
+                              state.network === 'Mainnet' ? 'USDM' : 'tUSDM',
+                              state.network,
+                            )}
                           </SelectItem>
                         </SelectContent>
                       </Select>
