@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   HotWalletType,
   Network,
@@ -87,97 +87,135 @@ export const queryPurchaseCountSchemaOutput = z.object({
   total: z.number().describe('Total number of purchases'),
 });
 
-export const queryPurchaseRequestSchemaOutput = z.object({
-  Purchases: z.array(
-    z.object({
-      id: z.string().describe('Unique identifier for the purchase'),
-      createdAt: z.date().describe('Timestamp when the purchase was created'),
-      updatedAt: z
-        .date()
-        .describe('Timestamp when the purchase was last updated'),
-      blockchainIdentifier: z
-        .string()
-        .describe('Unique blockchain identifier for the purchase'),
-      agentIdentifier: z
-        .string()
-        .nullable()
-        .describe('Identifier of the agent that is being purchased'),
-      lastCheckedAt: z
-        .date()
-        .nullable()
-        .describe(
-          'Timestamp when the purchase was last checked on-chain. Null if never checked',
-        ),
-      payByTime: z
-        .string()
-        .nullable()
-        .describe(
-          'Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set',
-        ),
-      submitResultTime: z
-        .string()
-        .describe(
-          'Unix timestamp (in milliseconds) by which the seller must submit the result',
-        ),
-      unlockTime: z
-        .string()
-        .describe(
-          'Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes',
-        ),
-      externalDisputeUnlockTime: z
-        .string()
-        .describe(
-          'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
-        ),
-      requestedById: z
-        .string()
-        .describe('ID of the API key that created this purchase'),
-      onChainState: z
-        .nativeEnum(OnChainState)
-        .nullable()
-        .describe(
-          'Current state of the purchase on the blockchain. Null if not yet on-chain',
-        ),
-      collateralReturnLovelace: z
-        .string()
-        .nullable()
-        .describe(
-          'Amount of collateral to return in lovelace. Null if no collateral',
-        ),
-      cooldownTime: z
-        .number()
-        .describe('Cooldown period in milliseconds for the buyer to dispute'),
-      cooldownTimeOtherParty: z
-        .number()
-        .describe('Cooldown period in milliseconds for the seller to dispute'),
-      inputHash: z
-        .string()
-        .describe(
-          'SHA256 hash of the input data for the purchase (hex string)',
-        ),
-      resultHash: z
-        .string()
-        .nullable()
-        .describe(
-          'SHA256 hash of the result submitted by the seller (hex string)',
-        ),
-      NextAction: z
-        .object({
-          requestedAction: z
-            .nativeEnum(PurchasingAction)
-            .describe('Next action required for this purchase'),
-          errorType: z
-            .nativeEnum(PurchaseErrorType)
-            .nullable()
-            .describe('Type of error that occurred, if any'),
-          errorNote: z
-            .string()
-            .nullable()
-            .describe('Additional details about the error, if any'),
-        })
-        .describe('Next action required for this purchase'),
-      CurrentTransaction: z
-        .object({
+export const purchaseResponseSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the purchase'),
+    createdAt: z.date().describe('Timestamp when the purchase was created'),
+    updatedAt: z
+      .date()
+      .describe('Timestamp when the purchase was last updated'),
+    blockchainIdentifier: z
+      .string()
+      .describe('Unique blockchain identifier for the purchase'),
+    agentIdentifier: z
+      .string()
+      .nullable()
+      .describe('Identifier of the agent that is being purchased'),
+    lastCheckedAt: z
+      .date()
+      .nullable()
+      .describe(
+        'Timestamp when the purchase was last checked on-chain. Null if never checked',
+      ),
+    payByTime: z
+      .string()
+      .nullable()
+      .describe(
+        'Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set',
+      ),
+    submitResultTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) by which the seller must submit the result',
+      ),
+    unlockTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes',
+      ),
+    externalDisputeUnlockTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
+      ),
+    requestedById: z
+      .string()
+      .describe('ID of the API key that created this purchase'),
+    onChainState: z
+      .nativeEnum(OnChainState)
+      .nullable()
+      .describe(
+        'Current state of the purchase on the blockchain. Null if not yet on-chain',
+      ),
+    collateralReturnLovelace: z
+      .string()
+      .nullable()
+      .describe(
+        'Amount of collateral to return in lovelace. Null if no collateral',
+      ),
+    cooldownTime: z
+      .number()
+      .describe('Cooldown period in milliseconds for the buyer to dispute'),
+    cooldownTimeOtherParty: z
+      .number()
+      .describe('Cooldown period in milliseconds for the seller to dispute'),
+    inputHash: z
+      .string()
+      .describe('SHA256 hash of the input data for the purchase (hex string)'),
+    resultHash: z
+      .string()
+      .nullable()
+      .describe(
+        'SHA256 hash of the result submitted by the seller (hex string)',
+      ),
+    NextAction: z
+      .object({
+        requestedAction: z
+          .nativeEnum(PurchasingAction)
+          .describe('Next action required for this purchase'),
+        errorType: z
+          .nativeEnum(PurchaseErrorType)
+          .nullable()
+          .describe('Type of error that occurred, if any'),
+        errorNote: z
+          .string()
+          .nullable()
+          .describe('Additional details about the error, if any'),
+      })
+      .describe('Next action required for this purchase'),
+    CurrentTransaction: z
+      .object({
+        id: z.string().describe('Unique identifier for the transaction'),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the transaction was last updated'),
+        txHash: z.string().nullable().describe('Cardano transaction hash'),
+        status: z
+          .nativeEnum(TransactionStatus)
+          .describe('Current status of the transaction'),
+        fees: z.string().nullable().describe('Fees of the transaction'),
+        blockHeight: z
+          .number()
+          .nullable()
+          .describe('Block height of the transaction'),
+        blockTime: z
+          .number()
+          .nullable()
+          .describe('Block time of the transaction'),
+        previousOnChainState: z
+          .nativeEnum(OnChainState)
+          .nullable()
+          .describe('Previous on-chain state before this transaction'),
+
+        newOnChainState: z
+          .nativeEnum(OnChainState)
+          .nullable()
+          .describe('New on-chain state of this transaction'),
+        confirmations: z
+          .number()
+          .nullable()
+          .describe('Number of block confirmations for this transaction'),
+      })
+      .nullable()
+      .describe(
+        'Current active transaction for this purchase. Null if no transaction in progress',
+      ),
+    TransactionHistory: z
+      .array(
+        z.object({
           id: z.string().describe('Unique identifier for the transaction'),
           createdAt: z
             .date()
@@ -202,7 +240,6 @@ export const queryPurchaseRequestSchemaOutput = z.object({
             .nativeEnum(OnChainState)
             .nullable()
             .describe('Previous on-chain state before this transaction'),
-
           newOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
@@ -211,106 +248,69 @@ export const queryPurchaseRequestSchemaOutput = z.object({
             .number()
             .nullable()
             .describe('Number of block confirmations for this transaction'),
-        })
-        .nullable()
-        .describe(
-          'Current active transaction for this purchase. Null if no transaction in progress',
-        ),
-      TransactionHistory: z
-        .array(
-          z.object({
-            id: z.string().describe('Unique identifier for the transaction'),
-            createdAt: z
-              .date()
-              .describe('Timestamp when the transaction was created'),
-            updatedAt: z
-              .date()
-              .describe('Timestamp when the transaction was last updated'),
-            txHash: z.string().nullable().describe('Cardano transaction hash'),
-            status: z
-              .nativeEnum(TransactionStatus)
-              .describe('Current status of the transaction'),
-            fees: z.string().nullable().describe('Fees of the transaction'),
-            blockHeight: z
-              .number()
-              .nullable()
-              .describe('Block height of the transaction'),
-            blockTime: z
-              .number()
-              .nullable()
-              .describe('Block time of the transaction'),
-            previousOnChainState: z
-              .nativeEnum(OnChainState)
-              .nullable()
-              .describe('Previous on-chain state before this transaction'),
-            newOnChainState: z
-              .nativeEnum(OnChainState)
-              .nullable()
-              .describe('New on-chain state of this transaction'),
-            confirmations: z
-              .number()
-              .nullable()
-              .describe('Number of block confirmations for this transaction'),
-          }),
-        )
-        .describe('Historical list of all transactions for this purchase'),
-      PaidFunds: z.array(
-        z.object({
-          amount: z.string(),
-          unit: z.string(),
         }),
-      ),
-      WithdrawnForSeller: z.array(
-        z.object({
-          amount: z.string(),
-          unit: z.string(),
-        }),
-      ),
-      WithdrawnForBuyer: z.array(
-        z.object({
-          amount: z.string(),
-          unit: z.string(),
-        }),
-      ),
-      PaymentSource: z.object({
-        id: z.string(),
-        network: z.nativeEnum(Network),
-        smartContractAddress: z.string(),
-        policyId: z.string().nullable(),
+      )
+      .describe('Historical list of all transactions for this purchase'),
+    PaidFunds: z.array(
+      z.object({
+        amount: z.string(),
+        unit: z.string(),
       }),
-      SellerWallet: z
-        .object({
-          id: z.string().describe('Unique identifier for the seller wallet'),
-          walletVkey: z
-            .string()
-            .describe('Payment key hash of the seller wallet'),
-        })
-        .nullable()
-        .describe('Seller wallet information. Null if not set'),
-      SmartContractWallet: z
-        .object({
-          id: z
-            .string()
-            .describe('Unique identifier for the smart contract wallet'),
-          walletVkey: z
-            .string()
-            .describe('Payment key hash of the smart contract wallet'),
-          walletAddress: z
-            .string()
-            .describe('Cardano address of the smart contract wallet'),
-        })
-        .nullable()
-        .describe(
-          'Smart contract wallet (seller wallet) managing this purchase. Null if not set',
-        ),
-      metadata: z
-        .string()
-        .nullable()
-        .describe(
-          'Optional metadata stored with the purchase for additional context. Null if not provided',
-        ),
+    ),
+    WithdrawnForSeller: z.array(
+      z.object({
+        amount: z.string(),
+        unit: z.string(),
+      }),
+    ),
+    WithdrawnForBuyer: z.array(
+      z.object({
+        amount: z.string(),
+        unit: z.string(),
+      }),
+    ),
+    PaymentSource: z.object({
+      id: z.string(),
+      network: z.nativeEnum(Network),
+      smartContractAddress: z.string(),
+      policyId: z.string().nullable(),
     }),
-  ),
+    SellerWallet: z
+      .object({
+        id: z.string().describe('Unique identifier for the seller wallet'),
+        walletVkey: z
+          .string()
+          .describe('Payment key hash of the seller wallet'),
+      })
+      .nullable()
+      .describe('Seller wallet information. Null if not set'),
+    SmartContractWallet: z
+      .object({
+        id: z
+          .string()
+          .describe('Unique identifier for the smart contract wallet'),
+        walletVkey: z
+          .string()
+          .describe('Payment key hash of the smart contract wallet'),
+        walletAddress: z
+          .string()
+          .describe('Cardano address of the smart contract wallet'),
+      })
+      .nullable()
+      .describe(
+        'Smart contract wallet (seller wallet) managing this purchase. Null if not set',
+      ),
+    metadata: z
+      .string()
+      .nullable()
+      .describe(
+        'Optional metadata stored with the purchase for additional context. Null if not provided',
+      ),
+  })
+  .openapi('Purchase');
+
+export const queryPurchaseRequestSchemaOutput = z.object({
+  Purchases: z.array(purchaseResponseSchema),
 });
 
 export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
@@ -596,204 +596,7 @@ export const createPurchaseInitSchemaInput = z.object({
     ),
 });
 
-export const createPurchaseInitSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier for the purchase'),
-  createdAt: z.date().describe('Timestamp when the purchase was created'),
-  updatedAt: z.date().describe('Timestamp when the purchase was last updated'),
-  blockchainIdentifier: z
-    .string()
-    .describe('Unique blockchain identifier for the purchase'),
-  lastCheckedAt: z
-    .date()
-    .nullable()
-    .describe(
-      'Timestamp when the purchase was last checked on-chain. Null if never checked',
-    ),
-  payByTime: z
-    .string()
-    .nullable()
-    .describe(
-      'Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set',
-    ),
-  submitResultTime: z
-    .string()
-    .describe(
-      'Unix timestamp (in milliseconds) by which the seller must submit the result',
-    ),
-  unlockTime: z
-    .string()
-    .describe(
-      'Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes',
-    ),
-  externalDisputeUnlockTime: z
-    .string()
-    .describe(
-      'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
-    ),
-  requestedById: z
-    .string()
-    .describe('ID of the API key that created this purchase'),
-  resultHash: z
-    .string()
-    .nullable()
-    .describe('SHA256 hash of the result submitted by the seller (hex string)'),
-  inputHash: z
-    .string()
-    .describe('SHA256 hash of the input data for the purchase (hex string)'),
-  onChainState: z
-    .nativeEnum(OnChainState)
-    .nullable()
-    .describe(
-      'Current state of the purchase on the blockchain. Null if not yet on-chain',
-    ),
-  NextAction: z
-    .object({
-      requestedAction: z
-        .nativeEnum(PurchasingAction)
-        .describe('Next action required for this purchase'),
-      errorType: z
-        .nativeEnum(PurchaseErrorType)
-        .nullable()
-        .describe('Type of error that occurred, if any'),
-      errorNote: z
-        .string()
-        .nullable()
-        .describe('Additional details about the error, if any'),
-    })
-    .describe('Next action required for this purchase'),
-  CurrentTransaction: z
-    .object({
-      id: z.string().describe('Unique identifier for the transaction'),
-      createdAt: z
-        .date()
-        .describe('Timestamp when the transaction was created'),
-      updatedAt: z
-        .date()
-        .describe('Timestamp when the transaction was last updated'),
-      txHash: z.string().nullable().describe('Cardano transaction hash'),
-      status: z
-        .nativeEnum(TransactionStatus)
-        .describe('Current status of the transaction'),
-      fees: z.string().nullable().describe('Fees of the transaction'),
-      blockHeight: z
-        .number()
-        .nullable()
-        .describe('Block height of the transaction'),
-      blockTime: z
-        .number()
-        .nullable()
-        .describe('Block time of the transaction'),
-    })
-    .nullable(),
-  TransactionHistory: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the transaction'),
-        createdAt: z
-          .date()
-          .describe('Timestamp when the transaction was created'),
-        updatedAt: z
-          .date()
-          .describe('Timestamp when the transaction was last updated'),
-        txHash: z.string().nullable().describe('Cardano transaction hash'),
-        status: z
-          .nativeEnum(TransactionStatus)
-          .describe('Current status of the transaction'),
-        fees: z.string().nullable().describe('Fees of the transaction'),
-        blockHeight: z
-          .number()
-          .nullable()
-          .describe('Block height of the transaction'),
-        blockTime: z
-          .number()
-          .nullable()
-          .describe('Block time of the transaction'),
-      }),
-    )
-    .nullable(),
-  PaidFunds: z.array(
-    z.object({
-      amount: z
-        .string()
-        .describe(
-          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-        ),
-      unit: z
-        .string()
-        .describe(
-          'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-        ),
-    }),
-  ),
-  WithdrawnForSeller: z
-    .array(
-      z.object({
-        amount: z.string().describe('Amount of the asset withdrawn'),
-        unit: z
-          .string()
-          .describe(
-            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-          ),
-      }),
-    )
-    .describe('List of assets and amounts withdrawn for the seller'),
-  WithdrawnForBuyer: z
-    .array(
-      z.object({
-        amount: z.string().describe('Amount of the asset withdrawn'),
-        unit: z
-          .string()
-          .describe(
-            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-          ),
-      }),
-    )
-    .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
-  PaymentSource: z
-    .object({
-      id: z.string().describe('Unique identifier for the payment source'),
-      network: z.nativeEnum(Network).describe('The Cardano network '),
-      policyId: z
-        .string()
-        .nullable()
-        .describe(
-          'Policy ID for the agent registry NFTs. Null if not applicable',
-        ),
-      smartContractAddress: z
-        .string()
-        .describe('Address of the smart contract managing this purchase'),
-    })
-    .describe('Payment source configuration for this purchase'),
-  SellerWallet: z
-    .object({
-      id: z.string().describe('Unique identifier for the seller wallet'),
-      walletVkey: z.string().describe('Payment key hash of the seller wallet'),
-    })
-    .nullable()
-    .describe('Seller wallet information. Null if not set'),
-  SmartContractWallet: z
-    .object({
-      id: z
-        .string()
-        .describe('Unique identifier for the smart contract wallet'),
-      walletVkey: z
-        .string()
-        .describe('Payment key hash of the smart contract wallet'),
-      walletAddress: z
-        .string()
-        .describe('Cardano address of the smart contract wallet'),
-    })
-    .nullable()
-    .describe(
-      'Smart contract wallet (seller wallet) managing this purchase. Null if not set',
-    ),
-  metadata: z
-    .string()
-    .nullable()
-    .describe(
-      'Optional metadata stored with the purchase for additional context. Null if not provided',
-    ),
-});
+export const createPurchaseInitSchemaOutput = purchaseResponseSchema;
 
 export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -1241,70 +1044,14 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         inputHash: input.inputHash,
       });
 
-      const result = {
+      return {
         ...initialPurchaseRequest,
-        CurrentTransaction: initialPurchaseRequest.CurrentTransaction
-          ? {
-              id: initialPurchaseRequest.CurrentTransaction.id,
-              createdAt: initialPurchaseRequest.CurrentTransaction.createdAt,
-              updatedAt: initialPurchaseRequest.CurrentTransaction.updatedAt,
-              txHash: initialPurchaseRequest.CurrentTransaction.txHash,
-              status: initialPurchaseRequest.CurrentTransaction.status,
-              fees:
-                initialPurchaseRequest.CurrentTransaction.fees?.toString() ??
-                null,
-              blockHeight:
-                initialPurchaseRequest.CurrentTransaction.blockHeight,
-              blockTime: initialPurchaseRequest.CurrentTransaction.blockTime,
-              utxoCount: initialPurchaseRequest.CurrentTransaction.utxoCount,
-              withdrawalCount:
-                initialPurchaseRequest.CurrentTransaction.withdrawalCount,
-              assetMintOrBurnCount:
-                initialPurchaseRequest.CurrentTransaction.assetMintOrBurnCount,
-              redeemerCount:
-                initialPurchaseRequest.CurrentTransaction.redeemerCount,
-              validContract:
-                initialPurchaseRequest.CurrentTransaction.validContract,
-              outputAmount:
-                initialPurchaseRequest.CurrentTransaction.outputAmount,
-            }
-          : null,
+        ...transformPurchaseGetTimestamps(initialPurchaseRequest),
+        ...transformPurchaseGetAmounts(initialPurchaseRequest),
+        agentIdentifier: input.agentIdentifier,
         TransactionHistory: [],
-        payByTime: initialPurchaseRequest.payByTime?.toString() ?? null,
-        PaidFunds: (
-          initialPurchaseRequest.PaidFunds as Array<{
-            unit: string;
-            amount: bigint;
-          }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          initialPurchaseRequest.WithdrawnForSeller as Array<{
-            unit: string;
-            amount: bigint;
-          }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          initialPurchaseRequest.WithdrawnForBuyer as Array<{
-            unit: string;
-            amount: bigint;
-          }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        submitResultTime: initialPurchaseRequest.submitResultTime.toString(),
-        unlockTime: initialPurchaseRequest.unlockTime.toString(),
-        externalDisputeUnlockTime:
-          initialPurchaseRequest.externalDisputeUnlockTime.toString(),
+        CurrentTransaction: null,
       };
-
-      return result;
     } catch (error: unknown) {
       // Record the business-specific error with context
       const errorInstance =

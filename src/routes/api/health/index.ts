@@ -1,5 +1,5 @@
 import { unauthenticatedEndpointFactory } from '@/utils/security/auth/not-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 
 export const healthResponseSchema = z.object({
   status: z
