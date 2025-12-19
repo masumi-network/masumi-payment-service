@@ -400,6 +400,40 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         )
       : undefined;
 
+    // Check if search query is a numeric amount (for ADA amount filtering)
+    // This matches amounts where the formatted ADA string contains the search query
+    // e.g., "5.5" matches 5.50, 5.51, ..., 5.59 ADA
+    let amountFilter: { gte: bigint; lte: bigint } | undefined;
+    if (searchLower) {
+      // Try to parse as a number (handles decimals like "5.5", "10.25", etc.)
+      const numericMatch = searchLower.match(/^(\d+\.?\d*)$/);
+      if (numericMatch) {
+        const numericValue = parseFloat(numericMatch[1]);
+        if (!isNaN(numericValue) && numericValue >= 0) {
+          // Convert to lovelace (ADA * 1,000,000)
+          // For "5.5", we want to match amounts from 5.50 to 5.59 ADA
+          // For "5", we want to match amounts from 5.00 to 5.99 ADA
+          const hasDecimal = numericMatch[1].includes('.');
+          let minLovelace: bigint;
+          let maxLovelace: bigint;
+
+          if (hasDecimal) {
+            // Has decimal: "5.5" -> match 5.50 to 5.59
+            minLovelace = BigInt(Math.floor(numericValue * 1000000));
+            // Round up to next decimal place: 5.5 -> 5.6, then subtract 1 lovelace
+            const nextDecimal = Math.ceil(numericValue * 10) / 10;
+            maxLovelace = BigInt(Math.floor(nextDecimal * 1000000)) - BigInt(1);
+          } else {
+            // No decimal: "5" -> match 5.00 to 5.99
+            minLovelace = BigInt(numericValue * 1000000);
+            maxLovelace = BigInt((numericValue + 1) * 1000000) - BigInt(1);
+          }
+
+          amountFilter = { gte: minLovelace, lte: maxLovelace };
+        }
+      }
+    }
+
     const whereClause = {
       PaymentSource: {
         network: input.network,
@@ -441,12 +475,27 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
               ...(matchingStates && matchingStates.length > 0
                 ? [{ onChainState: { in: matchingStates } }]
                 : []),
+              ...(amountFilter
+                ? [
+                    {
+                      RequestedFunds: {
+                        some: {
+                          amount: {
+                            gte: amountFilter.gte,
+                            lte: amountFilter.lte,
+                          },
+                          unit: '', // Only match ADA (empty string for ADA)
+                        },
+                      },
+                    },
+                  ]
+                : []),
             ],
           }
         : {}),
     };
 
-    let result = await prisma.paymentRequest.findMany({
+    const result = await prisma.paymentRequest.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
       cursor: input.cursorId
@@ -471,44 +520,6 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       },
     });
 
-    // Filter by amount if search query is provided (amount filtering happens in-memory)
-    if (searchLower && result.length > 0) {
-      result = result.filter((payment) => {
-        const matchedById = payment.id.toLowerCase().includes(searchLower);
-        const matchedByHash = payment.CurrentTransaction?.txHash
-          ?.toLowerCase()
-          .includes(searchLower);
-        const matchedByState =
-          matchingStates?.includes(payment.onChainState!) ||
-          payment.onChainState?.toLowerCase().includes(searchLower);
-        const matchedByNetwork = payment.PaymentSource.network
-          .toLowerCase()
-          .includes(searchLower);
-        const matchedByWallet = payment.SmartContractWallet?.walletAddress
-          .toLowerCase()
-          .includes(searchLower);
-
-        // Check amount matching
-        let matchedByAmount = false;
-        const requestedFunds = payment.RequestedFunds as Array<{
-          unit: string;
-          amount: bigint;
-        }>;
-        matchedByAmount = requestedFunds.some((fund) => {
-          const amountInAda = (Number(fund.amount) / 1000000).toFixed(2);
-          return amountInAda.includes(searchLower);
-        });
-
-        return (
-          matchedById ||
-          matchedByHash ||
-          matchedByState ||
-          matchedByNetwork ||
-          matchedByWallet ||
-          matchedByAmount
-        );
-      });
-    }
     if (result == null) {
       throw createHttpError(404, 'Payment not found');
     }
