@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
@@ -21,53 +21,59 @@ export const getWalletSchemaInput = z.object({
     .describe('Whether to include the decrypted secret in the response'),
 });
 
-export const getWalletSchemaOutput = z.object({
-  Secret: z
-    .object({
-      createdAt: z.date().describe('Timestamp when the secret was created'),
-      updatedAt: z
-        .date()
-        .describe('Timestamp when the secret was last updated'),
-      mnemonic: z
-        .string()
-        .describe('Decrypted 24-word mnemonic phrase for the wallet'),
-    })
-    .optional()
-    .describe(
-      'Wallet secret (mnemonic). Only included if includeSecret is true',
-    ),
-  PendingTransaction: z
-    .object({
-      createdAt: z
-        .date()
-        .describe('Timestamp when the pending transaction was created'),
-      updatedAt: z
-        .date()
-        .describe('Timestamp when the pending transaction was last updated'),
-      hash: z
-        .string()
-        .nullable()
-        .describe(
-          'Transaction hash of the pending transaction. Null if not yet submitted',
-        ),
-      lastCheckedAt: z
-        .date()
-        .nullable()
-        .describe(
-          'Timestamp when the pending transaction was last checked. Null if never checked',
-        ),
-    })
-    .nullable()
-    .describe(
-      'Pending transaction for this wallet. Null if no transaction is pending',
-    ),
-  note: z
-    .string()
-    .nullable()
-    .describe('Optional note about this wallet. Null if not set'),
-  walletVkey: z.string().describe('Payment key hash of the wallet'),
-  walletAddress: z.string().describe('Cardano address of the wallet'),
-});
+export const getWalletSchemaOutput = z
+  .object({
+    Secret: z
+      .object({
+        createdAt: z.date().describe('Timestamp when the secret was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the secret was last updated'),
+        mnemonic: z
+          .string()
+          .describe('Decrypted 24-word mnemonic phrase for the wallet'),
+      })
+      .optional()
+      .describe(
+        'Wallet secret (mnemonic). Only included if includeSecret is true',
+      ),
+    PendingTransaction: z
+      .object({
+        createdAt: z
+          .date()
+          .describe('Timestamp when the pending transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the pending transaction was last updated'),
+        hash: z
+          .string()
+          .nullable()
+          .describe(
+            'Transaction hash of the pending transaction. Null if not yet submitted',
+          ),
+        lastCheckedAt: z
+          .date()
+          .nullable()
+          .describe(
+            'Timestamp when the pending transaction was last checked. Null if never checked',
+          ),
+      })
+      .nullable()
+      .describe(
+        'Pending transaction for this wallet. Null if no transaction is pending',
+      ),
+    note: z
+      .string()
+      .nullable()
+      .describe('Optional note about this wallet. Null if not set'),
+    walletVkey: z.string().describe('Payment key hash of the wallet'),
+    walletAddress: z.string().describe('Cardano address of the wallet'),
+    collectionAddress: z
+      .string()
+      .nullable()
+      .describe('Collection address for this wallet. Null if not set'),
+  })
+  .openapi('Wallet');
 
 export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
   method: 'get',
@@ -134,6 +140,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             note: result.note,
             walletVkey: result.walletVkey,
             walletAddress: result.walletAddress,
+            collectionAddress: result.collectionAddress,
             Secret: {
               createdAt: result.Secret.createdAt,
               updatedAt: result.Secret.updatedAt,
@@ -151,6 +158,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
               }
             : null,
           note: result.note,
+          collectionAddress: result.collectionAddress,
           walletVkey: result.walletVkey,
           walletAddress: result.walletAddress,
         };
@@ -190,6 +198,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             note: result.note,
             walletVkey: result.walletVkey,
             walletAddress: result.walletAddress,
+            collectionAddress: result.collectionAddress,
             Secret: {
               createdAt: result.Secret.createdAt,
               updatedAt: result.Secret.updatedAt,
@@ -208,6 +217,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             : null,
           note: result.note,
           walletVkey: result.walletVkey,
+          collectionAddress: result.collectionAddress,
           walletAddress: result.walletAddress,
         };
       }
@@ -244,19 +254,21 @@ export const postWalletSchemaInput = z.object({
     .describe('The network the Cardano wallet will be used on'),
 });
 
-export const postWalletSchemaOutput = z.object({
-  walletMnemonic: z
-    .string()
-    .describe(
-      '24-word mnemonic phrase for the newly generated wallet. IMPORTANT: Backup this mnemonic securely',
-    ),
-  walletAddress: z
-    .string()
-    .describe('Cardano address of the newly generated wallet'),
-  walletVkey: z
-    .string()
-    .describe('Payment key hash of the newly generated wallet'),
-});
+export const postWalletSchemaOutput = z
+  .object({
+    walletMnemonic: z
+      .string()
+      .describe(
+        '24-word mnemonic phrase for the newly generated wallet. IMPORTANT: Backup this mnemonic securely',
+      ),
+    walletAddress: z
+      .string()
+      .describe('Cardano address of the newly generated wallet'),
+    walletVkey: z
+      .string()
+      .describe('Payment key hash of the newly generated wallet'),
+  })
+  .openapi('GeneratedWalletSecret');
 
 export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -333,22 +345,7 @@ export const patchWalletSchemaInput = z.object({
     ),
 });
 
-export const patchWalletSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier for the wallet'),
-  walletVkey: z.string().describe('Payment key hash of the wallet'),
-  walletAddress: z.string().describe('Cardano address of the wallet'),
-  collectionAddress: z
-    .string()
-    .nullable()
-    .describe('Collection address for this wallet. Null if not set'),
-  type: z
-    .enum(['Selling', 'Purchasing'])
-    .describe('Type of wallet (Selling or Purchasing)'),
-  note: z
-    .string()
-    .nullable()
-    .describe('Optional note about this wallet. Null if not set'),
-});
+export const patchWalletSchemaOutput = getWalletSchemaOutput;
 
 export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
   {
@@ -371,12 +368,30 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
         throw createHttpError(404, `${input.id} wallet not found`);
       }
 
-      const updated = await prisma.hotWallet.update({
+      const result = await prisma.hotWallet.update({
         where: { id: wallet.id },
         data: { collectionAddress: input.newCollectionAddress },
+        include: {
+          Secret: false,
+          PendingTransaction: true,
+          PaymentSource: true,
+        },
       });
 
-      return updated;
+      return {
+        PendingTransaction: result.PendingTransaction
+          ? {
+              createdAt: result.PendingTransaction.createdAt,
+              updatedAt: result.PendingTransaction.updatedAt,
+              hash: result.PendingTransaction.txHash,
+              lastCheckedAt: result.PendingTransaction.lastCheckedAt,
+            }
+          : null,
+        note: result.note,
+        walletVkey: result.walletVkey,
+        walletAddress: result.walletAddress,
+        collectionAddress: result.collectionAddress,
+      };
     },
   },
 );

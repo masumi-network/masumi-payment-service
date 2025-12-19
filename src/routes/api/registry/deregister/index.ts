@@ -1,5 +1,5 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
   HotWalletType,
@@ -15,6 +15,7 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { registryRequestOutputSchema } from '@/routes/api/registry';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -34,123 +35,7 @@ export const unregisterAgentSchemaInput = z.object({
     ),
 });
 
-export const unregisterAgentSchemaOutput = z.object({
-  id: z.string().describe('Unique identifier for the registry request'),
-  name: z.string().describe('Name of the agent'),
-  apiBaseUrl: z.string().describe('Base URL of the agent API for interactions'),
-  Capability: z
-    .object({
-      name: z
-        .string()
-        .nullable()
-        .describe('Name of the AI model/capability. Null if not provided'),
-      version: z
-        .string()
-        .nullable()
-        .describe('Version of the AI model/capability. Null if not provided'),
-    })
-    .describe('Information about the AI model and version used by the agent'),
-  Author: z
-    .object({
-      name: z.string().describe('Name of the agent author'),
-      contactEmail: z
-        .string()
-        .nullable()
-        .describe('Contact email of the author. Null if not provided'),
-      contactOther: z
-        .string()
-        .nullable()
-        .describe(
-          'Other contact information for the author. Null if not provided',
-        ),
-      organization: z
-        .string()
-        .nullable()
-        .describe('Organization of the author. Null if not provided'),
-    })
-    .describe('Author information for the agent'),
-  Legal: z
-    .object({
-      privacyPolicy: z
-        .string()
-        .nullable()
-        .describe('URL to the privacy policy. Null if not provided'),
-      terms: z
-        .string()
-        .nullable()
-        .describe('URL to the terms of service. Null if not provided'),
-      other: z
-        .string()
-        .nullable()
-        .describe('Other legal information. Null if not provided'),
-    })
-    .describe('Legal information about the agent'),
-  description: z
-    .string()
-    .nullable()
-    .describe('Description of the agent. Null if not provided'),
-  Tags: z.array(z.string()).describe('List of tags categorizing the agent'),
-  SmartContractWallet: z
-    .object({
-      walletVkey: z
-        .string()
-        .describe('Payment key hash of the smart contract wallet'),
-      walletAddress: z
-        .string()
-        .describe('Cardano address of the smart contract wallet'),
-    })
-    .describe('Smart contract wallet managing this agent registration'),
-  state: z
-    .nativeEnum(RegistrationState)
-    .describe(
-      'Current state of the registration process (should be DeregistrationRequested)',
-    ),
-  ExampleOutputs: z
-    .array(
-      z.object({
-        name: z.string().max(60).describe('Name of the example output'),
-        url: z.string().max(250).describe('URL to the example output'),
-        mimeType: z
-          .string()
-          .max(60)
-          .describe(
-            'MIME type of the example output (e.g., image/png, text/plain)',
-          ),
-      }),
-    )
-    .max(25)
-    .describe('List of example outputs from the agent'),
-  AgentPricing: z
-    .object({
-      pricingType: z
-        .enum([PricingType.Fixed])
-        .describe('Pricing type for the agent (Fixed or Free)'),
-      Pricing: z
-        .array(
-          z.object({
-            unit: z
-              .string()
-              .describe(
-                'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-              ),
-            amount: z
-              .string()
-              .describe(
-                'Amount of the asset in smallest unit (e.g., lovelace for ADA)',
-              ),
-          }),
-        )
-        .describe('List of assets and amounts for fixed pricing'),
-    })
-    .or(
-      z.object({
-        pricingType: z
-          .enum([PricingType.Free])
-          .describe('Pricing type for the agent (Fixed or Free)'),
-      }),
-    )
-    .describe('Pricing information for the agent'),
-});
+export const unregisterAgentSchemaOutput = registryRequestOutputSchema;
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -247,6 +132,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
         SmartContractWallet: true,
         ExampleOutputs: true,
+        CurrentTransaction: true,
       },
     });
 
@@ -267,20 +153,26 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         terms: result.terms,
         other: result.other,
       },
-      Tags: result.tags,
       AgentPricing:
         result.Pricing.pricingType == PricingType.Fixed
           ? {
               pricingType: PricingType.Fixed,
               Pricing:
-                result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                  unit: pricing.unit,
-                  amount: pricing.amount.toString(),
+                result.Pricing.FixedPricing?.Amounts.map((price) => ({
+                  unit: price.unit,
+                  amount: price.amount.toString(),
                 })) ?? [],
             }
           : {
               pricingType: PricingType.Free,
             },
+      Tags: result.tags,
+      CurrentTransaction: result.CurrentTransaction
+        ? {
+            ...result.CurrentTransaction,
+            fees: result.CurrentTransaction.fees?.toString() ?? null,
+          }
+        : null,
     };
   },
 });
