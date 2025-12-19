@@ -1,16 +1,21 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
   Network,
   OnChainState,
   PaymentAction,
-  PaymentErrorType,
   Permission,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { paymentResponseSchema } from '@/routes/api/payments';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import {
+  transformPaymentGetAmounts,
+  transformPaymentGetTimestamps,
+} from '@/utils/shared/transformers';
 
 export const submitPaymentResultSchemaInput = z.object({
   network: z
@@ -28,65 +33,7 @@ export const submitPaymentResultSchemaInput = z.object({
     .describe('The identifier of the payment'),
 });
 
-export const submitPaymentResultSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  payByTime: z.string().nullable(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  externalDisputeUnlockTime: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  requestedById: z.string(),
-  resultHash: z.string(),
-  inputHash: z.string(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  NextAction: z.object({
-    requestedAction: z.nativeEnum(PaymentAction),
-    errorType: z.nativeEnum(PaymentErrorType).nullable(),
-    errorNote: z.string().nullable(),
-    resultHash: z.string().nullable(),
-  }),
-  RequestedFunds: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    policyId: z.string().nullable(),
-    smartContractAddress: z.string(),
-  }),
-  BuyerWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-    })
-    .nullable(),
-  SmartContractWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-    })
-    .nullable(),
-  metadata: z.string().nullable(),
-});
+export const submitPaymentResultSchemaOutput = paymentResponseSchema;
 
 export const submitPaymentResultEndpointPost =
   readAuthenticatedEndpointFactory.build({
@@ -181,36 +128,38 @@ export const submitPaymentResultEndpointPost =
           BuyerWallet: true,
           SmartContractWallet: { where: { deletedAt: null } },
           PaymentSource: true,
+          CurrentTransaction: true,
           RequestedFunds: true,
           WithdrawnForSeller: true,
           WithdrawnForBuyer: true,
+          TransactionHistory: true,
         },
       });
+      if (result.inputHash == null) {
+        throw createHttpError(
+          500,
+          'Internal server error: Payment has no input hash',
+        );
+      }
 
+      const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
       return {
         ...result,
-        payByTime: result.payByTime?.toString() ?? null,
-        submitResultTime: result.submitResultTime.toString(),
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        RequestedFunds: (
-          result.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
+        ...transformPaymentGetTimestamps(result),
+        ...transformPaymentGetAmounts(result),
+        agentIdentifier: decoded?.agentIdentifier ?? null,
+        CurrentTransaction: result.CurrentTransaction
+          ? {
+              ...result.CurrentTransaction,
+              fees: result.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory: result.TransactionHistory
+          ? result.TransactionHistory.map((tx) => ({
+              ...tx,
+              fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
       };
     },
   });

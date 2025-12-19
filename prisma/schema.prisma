@@ -74,11 +74,23 @@ model Transaction {
   id                       String            @id @default(cuid())
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
-  txHash                   String
+  txHash                   String?
   status                   TransactionStatus
+  confirmations            Int?
   lastCheckedAt            DateTime?
+  fees                     BigInt?
+  blockHeight              Int?
+  blockTime                Int?
+  outputAmount             String?           @db.Text
+  utxoCount                Int?
+  withdrawalCount          Int?
+  assetMintOrBurnCount     Int?
+  redeemerCount            Int?
+  validContract            Boolean?
   paymentRequestHistoryId  String?
   purchaseRequestHistoryId String?
+  previousOnChainState     OnChainState?
+  newOnChainState          OnChainState?
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
@@ -188,8 +200,8 @@ model PaymentRequest {
   submitResultTime          BigInt
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
-  inputHash                 String
-  resultHash                String
+  inputHash                 String?
+  resultHash                String?
   onChainState              OnChainState?
   sellerCoolDownTime        BigInt
   buyerCoolDownTime         BigInt
@@ -235,7 +247,7 @@ model PurchaseRequest {
   unlockTime                BigInt
   externalDisputeUnlockTime BigInt
   inputHash                 String
-  resultHash                String
+  resultHash                String?
   onChainState              OnChainState?
   sellerCoolDownTime        BigInt
   buyerCoolDownTime         BigInt
@@ -261,7 +273,6 @@ model PurchaseActionData {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
   requestedAction        PurchasingAction
-  inputHash              String
   submittedTxHash        String?
   errorType              PurchaseErrorType?
   errorNote              String?

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/rules-of-hooks */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -6,7 +6,7 @@ import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Plus } from 'lucide-react';
-import { cn, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import { useEffect, useState, useCallback } from 'react';
 import {
   getRegistry,
@@ -25,7 +25,8 @@ import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
@@ -436,7 +437,7 @@ export default function Overview() {
                   <span className="text-xs font-normal text-muted-foreground">
                     $
                   </span>
-                  {useFormatBalance(
+                  {formatBalance(
                     (parseInt(totalUsdmBalance) / 1000000)
                       .toFixed(2)
                       ?.toString(),
@@ -453,7 +454,7 @@ export default function Overview() {
               ) : (
                 <div className="flex flex-col gap-2">
                   <div className="text-2xl font-semibold flex items-center gap-1">
-                    {useFormatBalance(
+                    {formatBalance(
                       (parseInt(totalBalance) / 1000000).toFixed(2)?.toString(),
                     ) ?? ''}
                     <span className="text-xs font-normal text-muted-foreground">
@@ -463,7 +464,7 @@ export default function Overview() {
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
                       ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance))}`}
+                      : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
               )}
@@ -634,18 +635,7 @@ export default function Overview() {
                             onClick={() => setSelectedWalletForDetails(wallet)}
                           >
                             <td className="py-3 px-2">
-                              <span
-                                className={cn(
-                                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                                  wallet.type === 'Purchasing'
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                                )}
-                              >
-                                {wallet.type === 'Purchasing'
-                                  ? 'Buying'
-                                  : 'Selling'}
-                              </span>
+                              <WalletTypeBadge type={wallet.type} />
                             </td>
                             <td className="py-3 px-2 max-w-[100px]">
                               <div className="text-sm font-medium truncate">
@@ -671,7 +661,7 @@ export default function Overview() {
                                   <Spinner className="h-3 w-3" />
                                 ) : (
                                   <>
-                                    {useFormatBalance(
+                                    {formatBalance(
                                       (
                                         parseInt(wallet.balance || '0') /
                                         1000000
@@ -688,7 +678,7 @@ export default function Overview() {
                               <div className="text-xs flex items-center gap-1">
                                 {!wallet.isLoadingBalance && (
                                   <>
-                                    {useFormatBalance(
+                                    {formatBalance(
                                       (
                                         parseInt(wallet.usdmBalance || '0') /
                                         1000000
