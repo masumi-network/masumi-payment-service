@@ -17,7 +17,6 @@ import {
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
