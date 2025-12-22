@@ -1,9 +1,17 @@
 -- AlterEnum
--- Check if WalletScoped already exists to avoid errors on re-run
+-- Only alter if Permission type exists (handles fresh databases)
 DO $$ 
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'WalletScoped' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'Permission')) THEN
-        ALTER TYPE "Permission" ADD VALUE 'WalletScoped';
+    -- Check if Permission type exists first
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Permission') THEN
+        -- Check if WalletScoped value already exists
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_enum 
+            WHERE enumlabel = 'WalletScoped' 
+            AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'Permission')
+        ) THEN
+            ALTER TYPE "Permission" ADD VALUE 'WalletScoped';
+        END IF;
     END IF;
 END $$;
 
