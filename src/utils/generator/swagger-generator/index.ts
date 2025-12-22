@@ -1,5 +1,4 @@
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   OpenAPIRegistry,
   OpenApiGeneratorV3,
@@ -8,6 +7,7 @@ import { healthResponseSchema } from '@/routes/api/health';
 import {
   addAPIKeySchemaInput,
   addAPIKeySchemaOutput,
+  apiKeyOutputSchema,
   deleteAPIKeySchemaInput,
   deleteAPIKeySchemaOutput,
   getAPIKeySchemaInput,
@@ -65,6 +65,7 @@ import {
   ApiKeyStatus,
   RPCProvider,
   PricingType,
+  RegistrationState,
 } from '@prisma/client';
 import {
   authorizePaymentRefundSchemaInput,
@@ -74,6 +75,224 @@ import {
   submitPaymentResultSchemaInput,
   submitPaymentResultSchemaOutput,
 } from '@/routes/api/payments/submit-result';
+
+const paymentSchemaOutputExample = {
+  id: 'cuid_v2_auto_generated',
+  blockchainIdentifier: 'blockchain_identifier',
+  agentIdentifier: 'agent_identifier',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  submitResultTime: '0',
+  unlockTime: '0',
+  externalDisputeUnlockTime: '0',
+  lastCheckedAt: null,
+  cooldownTime: 0,
+  payByTime: null,
+  cooldownTimeOtherParty: 0,
+  collateralReturnLovelace: null,
+  requestedById: 'requester_id',
+  resultHash: 'result_hash',
+  onChainState: null,
+  inputHash: 'input_hash',
+  NextAction: {
+    requestedAction: PaymentAction.AuthorizeRefundRequested,
+    errorType: null,
+    errorNote: null,
+    resultHash: null,
+  },
+  CurrentTransaction: null,
+  TransactionHistory: [],
+  RequestedFunds: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  PaymentSource: {
+    id: 'payment_source_id',
+    network: Network.Preprod,
+    smartContractAddress: 'address',
+    policyId: 'policy_id',
+  },
+  WithdrawnForSeller: [],
+  WithdrawnForBuyer: [],
+  BuyerWallet: null,
+  SmartContractWallet: null,
+  metadata: null,
+} satisfies z.infer<typeof createPaymentSchemaOutput>;
+
+const paymentSourceExtendedExample = {
+  id: 'cuid_v2_auto_generated',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  network: Network.Mainnet,
+  policyId: 'policy_id',
+  smartContractAddress: 'address_of_the_smart_contract',
+  PaymentSourceConfig: {
+    rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
+    rpcProvider: RPCProvider.Blockfrost,
+  },
+  lastIdentifierChecked: 'identifier',
+  syncInProgress: true,
+  lastCheckedAt: new Date(1713636260),
+  AdminWallets: [
+    { walletAddress: 'wallet_address', order: 0 },
+    { walletAddress: 'wallet_address', order: 1 },
+    { walletAddress: 'wallet_address', order: 2 },
+  ],
+  PurchasingWallets: [
+    {
+      collectionAddress: null,
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+    {
+      collectionAddress: 'send_refunds_to_this_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+  ],
+  SellingWallets: [
+    {
+      collectionAddress: 'null_will_use_the_selling_wallet_as_revenue_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+    {
+      collectionAddress: 'send_revenue_to_this_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+  ],
+  FeeReceiverNetworkWallet: {
+    walletAddress: 'wallet_address',
+  },
+  feeRatePermille: 50,
+} satisfies z.infer<typeof paymentSourceExtendedCreateSchemaOutput>;
+
+const apiKeyExample = {
+  id: 'api_key_id',
+  token: 'masumi_payment_api_key_secret',
+  permission: Permission.Admin,
+  usageLimited: true,
+  networkLimit: [Network.Preprod],
+  RemainingUsageCredits: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  status: ApiKeyStatus.Active,
+} satisfies z.infer<typeof apiKeyOutputSchema>;
+
+const walletExample = {
+  walletVkey: 'wallet_vkey',
+  note: 'note',
+  PendingTransaction: null,
+  walletAddress: 'wallet_address',
+  collectionAddress: 'collection_address',
+  Secret: undefined,
+} satisfies z.infer<typeof getWalletSchemaOutput>;
+
+const registryEntryExample = {
+  error: null,
+  id: 'registry_id',
+  name: 'Agent Name',
+  description: 'Agent Description',
+  apiBaseUrl: 'https://api.example.com',
+  Capability: { name: 'Capability Name', version: '1.0.0' },
+  Author: {
+    name: 'Author Name',
+    contactEmail: 'author@example.com',
+    contactOther: 'contact-other',
+    organization: 'Author Org',
+  },
+  Legal: {
+    privacyPolicy: 'https://example.com/privacy',
+    terms: 'https://example.com/terms',
+    other: 'https://example.com/other',
+  },
+  state: RegistrationState.RegistrationRequested,
+  Tags: ['tag1', 'tag2'],
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  lastCheckedAt: null,
+  ExampleOutputs: [
+    {
+      name: 'example_output_name',
+      url: 'https://example.com/example_output',
+      mimeType: 'application/json',
+    },
+  ],
+  agentIdentifier:
+    'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+  AgentPricing: {
+    pricingType: PricingType.Fixed,
+    Pricing: [
+      {
+        unit: '', // Empty string = ADA/lovelace
+        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+      },
+    ],
+  },
+  SmartContractWallet: {
+    walletVkey: 'wallet_vkey',
+    walletAddress: 'wallet_address',
+  },
+  CurrentTransaction: null,
+} satisfies z.infer<typeof registerAgentSchemaOutput>;
+
+const purchaseResponseSchemaExample = {
+  id: 'cuid_v2_auto_generated',
+  blockchainIdentifier: 'blockchain_identifier',
+  agentIdentifier: 'agent_identifier',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  lastCheckedAt: null,
+  payByTime: null,
+  submitResultTime: '0',
+  unlockTime: '0',
+  externalDisputeUnlockTime: '0',
+  requestedById: 'requester_id',
+  onChainState: null,
+  collateralReturnLovelace: null,
+  cooldownTime: 0,
+  cooldownTimeOtherParty: 0,
+  inputHash: 'input_hash',
+  resultHash: null,
+  NextAction: {
+    requestedAction: PurchasingAction.FundsLockingRequested,
+    errorType: null,
+    errorNote: null,
+  },
+  CurrentTransaction: null,
+  TransactionHistory: [],
+  PaidFunds: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  PaymentSource: {
+    id: 'payment_source_id',
+    policyId: 'policy_id',
+    network: Network.Preprod,
+    smartContractAddress: 'address',
+  },
+  SellerWallet: null,
+  SmartContractWallet: null,
+  metadata: null,
+  WithdrawnForSeller: [],
+  WithdrawnForBuyer: [],
+} satisfies z.infer<typeof createPurchaseInitSchemaOutput>;
 import {
   requestPurchaseRefundSchemaInput,
   requestPurchaseRefundSchemaOutput,
@@ -108,8 +327,6 @@ import {
   postRevealDataSchemaOutput,
   postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
-
-extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -157,19 +374,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    status: ApiKeyStatus.Active,
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    networkLimit: [Network.Preprod],
-                    usageLimited: true,
-                    RemainingUsageCredits: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                  },
+                  data: apiKeyExample,
                 },
               }),
           },
@@ -205,17 +410,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    walletVkey: 'wallet_vkey',
-                    note: 'note',
-                    PendingTransaction: null,
-                    walletAddress: 'wallet_address',
-                    Secret: {
-                      createdAt: new Date(1713636260),
-                      updatedAt: new Date(1713636260),
-                      mnemonic: 'decoded_secret',
-                    },
-                  },
+                  data: walletExample,
                 },
               }),
           },
@@ -292,14 +487,7 @@ export function generateOpenAPI() {
         content: {
           'application/json': {
             schema: patchWalletSchemaOutput.openapi({
-              example: {
-                id: 'unique_cuid_v2_of_entry_to_update',
-                collectionAddress: 'collection_address',
-                type: 'Selling',
-                walletVkey: 'wallet_vkey',
-                walletAddress: 'wallet_address',
-                note: 'note',
-              },
+              example: walletExample,
             }),
           },
         },
@@ -376,22 +564,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   data: {
-                    ApiKeys: [
-                      {
-                        id: 'unique_cuid_v2_of_entry',
-                        token: 'masumi_payment_api_key_secret',
-                        permission: Permission.Admin,
-                        usageLimited: true,
-                        RemainingUsageCredits: [
-                          {
-                            unit: '', // Empty string = ADA/lovelace
-                            amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                          },
-                        ],
-                        status: ApiKeyStatus.Active,
-                        networkLimit: [Network.Mainnet],
-                      },
-                    ],
+                    ApiKeys: [apiKeyExample],
                   },
                   status: 'success',
                 },
@@ -449,14 +622,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    usageLimited: true,
-                    networkLimit: [Network.Preprod],
-                    status: ApiKeyStatus.Active,
-                  },
+                  data: apiKeyExample,
                 },
               }),
           },
@@ -518,12 +684,8 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    usageLimited: true,
+                    ...apiKeyExample,
                     networkLimit: [Network.Preprod, Network.Mainnet],
-                    status: ApiKeyStatus.Active,
                   },
                 },
               }),
@@ -574,13 +736,8 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_registry_api_key_secret',
+                    ...apiKeyExample,
                     status: ApiKeyStatus.Revoked,
-                    permission: Permission.Admin,
-                    usageLimited: true,
-                    networkLimit: [Network.Preprod, Network.Mainnet],
-                    deletedAt: new Date(1713636260),
                   },
                 },
               }),
@@ -628,53 +785,7 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    Payments: [
-                      {
-                        id: 'cuid_v2_auto_generated',
-                        blockchainIdentifier: 'blockchain_identifier',
-                        agentIdentifier: 'agent_identifier',
-                        createdAt: new Date(1713636260),
-                        updatedAt: new Date(1713636260),
-                        submitResultTime: '0',
-                        unlockTime: '0',
-                        externalDisputeUnlockTime: '0',
-                        lastCheckedAt: null,
-                        cooldownTime: 0,
-                        payByTime: null,
-                        cooldownTimeOtherParty: 0,
-                        collateralReturnLovelace: null,
-                        requestedById: 'requester_id',
-                        resultHash: 'result_hash',
-                        onChainState: null,
-                        inputHash: 'input_hash',
-                        NextAction: {
-                          requestedAction:
-                            PaymentAction.AuthorizeRefundRequested,
-                          errorType: null,
-                          errorNote: null,
-                          resultHash: null,
-                        },
-                        CurrentTransaction: null,
-                        TransactionHistory: [],
-                        RequestedFunds: [
-                          {
-                            unit: '', // Empty string = ADA/lovelace
-                            amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                          },
-                        ],
-                        PaymentSource: {
-                          id: 'payment_source_id',
-                          network: Network.Preprod,
-                          smartContractAddress: 'address',
-                          policyId: 'policy_id',
-                        },
-                        WithdrawnForSeller: [],
-                        WithdrawnForBuyer: [],
-                        BuyerWallet: null,
-                        SmartContractWallet: null,
-                        metadata: null,
-                      },
-                    ],
+                    Payments: [paymentSchemaOutputExample],
                   },
                 },
               }),
@@ -733,46 +844,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    inputHash: 'input_hash',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    payByTime: '0',
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    requestedById: 'requester_id',
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    CurrentTransaction: null,
-                    TransactionHistory: [],
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -829,44 +901,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    requestedById: 'requester_id',
-                    payByTime: null,
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      network: Network.Preprod,
-                      policyId: 'policy_id',
-                      smartContractAddress: 'address',
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -920,44 +955,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      network: Network.Preprod,
-                      policyId: 'policy_id',
-                      smartContractAddress: 'address',
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -1112,45 +1110,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    TransactionHistory: [],
-                    PaidFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1176,44 +1136,7 @@ export function generateOpenAPI() {
               status: 'error',
               error: { message: 'Purchase request already exists' },
               id: 'cuid_v2_auto_generated',
-              object: {
-                id: 'cuid_v2_auto_generated',
-                createdAt: new Date(1713636260),
-                updatedAt: new Date(1713636260),
-                blockchainIdentifier: 'blockchain_identifier',
-                lastCheckedAt: null,
-                submitResultTime: '0',
-                unlockTime: '0',
-                externalDisputeUnlockTime: '0',
-                payByTime: null,
-                requestedById: 'requester_id',
-                resultHash: '',
-                onChainState: null,
-                inputHash: 'input_hash',
-                NextAction: {
-                  requestedAction: PurchasingAction.FundsLockingRequested,
-                  errorType: null,
-                  errorNote: null,
-                },
-                CurrentTransaction: null,
-                PaidFunds: [
-                  {
-                    amount: '10000000',
-                    unit: '',
-                  },
-                ],
-                PaymentSource: {
-                  id: 'payment_source_id',
-                  policyId: 'policy_id',
-                  network: Network.Preprod,
-                  smartContractAddress: 'address',
-                },
-                SellerWallet: null,
-                SmartContractWallet: null,
-                metadata: null,
-                WithdrawnForSeller: [],
-                WithdrawnForBuyer: [],
-              },
+              object: purchaseResponseSchemaExample,
             },
           },
         },
@@ -1261,43 +1184,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    PaidFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1351,43 +1238,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    PaidFunds: [
-                      {
-                        unit: '', // Empty string = ADA/lovelace
-                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1447,6 +1298,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1547,6 +1399,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1615,7 +1468,7 @@ export function generateOpenAPI() {
     tags: ['registry'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: queryAgentFromWalletSchemaInput.openapi({
+      query: queryAgentFromWalletSchemaInput.openapi('test', {
         example: {
           walletVKey: 'wallet_vkey',
           network: Network.Preprod,
@@ -1833,43 +1686,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid2',
-                    apiBaseUrl: 'api_url',
-                    Tags: ['tag1', 'tag2'],
-                    Capability: {
-                      name: 'capability_name',
-                      version: 'capability_version',
-                    },
-                    Legal: {
-                      privacyPolicy: 'privacy_policy',
-                      terms: 'terms',
-                      other: 'other',
-                    },
-                    AgentPricing: {
-                      pricingType: PricingType.Fixed,
-                      Pricing: [
-                        {
-                          unit: '',
-                          amount: '10000000',
-                        },
-                      ],
-                    },
-                    ExampleOutputs: [],
-                    Author: {
-                      name: 'author_name',
-                      organization: 'author_organization',
-                      contactEmail: 'author_contact_email',
-                      contactOther: 'author_contact_other',
-                    },
-                    SmartContractWallet: {
-                      walletVkey: 'wallet_vkey',
-                      walletAddress: 'wallet_address',
-                    },
-                    state: 'RegistrationRequested',
-                    description: 'description',
-                    name: 'name',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -1912,49 +1729,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid2',
-                    apiBaseUrl: 'api_url',
-                    Tags: ['tag1', 'tag2'],
-                    Capability: {
-                      name: 'capability_name',
-                      version: 'capability_version',
-                    },
-                    ExampleOutputs: [
-                      {
-                        name: 'example_output_name',
-                        url: 'https://example.com/example_output',
-                        mimeType: 'application/json',
-                      },
-                    ],
-                    Author: {
-                      name: 'author_name',
-                      organization: 'author_organization',
-                      contactEmail: 'author_contact_email',
-                      contactOther: 'author_contact_other',
-                    },
-                    Legal: {
-                      privacyPolicy: 'privacy_policy',
-                      terms: 'terms',
-                      other: 'other',
-                    },
-                    AgentPricing: {
-                      pricingType: PricingType.Fixed,
-                      Pricing: [
-                        {
-                          unit: '',
-                          amount: '10000000',
-                        },
-                      ],
-                    },
-                    SmartContractWallet: {
-                      walletVkey: 'wallet_vkey',
-                      walletAddress: 'wallet_address',
-                    },
-                    state: 'RegistrationRequested',
-                    description: 'description',
-                    name: 'name',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -1998,9 +1773,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'example_id',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -2297,62 +2070,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    network: Network.Mainnet,
-                    syncInProgress: true,
-                    smartContractAddress: 'address_of_the_smart_contract',
-                    AdminWallets: [
-                      { walletAddress: 'wallet_address', order: 0 },
-                      { walletAddress: 'wallet_address', order: 1 },
-                      { walletAddress: 'wallet_address', order: 2 },
-                    ],
-                    feeRatePermille: 50,
-                    FeeReceiverNetworkWallet: {
-                      walletAddress: 'wallet_address',
-                    },
-                    lastCheckedAt: new Date(1713636260),
-                    lastIdentifierChecked: 'identifier',
-                    PaymentSourceConfig: {
-                      rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
-                      rpcProvider: RPCProvider.Blockfrost,
-                    },
-                    PurchasingWallets: [
-                      {
-                        collectionAddress: null,
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_refunds_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                    SellingWallets: [
-                      {
-                        collectionAddress:
-                          'null_will_use_the_selling_wallet_as_revenue_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_revenue_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                  },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },
@@ -2416,62 +2134,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    network: Network.Mainnet,
-                    syncInProgress: true,
-                    smartContractAddress: 'address_of_the_smart_contract',
-                    AdminWallets: [
-                      { walletAddress: 'wallet_address', order: 0 },
-                      { walletAddress: 'wallet_address', order: 1 },
-                      { walletAddress: 'wallet_address', order: 2 },
-                    ],
-                    feeRatePermille: 50,
-                    FeeReceiverNetworkWallet: {
-                      walletAddress: 'wallet_address',
-                    },
-                    lastCheckedAt: new Date(1713636260),
-                    lastIdentifierChecked: 'identifier',
-                    PaymentSourceConfig: {
-                      rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
-                      rpcProvider: RPCProvider.Blockfrost,
-                    },
-                    PurchasingWallets: [
-                      {
-                        collectionAddress: null,
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_refunds_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                    SellingWallets: [
-                      {
-                        collectionAddress:
-                          'null_will_use_selling_wallet_as_revenue_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_revenue_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                  },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },
@@ -2513,7 +2176,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: { id: 'unique_cuid_v2_auto_generated' },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },

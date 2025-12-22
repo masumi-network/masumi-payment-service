@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { $Enums } from '@prisma/client';
