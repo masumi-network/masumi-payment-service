@@ -123,7 +123,7 @@ export const cancelPurchaseRefundRequestPost =
           permission: options.permission,
           allowedWalletIds: options.allowedWalletIds,
         },
-        purchase.SmartContractWallet,
+        { smartContractWalletId: purchase.SmartContractWallet.id },
       );
 
       const result = await prisma.purchaseRequest.update({

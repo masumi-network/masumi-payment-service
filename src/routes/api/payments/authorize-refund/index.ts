@@ -109,7 +109,7 @@ export const authorizePaymentRefundEndpointPost =
           permission: options.permission,
           allowedWalletIds: options.allowedWalletIds,
         },
-        payment.SmartContractWallet,
+        { smartContractWalletId: payment.SmartContractWallet.id },
       );
 
       if (payment.CurrentTransaction == null) {

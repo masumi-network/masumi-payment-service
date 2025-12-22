@@ -122,7 +122,7 @@ export const submitPaymentResultEndpointPost =
           permission: options.permission,
           allowedWalletIds: options.allowedWalletIds,
         },
-        payment.SmartContractWallet,
+        { smartContractWalletId: payment.SmartContractWallet.id },
       );
 
       const result = await prisma.paymentRequest.update({

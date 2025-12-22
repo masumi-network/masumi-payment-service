@@ -125,7 +125,7 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
         permission: options.permission,
         allowedWalletIds: options.allowedWalletIds,
       },
-      purchase.SmartContractWallet,
+      { smartContractWalletId: purchase.SmartContractWallet.id },
     );
 
     const newPurchase = await prisma.purchaseRequest.update({
