@@ -1,6 +1,7 @@
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from './logger';
 import { Network } from '@prisma/client';
+import { updateWalletBalance } from './metrics';
 
 interface WalletConfig {
   address: string;
@@ -101,6 +102,9 @@ async function checkWalletBalance(
     }, 0n);
 
     const balanceAda = Number(totalLovelace) / 1_000_000;
+
+    // Update wallet balance metric for OpenTelemetry/SigNoz monitoring
+    updateWalletBalance(address, network, totalLovelace);
 
     if (balanceAda < thresholdAda) {
       logger.warn('LOW WALLET BALANCE', {

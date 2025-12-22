@@ -73,6 +73,46 @@ export const activePaymentGauge = meter.createUpDownCounter('active_payments', {
   description: 'Number of currently active payments',
 });
 
+// Wallet balance monitoring gauge
+export const walletBalanceGauge = meter.createObservableGauge(
+  'wallet_balance_lovelace',
+  {
+    description: 'Current wallet balance in lovelace by network and address',
+    unit: 'lovelace',
+  },
+);
+
+// Store for wallet balance observations
+const walletBalances = new Map<
+  string,
+  { balance: number; network: string; address: string }
+>();
+
+// Helper to update wallet balance
+export const updateWalletBalance = (
+  address: string,
+  network: string,
+  balanceLovelace: bigint,
+) => {
+  const key = `${network}:${address}`;
+  walletBalances.set(key, {
+    balance: Number(balanceLovelace),
+    network,
+    address,
+  });
+};
+
+// Register callback for observable gauge
+walletBalanceGauge.addCallback((observableResult) => {
+  walletBalances.forEach((data) => {
+    observableResult.observe(data.balance, {
+      wallet_address: data.address,
+      network: data.network,
+      wallet_type: 'monitored',
+    });
+  });
+});
+
 // Business Endpoint Types
 type BusinessEndpoint = 'purchase' | 'registry' | 'wallet' | 'unknown';
 
