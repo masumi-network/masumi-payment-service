@@ -213,6 +213,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered
               ? `${sideBarWidthCollapsed}px`
               : `${sideBarWidth}px`,
+          pointerEvents: 'auto',
         }}
       >
         <div className="flex flex-col">
