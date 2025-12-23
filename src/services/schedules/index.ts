@@ -191,17 +191,21 @@ export async function initJobs() {
   });
 
   void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {
-    // Wallet balance monitoring interval - runs every 1 hour for preprod wallets
+    // Wallet balance monitoring - checks every 60 seconds
+
     AsyncInterval.start(async () => {
-      logger.info('Starting wallet balance monitoring');
+      logger.info('Starting database-driven wallet balance monitoring check', {
+        component: 'wallet_monitoring',
+      });
       const start = new Date();
       await checkAllWalletBalances();
       logger.info(
-        'Finished wallet balance monitoring in ' +
+        'Finished database-driven wallet balance monitoring check in ' +
           (new Date().getTime() - start.getTime()) / 1000 +
           's',
+        { component: 'wallet_monitoring' },
       );
-    }, CONFIG.CHECK_WALLET_BALANCE_INTERVAL * 1000);
+    }, 60000); // Check every minute (fast polling, smart filtering)
   });
 
   void new Promise((resolve) => setTimeout(resolve, 7500)).then(() => {

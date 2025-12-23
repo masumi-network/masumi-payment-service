@@ -100,12 +100,6 @@ const walletLockTimeoutInterval = Number(
 if (walletLockTimeoutInterval < 5)
   throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
-const checkWalletBalanceInterval = Number(
-  process.env.CHECK_WALLET_BALANCE_INTERVAL ?? '3600',
-);
-if (checkWalletBalanceInterval < 300)
-  throw new Error('CHECK_WALLET_BALANCE_INTERVAL must be at least 300 seconds');
-
 export const CONFIG = {
   PORT: process.env.PORT ?? '3001',
   DATABASE_URL: process.env.DATABASE_URL,
@@ -124,7 +118,6 @@ export const CONFIG = {
   REGISTER_AGENT_INTERVAL: registerAgentInterval,
   DEREGISTER_AGENT_INTERVAL: deregisterAgentInterval,
   CHECK_REGISTRY_TRANSACTIONS_INTERVAL: checkRegistryTransactionsInterval,
-  CHECK_WALLET_BALANCE_INTERVAL: checkWalletBalanceInterval,
   ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
   AUTO_WITHDRAW_PAYMENTS: autoWithdrawPayments,
   AUTO_WITHDRAW_REFUNDS: autoWithdrawRefunds,

@@ -1,146 +1,366 @@
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from './logger';
-import { Network } from '@prisma/client';
-import { updateWalletBalance } from './metrics';
+import { Network, Prisma } from '@prisma/client';
+import { updateWalletBalance, updateAssetBalance } from './metrics';
+import { prisma } from './db';
 
-interface WalletConfig {
-  address: string;
-  network: Network;
-  thresholdAda: number;
+// Type-safe interfaces
+interface AssetBalance {
+  policyId: string;
+  assetName: string;
+  quantity: bigint;
 }
 
+interface WalletCheckResult {
+  success: boolean;
+  lovelaceBalance?: bigint;
+  assetBalances?: Map<string, AssetBalance>;
+  error?: string;
+}
+
+// Type for database query result
+type ConfigWithRelations = Prisma.WalletMonitorConfigGetPayload<{
+  include: {
+    PaymentSource: {
+      include: {
+        PaymentSourceConfig: true;
+      };
+    };
+    WalletThresholds: {
+      where: { enabled: true };
+      include: {
+        HotWallet: true;
+        AssetThresholds: true;
+      };
+    };
+  };
+}>;
+
 export async function checkAllWalletBalances(): Promise<void> {
-  const walletsToCheck: WalletConfig[] = [];
+  try {
+    const now = new Date();
 
-  // Preprod wallets (active monitoring)
-  const preprodApiKey = process.env.BLOCKFROST_API_KEY_PREPROD;
-  const preprodAddresses = process.env.MONITOR_WALLET_ADDRESSES_PREPROD?.split(
-    ',',
-  )
-    .map((addr) => addr.trim())
-    .filter(Boolean);
+    // Find enabled configs
+    const configs = await prisma.walletMonitorConfig.findMany({
+      where: {
+        enabled: true,
+      },
+      include: {
+        PaymentSource: {
+          include: {
+            PaymentSourceConfig: true,
+          },
+        },
+        WalletThresholds: {
+          where: { enabled: true },
+          include: {
+            HotWallet: true,
+            AssetThresholds: true,
+          },
+        },
+      },
+    });
 
-  if (preprodApiKey && preprodAddresses && preprodAddresses.length > 0) {
-    walletsToCheck.push(
-      ...preprodAddresses.map((addr) => ({
-        address: addr,
-        network: Network.Preprod,
-        thresholdAda: 10, // 10 ADA threshold for preprod
-      })),
+    if (configs.length === 0) {
+      return;
+    }
+
+    // Filter configs that are due based on interval
+    const dueConfigs = configs.filter((config) => {
+      if (!config.lastCheckedAt) return true; // Never checked
+      const msSinceLastCheck = now.getTime() - config.lastCheckedAt.getTime();
+      const intervalMs = config.checkIntervalSeconds * 1000;
+      return msSinceLastCheck >= intervalMs;
+    });
+
+    if (dueConfigs.length === 0) {
+      return; // Nothing due yet
+    }
+
+    logger.info('Starting wallet balance checks', {
+      component: 'wallet_monitoring',
+      configCount: dueConfigs.length,
+    });
+
+    const results = await Promise.allSettled(
+      dueConfigs.map((config) => checkPaymentSourceWallets(config)),
     );
+
+    const successful = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected').length;
+
+    logger.info('Completed wallet balance checks', {
+      component: 'wallet_monitoring',
+      successful,
+      failed,
+    });
+  } catch (error) {
+    logger.error('Fatal error in wallet balance checking', {
+      component: 'wallet_monitoring',
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
+}
 
-  // Mainnet wallets (commented out - uncomment when needed)
-  // const mainnetApiKey = process.env.BLOCKFROST_API_KEY_MAINNET;
-  // const mainnetAddresses = process.env.MONITOR_WALLET_ADDRESSES_MAINNET
-  //   ?.split(',')
-  //   .map((addr) => addr.trim())
-  //   .filter(Boolean);
-  //
-  // if (mainnetApiKey && mainnetAddresses && mainnetAddresses.length > 0) {
-  //   walletsToCheck.push(
-  //     ...mainnetAddresses.map((addr) => ({
-  //       address: addr,
-  //       network: Network.Mainnet,
-  //       thresholdAda: 50, // 50 ADA threshold for mainnet
-  //     })),
-  //   );
-  // }
+async function checkPaymentSourceWallets(
+  config: ConfigWithRelations,
+): Promise<void> {
+  const { id, PaymentSource, WalletThresholds } = config;
 
-  if (walletsToCheck.length === 0) {
-    logger.debug('No wallet addresses configured for balance monitoring');
-    return;
+  try {
+    if (!PaymentSource.PaymentSourceConfig?.rpcProviderApiKey) {
+      throw new Error('Missing Blockfrost API key');
+    }
+
+    const apiKey = PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+
+    const results = await Promise.allSettled(
+      WalletThresholds.map((threshold) =>
+        checkWalletBalance(apiKey, PaymentSource.network, threshold),
+      ),
+    );
+
+    const allSuccess = results.every((r) => r.status === 'fulfilled');
+    const errors = results
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map((r) => {
+        const reason: unknown = r.reason;
+        if (reason instanceof Error) {
+          return reason.message;
+        }
+        return String(reason);
+      });
+
+    await prisma.walletMonitorConfig.update({
+      where: { id },
+      data: {
+        lastCheckedAt: new Date(),
+        lastCheckStatus: allSuccess ? 'success' : 'partial_failure',
+        lastCheckError: errors.length > 0 ? errors.join('; ') : null,
+      },
+    });
+
+    logger.debug('Payment source check complete', {
+      component: 'wallet_monitoring',
+      paymentSourceId: PaymentSource.id,
+      walletCount: WalletThresholds.length,
+      status: allSuccess ? 'success' : 'partial_failure',
+    });
+  } catch (error) {
+    await prisma.walletMonitorConfig.update({
+      where: { id },
+      data: {
+        lastCheckedAt: new Date(),
+        lastCheckStatus: 'error',
+        lastCheckError: error instanceof Error ? error.message : String(error),
+      },
+    });
+
+    logger.error('Payment source check failed', {
+      component: 'wallet_monitoring',
+      paymentSourceId: PaymentSource.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
-
-  logger.info('Starting wallet balance checks', {
-    walletCount: walletsToCheck.length,
-  });
-
-  // Check all wallets
-  await Promise.allSettled(
-    walletsToCheck.map(async (config) => {
-      const apiKey =
-        config.network === Network.Preprod ? preprodApiKey : undefined;
-
-      if (!apiKey) {
-        logger.warn('Missing Blockfrost API key', { network: config.network });
-        return;
-      }
-
-      await checkWalletBalance(
-        apiKey,
-        config.address,
-        config.network,
-        config.thresholdAda,
-      );
-    }),
-  );
-
-  logger.info('Completed wallet balance checks');
 }
 
 async function checkWalletBalance(
   apiKey: string,
-  address: string,
   network: Network,
-  thresholdAda: number,
+  threshold: ConfigWithRelations['WalletThresholds'][0],
 ): Promise<void> {
-  if (!address || address.trim() === '') {
-    return;
-  }
+  const { HotWallet, adaThresholdLovelace, AssetThresholds } = threshold;
+  const address = HotWallet.walletAddress;
 
   try {
-    const provider = new BlockfrostProvider(apiKey);
-    const utxos = await provider.fetchAddressUTxOs(address);
+    const result = await fetchWalletBalances(apiKey, address);
 
-    // Calculate total lovelace (handle both 'lovelace' and '' unit)
-    const totalLovelace = utxos.reduce((sum, utxo) => {
-      const lovelaceAsset = utxo.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      );
-      return sum + BigInt(lovelaceAsset?.quantity ?? '0');
-    }, 0n);
+    if (!result.success || result.lovelaceBalance === undefined) {
+      throw new Error(result.error || 'Failed to fetch balance');
+    }
 
-    const balanceAda = Number(totalLovelace) / 1_000_000;
+    updateWalletBalance(address, network, result.lovelaceBalance);
 
-    // Update wallet balance metric for OpenTelemetry/SigNoz monitoring
-    updateWalletBalance(address, network, totalLovelace);
+    if (result.lovelaceBalance < adaThresholdLovelace) {
+      const balanceAda = Number(result.lovelaceBalance) / 1_000_000;
+      const thresholdAda = Number(adaThresholdLovelace) / 1_000_000;
 
-    if (balanceAda < thresholdAda) {
       logger.warn('LOW WALLET BALANCE', {
         alert_type: 'wallet_balance_low',
+        component: 'wallet_monitoring',
+        wallet_id: HotWallet.id,
+        wallet_type: HotWallet.type,
         wallet_address: address,
-        network: network,
-        balance_lovelace: totalLovelace.toString(),
+        network,
+        balance_lovelace: result.lovelaceBalance.toString(),
         balance_ada: balanceAda.toFixed(6),
-        threshold_ada: thresholdAda,
+        threshold_lovelace: adaThresholdLovelace.toString(),
+        threshold_ada: thresholdAda.toFixed(6),
       });
-    } else {
-      logger.info('Wallet balance OK', {
-        wallet_address: address,
-        network: network,
-        balance_ada: balanceAda.toFixed(6),
-      });
-    }
-  } catch (error: unknown) {
-    // Handle rate limiting gracefully
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'status_code' in error &&
-      error.status_code === 429
-    ) {
-      logger.warn('Blockfrost API rate limit hit', {
-        wallet_address: address,
-        network: network,
-      });
-      return;
     }
 
-    logger.error('Error checking wallet balance', {
+    if (AssetThresholds.length > 0 && result.assetBalances) {
+      checkAssetThresholds(
+        AssetThresholds,
+        result.assetBalances,
+        HotWallet,
+        address,
+        network,
+      );
+    }
+  } catch (error) {
+    logger.error('Wallet balance check failed', {
+      component: 'wallet_monitoring',
+      wallet_id: HotWallet.id,
       wallet_address: address,
-      network: network,
+      network,
       error: error instanceof Error ? error.message : String(error),
     });
+    throw error;
+  }
+}
+
+async function fetchWalletBalances(
+  apiKey: string,
+  address: string,
+): Promise<WalletCheckResult> {
+  const maxRetries = 3;
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const provider = new BlockfrostProvider(apiKey);
+      const utxos = await provider.fetchAddressUTxOs(address);
+
+      // Calculate lovelace and parse assets
+      let lovelaceBalance = 0n;
+      const assetMap = new Map<string, AssetBalance>();
+
+      for (const utxo of utxos) {
+        for (const asset of utxo.output.amount) {
+          const unit = asset.unit;
+
+          if (unit === 'lovelace' || unit === '') {
+            lovelaceBalance += BigInt(asset.quantity);
+            continue;
+          }
+
+          if (unit.length < 56) {
+            logger.warn('Invalid asset unit length', {
+              component: 'wallet_monitoring',
+              unit,
+              length: unit.length,
+            });
+            continue;
+          }
+
+          const policyId = unit.slice(0, 56);
+          const assetName = unit.slice(56);
+          const key = `${policyId}:${assetName}`;
+
+          const existing = assetMap.get(key);
+          const quantity = BigInt(asset.quantity);
+
+          if (existing) {
+            existing.quantity += quantity;
+          } else {
+            assetMap.set(key, { policyId, assetName, quantity });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        lovelaceBalance,
+        assetBalances: assetMap,
+      };
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Check for Blockfrost-specific errors
+      const blockfrostError = error as { status_code?: number };
+
+      if (blockfrostError?.status_code === 429) {
+        const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        logger.warn('Blockfrost rate limit, retrying...', {
+          component: 'wallet_monitoring',
+          attempt,
+          delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      if (blockfrostError?.status_code === 404) {
+        return {
+          success: true,
+          lovelaceBalance: 0n,
+          assetBalances: new Map(),
+        };
+      }
+
+      if (attempt < maxRetries) {
+        logger.warn('Blockfrost API error, retrying...', {
+          component: 'wallet_monitoring',
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: lastError?.message || 'Failed to fetch balance',
+  };
+}
+
+function checkAssetThresholds(
+  assetThresholds: ConfigWithRelations['WalletThresholds'][0]['AssetThresholds'],
+  assetBalances: Map<string, AssetBalance>,
+  hotWallet: ConfigWithRelations['WalletThresholds'][0]['HotWallet'],
+  address: string,
+  network: Network,
+): void {
+  for (const threshold of assetThresholds) {
+    const key = `${threshold.policyId}:${threshold.assetName}`;
+    const balance = assetBalances.get(key);
+    const currentBalance = balance?.quantity ?? 0n;
+
+    updateAssetBalance(
+      address,
+      network,
+      threshold.policyId,
+      threshold.assetName,
+      currentBalance,
+    );
+
+    if (currentBalance < threshold.minAmount) {
+      const safeDecimals = Math.min(threshold.decimals, 18);
+
+      const displayBalance =
+        Number(currentBalance) / Math.pow(10, safeDecimals);
+      const displayThreshold =
+        Number(threshold.minAmount) / Math.pow(10, safeDecimals);
+
+      logger.warn('LOW ASSET BALANCE', {
+        alert_type: 'wallet_asset_balance_low',
+        component: 'wallet_monitoring',
+        wallet_id: hotWallet.id,
+        wallet_type: hotWallet.type,
+        wallet_address: address,
+        network,
+        policy_id: threshold.policyId,
+        asset_name: threshold.assetName,
+        display_name: threshold.displayName || 'Unknown',
+        display_symbol: threshold.displaySymbol || '',
+        current_balance: currentBalance.toString(),
+        current_balance_display: displayBalance.toFixed(safeDecimals),
+        threshold: threshold.minAmount.toString(),
+        threshold_display: displayThreshold.toFixed(safeDecimals),
+      });
+    }
   }
 }

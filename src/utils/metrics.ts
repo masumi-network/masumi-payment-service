@@ -113,6 +113,61 @@ walletBalanceGauge.addCallback((observableResult) => {
   });
 });
 
+export const assetBalanceGauge = meter.createObservableGauge(
+  'wallet_asset_balance',
+  {
+    description:
+      'Wallet asset balance by network, address, policy ID, and asset name',
+    unit: 'quantity',
+  },
+);
+
+const assetBalances = new Map<
+  string,
+  {
+    balance: number;
+    network: string;
+    address: string;
+    policyId: string;
+    assetName: string;
+  }
+>();
+
+export const updateAssetBalance = (
+  address: string,
+  network: string,
+  policyId: string,
+  assetName: string,
+  balance: bigint,
+) => {
+  const key = `${network}:${address}:${policyId}:${assetName}`;
+
+  const balanceNum =
+    balance > BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number.MAX_SAFE_INTEGER
+      : Number(balance);
+
+  assetBalances.set(key, {
+    balance: balanceNum,
+    network,
+    address,
+    policyId,
+    assetName,
+  });
+};
+
+assetBalanceGauge.addCallback((observableResult) => {
+  assetBalances.forEach((data) => {
+    observableResult.observe(data.balance, {
+      wallet_address: data.address,
+      network: data.network,
+      policy_id: data.policyId,
+      asset_name: data.assetName,
+      wallet_type: 'monitored',
+    });
+  });
+});
+
 // Business Endpoint Types
 type BusinessEndpoint = 'purchase' | 'registry' | 'wallet' | 'unknown';
 
