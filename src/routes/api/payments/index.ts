@@ -1,4 +1,4 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
@@ -362,7 +362,7 @@ export const queryPaymentsSchemaOutput = z.object({
   Payments: z.array(paymentResponseSchema),
 });
 
-export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
+export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: queryPaymentsSchemaInput,
   output: queryPaymentsSchemaOutput,
@@ -549,7 +549,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
   },
 });
 
-export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
+export const queryPaymentCountGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: queryPaymentCountSchemaInput,
   output: queryPaymentCountSchemaOutput,
@@ -659,7 +659,7 @@ export const createPaymentsSchemaInput = z.object({
 
 export const createPaymentSchemaOutput = paymentResponseSchema;
 
-export const paymentInitPost = readAuthenticatedEndpointFactory.build({
+export const paymentInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
   input: createPaymentsSchemaInput,
   output: createPaymentSchemaOutput,
