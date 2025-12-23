@@ -291,12 +291,13 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!(collapsed && !isHovered) ? (
-              <Link href="/">
+              <Link href="/" key="masumi-logo-full">
                 <MasumiLogo />
               </Link>
             ) : (
               <Link
                 href="/"
+                key="masumi-logo-icon"
                 className="flex items-center justify-center w-8 h-8"
                 style={
                   shouldAnimateIcon && collapsed && !isHovered
