@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 
 export type allowedFormat = string | number | boolean | null | undefined | Date;
 

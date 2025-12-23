@@ -1,10 +1,8 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   Network,
   PurchasingAction,
-  TransactionStatus,
   OnChainState,
-  PurchaseErrorType,
   Permission,
   $Enums,
 } from '@prisma/client';
@@ -12,6 +10,12 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { purchaseResponseSchema } from '@/routes/api/purchases';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import {
+  transformPurchaseGetAmounts,
+  transformPurchaseGetTimestamps,
+} from '@/utils/shared/transformers';
 
 export const requestPurchaseRefundSchemaInput = z.object({
   blockchainIdentifier: z
@@ -23,72 +27,7 @@ export const requestPurchaseRefundSchemaInput = z.object({
     .describe('The network the Cardano wallet will be used on'),
 });
 
-export const requestPurchaseRefundSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  payByTime: z.string().nullable(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  externalDisputeUnlockTime: z.string(),
-  requestedById: z.string(),
-  resultHash: z.string(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  NextAction: z.object({
-    requestedAction: z.nativeEnum(PurchasingAction),
-    errorType: z.nativeEnum(PurchaseErrorType).nullable(),
-    errorNote: z.string().nullable(),
-  }),
-  CurrentTransaction: z
-    .object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      txHash: z.string(),
-      status: z.nativeEnum(TransactionStatus),
-    })
-    .nullable(),
-  PaidFunds: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    policyId: z.string().nullable(),
-    smartContractAddress: z.string(),
-  }),
-  SellerWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-    })
-    .nullable(),
-  SmartContractWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-    })
-    .nullable(),
-  metadata: z.string().nullable(),
-});
+export const requestPurchaseRefundSchemaOutput = purchaseResponseSchema;
 
 export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -177,13 +116,12 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
       throw createHttpError(404, 'Smart contract wallet not set on purchase');
     }
 
-    const result = await prisma.purchaseRequest.update({
+    const newPurchase = await prisma.purchaseRequest.update({
       where: { id: purchase.id },
       data: {
         NextAction: {
           create: {
             requestedAction: PurchasingAction.SetRefundRequestedRequested,
-            inputHash: purchase.inputHash,
           },
         },
       },
@@ -199,29 +137,24 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
         WithdrawnForBuyer: true,
       },
     });
+
+    const decoded = decodeBlockchainIdentifier(
+      newPurchase.blockchainIdentifier,
+    );
     return {
-      ...result,
-      submitResultTime: result.submitResultTime.toString(),
-      payByTime: result.payByTime?.toString() ?? null,
-      unlockTime: result.unlockTime.toString(),
-      externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-      PaidFunds: (
-        result.PaidFunds as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        ...amount,
-        amount: amount.amount.toString(),
-      })),
-      WithdrawnForSeller: (
-        result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        unit: amount.unit,
-        amount: amount.amount.toString(),
-      })),
-      WithdrawnForBuyer: (
-        result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        unit: amount.unit,
-        amount: amount.amount.toString(),
+      ...newPurchase,
+      ...transformPurchaseGetTimestamps(newPurchase),
+      ...transformPurchaseGetAmounts(newPurchase),
+      agentIdentifier: decoded?.agentIdentifier ?? null,
+      CurrentTransaction: newPurchase.CurrentTransaction
+        ? {
+            ...newPurchase.CurrentTransaction,
+            fees: newPurchase.CurrentTransaction.fees?.toString() ?? null,
+          }
+        : null,
+      TransactionHistory: newPurchase.TransactionHistory.map((tx) => ({
+        ...tx,
+        fees: tx.fees?.toString() ?? null,
       })),
     };
   },

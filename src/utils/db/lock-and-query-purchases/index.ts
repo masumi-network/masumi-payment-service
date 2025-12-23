@@ -13,7 +13,7 @@ export async function lockAndQueryPurchases({
   unlockTime?: { lte: number } | undefined | { gte: number };
   onChainState?: OnChainState | { in: OnChainState[] } | undefined;
   submitResultTime?: { lte: number } | undefined | { gte: number };
-  resultHash?: string | undefined;
+  resultHash?: string | null | undefined;
 }) {
   return await prisma.$transaction(
     async (prisma) => {

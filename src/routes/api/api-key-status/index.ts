@@ -1,24 +1,13 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from 'zod';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
+import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { apiKeyOutputSchema } from '@/routes/api/api-key';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 
-export const getAPIKeyStatusSchemaOutput = z.object({
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  RemainingUsageCredits: z.array(
-    z.object({
-      unit: z.string(),
-      amount: z.string(),
-    }),
-  ),
-  status: z.nativeEnum(ApiKeyStatus),
-});
+export const getAPIKeyStatusSchemaOutput = apiKeyOutputSchema;
 
 export const queryAPIKeyStatusEndpointGet =
   readAuthenticatedEndpointFactory.build({
@@ -35,11 +24,8 @@ export const queryAPIKeyStatusEndpointGet =
       }
       return {
         ...result,
-        RemainingUsageCredits: result?.RemainingUsageCredits.map(
-          (usageCredit) => ({
-            unit: usageCredit.unit,
-            amount: usageCredit.amount.toString(),
-          }),
+        RemainingUsageCredits: transformBigIntAmounts(
+          result.RemainingUsageCredits,
         ),
       };
     },

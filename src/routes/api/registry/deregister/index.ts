@@ -1,5 +1,5 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
   HotWalletType,
@@ -14,6 +14,8 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { registryRequestOutputSchema } from '@/routes/api/registry';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -33,57 +35,7 @@ export const unregisterAgentSchemaInput = z.object({
     ),
 });
 
-export const unregisterAgentSchemaOutput = z.object({
-  id: z.string(),
-  name: z.string(),
-  apiBaseUrl: z.string(),
-  Capability: z.object({
-    name: z.string().nullable(),
-    version: z.string().nullable(),
-  }),
-  Author: z.object({
-    name: z.string(),
-    contactEmail: z.string().nullable(),
-    contactOther: z.string().nullable(),
-    organization: z.string().nullable(),
-  }),
-  Legal: z.object({
-    privacyPolicy: z.string().nullable(),
-    terms: z.string().nullable(),
-    other: z.string().nullable(),
-  }),
-  description: z.string().nullable(),
-  Tags: z.array(z.string()),
-  SmartContractWallet: z.object({
-    walletVkey: z.string(),
-    walletAddress: z.string(),
-  }),
-  state: z.nativeEnum(RegistrationState),
-  ExampleOutputs: z
-    .array(
-      z.object({
-        name: z.string().max(60),
-        url: z.string().max(250),
-        mimeType: z.string().max(60),
-      }),
-    )
-    .max(25),
-  AgentPricing: z
-    .object({
-      pricingType: z.enum([PricingType.Fixed]),
-      Pricing: z.array(
-        z.object({
-          unit: z.string(),
-          amount: z.string(),
-        }),
-      ),
-    })
-    .or(
-      z.object({
-        pricingType: z.enum([PricingType.Free]),
-      }),
-    ),
-});
+export const unregisterAgentSchemaOutput = registryRequestOutputSchema;
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -138,13 +90,13 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-    let assetName = input.agentIdentifier;
-    if (assetName.startsWith(policyId)) {
-      assetName = assetName.slice(policyId.length);
-    }
+    const assetName = extractAssetName(input.agentIdentifier);
     const holderWallet = await blockfrost.assetsAddresses(
       policyId + assetName,
-      { order: 'desc', count: 1 },
+      {
+        order: 'desc',
+        count: 1,
+      },
     );
     if (holderWallet.length == 0) {
       throw createHttpError(404, 'Asset not found');
@@ -180,6 +132,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
         SmartContractWallet: true,
         ExampleOutputs: true,
+        CurrentTransaction: true,
       },
     });
 
@@ -200,20 +153,26 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         terms: result.terms,
         other: result.other,
       },
-      Tags: result.tags,
       AgentPricing:
         result.Pricing.pricingType == PricingType.Fixed
           ? {
               pricingType: PricingType.Fixed,
               Pricing:
-                result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                  unit: pricing.unit,
-                  amount: pricing.amount.toString(),
+                result.Pricing.FixedPricing?.Amounts.map((price) => ({
+                  unit: price.unit,
+                  amount: price.amount.toString(),
                 })) ?? [],
             }
           : {
               pricingType: PricingType.Free,
             },
+      Tags: result.tags,
+      CurrentTransaction: result.CurrentTransaction
+        ? {
+            ...result.CurrentTransaction,
+            fees: result.CurrentTransaction.fees?.toString() ?? null,
+          }
+        : null,
     };
   },
 });

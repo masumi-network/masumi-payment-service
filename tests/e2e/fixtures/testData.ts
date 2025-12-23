@@ -2,6 +2,7 @@ import { Network } from '@prisma/client';
 import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
 import { createHash } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';
+import crypto from 'crypto';
 
 /**
  * Test data generators for e2e tests
@@ -155,7 +156,7 @@ function generateHexIdentifier(length: number): string {
   const randomBytes: number[] = [];
 
   for (let i = 0; i < bytes; i++) {
-    randomBytes[i] = Math.floor(Math.random() * 256);
+    randomBytes.push(crypto.randomInt(0, 255));
   }
 
   return randomBytes

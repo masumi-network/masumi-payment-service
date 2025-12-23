@@ -3,9 +3,10 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,14 +16,13 @@ import {
   getRegistry,
   deleteRegistry,
   GetRegistryResponses,
-  getUtxos,
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
@@ -60,6 +60,7 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 };
 
 export default function AIAgentsPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -76,6 +77,9 @@ export default function AIAgentsPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
+  const [initialDialogTab, setInitialDialogTab] = useState<
+    'Details' | 'Earnings'
+  >('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -233,6 +237,15 @@ export default function AIAgentsPage() {
     filterAgents();
   }, [filterAgents, searchQuery, activeTab]);
 
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'register_agent') {
+      setIsRegisterDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/ai-agents', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleSelectAgent = (id: string) => {
     setSelectedAgents((prev) =>
       prev.includes(id)
@@ -269,7 +282,7 @@ export default function AIAgentsPage() {
 
   const useFormatPrice = (amount: string | undefined) => {
     if (!amount) return '—';
-    return useFormatBalance((parseInt(amount) / 1000000).toFixed(2));
+    return formatBalance((parseInt(amount) / 1000000).toFixed(2));
   };
 
   const handleDeleteClick = (agent: AIAgent) => {
@@ -351,60 +364,42 @@ export default function AIAgentsPage() {
     setSelectedAgentForDetails(agent);
   };
 
-  const handleWalletClick = async (walletAddress: string) => {
-    // Fetch wallet balance
-    const response = await handleApiCall(
-      () =>
-        getUtxos({
-          client: apiClient,
-          query: {
-            address: walletAddress,
-            network: state.network,
-          },
-        }),
-      {
-        onError: (error: any) => {
-          console.error('Error fetching wallet details:', error);
-          toast.error(error.message || 'Failed to fetch wallet details');
-        },
-        errorMessage: 'Failed to fetch wallet details',
-      },
+  const handleWalletClick = async (walletVkey: string) => {
+    // Find the wallet by vkey from payment sources in context
+    const filteredSources = state.paymentSources.filter(
+      (source: any) =>
+        source.network === state.network &&
+        (selectedPaymentSourceId
+          ? source.id === selectedPaymentSourceId
+          : true),
     );
 
-    if (!response) return;
+    // Flatten all wallets from filtered sources
+    const allWallets = filteredSources.flatMap((source: any) => [
+      ...(source.SellingWallets || []).map((wallet: any) => ({
+        ...wallet,
+        type: 'Selling' as const,
+        balance: '0',
+        usdmBalance: '0',
+      })),
+      ...(source.PurchasingWallets || []).map((wallet: any) => ({
+        ...wallet,
+        type: 'Purchasing' as const,
+        balance: '0',
+        usdmBalance: '0',
+      })),
+    ]);
 
-    let adaBalance = '0';
-    let usdmBalance = '0';
+    const foundWallet = allWallets.find(
+      (wallet: any) => wallet.walletVkey === walletVkey,
+    );
 
-    if (response.data?.data?.Utxos) {
-      response.data.data.Utxos.forEach((utxo) => {
-        utxo.Amounts.forEach((amount) => {
-          if (amount.unit === 'lovelace' || amount.unit === '') {
-            adaBalance = (
-              parseInt(adaBalance) + (amount.quantity || 0)
-            ).toString();
-          } else if (amount.unit === getUsdmConfig(state.network).fullAssetId) {
-            usdmBalance = (
-              parseInt(usdmBalance) + (amount.quantity || 0)
-            ).toString();
-          }
-        });
-      });
+    if (!foundWallet) {
+      toast.error('Wallet not found');
+      return;
     }
 
-    // Create wallet details object
-    const walletDetails: WalletWithBalance = {
-      id: walletAddress, // Using address as ID since we don't have the actual wallet ID
-      walletVkey: '', // We don't have this information
-      walletAddress,
-      collectionAddress: null,
-      note: null,
-      type: 'Selling', // AI agents use selling wallets
-      balance: adaBalance,
-      usdmBalance,
-    };
-
-    setSelectedWalletForDetails(walletDetails);
+    setSelectedWalletForDetails(foundWallet as WalletWithBalance);
   };
 
   return (
@@ -560,7 +555,7 @@ export default function AIAgentsPage() {
                             onClick={(e) => {
                               e.stopPropagation();
                               handleWalletClick(
-                                agent.SmartContractWallet.walletAddress,
+                                agent.SmartContractWallet.walletVkey,
                               );
                             }}
                           >
@@ -608,17 +603,32 @@ export default function AIAgentsPage() {
                       </td>
                       <td className="p-4">
                         {['RegistrationConfirmed'].includes(agent.state) ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteClick(agent);
-                            }}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInitialDialogTab('Earnings');
+                                handleAgentClick(agent);
+                              }}
+                              className="text-white hover:text-gray-200 hover:bg-gray-600"
+                              title="View Details & Earnings"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteClick(agent);
+                              }}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         ) : agent.state === 'RegistrationInitiated' ||
                           agent.state === 'DeregistrationInitiated' ? (
                           <div className="flex items-center justify-center w-8 h-8">
@@ -663,12 +673,16 @@ export default function AIAgentsPage() {
 
         <AIAgentDetailsDialog
           agent={selectedAgentForDetails}
-          onClose={() => setSelectedAgentForDetails(null)}
+          onClose={() => {
+            setSelectedAgentForDetails(null);
+            setInitialDialogTab('Details'); // Reset to default tab
+          }}
           onSuccess={() => {
             setTimeout(() => {
               fetchAgents();
             }, 2000);
           }}
+          initialTab={initialDialogTab}
         />
 
         <ConfirmDialog

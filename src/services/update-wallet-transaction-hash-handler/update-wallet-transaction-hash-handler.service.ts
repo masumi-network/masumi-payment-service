@@ -20,7 +20,7 @@ import { deRegisterAgentV1 } from '../cardano-deregister-handler/';
 import { authorizeRefundV1 } from '../cardano-authorize-refund-handler/';
 import { cancelRefundsV1 } from '../cardano-cancel-refund-handler/';
 import { CONFIG, DEFAULTS } from '@/utils/config';
-import { convertErrorString } from '@/utils/converter/error-string-convert';
+import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 
 const mutex = new Mutex();
@@ -548,6 +548,21 @@ export async function updateWalletTransactionHash() {
             return;
           }
           const txHash = wallet.PendingTransaction.txHash;
+          if (txHash == null) {
+            await prisma.hotWallet.update({
+              where: { id: wallet.id, deletedAt: null },
+              data: {
+                PendingTransaction: { disconnect: true },
+                lockedAt: null,
+              },
+            });
+            if (wallet.type == HotWalletType.Selling) {
+              unlockedSellingWalletIds.push(wallet.id);
+            } else if (wallet.type == HotWalletType.Purchasing) {
+              unlockedPurchasingWalletIds.push(wallet.id);
+            }
+            return;
+          }
 
           const blockfrostKey =
             wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
@@ -574,7 +589,7 @@ export async function updateWalletTransactionHash() {
           }
         } catch (error) {
           logger.error(
-            `Error updating wallet transaction hash: ${convertErrorString(error)}`,
+            `Error updating wallet transaction hash: ${errorToString(error)}`,
           );
         }
       }),
@@ -609,7 +624,7 @@ export async function updateWalletTransactionHash() {
           }
         } catch (error) {
           logger.error(
-            `Error updating timed out wallet: ${convertErrorString(error)}`,
+            `Error updating timed out wallet: ${errorToString(error)}`,
           );
         }
       }),
@@ -625,41 +640,39 @@ export async function updateWalletTransactionHash() {
       try {
         await submitResultV1();
       } catch (error) {
-        logger.error(
-          `Error initiating submit result: ${convertErrorString(error)}`,
-        );
+        logger.error(`Error initiating submit result: ${errorToString(error)}`);
       }
       try {
         await authorizeRefundV1();
       } catch (error) {
-        logger.error(`Error initiating refunds: ${convertErrorString(error)}`);
+        logger.error(`Error initiating refunds: ${errorToString(error)}`);
       }
       try {
         await collectOutstandingPaymentsV1();
       } catch (error) {
         logger.error(
-          `Error initiating collect outstanding payments: ${convertErrorString(error)}`,
+          `Error initiating collect outstanding payments: ${errorToString(error)}`,
         );
       }
       try {
         await registerAgentV1();
       } catch (error) {
         logger.error(
-          `Error initiating register agent: ${convertErrorString(error)}`,
+          `Error initiating register agent: ${errorToString(error)}`,
         );
       }
       try {
         await deRegisterAgentV1();
       } catch (error) {
         logger.error(
-          `Error initiating deregister agent: ${convertErrorString(error)}`,
+          `Error initiating deregister agent: ${errorToString(error)}`,
         );
       }
       try {
         await authorizeRefundV1();
       } catch (error) {
         logger.error(
-          `Error initiating authorize refund: ${convertErrorString(error)}`,
+          `Error initiating authorize refund: ${errorToString(error)}`,
         );
       }
     }
@@ -668,28 +681,26 @@ export async function updateWalletTransactionHash() {
         await collectRefundV1();
       } catch (error) {
         logger.error(
-          `Error initiating collect refund: ${convertErrorString(error)}`,
+          `Error initiating collect refund: ${errorToString(error)}`,
         );
       }
       try {
         await requestRefundsV1();
       } catch (error) {
         logger.error(
-          `Error initiating request refund: ${convertErrorString(error)}`,
+          `Error initiating request refund: ${errorToString(error)}`,
         );
       }
       try {
         await cancelRefundsV1();
       } catch (error) {
-        logger.error(
-          `Error initiating cancel refund: ${convertErrorString(error)}`,
-        );
+        logger.error(`Error initiating cancel refund: ${errorToString(error)}`);
       }
       try {
         await batchLatestPaymentEntriesV1();
       } catch (error) {
         logger.error(
-          `Error initiating batch latest payment entries: ${convertErrorString(error)}`,
+          `Error initiating batch latest payment entries: ${errorToString(error)}`,
         );
       }
     }

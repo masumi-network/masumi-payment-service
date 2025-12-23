@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -8,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, RefreshCw } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
@@ -17,7 +17,6 @@ import {
   GetPaymentSourceResponses,
   getUtxos,
   GetUtxosResponses,
-  //getWallet,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
@@ -28,15 +27,14 @@ import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { FaExchangeAlt } from 'react-icons/fa';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
 import {
   WalletDetailsDialog,
   WalletWithBalance as BaseWalletWithBalance,
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
-import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type Wallet =
@@ -59,7 +57,10 @@ interface WalletWithBalance extends BaseWalletWithBalance {
 }
 
 export default function WalletsPage() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState(
+    typeof router.query.searched === 'string' ? router.query.searched : '',
+  );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
@@ -68,9 +69,6 @@ export default function WalletsPage() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(
-    new Set(),
-  );
-  const [copiedAddresses, setCopiedAddresses] = useState<Set<string>>(
     new Set(),
   );
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
@@ -304,6 +302,22 @@ export default function WalletsPage() {
     fetchWallets();
   }, [fetchWallets, state.network, selectedPaymentSourceId]);
 
+  // Initialize searchQuery from router query parameter
+  useEffect(() => {
+    if (router.query.searched && typeof router.query.searched === 'string') {
+      setSearchQuery(router.query.searched);
+    }
+  }, [router.query.searched]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_wallet') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/wallets', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
+
   const handleSelectWallet = (id: string) => {
     setSelectedWallets((prev) =>
       prev.includes(id)
@@ -371,34 +385,8 @@ export default function WalletsPage() {
     }
   };
 
-  const formatUsdValue = (adaAmount: string) => {
-    if (!rate || !adaAmount) return '—';
-    const ada = parseInt(adaAmount) / 1000000;
-    return `≈ $${(ada * rate).toFixed(2)}`;
-  };
-
-  const hasSellingWallets = !isLoading
-    ? allWallets.some((wallet) => wallet.type === 'Selling')
-    : true;
-
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
-  };
-
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedAddresses((prev) => {
-      const newSet = new Set(prev);
-      newSet.add(`${id}-${text}`);
-      return newSet;
-    });
-    setTimeout(() => {
-      setCopiedAddresses((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(`${id}-${text}`);
-        return newSet;
-      });
-    }, 2000);
   };
 
   return (
@@ -409,15 +397,7 @@ export default function WalletsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold">Wallets</h1>
-              <BadgeWithTooltip
-                text="?"
-                tooltipText={TOOLTIP_TEXTS.WALLETS}
-                variant="outline"
-                className="text-xs w-5 h-5 rounded-full p-0 flex items-center justify-center cursor-help"
-              />
-            </div>
+            <h1 className="text-2xl font-semibold">Wallets</h1>
             <p className="text-sm text-muted-foreground">
               Manage your buying and selling wallets.{' '}
               <Link
@@ -515,16 +495,13 @@ export default function WalletsPage() {
                         />
                       </td>
                       <td className="p-4">
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                            wallet.type === 'Purchasing'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                          )}
-                        >
-                          {wallet.type === 'Purchasing' ? 'Buying' : 'Selling'}
-                        </span>
+                        {wallet.type === 'Collection' ? (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
+                            Collection
+                          </span>
+                        ) : (
+                          <WalletTypeBadge type={wallet.type} />
+                        )}
                       </td>
                       <td className="p-4">
                         <div className="text-sm font-medium truncate">
@@ -574,7 +551,7 @@ export default function WalletsPage() {
                             ) : (
                               <span>
                                 {wallet.balance
-                                  ? useFormatBalance(
+                                  ? formatBalance(
                                       (
                                         parseInt(wallet.balance) / 1000000
                                       ).toFixed(2),
@@ -589,7 +566,7 @@ export default function WalletsPage() {
                             rate && (
                               <span className="text-xs text-muted-foreground">
                                 $
-                                {useFormatBalance(
+                                {formatBalance(
                                   (
                                     (parseInt(wallet.balance) / 1000000) *
                                     rate
@@ -607,7 +584,7 @@ export default function WalletsPage() {
                           ) : (
                             <span>
                               {wallet.usdmBalance
-                                ? `$${useFormatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
+                                ? `$${formatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
                                 : '$0'}
                             </span>
                           )}
@@ -626,7 +603,7 @@ export default function WalletsPage() {
                           >
                             <RefreshCw className="h-4 w-4" />
                           </Button>
-                          <Button
+                          {/*<Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
@@ -636,7 +613,7 @@ export default function WalletsPage() {
                             }}
                           >
                             <FaExchangeAlt className="h-4 w-4" />
-                          </Button>
+                          </Button>*/}
                           <Button
                             variant="muted"
                             className="h-8"

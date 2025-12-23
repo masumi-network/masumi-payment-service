@@ -17,6 +17,7 @@ src/services/.DS_Store
 .DS_Store
 # claude config
 .claude
+.cursor
 
 frontend/.env
 smart-contracts/registry/wallet1.addr
@@ -27,3 +28,5 @@ smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
 
 otelcol-contrib
+tests/e2e/.e2e-global-state.json
+tests/e2e/.e2e-global-state.json

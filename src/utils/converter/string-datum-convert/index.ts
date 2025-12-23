@@ -20,8 +20,8 @@ export type DecodedV1ContractDatum = {
   sellerNonce: string;
   buyerNonce: string;
   collateralReturnLovelace: bigint;
-  inputHash: string;
-  resultHash: string;
+  inputHash: string | null;
+  resultHash: string | null;
   payByTime: bigint;
   resultTime: bigint;
   unlockTime: bigint;
@@ -109,15 +109,22 @@ export function decodeV1ContractDatum(
       //invalid transaction
       return null;
     }
-    const inputHash = fields[7].bytes;
+    let inputHash: string | null = fields[7].bytes as string;
     if (fields[8] == null || fields[8].bytes == null) {
       //invalid transaction
       return null;
     }
-    const resultHash = fields[8].bytes;
+    if (inputHash.length == 0) {
+      inputHash = null;
+    }
+
+    let resultHash: string | null = fields[8].bytes as string;
     if (fields[9] == null || fields[9].int == null) {
       //invalid transaction
       return null;
+    }
+    if (resultHash.length == 0) {
+      resultHash = null;
     }
     const payByTime = BigInt(fields[9].int);
     if (fields[10] == null || fields[10].int == null) {
@@ -178,8 +185,8 @@ export function decodeV1ContractDatum(
       sellerNonce: sellerNonce as string,
       buyerNonce: buyerNonce as string,
       collateralReturnLovelace,
-      inputHash: inputHash as string,
-      resultHash: resultHash as string,
+      inputHash: inputHash,
+      resultHash: resultHash,
       payByTime,
       resultTime,
       unlockTime,

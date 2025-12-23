@@ -1,20 +1,20 @@
-import { logger } from '../../utils/logger';
-import { CONFIG } from '../../utils/config';
-import { checkLatestTransactions } from '../cardano-tx-handler/';
-import { batchLatestPaymentEntriesV1 } from '../cardano-payment-batcher/cardano-payment-batcher.service';
-import { collectOutstandingPaymentsV1 } from '../cardano-collection-handler/';
-import { collectRefundV1 } from '../cardano-refund-handler/';
-import { updateWalletTransactionHash } from '../update-wallet-transaction-hash-handler/';
+import { logger } from '@/utils/logger';
+import { CONFIG } from '@/utils/config';
+import { checkLatestTransactions } from '@/services/cardano-tx-handler/';
+import { batchLatestPaymentEntriesV1 } from '@/services/cardano-payment-batcher/cardano-payment-batcher.service';
+import { collectOutstandingPaymentsV1 } from '@/services/cardano-collection-handler/';
+import { collectRefundV1 } from '@/services/cardano-refund-handler/';
+import { updateWalletTransactionHash } from '@/services/update-wallet-transaction-hash-handler/';
 import { requestRefundsV1 } from '../cardano-request-refund-handler/';
-import { AsyncInterval } from '../../utils/async-interval';
-import { cancelRefundsV1 } from '../cardano-cancel-refund-handler/';
-import { registerAgentV1 } from '../cardano-register-handler/';
-import { deRegisterAgentV1 } from '../cardano-deregister-handler/';
-import { submitResultV1 } from '../cardano-submit-result-handler/';
-import { authorizeRefundV1 } from '../cardano-authorize-refund-handler/';
-import { handleAutomaticDecisions } from '../automatic-decision-handler';
-import { checkRegistryTransactions } from '../cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
-import { checkAllWalletBalances } from '../../utils/wallet-balance-checker';
+import { AsyncInterval } from '@/utils/async-interval';
+import { cancelRefundsV1 } from '@/services/cardano-cancel-refund-handler/';
+import { registerAgentV1 } from '@/services/cardano-register-handler/';
+import { deRegisterAgentV1 } from '@/services/cardano-deregister-handler/';
+import { submitResultV1 } from '@/services/cardano-submit-result-handler/';
+import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/';
+import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
+import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
+import { checkAllWalletBalances } from '@/utils/wallet-balance-checker';
 
 export async function initJobs() {
   const start = new Date();
