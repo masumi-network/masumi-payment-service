@@ -79,6 +79,7 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
     };
   }) => {
     const startTime = Date.now();
+    let walletId: string | null = null;
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
         options.networkLimit,
@@ -86,38 +87,64 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
         options.permission,
       );
 
-      const wallet = await prisma.hotWallet.findUnique({
-        where: {
-          walletVkey: input.walletVkey,
-        },
-        include: {
-          Secret: true,
-          PaymentSource: {
-            include: {
-              PaymentSourceConfig: true,
+      // Lock the wallet in a transaction to prevent concurrent usage
+      const wallet = await prisma.$transaction(
+        async (prisma) => {
+          const wallet = await prisma.hotWallet.findUnique({
+            where: {
+              walletVkey: input.walletVkey,
             },
-          },
+            include: {
+              Secret: true,
+              PaymentSource: {
+                include: {
+                  PaymentSourceConfig: true,
+                },
+              },
+            },
+          });
+
+          if (wallet == null) {
+            throw createHttpError(404, 'Wallet not found');
+          }
+
+          if (wallet.deletedAt != null) {
+            throw createHttpError(404, 'Wallet has been deleted');
+          }
+
+          if (wallet.lockedAt != null) {
+            throw createHttpError(
+              409,
+              'Wallet is currently locked and cannot be used for swap',
+            );
+          }
+
+          if (wallet.PaymentSource.network !== Network.Mainnet) {
+            throw createHttpError(
+              400,
+              'Swap functionality is only available for mainnet wallets',
+            );
+          }
+
+          if (!wallet.PaymentSource.PaymentSourceConfig) {
+            throw createHttpError(
+              400,
+              'Payment source configuration not found',
+            );
+          }
+
+          // Lock the wallet atomically
+          await prisma.hotWallet.update({
+            where: { id: wallet.id, deletedAt: null },
+            data: { lockedAt: new Date() },
+          });
+
+          return wallet;
         },
-      });
+        { isolationLevel: 'Serializable', timeout: 10000 },
+      );
 
-      if (wallet == null) {
-        throw createHttpError(404, 'Wallet not found');
-      }
-
-      if (wallet.deletedAt != null) {
-        throw createHttpError(404, 'Wallet has been deleted');
-      }
-
-      if (wallet.PaymentSource.network !== Network.Mainnet) {
-        throw createHttpError(
-          400,
-          'Swap functionality is only available for mainnet wallets',
-        );
-      }
-
-      if (!wallet.PaymentSource.PaymentSourceConfig) {
-        throw createHttpError(400, 'Payment source configuration not found');
-      }
+      walletId = wallet.id;
 
       const blockfrostApiKey =
         wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
@@ -164,6 +191,31 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
         },
       );
       throw error;
+    } finally {
+      // Always unlock the wallet, even if the swap failed
+      if (walletId != null) {
+        try {
+          await prisma.hotWallet.update({
+            where: { id: walletId, deletedAt: null },
+            data: { lockedAt: null },
+          });
+        } catch (unlockError) {
+          // Log but don't throw - we don't want to mask the original error
+          recordBusinessEndpointError(
+            '/api/v1/swap',
+            'POST',
+            500,
+            unlockError instanceof Error
+              ? unlockError
+              : new Error(String(unlockError)),
+            {
+              user_id: options.id,
+              operation: 'unlock_wallet_after_swap',
+              duration: Date.now() - startTime,
+            },
+          );
+        }
+      }
     }
   },
 });
