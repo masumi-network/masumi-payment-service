@@ -15,6 +15,7 @@ import {
   getApiKeyStatus,
 } from '@/lib/api/generated';
 import { ThemeProvider } from '@/lib/contexts/ThemeContext';
+import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { Spinner } from '@/components/ui/spinner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
@@ -28,13 +29,15 @@ function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
       <AppProvider initialState={initialAppState}>
-        <TooltipProvider delayDuration={200}>
-          <ThemedApp
-            Component={Component}
-            pageProps={pageProps}
-            router={router}
-          />
-        </TooltipProvider>
+        <SidebarProvider>
+          <TooltipProvider delayDuration={200}>
+            <ThemedApp
+              Component={Component}
+              pageProps={pageProps}
+              router={router}
+            />
+          </TooltipProvider>
+        </SidebarProvider>
       </AppProvider>
     </ThemeProvider>
   );

@@ -20,6 +20,7 @@ import {
   NotebookPen,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
@@ -38,14 +39,13 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  });
-  const [isHovered, setIsHovered] = useState(false);
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
@@ -126,10 +126,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [isChangingNetwork]);
 
   useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-  }, [collapsed]);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -141,7 +137,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Check if user has payment sources
   const hasPaymentSources =
     state.paymentSources && state.paymentSources.length > 0;
 
@@ -183,7 +178,6 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
-    // Don't mark as read immediately, let user view notifications first
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
@@ -219,6 +213,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered
               ? `${sideBarWidthCollapsed}px`
               : `${sideBarWidth}px`,
+          pointerEvents: 'auto',
         }}
       >
         <div className="flex flex-col">
@@ -272,22 +267,21 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!(collapsed && !isHovered) ? (
-              <Link
-                href="/"
-                style={{
-                  animation: 'scaleIn 0.3s ease-out',
-                  transformOrigin: 'left center',
-                }}
-              >
+              <Link href="/" key="masumi-logo-full">
                 <MasumiLogo />
               </Link>
             ) : (
               <Link
                 href="/"
+                key="masumi-logo-icon"
                 className="flex items-center justify-center w-8 h-8"
-                style={{
-                  animation: 'rotateIn 0.3s ease-out',
-                }}
+                style={
+                  shouldAnimateIcon && collapsed && !isHovered
+                    ? {
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
+                    : undefined
+                }
               >
                 <MasumiIconFlat className="w-6 h-6" />
               </Link>
