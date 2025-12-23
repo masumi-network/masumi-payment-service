@@ -50,6 +50,13 @@ export const APIKeySchema = {
             type: 'string',
             enum: ['Active', 'Revoked'],
             description: 'Current status of the API key'
+        },
+        allowedWalletIds: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'List of wallet IDs this API key can access (only populated for WalletScoped keys)'
         }
     },
     required: ['id', 'token', 'permission', 'usageLimited', 'networkLimit', 'RemainingUsageCredits', 'status']

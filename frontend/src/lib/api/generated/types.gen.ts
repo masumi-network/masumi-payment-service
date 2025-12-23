@@ -38,6 +38,10 @@ export type ApiKey = {
      * Current status of the API key
      */
     status: 'Active' | 'Revoked';
+    /**
+     * List of wallet IDs this API key can access (only populated for WalletScoped keys)
+     */
+    allowedWalletIds?: Array<string>;
 };
 
 export type Wallet = {
@@ -1544,6 +1548,14 @@ export type PatchApiKeyData = {
          * The networks the API key is allowed to use
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Array of wallet IDs to assign to this WalletScoped API key. Only applicable for WalletScoped keys.
+         */
+        walletsToAdd?: Array<string>;
+        /**
+         * Array of wallet IDs to unassign from this WalletScoped API key. Only applicable for WalletScoped keys.
+         */
+        walletsToRemove?: Array<string>;
     };
     path?: never;
     query?: never;
