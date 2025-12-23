@@ -16,6 +16,13 @@ import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/aut
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
+enum FilterStatus {
+  Registered = 'Registered',
+  Deregistered = 'Deregistered',
+  Pending = 'Pending',
+  Failed = 'Failed',
+}
+
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
     .string()
@@ -30,7 +37,7 @@ export const queryRegistryRequestSchemaInput = z.object({
     .nullable()
     .describe('The smart contract address of the payment source'),
   filterStatus: z
-    .enum(['Registered', 'Deregistered', 'Pending', 'Failed'])
+    .nativeEnum(FilterStatus)
     .optional()
     .describe('Filter by registration status category'),
   searchQuery: z
@@ -253,16 +260,16 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 
     // Build status filter based on filterStatus
     let stateFilter: RegistrationState[] | undefined;
-    if (input.filterStatus === 'Registered') {
+    if (input.filterStatus === FilterStatus.Registered) {
       stateFilter = [RegistrationState.RegistrationConfirmed];
-    } else if (input.filterStatus === 'Deregistered') {
+    } else if (input.filterStatus === FilterStatus.Deregistered) {
       stateFilter = [RegistrationState.DeregistrationConfirmed];
-    } else if (input.filterStatus === 'Pending') {
+    } else if (input.filterStatus === FilterStatus.Pending) {
       stateFilter = [
         RegistrationState.RegistrationRequested,
         RegistrationState.DeregistrationRequested,
       ];
-    } else if (input.filterStatus === 'Failed') {
+    } else if (input.filterStatus === FilterStatus.Failed) {
       stateFilter = [
         RegistrationState.RegistrationFailed,
         RegistrationState.DeregistrationFailed,

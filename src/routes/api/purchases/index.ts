@@ -31,6 +31,11 @@ import {
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
 
+enum FilterOnChainState {
+  RefundRequests = 'RefundRequests',
+  Disputes = 'Disputes',
+}
+
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
     .number({ coerce: true })
@@ -53,7 +58,7 @@ export const queryPurchaseRequestSchemaInput = z.object({
     .nullable()
     .describe('The smart contract address of the payment source'),
   filterOnChainState: z
-    .enum(['RefundRequests', 'Disputes'])
+    .nativeEnum(FilterOnChainState)
     .optional()
     .describe('Filter by on-chain state category (RefundRequests or Disputes)'),
   searchQuery: z
@@ -337,9 +342,9 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
 
     // Build onChainState filter
     let onChainStateFilter: OnChainState[] | undefined;
-    if (input.filterOnChainState === 'RefundRequests') {
+    if (input.filterOnChainState === FilterOnChainState.RefundRequests) {
       onChainStateFilter = [OnChainState.RefundRequested];
-    } else if (input.filterOnChainState === 'Disputes') {
+    } else if (input.filterOnChainState === FilterOnChainState.Disputes) {
       onChainStateFilter = [OnChainState.Disputed];
     }
 
