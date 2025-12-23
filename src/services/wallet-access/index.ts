@@ -88,9 +88,12 @@ export class WalletAccess {
   }
 
   /**
-   * Check if a specific wallet ID is in the allowed list
+
    */
-  static canAccessWallet(context: AccessContext, walletId: string): boolean {
+  static isWalletAllowedForKey(
+    context: AccessContext,
+    walletId: string,
+  ): boolean {
     if (context.permission === Permission.Admin) {
       return true;
     }
@@ -104,10 +107,9 @@ export class WalletAccess {
 
   /**
    * Require access to a specific wallet
-   * Throws 403 if wallet not in allowed list
    */
   static requireWalletAccess(context: AccessContext, walletId: string): void {
-    if (!this.canAccessWallet(context, walletId)) {
+    if (!this.isWalletAllowedForKey(context, walletId)) {
       throw createHttpError(403, 'Forbidden: Cannot access this wallet');
     }
   }

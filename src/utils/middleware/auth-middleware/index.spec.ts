@@ -134,7 +134,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: true,
       networkLimit: [],
-      ApiKeyHotWallets: [],
+      WalletScopedHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -161,7 +161,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: true,
       networkLimit: [],
-      ApiKeyHotWallets: [],
+      WalletScopedHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -187,7 +187,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [],
-      ApiKeyHotWallets: [],
+      WalletScopedHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
@@ -213,7 +213,7 @@ describe('authMiddleware', () => {
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [Network.Preprod, Network.Mainnet],
-      ApiKeyHotWallets: [],
+      WalletScopedHotWallets: [],
     };
     const { prisma } = require('@/utils/db');
     (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);

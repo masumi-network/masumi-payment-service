@@ -28,21 +28,15 @@ export const authMiddleware = (minPermission: Permission) =>
             tokenHash: generateSHA256Hash(sentKey),
           },
           include: {
-            ApiKeyHotWallets: {
+            WalletScopedHotWallets: {
               where: {
-                HotWallet: {
-                  deletedAt: null,
-                },
+                deletedAt: null,
               },
               include: {
-                HotWallet: {
-                  include: {
-                    PaymentSource: {
-                      select: {
-                        network: true,
-                        deletedAt: true,
-                      },
-                    },
+                PaymentSource: {
+                  select: {
+                    network: true,
+                    deletedAt: true,
                   },
                 },
               },
@@ -99,17 +93,17 @@ export const authMiddleware = (minPermission: Permission) =>
           networkLimit = [Network.Mainnet, Network.Preprod];
           usageLimited = false;
         } else if (apiKey.permission === Permission.WalletScoped) {
-          const validWallets = apiKey.ApiKeyHotWallets.filter(
-            (ahw) =>
-              ahw.HotWallet.deletedAt === null &&
-              ahw.HotWallet.PaymentSource.deletedAt === null,
+          const validWallets = apiKey.WalletScopedHotWallets.filter(
+            (wallet) =>
+              wallet.deletedAt === null &&
+              wallet.PaymentSource.deletedAt === null,
           );
 
-          allowedWalletIds = validWallets.map((ahw) => ahw.HotWallet.id);
+          allowedWalletIds = validWallets.map((wallet) => wallet.id);
 
           const networks = new Set<Network>();
-          for (const ahw of validWallets) {
-            networks.add(ahw.HotWallet.PaymentSource.network);
+          for (const wallet of validWallets) {
+            networks.add(wallet.PaymentSource.network);
           }
           networkLimit = Array.from(networks);
         }
