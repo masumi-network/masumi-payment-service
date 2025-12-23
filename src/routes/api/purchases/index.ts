@@ -435,7 +435,6 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                             gte: amountFilter.gte,
                             lte: amountFilter.lte,
                           },
-                          unit: '', // Only match ADA (empty string for ADA)
                         },
                       },
                     },
