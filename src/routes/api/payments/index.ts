@@ -456,15 +456,6 @@ export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
                 },
               },
               {
-                PaymentSource: {
-                  network: {
-                    in: Object.values(Network).filter((n) =>
-                      n.toLowerCase().includes(searchLower),
-                    ),
-                  },
-                },
-              },
-              {
                 SmartContractWallet: {
                   walletAddress: {
                     contains: searchLower,
