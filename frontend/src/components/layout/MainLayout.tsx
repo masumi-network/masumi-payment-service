@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -20,6 +20,7 @@ import {
   NotebookPen,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
@@ -38,21 +39,17 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  });
-  const [isHovered, setIsHovered] = useState(false);
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
   const { state, dispatch, isChangingNetwork } = useAppContext();
-  const prevCollapsedRef = useRef(collapsed);
-  const prevHoveredRef = useRef(isHovered);
-  const [shouldAnimateIcon, setShouldAnimateIcon] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -127,28 +124,6 @@ export function MainLayout({ children }: MainLayoutProps) {
       };
     }
   }, [isChangingNetwork]);
-
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-  }, [collapsed]);
-
-  useEffect(() => {
-    const isCollapsing = collapsed && !prevCollapsedRef.current;
-    const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
-
-    if (isCollapsing || isHoverEnding) {
-      setShouldAnimateIcon(true);
-      const timer = setTimeout(() => {
-        setShouldAnimateIcon(false);
-      }, 300);
-      prevCollapsedRef.current = collapsed;
-      prevHoveredRef.current = isHovered;
-      return () => clearTimeout(timer);
-    }
-
-    prevCollapsedRef.current = collapsed;
-    prevHoveredRef.current = isHovered;
-  }, [collapsed, isHovered]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
