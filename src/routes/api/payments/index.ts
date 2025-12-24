@@ -1,4 +1,4 @@
-import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
@@ -34,6 +34,11 @@ import {
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 
+enum FilterOnChainState {
+  RefundRequests = 'RefundRequests',
+  Disputes = 'Disputes',
+}
+
 export const queryPaymentsSchemaInput = z.object({
   limit: z
     .number({ coerce: true })
@@ -55,7 +60,16 @@ export const queryPaymentsSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('The smart contract address of the payment source'),
-
+  filterOnChainState: z
+    .nativeEnum(FilterOnChainState)
+    .optional()
+    .describe('Filter by on-chain state category (RefundRequests or Disputes)'),
+  searchQuery: z
+    .string()
+    .optional()
+    .describe(
+      'Search query to filter by ID, hash, state, network, wallet address, or amount',
+    ),
   includeHistory: z
     .string()
     .optional()
@@ -64,6 +78,21 @@ export const queryPaymentsSchemaInput = z.object({
     .describe(
       'Whether to include the full transaction and status history of the payments',
     ),
+});
+
+export const queryPaymentCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The network the payments were made on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryPaymentCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of payments'),
 });
 
 export const paymentResponseSchema = z
@@ -338,7 +367,7 @@ export const queryPaymentsSchemaOutput = z.object({
   Payments: z.array(paymentResponseSchema),
 });
 
-export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
+export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: queryPaymentsSchemaInput,
   output: queryPaymentsSchemaOutput,
@@ -360,14 +389,109 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.paymentRequest.findMany({
-      where: {
-        PaymentSource: {
-          network: input.network,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-          deletedAt: null,
-        },
+    // Build onChainState filter
+    let onChainStateFilter: OnChainState[] | undefined;
+    if (input.filterOnChainState === FilterOnChainState.RefundRequests) {
+      onChainStateFilter = [OnChainState.RefundRequested];
+    } else if (input.filterOnChainState === FilterOnChainState.Disputes) {
+      onChainStateFilter = [OnChainState.Disputed];
+    }
+
+    // Build search query filter
+    const searchLower = input.searchQuery?.toLowerCase();
+    const matchingStates = searchLower
+      ? Object.values(OnChainState).filter((s) =>
+          s.toLowerCase().includes(searchLower),
+        )
+      : undefined;
+
+    // Check if search query is a numeric amount (for ADA amount filtering)
+    // This matches amounts where the formatted ADA string contains the search query
+    // e.g., "5.5" matches 5.50, 5.51, ..., 5.59 ADA
+    let amountFilter: { gte: bigint; lte: bigint } | undefined;
+    if (searchLower) {
+      // Try to parse as a number (handles decimals like "5.5", "10.25", etc.)
+      const numericMatch = searchLower.match(/^(\d+\.?\d*)$/);
+      if (numericMatch) {
+        const numericValue = parseFloat(numericMatch[1]);
+        if (!isNaN(numericValue) && numericValue >= 0) {
+          // Convert to lovelace (ADA * 1,000,000)
+          // For "5.5", we want to match amounts from 5.50 to 5.59 ADA
+          // For "5", we want to match amounts from 5.00 to 5.99 ADA
+          const hasDecimal = numericMatch[1].includes('.');
+          let minLovelace: bigint;
+          let maxLovelace: bigint;
+
+          if (hasDecimal) {
+            // Has decimal: "5.5" -> match 5.50 to 5.59
+            minLovelace = BigInt(Math.floor(numericValue * 1000000));
+            // Round up to next decimal place: 5.5 -> 5.6, then subtract 1 lovelace
+            const nextDecimal = Math.ceil(numericValue * 10) / 10;
+            maxLovelace = BigInt(Math.floor(nextDecimal * 1000000)) - BigInt(1);
+          } else {
+            // No decimal: "5" -> match 5.00 to 5.99
+            minLovelace = BigInt(numericValue * 1000000);
+            maxLovelace = BigInt((numericValue + 1) * 1000000) - BigInt(1);
+          }
+
+          amountFilter = { gte: minLovelace, lte: maxLovelace };
+        }
+      }
+    }
+
+    const whereClause = {
+      PaymentSource: {
+        network: input.network,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        deletedAt: null,
       },
+      ...(onChainStateFilter
+        ? { onChainState: { in: onChainStateFilter } }
+        : {}),
+      ...(searchLower
+        ? {
+            OR: [
+              { id: { contains: searchLower, mode: 'insensitive' as const } },
+              {
+                CurrentTransaction: {
+                  txHash: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              {
+                SmartContractWallet: {
+                  walletAddress: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              ...(matchingStates && matchingStates.length > 0
+                ? [{ onChainState: { in: matchingStates } }]
+                : []),
+              ...(amountFilter
+                ? [
+                    {
+                      RequestedFunds: {
+                        some: {
+                          amount: {
+                            gte: amountFilter.gte,
+                            lte: amountFilter.lte,
+                          },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {}),
+    };
+
+    const result = await prisma.paymentRequest.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       cursor: input.cursorId
         ? {
@@ -390,6 +514,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         },
       },
     });
+
     if (result == null) {
       throw createHttpError(404, 'Payment not found');
     }
@@ -415,6 +540,44 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
             }))
           : null,
       })),
+    };
+  },
+});
+
+export const queryPaymentCountGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPaymentCountSchemaInput,
+  output: queryPaymentCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryPaymentCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.paymentRequest.count({
+      where: {
+        PaymentSource: {
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+          deletedAt: null,
+        },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });
@@ -491,7 +654,7 @@ export const createPaymentsSchemaInput = z.object({
 
 export const createPaymentSchemaOutput = paymentResponseSchema;
 
-export const paymentInitPost = readAuthenticatedEndpointFactory.build({
+export const paymentInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
   input: createPaymentsSchemaInput,
   output: createPaymentSchemaOutput,

@@ -11,6 +11,9 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   getRegistry,
   GetRegistryResponses,
+  getRegistryCount,
+  getPurchaseCount,
+  getPaymentCount,
   getUtxos,
   getPaymentSource,
   GetPaymentSourceResponses,
@@ -27,7 +30,6 @@ import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -57,6 +59,8 @@ export const getStaticProps: GetStaticProps = async () => {
 export default function Overview() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
   const [agents, setAgents] = useState<AIAgent[]>([]);
+  const [totalAgentsCount, setTotalAgentsCount] = useState<number | null>(null);
+  const [isLoadingAgentsCount, setIsLoadingAgentsCount] = useState(true);
   const [wallets, setWallets] = useState<WalletWithBalance[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [isLoadingWallets, setIsLoadingWallets] = useState(true);
@@ -73,8 +77,11 @@ export default function Overview() {
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const { rate, isLoading: isLoadingRate } = useRate();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
+  const [totalTransactionsCount, setTotalTransactionsCount] = useState<
+    number | null
+  >(null);
+  const [isLoadingTransactionsCount, setIsLoadingTransactionsCount] =
+    useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
@@ -131,13 +138,16 @@ export default function Overview() {
       if (!response) return;
 
       if (response.data?.data?.Assets) {
-        const newAgents = response.data.data.Assets;
+        // Filter out deregistered agents
+        const activeAgents = response.data.data.Assets.filter(
+          (agent) => agent.state !== 'DeregistrationConfirmed',
+        );
         if (cursor) {
-          setAgents((prev) => [...prev, ...newAgents]);
+          setAgents((prev) => [...prev, ...activeAgents]);
         } else {
-          setAgents(newAgents);
+          setAgents(activeAgents);
         }
-        setHasMore(newAgents.length === 10);
+        setHasMore(activeAgents.length === 10);
       } else {
         if (!cursor) {
           setAgents([]);
@@ -147,6 +157,95 @@ export default function Overview() {
     },
     [apiClient, state.network, state.paymentSources, selectedPaymentSourceId],
   );
+
+  const fetchAgentsCount = useCallback(async () => {
+    setIsLoadingAgentsCount(true);
+    const selectedPaymentSource = state.paymentSources?.find(
+      (ps) => ps.id === selectedPaymentSourceId,
+    );
+    const smartContractAddress =
+      selectedPaymentSource?.smartContractAddress ?? null;
+
+    const response = await handleApiCall(
+      () =>
+        getRegistryCount({
+          client: apiClient,
+          query: {
+            network: state.network,
+            filterSmartContractAddress: smartContractAddress
+              ? smartContractAddress
+              : undefined,
+          },
+        }),
+      {
+        onError: (error: any) => {
+          console.error('Error fetching agents count:', error);
+          // Don't show toast for count errors, just log
+        },
+        onFinally: () => {
+          setIsLoadingAgentsCount(false);
+        },
+        errorMessage: 'Failed to load AI agents count',
+      },
+    );
+
+    if (response?.data?.data?.total !== undefined) {
+      setTotalAgentsCount(response.data.data.total);
+    }
+  }, [apiClient, state.network, state.paymentSources, selectedPaymentSourceId]);
+
+  const fetchTransactionsCount = useCallback(async () => {
+    setIsLoadingTransactionsCount(true);
+    const selectedPaymentSource = state.paymentSources?.find(
+      (ps) => ps.id === selectedPaymentSourceId,
+    );
+    const smartContractAddress =
+      selectedPaymentSource?.smartContractAddress ?? null;
+
+    const [purchasesResponse, paymentsResponse] = await Promise.all([
+      handleApiCall(
+        () =>
+          getPurchaseCount({
+            client: apiClient,
+            query: {
+              network: state.network,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching purchases count:', error);
+          },
+          errorMessage: 'Failed to load purchases count',
+        },
+      ),
+      handleApiCall(
+        () =>
+          getPaymentCount({
+            client: apiClient,
+            query: {
+              network: state.network,
+              filterSmartContractAddress: smartContractAddress
+                ? smartContractAddress
+                : undefined,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Error fetching payments count:', error);
+          },
+          errorMessage: 'Failed to load payments count',
+        },
+      ),
+    ]);
+
+    const purchasesTotal = purchasesResponse?.data?.data?.total ?? 0;
+    const paymentsTotal = paymentsResponse?.data?.data?.total ?? 0;
+    setTotalTransactionsCount(purchasesTotal + paymentsTotal);
+    setIsLoadingTransactionsCount(false);
+  }, [apiClient, state.network, state.paymentSources, selectedPaymentSourceId]);
 
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMore && agents.length > 0) {
@@ -352,9 +451,13 @@ export default function Overview() {
       selectedPaymentSourceId
     ) {
       fetchAgents();
+      fetchAgentsCount();
+      fetchTransactionsCount();
     }
   }, [
     fetchAgents,
+    fetchAgentsCount,
+    fetchTransactionsCount,
     state.paymentSources,
     state.network,
     selectedPaymentSourceId,
@@ -420,10 +523,12 @@ export default function Overview() {
               <div className="text-sm text-muted-foreground mb-2">
                 Total AI agents
               </div>
-              {isLoadingAgents ? (
+              {isLoadingAgentsCount ? (
                 <Spinner size={20} addContainer />
               ) : (
-                <div className="text-2xl font-semibold">{agents.length}</div>
+                <div className="text-2xl font-semibold">
+                  {totalAgentsCount ?? 0}
+                </div>
               )}
             </div>
             <div className="border rounded-lg p-6">
@@ -471,14 +576,14 @@ export default function Overview() {
             </div>
             <div className="border rounded-lg p-6">
               <div className="text-sm text-muted-foreground mb-2">
-                New Transactions
+                Total Transactions
               </div>
-              {isLoadingTransactions ? (
+              {isLoadingTransactionsCount ? (
                 <Spinner size={20} addContainer />
               ) : (
                 <>
                   <div className="text-2xl font-semibold">
-                    {newTransactionsCount}
+                    {totalTransactionsCount ?? 0}
                   </div>
                   <Link
                     href="/transactions"
@@ -758,6 +863,7 @@ export default function Overview() {
         onSuccess={() => {
           setTimeout(() => {
             fetchAgents();
+            fetchAgentsCount();
           }, 2000);
         }}
       />
@@ -768,6 +874,7 @@ export default function Overview() {
         onSuccess={() => {
           setTimeout(() => {
             fetchAgents();
+            fetchAgentsCount();
           }, 2000);
         }}
       />

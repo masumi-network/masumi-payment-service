@@ -109,9 +109,6 @@ export default function Transactions() {
     [],
   );
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<
-    Transaction[]
-  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] =
@@ -124,109 +121,13 @@ export default function Transactions() {
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filterTransactions
-    const seenHashes = new Set();
-    const dedupedTransactions = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
-      return true;
-    });
-
-    const refundCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'RefundRequested',
-    ).length;
-    const disputeCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'Disputed',
-    ).length;
-
-    return [
-      { name: 'All', count: null },
-      { name: 'Payments', count: null },
-      { name: 'Purchases', count: null },
-      {
-        name: 'Refund Requests',
-        count: refundCount || null,
-      },
-      {
-        name: 'Disputes',
-        count: disputeCount || null,
-      },
-    ];
-  }, [allTransactions]);
-
-  const filterTransactions = useCallback(() => {
-    const seenHashes = new Set();
-    let filtered = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
-      return true;
-    });
-
-    if (activeTab === 'Payments') {
-      filtered = filtered.filter((t) => t.type === 'payment');
-    } else if (activeTab === 'Purchases') {
-      filtered = filtered.filter((t) => t.type === 'purchase');
-    } else if (activeTab === 'Refund Requests') {
-      filtered = filtered.filter((t) => t.onChainState === 'RefundRequested');
-    } else if (activeTab === 'Disputes') {
-      filtered = filtered.filter((t) => t.onChainState === 'Disputed');
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((transaction) => {
-        const matchId = transaction.id?.toLowerCase().includes(query) || false;
-        const matchHash =
-          transaction.CurrentTransaction?.txHash
-            ?.toLowerCase()
-            .includes(query) || false;
-        const matchState =
-          transaction.onChainState?.toLowerCase().includes(query) || false;
-        const matchType =
-          transaction.type?.toLowerCase().includes(query) || false;
-        const matchNetwork =
-          transaction.PaymentSource?.network?.toLowerCase().includes(query) ||
-          false;
-        const matchWallet =
-          transaction.SmartContractWallet?.walletAddress
-            ?.toLowerCase()
-            .includes(query) || false;
-
-        const matchRequestedFunds =
-          transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some(
-            (fund) => parseInt(fund.amount) / 1000000,
-          )
-            .toString()
-            .toLowerCase()
-            .includes(query);
-        const matchPaidFunds =
-          transaction.type === 'purchase' &&
-          transaction.PaidFunds?.some((fund) => parseInt(fund.amount) / 1000000)
-            .toString()
-            .toLowerCase()
-            .includes(query);
-
-        return (
-          matchId ||
-          matchHash ||
-          matchState ||
-          matchType ||
-          matchNetwork ||
-          matchWallet ||
-          matchRequestedFunds ||
-          matchPaidFunds
-        );
-      });
-    }
-
-    setFilteredTransactions(filtered);
-  }, [allTransactions, searchQuery, activeTab]);
+  const tabs = [
+    { name: 'All', count: null },
+    { name: 'Payments', count: null },
+    { name: 'Purchases', count: null },
+    { name: 'Refund Requests', count: null },
+    { name: 'Disputes', count: null },
+  ];
 
   const fetchTransactions = useCallback(
     async (
@@ -241,10 +142,32 @@ export default function Transactions() {
         );
         const smartContractAddress =
           selectedPaymentSource?.smartContractAddress;
+
+        // Determine which endpoints to fetch based on activeTab
+        const shouldFetchPurchases =
+          activeTab === 'All' ||
+          activeTab === 'Purchases' ||
+          activeTab === 'Refund Requests' ||
+          activeTab === 'Disputes';
+        const shouldFetchPayments =
+          activeTab === 'All' ||
+          activeTab === 'Payments' ||
+          activeTab === 'Refund Requests' ||
+          activeTab === 'Disputes';
+
+        // Map tab to filterOnChainState
+        const filterOnChainState =
+          activeTab === 'Refund Requests'
+            ? 'RefundRequests'
+            : activeTab === 'Disputes'
+              ? 'Disputes'
+              : undefined;
+
         // Fetch purchases
         let purchases: Transaction[] = [];
         let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = forceFetchPurchases || hasMorePurchases;
+        let morePurchases =
+          (forceFetchPurchases || hasMorePurchases) && shouldFetchPurchases;
         if (morePurchases) {
           const purchaseRes = await getPurchase({
             client: apiClient,
@@ -256,6 +179,8 @@ export default function Transactions() {
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
+              filterOnChainState: filterOnChainState,
+              searchQuery: searchQuery || undefined,
             },
           });
           if (purchaseRes.data?.data?.Purchases) {
@@ -275,7 +200,8 @@ export default function Transactions() {
         // Fetch payments
         let payments: Transaction[] = [];
         let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = forceFetchPayments || hasMorePayments;
+        let morePayments =
+          (forceFetchPayments || hasMorePayments) && shouldFetchPayments;
         if (morePayments) {
           const paymentRes = await getPayment({
             client: apiClient,
@@ -287,6 +213,8 @@ export default function Transactions() {
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
+              filterOnChainState: filterOnChainState,
+              searchQuery: searchQuery || undefined,
             },
           });
           if (paymentRes.data?.data?.Payments) {
@@ -372,11 +300,13 @@ export default function Transactions() {
       );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
-  }, [state.network, apiClient, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    filterTransactions();
-  }, [filterTransactions, searchQuery, activeTab]);
+  }, [
+    state.network,
+    apiClient,
+    selectedPaymentSourceId,
+    activeTab,
+    searchQuery,
+  ]);
 
   const handleLoadMore = () => {
     if (!isLoadingMore && (hasMorePurchases || hasMorePayments)) {
@@ -393,10 +323,10 @@ export default function Transactions() {
   };
 
   const handleSelectAll = () => {
-    if (filteredTransactions.length === selectedTransactions.length) {
+    if (allTransactions.length === selectedTransactions.length) {
       setSelectedTransactions([]);
     } else {
-      setSelectedTransactions(filteredTransactions.map((t) => t.id));
+      setSelectedTransactions(allTransactions.map((t) => t.id));
     }
   };
 
@@ -548,7 +478,7 @@ export default function Transactions() {
             </div>
             <Button
               onClick={() => setShowDownloadDialog(true)}
-              disabled={filteredTransactions.length === 0}
+              disabled={allTransactions.length === 0}
               className="flex items-center gap-2"
             >
               <Download className="h-4 w-4" />
@@ -563,8 +493,11 @@ export default function Transactions() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
-              //setAllTransactions([]);
-              //fetchTransactions();
+              setPurchaseCursorId(null);
+              setPaymentCursorId(null);
+              setHasMorePurchases(true);
+              setHasMorePayments(true);
+              setAllTransactions([]);
             }}
           />
 
@@ -593,9 +526,8 @@ export default function Transactions() {
                   <th className="p-4 text-left text-sm font-medium">
                     <Checkbox
                       checked={
-                        filteredTransactions.length > 0 &&
-                        selectedTransactions.length ===
-                          filteredTransactions.length
+                        allTransactions.length > 0 &&
+                        selectedTransactions.length === allTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -621,14 +553,14 @@ export default function Transactions() {
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
-                ) : filteredTransactions.length === 0 ? (
+                ) : allTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="text-center py-8">
                       No transactions found
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction) => (
+                  allTransactions.map((transaction) => (
                     <tr
                       key={transaction.id}
                       className={cn(

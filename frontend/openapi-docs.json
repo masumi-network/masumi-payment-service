@@ -3212,6 +3212,30 @@
                     {
                         "schema": {
                             "type": "string",
+                            "enum": [
+                                "RefundRequests",
+                                "Disputes"
+                            ],
+                            "description": "Filter by on-chain state category (RefundRequests or Disputes)"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state category (RefundRequests or Disputes)",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
                             "default": "false",
                             "description": "Whether to include the full transaction and status history of the payments"
                         },
@@ -3821,6 +3845,86 @@
                 }
             }
         },
+        "/payment/count": {
+            "get": {
+                "description": "Gets the total count of payments.",
+                "summary": "Get the total number of payments. (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the payments were made on"
+                        },
+                        "required": true,
+                        "description": "The network the payments were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total payments count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of payments"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 150
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/purchase/": {
             "get": {
                 "description": "Gets the purchase status. It needs to be created first with a POST request.",
@@ -3880,6 +3984,30 @@
                         "required": false,
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "RefundRequests",
+                                "Disputes"
+                            ],
+                            "description": "Filter by on-chain state category (RefundRequests or Disputes)"
+                        },
+                        "required": false,
+                        "description": "Filter by on-chain state category (RefundRequests or Disputes)",
+                        "name": "filterOnChainState",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "name": "searchQuery",
                         "in": "query"
                     },
                     {
@@ -4275,6 +4403,86 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/count": {
+            "get": {
+                "description": "Gets the total count of purchases.",
+                "summary": "Get the total number of purchases. (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the purchases were made on"
+                        },
+                        "required": true,
+                        "description": "The network the purchases were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total purchases count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of purchases"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 75
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -4993,6 +5201,32 @@
                         "description": "The smart contract address of the payment source",
                         "name": "filterSmartContractAddress",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Registered",
+                                "Deregistered",
+                                "Pending",
+                                "Failed"
+                            ],
+                            "description": "Filter by registration status category"
+                        },
+                        "required": false,
+                        "description": "Filter by registration status category",
+                        "name": "filterStatus",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by name, description, tags, wallet address, state, or price"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by name, description, tags, wallet address, state, or price",
+                        "name": "searchQuery",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5629,6 +5863,86 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/registry/count": {
+            "get": {
+                "description": "Gets the total count of AI agents.",
+                "summary": "Get the total number of AI agents. (READ access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Total AI agents count",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "total": {
+                                                    "type": "number",
+                                                    "description": "Total number of AI agents"
+                                                }
+                                            },
+                                            "required": [
+                                                "total"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "total": 42
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

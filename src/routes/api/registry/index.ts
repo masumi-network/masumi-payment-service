@@ -16,6 +16,13 @@ import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/aut
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
+enum FilterStatus {
+  Registered = 'Registered',
+  Deregistered = 'Deregistered',
+  Pending = 'Pending',
+  Failed = 'Failed',
+}
+
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
     .string()
@@ -29,6 +36,16 @@ export const queryRegistryRequestSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('The smart contract address of the payment source'),
+  filterStatus: z
+    .nativeEnum(FilterStatus)
+    .optional()
+    .describe('Filter by registration status category'),
+  searchQuery: z
+    .string()
+    .optional()
+    .describe(
+      'Search query to filter by name, description, tags, wallet address, state, or price',
+    ),
 });
 
 export const registryRequestOutputSchema = z
@@ -204,6 +221,21 @@ export const queryRegistryRequestSchemaOutput = z.object({
   Assets: z.array(registryRequestOutputSchema),
 });
 
+export const queryRegistryCountSchemaInput = z.object({
+  network: z
+    .nativeEnum(Network)
+    .describe('The Cardano network used to register the agent on'),
+  filterSmartContractAddress: z
+    .string()
+    .optional()
+    .nullable()
+    .describe('The smart contract address of the payment source'),
+});
+
+export const queryRegistryCountSchemaOutput = z.object({
+  total: z.number().describe('Total number of AI agents'),
+});
+
 export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: queryRegistryRequestSchemaInput,
@@ -226,15 +258,69 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    const result = await prisma.registryRequest.findMany({
-      where: {
-        PaymentSource: {
-          network: input.network,
-          deletedAt: null,
-          smartContractAddress: input.filterSmartContractAddress ?? undefined,
-        },
-        SmartContractWallet: { deletedAt: null },
+    // Build status filter based on filterStatus
+    let stateFilter: RegistrationState[] | undefined;
+    if (input.filterStatus === FilterStatus.Registered) {
+      stateFilter = [RegistrationState.RegistrationConfirmed];
+    } else if (input.filterStatus === FilterStatus.Deregistered) {
+      stateFilter = [RegistrationState.DeregistrationConfirmed];
+    } else if (input.filterStatus === FilterStatus.Pending) {
+      stateFilter = [
+        RegistrationState.RegistrationRequested,
+        RegistrationState.DeregistrationRequested,
+      ];
+    } else if (input.filterStatus === FilterStatus.Failed) {
+      stateFilter = [
+        RegistrationState.RegistrationFailed,
+        RegistrationState.DeregistrationFailed,
+      ];
+    }
+
+    // Build search query filter
+    const searchLower = input.searchQuery?.toLowerCase();
+    const matchingStates = searchLower
+      ? Object.values(RegistrationState).filter((s) =>
+          s.toLowerCase().includes(searchLower),
+        )
+      : undefined;
+
+    const whereClause = {
+      PaymentSource: {
+        network: input.network,
+        deletedAt: null,
+        smartContractAddress: input.filterSmartContractAddress ?? undefined,
       },
+      SmartContractWallet: { deletedAt: null },
+      ...(stateFilter ? { state: { in: stateFilter } } : {}),
+      ...(searchLower
+        ? {
+            OR: [
+              { name: { contains: searchLower, mode: 'insensitive' as const } },
+              {
+                description: {
+                  contains: searchLower,
+                  mode: 'insensitive' as const,
+                },
+              },
+              { tags: { hasSome: [searchLower] } },
+              {
+                SmartContractWallet: {
+                  walletAddress: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+              },
+              ...(matchingStates && matchingStates.length > 0
+                ? [{ state: { in: matchingStates } }]
+                : []),
+            ],
+          }
+        : {}),
+    };
+
+    let result = await prisma.registryRequest.findMany({
+      where: whereClause,
       orderBy: {
         createdAt: 'desc',
       },
@@ -247,6 +333,49 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
         ExampleOutputs: true,
       },
     });
+
+    // Filter by price if search query is provided (price filtering happens in-memory)
+    // Database already filtered by name, description, tags, wallet, and state
+    // We add price matching here since it requires calculated values
+    if (searchLower && result.length > 0) {
+      result = result.filter((item) => {
+        // Items already passed DB filter, so they match name/description/tags/wallet/state
+        // We also check price matching here
+        const matchedByName = item.name.toLowerCase().includes(searchLower);
+        const matchedByDescription = item.description
+          ?.toLowerCase()
+          .includes(searchLower);
+        const matchedByTags = item.tags.some((tag) =>
+          tag.toLowerCase().includes(searchLower),
+        );
+        const matchedByWallet = item.SmartContractWallet.walletAddress
+          .toLowerCase()
+          .includes(searchLower);
+        const matchedByState = matchingStates?.includes(item.state);
+
+        // Check price matching
+        let matchedByPrice = false;
+        if (item.Pricing.pricingType === PricingType.Fixed) {
+          const amounts = item.Pricing.FixedPricing?.Amounts || [];
+          matchedByPrice = amounts.some((price) => {
+            const priceInAda = (Number(price.amount) / 1000000).toFixed(2);
+            return priceInAda.includes(searchLower);
+          });
+        } else if (item.Pricing.pricingType === PricingType.Free) {
+          matchedByPrice = searchLower.includes('free');
+        }
+
+        // Match if any criteria matches
+        return (
+          matchedByName ||
+          matchedByDescription ||
+          matchedByTags ||
+          matchedByWallet ||
+          matchedByState ||
+          matchedByPrice
+        );
+      });
+    }
 
     return {
       Assets: result.map((item) => ({
@@ -287,6 +416,45 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
             }
           : null,
       })),
+    };
+  },
+});
+
+export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryRegistryCountSchemaInput,
+  output: queryRegistryCountSchemaOutput,
+  handler: async ({
+    input,
+    options,
+  }: {
+    input: z.infer<typeof queryRegistryCountSchemaInput>;
+    options: {
+      id: string;
+      permission: $Enums.Permission;
+      networkLimit: $Enums.Network[];
+      usageLimited: boolean;
+    };
+  }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
+    const total = await prisma.registryRequest.count({
+      where: {
+        PaymentSource: {
+          network: input.network,
+          deletedAt: null,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        },
+        SmartContractWallet: { deletedAt: null },
+      },
+    });
+
+    return {
+      total,
     };
   },
 });
