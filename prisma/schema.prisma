@@ -9,19 +9,20 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String            @id @default(cuid())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  token                 String            @unique
-  tokenHash             String            @unique
-  status                ApiKeyStatus
-  permission            Permission
-  networkLimit          Network[]
-  usageLimited          Boolean           @default(false)
-  deletedAt             DateTime?
-  PaymentRequest        PaymentRequest[]
-  PurchaseRequest       PurchaseRequest[]
-  RemainingUsageCredits UnitValue[]
+  id                     String            @id @default(cuid())
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  token                  String            @unique
+  tokenHash              String            @unique
+  status                 ApiKeyStatus
+  permission             Permission
+  networkLimit           Network[]
+  usageLimited           Boolean           @default(false)
+  deletedAt              DateTime?
+  PaymentRequest         PaymentRequest[]
+  PurchaseRequest        PurchaseRequest[]
+  RemainingUsageCredits  UnitValue[]
+  WalletScopedHotWallets HotWallet[]       @relation("WalletScopedApiKey")
 }
 
 model UnitValue {
@@ -49,25 +50,29 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                   String            @id @default(cuid())
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  walletVkey           String            @unique
-  walletAddress        String
-  type                 HotWalletType
-  secretId             String
-  collectionAddress    String?
-  pendingTransactionId String?           @unique
-  paymentSourceId      String
-  lockedAt             DateTime?
-  note                 String?
-  deletedAt            DateTime?
-  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
-  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
-  PaymentRequest       PaymentRequest[]
-  PurchaseRequest      PurchaseRequest[]
-  RegistryRequest      RegistryRequest[]
+  id                    String            @id @default(cuid())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  walletVkey            String            @unique
+  walletAddress         String
+  type                  HotWalletType
+  secretId              String
+  collectionAddress     String?
+  pendingTransactionId  String?           @unique
+  paymentSourceId       String
+  lockedAt              DateTime?
+  note                  String?
+  deletedAt             DateTime?
+  walletScopedApiKeyId  String?
+  PaymentSource         PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction    Transaction?      @relation(fields: [pendingTransactionId], references: [id])
+  Secret                WalletSecret      @relation(fields: [secretId], references: [id])
+  WalletScopedApiKey    ApiKey?           @relation("WalletScopedApiKey", fields: [walletScopedApiKeyId], references: [id], onDelete: SetNull)
+  PaymentRequest        PaymentRequest[]
+  PurchaseRequest       PurchaseRequest[]
+  RegistryRequest       RegistryRequest[]
+
+  @@index([walletScopedApiKeyId])
 }
 
 model Transaction {
@@ -348,6 +353,7 @@ enum Permission {
   Read
   ReadAndPay
   Admin
+  WalletScoped
 }
 
 enum HotWalletType {

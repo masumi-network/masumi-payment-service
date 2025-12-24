@@ -27,6 +27,21 @@ export const authMiddleware = (minPermission: Permission) =>
           where: {
             tokenHash: generateSHA256Hash(sentKey),
           },
+          include: {
+            WalletScopedHotWallets: {
+              where: {
+                deletedAt: null,
+              },
+              include: {
+                PaymentSource: {
+                  select: {
+                    network: true,
+                    deletedAt: true,
+                  },
+                },
+              },
+            },
+          },
         });
 
         if (!apiKey) {
@@ -40,17 +55,23 @@ export const authMiddleware = (minPermission: Permission) =>
           throw createHttpError(401, 'Unauthorized, API key is revoked');
         }
 
-        if (
-          minPermission == Permission.Admin &&
-          apiKey.permission != Permission.Admin
-        ) {
-          throw createHttpError(401, 'Unauthorized, admin access required');
+        if (minPermission == Permission.Admin) {
+          if (apiKey.permission === Permission.WalletScoped) {
+            throw createHttpError(
+              403,
+              'Forbidden: WalletScoped keys cannot perform admin operations',
+            );
+          }
+          if (apiKey.permission !== Permission.Admin) {
+            throw createHttpError(401, 'Unauthorized, admin access required');
+          }
         }
 
         if (
           minPermission == Permission.ReadAndPay &&
           apiKey.permission != Permission.ReadAndPay &&
-          apiKey.permission != Permission.Admin
+          apiKey.permission != Permission.Admin &&
+          apiKey.permission != Permission.WalletScoped
         ) {
           throw createHttpError(401, 'Unauthorized, payment access required');
         }
@@ -59,17 +80,32 @@ export const authMiddleware = (minPermission: Permission) =>
           minPermission == Permission.Read &&
           apiKey.permission != Permission.Read &&
           apiKey.permission != Permission.Admin &&
-          apiKey.permission != Permission.ReadAndPay
+          apiKey.permission != Permission.ReadAndPay &&
+          apiKey.permission != Permission.WalletScoped
         ) {
           throw createHttpError(401, 'Unauthorized, read access required');
         }
         let networkLimit = apiKey.networkLimit;
+        let usageLimited = apiKey.usageLimited;
+        let allowedWalletIds: string[] = [];
+
         if (apiKey.permission == Permission.Admin) {
           networkLimit = [Network.Mainnet, Network.Preprod];
-        }
-        let usageLimited = apiKey.usageLimited;
-        if (apiKey.permission == Permission.Admin) {
           usageLimited = false;
+        } else if (apiKey.permission === Permission.WalletScoped) {
+          const validWallets = apiKey.WalletScopedHotWallets.filter(
+            (wallet) =>
+              wallet.deletedAt === null &&
+              wallet.PaymentSource.deletedAt === null,
+          );
+
+          allowedWalletIds = validWallets.map((wallet) => wallet.id);
+
+          const networks = new Set<Network>();
+          for (const wallet of validWallets) {
+            networks.add(wallet.PaymentSource.network);
+          }
+          networkLimit = Array.from(networks);
         }
 
         return {
@@ -77,6 +113,7 @@ export const authMiddleware = (minPermission: Permission) =>
           permission: apiKey.permission,
           networkLimit: networkLimit,
           usageLimited: usageLimited,
+          allowedWalletIds: allowedWalletIds,
         }; // provides endpoints with options.user
       } catch (error) {
         //await a random amount to throttle invalid requests

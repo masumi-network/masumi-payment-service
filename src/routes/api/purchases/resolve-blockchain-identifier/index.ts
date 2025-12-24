@@ -1,8 +1,9 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, $Enums } from '@prisma/client';
+import { Network, $Enums, Prisma } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { WalletAccess } from '@/services/wallet-access';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
   transformPurchaseGetTimestamps,
@@ -50,6 +51,7 @@ export const resolvePurchaseRequestPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -58,15 +60,26 @@ export const resolvePurchaseRequestPost =
         options.permission,
       );
 
-      const purchase = await prisma.purchaseRequest.findUnique({
-        where: {
-          PaymentSource: {
-            deletedAt: null,
-            network: input.network,
-            smartContractAddress: input.filterSmartContractAddress ?? undefined,
-          },
-          blockchainIdentifier: input.blockchainIdentifier,
+      const baseWhere: Prisma.PurchaseRequestWhereInput = {
+        PaymentSource: {
+          deletedAt: null,
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
         },
+        blockchainIdentifier: input.blockchainIdentifier,
+      };
+
+      const whereClause = WalletAccess.buildFilter(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        baseWhere,
+      );
+
+      const purchase = await prisma.purchaseRequest.findFirst({
+        where: whereClause,
         include: {
           SellerWallet: true,
           SmartContractWallet: { where: { deletedAt: null } },
@@ -85,6 +98,7 @@ export const resolvePurchaseRequestPost =
       if (purchase == null) {
         throw createHttpError(404, 'Purchase not found');
       }
+
       return {
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
