@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { $Enums, Network, RPCProvider } from '@prisma/client';
 
@@ -18,26 +18,26 @@ export const getRpcProviderKeysSchemaInput = z.object({
     .describe('The number of rpc provider keys to return'),
 });
 
+export const rpcProviderKeyOutputSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the RPC provider key'),
+    rpcProviderApiKey: z.string().describe('The RPC provider API key '),
+    rpcProvider: z.nativeEnum(RPCProvider).describe('The RPC provider type '),
+    createdAt: z
+      .date()
+      .describe('Timestamp when the RPC provider key was created'),
+    updatedAt: z
+      .date()
+      .describe('Timestamp when the RPC provider key was last updated'),
+    network: z
+      .nativeEnum(Network)
+      .describe('The Cardano network this RPC provider key is for'),
+  })
+  .openapi('RpcProviderKey');
+
 export const getRpcProviderKeysSchemaOutput = z.object({
   RpcProviderKeys: z
-    .array(
-      z.object({
-        id: z.string().describe('Unique identifier for the RPC provider key'),
-        rpcProviderApiKey: z.string().describe('The RPC provider API key '),
-        rpcProvider: z
-          .nativeEnum(RPCProvider)
-          .describe('The RPC provider type '),
-        createdAt: z
-          .date()
-          .describe('Timestamp when the RPC provider key was created'),
-        updatedAt: z
-          .date()
-          .describe('Timestamp when the RPC provider key was last updated'),
-        network: z
-          .nativeEnum(Network)
-          .describe('The Cardano network this RPC provider key is for'),
-      }),
-    )
+    .array(rpcProviderKeyOutputSchema)
     .describe('List of RPC provider keys'),
 });
 

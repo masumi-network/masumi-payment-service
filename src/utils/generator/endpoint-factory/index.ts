@@ -10,7 +10,7 @@ import {
 } from 'express-zod-api';
 import createHttpError, { HttpError } from 'http-errors';
 
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 export const getPublicErrorMessage = (error: HttpError): string =>
   process.env.NODE_ENV === 'production' && !error.expose
     ? createHttpError(error.statusCode).message // default message for that code
