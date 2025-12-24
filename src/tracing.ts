@@ -30,7 +30,7 @@ export async function setupTracing() {
   const otlpEndpoint = CONFIG.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (!otlpEndpoint) {
     logger.warn(
-      '***************************************************************** OTEL is not configured *****************************************************************',
+      '************************** OTEL is not configured ******************************',
     );
     return;
   }
