@@ -7,11 +7,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
+import {
+  cn,
+  shortenAddress,
+  handleApiCall,
+  getExplorerUrl,
+  formatFundUnit,
+} from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
@@ -89,7 +94,6 @@ export function AIAgentDetailsDialog({
 
   // Ensure activeTab is set when dialog opens
   useEffect(() => {
-    console.log(activeTab);
     if (agent && !activeTab) {
       setActiveTab('Details');
     }
@@ -306,21 +310,10 @@ export function AIAgentDetailsDialog({
                                 >
                                   <span className="text-sm text-muted-foreground">
                                     Price (
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? 'ADA'
-                                      : price.unit ===
-                                          getUsdmConfig(state.network)
-                                            .fullAssetId
-                                        ? 'USDM'
-                                        : price.unit === TESTUSDM_CONFIG.unit
-                                          ? 'tUSDM'
-                                          : price.unit}
-                                    )
+                                    {formatFundUnit(price.unit, state.network)})
                                   </span>
                                   <span className="font-medium">
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? `${useFormatPrice(price.amount)} ADA`
-                                      : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                    {`${useFormatPrice(price.amount)} ${formatFundUnit(price.unit, state.network)}`}
                                   </span>
                                 </div>
                               ),
