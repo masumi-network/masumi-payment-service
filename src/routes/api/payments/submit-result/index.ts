@@ -16,6 +16,7 @@ import {
   transformPaymentGetAmounts,
   transformPaymentGetTimestamps,
 } from '@/utils/shared/transformers';
+import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const submitPaymentResultSchemaInput = z.object({
   network: z
@@ -143,10 +144,17 @@ export const submitPaymentResultEndpointPost =
       }
 
       const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+      const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
+        result.CurrentTransaction,
+        result.TransactionHistory,
+      );
+
       return {
         ...result,
         ...transformPaymentGetTimestamps(result),
         ...transformPaymentGetAmounts(result),
+        totalBuyerFees,
+        totalSellerFees,
         agentIdentifier: decoded?.agentIdentifier ?? null,
         CurrentTransaction: result.CurrentTransaction
           ? {

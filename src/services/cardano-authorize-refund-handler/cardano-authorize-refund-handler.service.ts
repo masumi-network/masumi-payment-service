@@ -168,8 +168,9 @@ export async function authorizeRefundV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                  BigInt(request.collateralReturnLovelace ?? 0) &&
+                BigInt(decodedContract.payByTime) ==
+                  BigInt(request.payByTime ?? 0)
               );
             });
 

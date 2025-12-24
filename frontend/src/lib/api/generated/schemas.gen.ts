@@ -435,6 +435,14 @@ export const PaymentSchema = {
             },
             description: 'List of assets and amounts withdrawn for the buyer (refunds)'
         },
+        totalBuyerFees: {
+            type: 'string',
+            description: 'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)'
+        },
+        totalSellerFees: {
+            type: 'string',
+            description: 'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)'
+        },
         PaymentSource: {
             type: 'object',
             properties: {
@@ -502,7 +510,7 @@ export const PaymentSchema = {
             description: 'Optional metadata stored with the payment for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'inputHash', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
+    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'inputHash', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'totalBuyerFees', 'totalSellerFees', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
 } as const;
 
 export const PurchaseSchema = {
@@ -777,6 +785,14 @@ export const PurchaseSchema = {
                 required: ['amount', 'unit']
             }
         },
+        totalBuyerFees: {
+            type: 'string',
+            description: 'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)'
+        },
+        totalSellerFees: {
+            type: 'string',
+            description: 'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)'
+        },
         PaymentSource: {
             type: 'object',
             properties: {
@@ -839,7 +855,7 @@ export const PurchaseSchema = {
             description: 'Optional metadata stored with the purchase for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'externalDisputeUnlockTime', 'requestedById', 'onChainState', 'collateralReturnLovelace', 'cooldownTime', 'cooldownTimeOtherParty', 'inputHash', 'resultHash', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'PaidFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'SellerWallet', 'SmartContractWallet', 'metadata']
+    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'externalDisputeUnlockTime', 'requestedById', 'onChainState', 'collateralReturnLovelace', 'cooldownTime', 'cooldownTimeOtherParty', 'inputHash', 'resultHash', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'PaidFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'totalBuyerFees', 'totalSellerFees', 'PaymentSource', 'SellerWallet', 'SmartContractWallet', 'metadata']
 } as const;
 
 export const AgentMetadataSchema = {
