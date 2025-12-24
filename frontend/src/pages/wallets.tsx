@@ -9,7 +9,7 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -76,7 +76,7 @@ export default function WalletsPage() {
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<Wallet | null>(null);
   const [selectedWalletForSwap, setSelectedWalletForSwap] =
-    useState<Wallet | null>(null);
+    useState<WalletWithBalance | null>(null);
   const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -609,7 +609,7 @@ export default function WalletsPage() {
                             className="h-8 w-8"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedWalletForSwap(wallet as Wallet);
+                              setSelectedWalletForSwap(wallet);
                             }}
                           >
                             <FaExchangeAlt className="h-4 w-4" />
@@ -642,15 +642,13 @@ export default function WalletsPage() {
         onSuccess={fetchWallets}
       />
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
         network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}
