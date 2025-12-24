@@ -12,11 +12,12 @@ interface LogInfo {
 
 // Custom transport that sends logs to OpenTelemetry
 class OpenTelemetryTransport extends transports.Console {
-  private otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
-
   log(info: LogInfo, callback?: () => void) {
+    // Fetch logger lazily so it uses the provider registered after SDK start
+    const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
+
     // Send to OpenTelemetry
-    this.otelLogger.emit({
+    otelLogger.emit({
       severityNumber: this.getSeverityNumber(info.level),
       severityText: info.level.toUpperCase(),
       body: String(info.message),
