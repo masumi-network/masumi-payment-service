@@ -315,5 +315,9 @@ export function formatFundUnit(
     return 'tUSDM';
   }
 
+  if (unit === 'lovelace') {
+    return 'ADA';
+  }
+
   return unit ?? '—';
 }
