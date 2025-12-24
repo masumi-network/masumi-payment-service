@@ -119,6 +119,8 @@ const paymentSchemaOutputExample = {
   BuyerWallet: null,
   SmartContractWallet: null,
   metadata: null,
+  totalBuyerFees: '0.000000',
+  totalSellerFees: '0.000000',
 } satisfies z.infer<typeof createPaymentSchemaOutput>;
 
 const paymentSourceExtendedExample = {
@@ -292,6 +294,8 @@ const purchaseResponseSchemaExample = {
   metadata: null,
   WithdrawnForSeller: [],
   WithdrawnForBuyer: [],
+  totalBuyerFees: '0.000000',
+  totalSellerFees: '0.000000',
 } satisfies z.infer<typeof createPurchaseInitSchemaOutput>;
 import {
   requestPurchaseRefundSchemaInput,
@@ -1045,6 +1049,8 @@ export function generateOpenAPI() {
                         TransactionHistory: [],
                         WithdrawnForSeller: [],
                         WithdrawnForBuyer: [],
+                        totalBuyerFees: '0.000000',
+                        totalSellerFees: '0.000000',
                       },
                     ],
                   },
@@ -1336,6 +1342,8 @@ export function generateOpenAPI() {
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerFees: '0.000000',
+                    totalSellerFees: '0.000000',
                   },
                 },
               }),
@@ -1436,6 +1444,8 @@ export function generateOpenAPI() {
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerFees: '0.000000',
+                    totalSellerFees: '0.000000',
                   },
                 },
               }),
