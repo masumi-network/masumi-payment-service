@@ -334,6 +334,14 @@ export type Payment = {
         unit: string;
     }>;
     /**
+     * Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)
+     */
+    totalBuyerFees: string;
+    /**
+     * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
+     */
+    totalSellerFees: string;
+    /**
      * Payment source configuration for this payment
      */
     PaymentSource: {
@@ -586,6 +594,14 @@ export type Purchase = {
         amount: string;
         unit: string;
     }>;
+    /**
+     * Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)
+     */
+    totalBuyerFees: string;
+    /**
+     * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
+     */
+    totalSellerFees: string;
     PaymentSource: {
         id: string;
         network: 'Preprod' | 'Mainnet';
