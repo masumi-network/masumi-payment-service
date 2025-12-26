@@ -1,18 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
-import { getPaymentSource, getUtxos } from '@/lib/api/generated';
+import {
+  getPaymentSource,
+  getUtxos,
+  GetPaymentSourceResponses,
+} from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 type Wallet =
-  | (Awaited<
-      ReturnType<typeof getPaymentSource>
-    >['data']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
+  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
       type: 'Purchasing';
     })
-  | (Awaited<
-      ReturnType<typeof getPaymentSource>
-    >['data']['data']['PaymentSources'][0]['SellingWallets'][0] & {
+  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
       type: 'Selling';
     });
 
@@ -24,7 +24,7 @@ export type WalletWithBalance = Wallet & {
 
 async function fetchWalletBalance(
   apiClient: any,
-  network: string,
+  network: 'Preprod' | 'Mainnet',
   address: string,
 ) {
   const response = await handleApiCall(
