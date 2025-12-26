@@ -23,6 +23,9 @@ import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDia
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
+import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
+import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
+import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
@@ -416,23 +419,23 @@ export default function Overview() {
 
         <div className="mb-8">
           <div className="grid grid-cols-4 gap-4">
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total AI agents
-              </div>
-              {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            {isLoadingAgents ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total AI agents
+                </div>
                 <div className="text-2xl font-semibold">{agents.length}</div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total USDM
               </div>
-              {isLoadingWallets || isLoadingBalances ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingWallets || isLoadingBalances ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total USDM
+                </div>
                 <div className="text-2xl font-semibold flex items-center gap-1">
                   <span className="text-xs font-normal text-muted-foreground">
                     $
@@ -443,15 +446,15 @@ export default function Overview() {
                       ?.toString(),
                   ) ?? ''}
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total ada balance
               </div>
-              {isLoadingWallets || isLoadingBalances ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingWallets || isLoadingBalances ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total ada balance
+                </div>
                 <div className="flex flex-col gap-2">
                   <div className="text-2xl font-semibold flex items-center gap-1">
                     {formatBalance(
@@ -467,15 +470,15 @@ export default function Overview() {
                       : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                New Transactions
               </div>
-              {isLoadingTransactions ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingTransactions ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  New Transactions
+                </div>
                 <>
                   <div className="text-2xl font-semibold">
                     {newTransactionsCount}
@@ -487,8 +490,8 @@ export default function Overview() {
                     View all transactions <ChevronRight size={14} />
                   </Link>
                 </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -511,7 +514,7 @@ export default function Overview() {
               </p>
 
               {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
+                <AgentListSkeleton items={3} />
               ) : agents.length > 0 ? (
                 <div className="mb-4 max-h-[500px] overflow-y-auto">
                   {agents.map((agent) => (
@@ -615,7 +618,7 @@ export default function Overview() {
 
               <div className="mb-4">
                 {isLoadingWallets ? (
-                  <Spinner size={20} addContainer />
+                  <WalletListSkeleton rows={2} />
                 ) : (
                   <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
                     <table className="w-full">

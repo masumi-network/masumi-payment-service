@@ -15,7 +15,7 @@ import {
   GetPurchaseResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { Spinner } from '@/components/ui/spinner';
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
@@ -616,11 +616,7 @@ export default function Transactions() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={9}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
+                  <TransactionTableSkeleton rows={5} />
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="text-center py-8">

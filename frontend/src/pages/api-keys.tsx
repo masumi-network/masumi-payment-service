@@ -18,7 +18,7 @@ import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Spinner } from '@/components/ui/spinner';
+import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
 import { Search, Plus } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import {
@@ -356,11 +356,7 @@ export default function ApiKeys() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
+                  <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
