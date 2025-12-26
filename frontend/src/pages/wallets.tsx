@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
+import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { FaExchangeAlt } from 'react-icons/fa';
@@ -469,11 +470,7 @@ export default function WalletsPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={8}>
-                    <Spinner size={20} addContainer />
-                  </td>
-                </tr>
+                <WalletTableSkeleton rows={2} />
               ) : filteredWallets.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8">

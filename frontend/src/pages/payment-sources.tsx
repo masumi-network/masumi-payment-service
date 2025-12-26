@@ -21,7 +21,7 @@ import { toast } from 'react-toastify';
 import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
-import { Spinner } from '@/components/ui/spinner';
+import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Pagination } from '@/components/ui/pagination';
 import {
@@ -407,11 +407,7 @@ export default function PaymentSourcesPage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
+                  <PaymentSourceTableSkeleton rows={5} />
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
