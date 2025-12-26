@@ -22,6 +22,8 @@ import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
+import { useAgents } from '@/lib/queries/useAgents';
+import { useQueryClient } from '@tanstack/react-query';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -61,12 +63,35 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 
 export default function AIAgentsPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  // Use React Query for initial load (cached)
+  const { 
+    data: initialAgentsData, 
+    isLoading: isLoadingInitial, 
+    isFetching: isFetchingAgents,
+    refetch: refetchAgentsQuery 
+  } = useAgents();
+  
+  // Initialize allAgents from cached data
+  useEffect(() => {
+    if (initialAgentsData?.agents) {
+      setAllAgents(initialAgentsData.agents);
+      setHasMore(initialAgentsData.hasMore || false);
+    }
+  }, [initialAgentsData]);
+  
+  const isLoading = isLoadingInitial && allAgents.length === 0;
+  
+  // Helper to refetch agents (uses React Query refetch)
+  const refetchAgents = useCallback(async () => {
+    await refetchAgentsQuery();
+  }, [refetchAgentsQuery]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] =
     useState<AIAgent | null>(null);
@@ -150,14 +175,14 @@ export default function AIAgentsPage() {
     setFilteredAgents(filtered);
   }, [allAgents, searchQuery, activeTab]);
 
+  // fetchAgents is now only used for pagination (load more)
+  // Initial load is handled by useAgents hook above
   const fetchAgents = useCallback(
     async (cursor?: string | null) => {
-      if (!cursor) {
-        setIsLoading(true);
-        setAllAgents([]);
-      } else {
-        setIsLoadingMore(true);
-      }
+      // Only handle pagination, not initial load
+      if (!cursor) return;
+      
+      setIsLoadingMore(true);
 
       const selectedPaymentSource = state.paymentSources.find(
         (ps) => ps.id === selectedPaymentSourceId,
@@ -223,15 +248,7 @@ export default function AIAgentsPage() {
     }
   };
 
-  useEffect(() => {
-    if (
-      state.paymentSources &&
-      state.paymentSources.length > 0 &&
-      selectedPaymentSourceId
-    ) {
-      fetchAgents();
-    }
-  }, [state.network, state.paymentSources, selectedPaymentSourceId]);
+  // Initial load is handled by useAgents hook - no useEffect needed
 
   useEffect(() => {
     filterAgents();
@@ -309,7 +326,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deleted successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            fetchAgents();
+            refetchAgents();
           },
           onError: (error: any) => {
             console.error('Error deleting agent:', error);
@@ -341,7 +358,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            fetchAgents();
+            refetchAgents();
           },
           onError: (error: any) => {
             console.error('Error deregistering agent:', error);
@@ -424,8 +441,8 @@ export default function AIAgentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => fetchAgents()}
-              isRefreshing={isLoading}
+              onRefresh={refetchAgents}
+              isRefreshing={isFetchingAgents}
             />
             <Button
               className="flex items-center gap-2"
@@ -444,7 +461,7 @@ export default function AIAgentsPage() {
             onTabChange={(tab) => {
               setActiveTab(tab);
               setAllAgents([]);
-              fetchAgents();
+              refetchAgents();
             }}
           />
 
@@ -666,7 +683,7 @@ export default function AIAgentsPage() {
           onClose={() => setIsRegisterDialogOpen(false)}
           onSuccess={() => {
             setTimeout(() => {
-              fetchAgents();
+              refetchAgents();
             }, 2000);
           }}
         />
@@ -679,7 +696,7 @@ export default function AIAgentsPage() {
           }}
           onSuccess={() => {
             setTimeout(() => {
-              fetchAgents();
+              refetchAgents();
             }, 2000);
           }}
           initialTab={initialDialogTab}
