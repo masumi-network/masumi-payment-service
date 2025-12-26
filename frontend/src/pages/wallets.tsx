@@ -240,6 +240,47 @@ export default function WalletsPage() {
     }
   }, [router.query.action, router]);
 
+  const filterWallets = useCallback(() => {
+    let filtered = [...allWallets];
+
+    if (activeTab === 'Purchasing') {
+      filtered = filtered.filter((wallet) => wallet.type === 'Purchasing');
+    } else if (activeTab === 'Selling') {
+      filtered = filtered.filter((wallet) => wallet.type === 'Selling');
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((wallet) => {
+        const matchAddress =
+          wallet.walletAddress?.toLowerCase().includes(query) ||
+          (wallet as any).collectionAddress?.toLowerCase().includes(query) ||
+          false;
+        const matchNote =
+          (wallet as any).note?.toLowerCase().includes(query) || false;
+        const matchType = wallet.type?.toLowerCase().includes(query) || false;
+        const matchBalance = wallet.balance
+          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
+          : false;
+        const matchUsdmBalance = wallet.usdmBalance?.includes(query) || false;
+
+        return (
+          matchAddress ||
+          matchNote ||
+          matchType ||
+          matchBalance ||
+          matchUsdmBalance
+        );
+      });
+    }
+
+    setFilteredWallets(filtered);
+  }, [allWallets, searchQuery, activeTab]);
+
+  useEffect(() => {
+    filterWallets();
+  }, [filterWallets]);
+
   const handleSelectWallet = (id: string) => {
     setSelectedWallets((prev) =>
       prev.includes(id)
