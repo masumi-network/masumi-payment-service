@@ -3,10 +3,17 @@ import {
   getPaymentSource,
   getUtxos,
   GetPaymentSourceResponses,
+  GetUtxosResponses,
 } from '@/lib/api/generated';
+import { Client } from '@hey-api/client-axios';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+
+type PaymentSource =
+  GetPaymentSourceResponses['200']['data']['PaymentSources'][0];
+type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
+type UTXOAmount = UTXO['Amounts'][0];
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
@@ -23,7 +30,7 @@ export type WalletWithBalance = Wallet & {
 };
 
 async function fetchWalletBalance(
-  apiClient: any,
+  apiClient: Client,
   network: 'Preprod' | 'Mainnet',
   address: string,
 ) {
@@ -51,8 +58,8 @@ async function fetchWalletBalance(
 
     const usdmConfig = getUsdmConfig(network);
 
-    response.data.data.Utxos.forEach((utxo: any) => {
-      utxo.Amounts.forEach((amount: any) => {
+    response.data.data.Utxos.forEach((utxo: UTXO) => {
+      utxo.Amounts.forEach((amount: UTXOAmount) => {
         if (amount.unit === 'lovelace' || amount.unit == '') {
           adaBalance += amount.quantity || 0;
         } else if (amount.unit === usdmConfig.fullAssetId) {
@@ -93,17 +100,17 @@ export function useWallets() {
       }
 
       const paymentSources = response.data.data.PaymentSources.filter(
-        (source: any) =>
+        (source: PaymentSource) =>
           selectedPaymentSourceId
             ? source.id === selectedPaymentSourceId
             : true,
       );
 
       const purchasingWallets = paymentSources
-        .map((source: any) => source.PurchasingWallets)
+        .map((source: PaymentSource) => source.PurchasingWallets)
         .flat();
       const sellingWallets = paymentSources
-        .map((source: any) => source.SellingWallets)
+        .map((source: PaymentSource) => source.SellingWallets)
         .flat();
 
       if (paymentSources.length === 0) {
@@ -115,11 +122,11 @@ export function useWallets() {
       }
 
       const allWallets: Wallet[] = [
-        ...purchasingWallets.map((wallet: any) => ({
+        ...purchasingWallets.map((wallet) => ({
           ...wallet,
           type: 'Purchasing' as const,
         })),
-        ...sellingWallets.map((wallet: any) => ({
+        ...sellingWallets.map((wallet) => ({
           ...wallet,
           type: 'Selling' as const,
         })),

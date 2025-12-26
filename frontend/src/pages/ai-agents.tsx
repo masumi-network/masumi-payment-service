@@ -23,7 +23,6 @@ import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
 import { useAgents } from '@/lib/queries/useAgents';
-import { useQueryClient } from '@tanstack/react-query';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -63,7 +62,6 @@ const parseAgentStatus = (status: AIAgent['state']): string => {
 
 export default function AIAgentsPage() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
@@ -209,11 +207,9 @@ export default function AIAgentsPage() {
               setAllAgents([]);
             }
             setHasMore(false);
-            setIsLoading(false);
             setIsLoadingMore(false);
           },
           onFinally: () => {
-            setIsLoading(false);
             setIsLoadingMore(false);
           },
           errorMessage: 'Failed to load AI agents',

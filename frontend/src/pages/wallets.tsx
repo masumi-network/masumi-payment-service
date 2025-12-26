@@ -145,6 +145,7 @@ export default function WalletsPage() {
       setAllWallets([]);
       setFilteredWallets([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletsData]);
 
   const isLoading = isLoadingWallets && allWallets.length === 0;

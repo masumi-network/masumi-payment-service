@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
