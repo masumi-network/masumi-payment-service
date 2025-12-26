@@ -37,4 +37,3 @@ export function TransactionTableSkeleton({ rows = 5 }: { rows?: number }) {
     </>
   );
 }
-

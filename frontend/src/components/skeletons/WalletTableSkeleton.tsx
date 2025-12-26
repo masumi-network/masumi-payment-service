@@ -34,4 +34,3 @@ export function WalletTableSkeleton({ rows = 5 }: { rows?: number }) {
     </>
   );
 }
-

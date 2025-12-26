@@ -30,4 +30,3 @@ export function WalletListSkeleton({ rows = 5 }: { rows?: number }) {
     </div>
   );
 }
-

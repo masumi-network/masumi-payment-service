@@ -37,4 +37,3 @@ export function AIAgentTableSkeleton({ rows = 5 }: { rows?: number }) {
     </>
   );
 }
-

@@ -18,4 +18,3 @@ export function AgentListSkeleton({ items = 3 }: { items?: number }) {
     </div>
   );
 }
-

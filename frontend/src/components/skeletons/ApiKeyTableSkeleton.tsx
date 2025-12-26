@@ -34,4 +34,3 @@ export function ApiKeyTableSkeleton({ rows = 5 }: { rows?: number }) {
     </>
   );
 }
-

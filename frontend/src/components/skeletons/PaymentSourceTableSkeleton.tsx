@@ -34,4 +34,3 @@ export function PaymentSourceTableSkeleton({ rows = 5 }: { rows?: number }) {
     </>
   );
 }
-
