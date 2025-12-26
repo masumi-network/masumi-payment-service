@@ -153,7 +153,6 @@ export function useWallets() {
           };
         },
       );
-
       return {
         wallets: walletsWithBalance,
         totalBalance: totalAdaBalance.toString(),

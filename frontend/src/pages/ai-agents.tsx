@@ -69,15 +69,15 @@ export default function AIAgentsPage() {
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
-  
+
   // Use React Query for initial load (cached)
-  const { 
-    data: initialAgentsData, 
-    isLoading: isLoadingInitial, 
+  const {
+    data: initialAgentsData,
+    isLoading: isLoadingInitial,
     isFetching: isFetchingAgents,
-    refetch: refetchAgentsQuery 
+    refetch: refetchAgentsQuery,
   } = useAgents();
-  
+
   // Initialize allAgents from cached data
   useEffect(() => {
     if (initialAgentsData?.agents) {
@@ -85,9 +85,9 @@ export default function AIAgentsPage() {
       setHasMore(initialAgentsData.hasMore || false);
     }
   }, [initialAgentsData]);
-  
+
   const isLoading = isLoadingInitial && allAgents.length === 0;
-  
+
   // Helper to refetch agents (uses React Query refetch)
   const refetchAgents = useCallback(async () => {
     await refetchAgentsQuery();
@@ -181,7 +181,7 @@ export default function AIAgentsPage() {
     async (cursor?: string | null) => {
       // Only handle pagination, not initial load
       if (!cursor) return;
-      
+
       setIsLoadingMore(true);
 
       const selectedPaymentSource = state.paymentSources.find(

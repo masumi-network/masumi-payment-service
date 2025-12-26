@@ -41,7 +41,6 @@ export function useAgents(cursorId?: string | null) {
       if (!response?.data?.data?.Assets) {
         return { agents: [], hasMore: false };
       }
-
       const agents = response.data.data.Assets;
       return {
         agents,
