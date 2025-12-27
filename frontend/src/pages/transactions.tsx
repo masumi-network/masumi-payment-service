@@ -207,8 +207,6 @@ export default function Transactions() {
     setFilteredTransactions(filtered);
   }, [allTransactions, searchQuery, activeTab]);
 
-
-
   useEffect(() => {
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
@@ -233,8 +231,6 @@ export default function Transactions() {
       loadMore();
     }
   }, [hasMore, isLoadingMore, loadMore]);
-
-
 
   const handleSelectTransaction = (id: string) => {
     setSelectedTransactions((prev) =>
@@ -445,7 +441,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                        filteredTransactions.length
+                          filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -519,22 +515,8 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                          transaction.RequestedFunds?.length
+                        transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
-                            const amount = formatPrice(fund.amount);
-                            const unit = formatFundUnit(
-                              fund.unit,
-                              state.network,
-                            );
-                            return (
-                              <div key={index} className="text-sm">
-                                {amount} {unit}
-                              </div>
-                            );
-                          })
-                          : transaction.type === 'purchase' &&
-                            transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(
                                 fund.unit,
@@ -546,6 +528,20 @@ export default function Transactions() {
                                 </div>
                               );
                             })
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
+                                const amount = formatPrice(fund.amount);
+                                const unit = formatFundUnit(
+                                  fund.unit,
+                                  state.network,
+                                );
+                                return (
+                                  <div key={index} className="text-sm">
+                                    {amount} {unit}
+                                  </div>
+                                );
+                              })
                             : '—'}
                       </td>
                       <td className="p-4">
