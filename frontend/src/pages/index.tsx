@@ -5,7 +5,7 @@ import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Plus } from 'lucide-react';
 import { shortenAddress } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { GetRegistryResponses } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
@@ -44,10 +44,17 @@ export default function Overview() {
   const { data: agentsData, isLoading: isLoadingAgents } = useAgents();
   const { data: walletsData, isLoading: isLoadingWallets } = useWallets();
 
-  const agents = agentsData?.agents || [];
-  const wallets = walletsData?.wallets || [];
-  const totalBalance = walletsData?.totalBalance || '0';
-  const totalUsdmBalance = walletsData?.totalUsdmBalance || '0';
+  // Memoize derived values to ensure they update when query data changes
+  const agents = useMemo(() => agentsData?.agents || [], [agentsData]);
+  const wallets = useMemo(() => walletsData?.wallets || [], [walletsData]);
+  const totalBalance = useMemo(
+    () => walletsData?.totalBalance || '0',
+    [walletsData],
+  );
+  const totalUsdmBalance = useMemo(
+    () => walletsData?.totalUsdmBalance || '0',
+    [walletsData],
+  );
   const isLoadingBalances = isLoadingWallets;
 
   // Refetch functions for after mutations
