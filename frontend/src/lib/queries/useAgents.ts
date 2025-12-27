@@ -55,7 +55,7 @@ export function useAgents() {
       !!state.paymentSources &&
       state.paymentSources.length > 0 &&
       !!selectedPaymentSourceId,
-    staleTime: 0,
+    staleTime: 15000,
   });
 
   const agents = query.data?.pages.flatMap((page) => page.agents) ?? [];

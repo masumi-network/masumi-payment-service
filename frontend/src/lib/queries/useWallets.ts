@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
   getPaymentSource,
   getUtxos,
@@ -9,6 +10,7 @@ import { Client } from '@hey-api/client-axios';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { toast } from 'react-toastify';
 
 type PaymentSource =
   GetPaymentSourceResponses['200']['data']['PaymentSources'][0];
@@ -29,27 +31,32 @@ export type WalletWithBalance = Wallet & {
   isLoadingBalance?: boolean;
 };
 
-async function fetchWalletBalance(
+export async function fetchWalletBalance(
   apiClient: Client,
   network: 'Preprod' | 'Mainnet',
   address: string,
 ) {
-  const response = await handleApiCall(
-    () =>
-      getUtxos({
-        client: apiClient,
-        query: {
-          address: address,
-          network: network,
-        },
-      }),
-    {
-      errorMessage:
-        'Error fetching wallet balance. Possible reason: Wallet has not been used before',
+  const response = getUtxos({
+    client: apiClient,
+    query: {
+      address: address,
+      network: network,
     },
-  );
+  });
+  const responseData = await response;
 
-  if (!response?.data?.data?.Utxos) {
+  if (responseData.status == 404) {
+    return { ada: '0', usdm: '0' };
+  }
+  if (responseData.error) {
+    console.error('Error fetching wallet balance:', responseData.error);
+    toast.error(
+      'Error fetching wallet balance: ' + errorToString(responseData.error),
+    );
+    return { ada: '0', usdm: '0' };
+  }
+
+  if (!responseData.data?.data?.Utxos) {
     return { ada: '0', usdm: '0' };
   }
 
@@ -59,7 +66,7 @@ async function fetchWalletBalance(
 
     const usdmConfig = getUsdmConfig(network);
 
-    response.data.data.Utxos.forEach((utxo: UTXO) => {
+    responseData.data.data.Utxos.forEach((utxo: UTXO) => {
       utxo.Amounts.forEach((amount: UTXOAmount) => {
         if (amount.unit === 'lovelace' || amount.unit == '') {
           adaBalance += amount.quantity || 0;
@@ -79,10 +86,17 @@ async function fetchWalletBalance(
   }
 }
 
+type WalletsResponse = {
+  wallets: WalletWithBalance[];
+  totalBalance: string;
+  totalUsdmBalance: string;
+  nextCursor?: string;
+};
+
 export function useWallets() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
 
-  return useQuery({
+  const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', state.network, selectedPaymentSourceId],
     queryFn: async () => {
       const response = await handleApiCall(
@@ -97,6 +111,7 @@ export function useWallets() {
           wallets: [],
           totalBalance: '0',
           totalUsdmBalance: '0',
+          nextCursor: undefined,
         };
       }
 
@@ -119,6 +134,7 @@ export function useWallets() {
           wallets: [],
           totalBalance: '0',
           totalUsdmBalance: '0',
+          nextCursor: undefined,
         };
       }
 
@@ -133,14 +149,12 @@ export function useWallets() {
         })),
       ];
 
-      // Fetch balances for all wallets concurrently
       const balancePromises = allWallets.map((wallet) =>
         fetchWalletBalance(apiClient, state.network, wallet.walletAddress),
       );
 
       const balanceResults = await Promise.all(balancePromises);
 
-      // Calculate totals and create wallets with balances
       let totalAdaBalance = 0;
       let totalUsdmBalance = 0;
 
@@ -161,16 +175,48 @@ export function useWallets() {
           };
         },
       );
+
       return {
         wallets: walletsWithBalance,
         totalBalance: totalAdaBalance.toString(),
         totalUsdmBalance: totalUsdmBalance.toString(),
+        nextCursor: undefined,
       };
     },
     enabled:
       !!state.paymentSources &&
       state.paymentSources.length > 0 &&
       !!selectedPaymentSourceId,
-    staleTime: 0,
+    staleTime: 15000,
   });
+
+  const wallets = useMemo(() => query.data?.wallets ?? [], [query.data]);
+
+  const totalBalance = useMemo(
+    () => parseInt(query.data?.totalBalance || '0', 10) || 0,
+    [query.data],
+  );
+
+  const totalUsdmBalance = useMemo(
+    () => parseInt(query.data?.totalUsdmBalance || '0', 10) || 0,
+    [query.data],
+  );
+
+  return {
+    ...query,
+    wallets,
+    totalBalance: totalBalance.toString(),
+    totalUsdmBalance: totalUsdmBalance.toString(),
+  };
+}
+function errorToString(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (error !== null && error !== undefined) {
+    if (typeof error === 'object') {
+      return JSON.stringify(error);
+    }
+  }
+  return 'Unknown error';
 }
