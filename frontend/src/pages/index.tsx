@@ -146,23 +146,10 @@ export default function Overview() {
                 <div className="text-sm text-muted-foreground mb-2">
                   Total AI agents
                 </div>
-                <div className="text-2xl font-semibold">{agents.length}</div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total AI agents
-              </div>
-              {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
-              ) : (
                 <div className="text-2xl font-semibold">
                   {agents.length}
                   {hasMoreAgents ? '+' : ''}
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total USDM
               </div>
             )}
             {isLoadingWallets || isLoadingBalances ? (

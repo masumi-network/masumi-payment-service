@@ -7,13 +7,6 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPayment,
-  GetPaymentResponses,
-  getPurchase,
-  GetPurchaseResponses,
-} from '@/lib/api/generated';
-import { toast } from 'react-toastify';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Search } from 'lucide-react';
@@ -471,7 +464,7 @@ export default function Transactions() {
               <tbody>
                 {isLoading ? (
                   <TransactionTableSkeleton rows={5} />
-                {isInitialLoading ? (
+                ) : isInitialLoading ? (
                   <tr>
                     <td colSpan={9}>
                       <Spinner size={20} addContainer />
