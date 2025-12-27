@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/generated';
 import { ThemeProvider } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
+import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { Spinner } from '@/components/ui/spinner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
@@ -28,17 +29,19 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
-      <AppProvider initialState={initialAppState}>
-        <SidebarProvider>
-          <TooltipProvider delayDuration={200}>
-            <ThemedApp
-              Component={Component}
-              pageProps={pageProps}
-              router={router}
-            />
-          </TooltipProvider>
-        </SidebarProvider>
-      </AppProvider>
+      <QueryProvider>
+        <AppProvider initialState={initialAppState}>
+          <SidebarProvider>
+            <TooltipProvider delayDuration={200}>
+              <ThemedApp
+                Component={Component}
+                pageProps={pageProps}
+                router={router}
+              />
+            </TooltipProvider>
+          </SidebarProvider>
+        </AppProvider>
+      </QueryProvider>
     </ThemeProvider>
   );
 }

@@ -44,7 +44,11 @@ interface AddWalletDialogProps {
 const walletSchema = z.object({
   mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
   note: z.string().min(1, 'Note is required'),
-  collectionAddress: z.string().min(1, 'Collection address is required'),
+  collectionAddress: z
+    .string()
+    .min(1, 'Collection address is required')
+    .nullable()
+    .optional(),
 });
 
 type WalletFormValues = z.infer<typeof walletSchema>;
@@ -72,7 +76,7 @@ export function AddWalletDialog({
     defaultValues: {
       mnemonic: '',
       note: '',
-      collectionAddress: '',
+      collectionAddress: null,
     },
   });
 
@@ -160,10 +164,13 @@ export function AddWalletDialog({
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
 
+    let collectionAddress: string | null =
+      data.collectionAddress?.trim() || null;
+
     // Validate collection address if provided
-    if (data.collectionAddress.trim()) {
+    if (collectionAddress) {
       const validation = validateCardanoAddress(
-        data.collectionAddress.trim(),
+        collectionAddress,
         state.network,
       );
 
@@ -175,7 +182,7 @@ export function AddWalletDialog({
       const balance = await getUtxos({
         client: apiClient,
         query: {
-          address: data.collectionAddress.trim(),
+          address: collectionAddress,
           network: state.network,
         },
       });
@@ -184,6 +191,8 @@ export function AddWalletDialog({
           'Collection address has not been used yet, please check if this is the correct address',
         );
       }
+    } else {
+      collectionAddress = null;
     }
 
     if (!paymentSourceId) {
@@ -203,7 +212,7 @@ export function AddWalletDialog({
               {
                 walletMnemonic: data.mnemonic.trim(),
                 note: data.note.trim(),
-                collectionAddress: data.collectionAddress.trim(),
+                collectionAddress: collectionAddress,
               },
             ],
           },
@@ -316,13 +325,12 @@ export function AddWalletDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
-              <span className="text-destructive">*</span>
+              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection
+              Address{' '}
             </label>
             <Input
               {...register('collectionAddress')}
               placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
-              required
             />
             {errors.collectionAddress && (
               <p className="text-xs text-destructive mt-1">
