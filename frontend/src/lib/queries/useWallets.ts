@@ -170,6 +170,6 @@ export function useWallets() {
       !!state.paymentSources &&
       state.paymentSources.length > 0 &&
       !!selectedPaymentSourceId,
-    staleTime: 60 * 1000, // 60 seconds
+    staleTime: 0,
   });
 }

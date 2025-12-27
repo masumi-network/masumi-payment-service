@@ -51,8 +51,6 @@ export function useAgents(cursorId?: string | null) {
       !!state.paymentSources &&
       state.paymentSources.length > 0 &&
       !!selectedPaymentSourceId,
-    // First page (latest agents) should always be fresh - no caching
-    // Paginated pages can be cached since they're historical data
-    staleTime: cursorId ? 60 * 1000 : 0, // 60 seconds for paginated pages, 0 for first page
+    staleTime: cursorId ? 60 * 1000 : 0,
   });
 }
