@@ -26,7 +26,6 @@ export function useApiKeys(cursorToken?: string | null) {
       if (!response?.data?.data?.ApiKeys) {
         return { apiKeys: [], hasMore: false };
       }
-
       const apiKeys = response.data.data.ApiKeys;
       return {
         apiKeys,

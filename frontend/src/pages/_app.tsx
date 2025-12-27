@@ -30,17 +30,17 @@ function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
       <QueryProvider>
-        <AppProvider initialState={initialAppState}>
+      <AppProvider initialState={initialAppState}>
           <SidebarProvider>
-            <TooltipProvider delayDuration={200}>
-              <ThemedApp
-                Component={Component}
-                pageProps={pageProps}
-                router={router}
-              />
-            </TooltipProvider>
+        <TooltipProvider delayDuration={200}>
+          <ThemedApp
+            Component={Component}
+            pageProps={pageProps}
+            router={router}
+          />
+        </TooltipProvider>
           </SidebarProvider>
-        </AppProvider>
+      </AppProvider>
       </QueryProvider>
     </ThemeProvider>
   );
