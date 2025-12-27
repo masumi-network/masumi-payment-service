@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
+import { useApiKeys } from '@/lib/queries/useApiKeys';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -39,7 +40,6 @@ export default function ApiKeys() {
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [allApiKeys, setAllApiKeys] = useState<ApiKey[]>([]);
   const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
@@ -48,6 +48,26 @@ export default function ApiKeys() {
   const [activeTab, setActiveTab] = useState('All');
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const {
+    data: initialApiKeysData,
+    isLoading: isLoadingInitial,
+    isFetching: isFetchingApiKeys,
+    refetch: refetchApiKeysQuery,
+  } = useApiKeys();
+
+  const isLoading = isLoadingInitial && allApiKeys.length === 0;
+
+  useEffect(() => {
+    if (initialApiKeysData?.apiKeys) {
+      setAllApiKeys(initialApiKeysData.apiKeys);
+      setHasMore(initialApiKeysData.hasMore || false);
+    }
+  }, [initialApiKeysData]);
+
+  const refetchApiKeys = useCallback(async () => {
+    await refetchApiKeysQuery();
+  }, [refetchApiKeysQuery]);
 
   const tabs = [
     { name: 'All', count: null },
@@ -102,10 +122,7 @@ export default function ApiKeys() {
 
   const fetchApiKeys = useCallback(
     async (cursor?: string | null) => {
-      if (!cursor) {
-        setIsLoading(true);
-        setAllApiKeys([]);
-      } else {
+      if (cursor) {
         setIsLoadingMore(true);
       }
 
@@ -122,13 +139,9 @@ export default function ApiKeys() {
           onError: (error: any) => {
             console.error('Error fetching API keys:', error);
             toast.error(error.message || 'Failed to fetch API keys');
-            if (!cursor) {
-              setAllApiKeys([]);
-            }
             setHasMore(false);
           },
           onFinally: () => {
-            setIsLoading(false);
             setIsLoadingMore(false);
           },
           errorMessage: 'Failed to fetch API keys',
@@ -142,19 +155,16 @@ export default function ApiKeys() {
 
         if (cursor) {
           setAllApiKeys((prev) => {
-            // Create a map of existing keys by token to prevent duplicates
             const existingKeysMap = new Map(
               prev.map((key) => [key.token, key]),
             );
 
-            // Add new keys, overwriting any existing ones with the same token
             newKeys.forEach((key) => {
               existingKeysMap.set(key.token, key);
             });
 
             const combinedKeys = Array.from(existingKeysMap.values());
 
-            // Check if we need to fetch more
             const filteredCount = combinedKeys.filter((key) =>
               key.networkLimit.includes(state.network),
             ).length;
@@ -168,7 +178,6 @@ export default function ApiKeys() {
           });
         } else {
           setAllApiKeys(newKeys);
-          // Check if we need to fetch more for initial load
           const filteredCount = newKeys.filter((key) =>
             key.networkLimit.includes(state.network),
           ).length;
@@ -181,29 +190,13 @@ export default function ApiKeys() {
 
         setHasMore(newKeys.length === 10);
       } else {
-        if (!cursor) {
-          setAllApiKeys([]);
-        }
         setHasMore(false);
       }
 
-      setIsLoading(false);
       setIsLoadingMore(false);
     },
     [apiClient, state.network],
   );
-
-  // Separate effect for initial load
-  useEffect(() => {
-    fetchApiKeys();
-  }, [fetchApiKeys]);
-
-  // Separate effect for network changes
-  useEffect(() => {
-    if (state.network) {
-      fetchApiKeys();
-    }
-  }, [state.network, fetchApiKeys]);
 
   useEffect(() => {
     filterApiKeys();
@@ -253,7 +246,7 @@ export default function ApiKeys() {
       {
         onSuccess: () => {
           toast.success('API key deleted successfully');
-          fetchApiKeys();
+          refetchApiKeys();
         },
         onError: (error: any) => {
           console.error('Error deleting API key:', error);
@@ -291,8 +284,8 @@ export default function ApiKeys() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton
-                onRefresh={() => fetchApiKeys()}
-                isRefreshing={isLoading}
+                onRefresh={refetchApiKeys}
+                isRefreshing={isFetchingApiKeys}
               />
               <Button onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -309,7 +302,7 @@ export default function ApiKeys() {
             onTabChange={(tab) => {
               setActiveTab(tab);
               setAllApiKeys([]);
-              fetchApiKeys();
+              refetchApiKeys();
             }}
           />
 
@@ -472,14 +465,14 @@ export default function ApiKeys() {
       <AddApiKeyDialog
         open={isAddDialogOpen}
         onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={fetchApiKeys}
+        onSuccess={refetchApiKeys}
       />
 
       {keyToUpdate && (
         <UpdateApiKeyDialog
           open={true}
           onClose={() => setKeyToUpdate(null)}
-          onSuccess={fetchApiKeys}
+          onSuccess={refetchApiKeys}
           apiKey={keyToUpdate}
         />
       )}

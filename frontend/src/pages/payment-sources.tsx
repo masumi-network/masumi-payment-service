@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +17,7 @@ import {
   GetPaymentSourceResponses,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { usePaymentSources } from '@/lib/queries/usePaymentSources';
 import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -147,7 +147,6 @@ export default function PaymentSourcesPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSource | null>(
     null,
   );
@@ -172,6 +171,26 @@ export default function PaymentSourcesPage() {
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
     useState<PaymentSource | null>(null);
 
+  const {
+    data: initialPaymentSourcesData,
+    isLoading: isLoadingInitial,
+    isFetching: isFetchingPaymentSources,
+    refetch: refetchPaymentSourcesQuery,
+  } = usePaymentSources();
+
+  const isLoading = isLoadingInitial && paymentSources.length === 0;
+
+  useEffect(() => {
+    if (initialPaymentSourcesData?.paymentSources) {
+      setPaymentSources(initialPaymentSourcesData.paymentSources);
+      setHasMore(initialPaymentSourcesData.hasMore || false);
+    }
+  }, [initialPaymentSourcesData]);
+
+  const refetchPaymentSources = useCallback(async () => {
+    await refetchPaymentSourcesQuery();
+  }, [refetchPaymentSourcesQuery]);
+
   const filterPaymentSources = useCallback(() => {
     let filtered = [...paymentSources];
 
@@ -190,10 +209,7 @@ export default function PaymentSourcesPage() {
   }, [paymentSources, searchQuery]);
 
   const fetchPaymentSources = async (cursor?: string | null) => {
-    if (!cursor) {
-      setIsLoading(true);
-      setPaymentSources([]);
-    } else {
+    if (cursor) {
       setIsLoadingMore(true);
     }
 
@@ -209,11 +225,7 @@ export default function PaymentSourcesPage() {
       const error = response.error as { message: string };
       console.error('Error fetching payment sources:', error);
       toast.error(error.message || 'Failed to load payment sources');
-      if (!cursor) {
-        setPaymentSources([]);
-      }
       setHasMore(false);
-      setIsLoading(false);
       setIsLoadingMore(false);
       return null;
     }
@@ -230,23 +242,14 @@ export default function PaymentSourcesPage() {
       }
 
       setHasMore(response.data.data.ExtendedPaymentSources.length === 10);
-      setIsLoading(false);
       setIsLoadingMore(false);
       return filteredSources;
     } else {
-      if (!cursor) {
-        setPaymentSources([]);
-      }
       setHasMore(false);
-      setIsLoading(false);
       setIsLoadingMore(false);
       return [];
     }
   };
-
-  useEffect(() => {
-    void fetchPaymentSources();
-  }, [state.network]);
 
   useEffect(() => {
     filterPaymentSources();
@@ -291,10 +294,9 @@ export default function PaymentSourcesPage() {
       {
         onSuccess: async () => {
           toast.success('Payment source deleted successfully');
-          const updatedSources = await fetchPaymentSources();
+          const result = await refetchPaymentSourcesQuery();
 
-          // Check if no payment sources remain after deletion
-          if (updatedSources && updatedSources.length === 0) {
+          if (result.data && result.data.paymentSources.length === 0) {
             router.push(`/setup?network=${encodeURIComponent(state.network)}`);
           }
         },
@@ -348,10 +350,8 @@ export default function PaymentSourcesPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => {
-                void fetchPaymentSources();
-              }}
-              isRefreshing={isLoading}
+              onRefresh={refetchPaymentSources}
+              isRefreshing={isFetchingPaymentSources}
             />
             <Button
               className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
@@ -525,13 +525,13 @@ export default function PaymentSourcesPage() {
         <AddPaymentSourceDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
-          onSuccess={fetchPaymentSources}
+          onSuccess={refetchPaymentSources}
         />
 
         <UpdatePaymentSourceDialog
           open={!!sourceToUpdate}
           onClose={() => setSourceToUpdate(null)}
-          onSuccess={fetchPaymentSources}
+          onSuccess={refetchPaymentSources}
           paymentSourceId={sourceToUpdate?.id || ''}
           currentApiKey={
             sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''
