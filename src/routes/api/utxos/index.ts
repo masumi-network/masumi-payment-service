@@ -140,8 +140,14 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
         })),
       };
     } catch (error) {
-      if (errorToString(error).includes('ValueNotConservedUTxO')) {
-        throw createHttpError(404, 'Wallet not found');
+      if (
+        errorToString(error).includes('ValueNotConservedUTxO') ||
+        (errorToString(error).toLowerCase().includes('not') &&
+          errorToString(error).toLowerCase().includes('found')) ||
+        ((error as { statusCode?: number | string })
+          .statusCode as unknown as number) == 404
+      ) {
+        throw createHttpError(404, 'Address not found');
       }
       throw createHttpError(500, 'Failed to get UTXOs');
     }

@@ -294,9 +294,9 @@ export function RegisterAIAgentDialog({
     async (data: AgentFormValues) => {
       try {
         setIsLoading(true);
-        const selectedWallet = data.selectedWallet;
+        const selectedWalletVkey = data.selectedWallet;
         const selectedWalletBalance = sellingWallets.find(
-          (w) => w.wallet.walletVkey == selectedWallet,
+          (w) => w.wallet.walletVkey == selectedWalletVkey,
         )?.balance;
         if (
           selectedWalletBalance == undefined ||
@@ -306,10 +306,11 @@ export function RegisterAIAgentDialog({
           return;
         }
         const paymentSource = state.paymentSources?.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
+          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
         );
         if (!paymentSource) {
-          throw new Error('Smart contract wallet not found in payment sources');
+          toast.error('Smart contract wallet not found in payment sources');
+          return;
         }
 
         const legal: {
@@ -345,7 +346,7 @@ export function RegisterAIAgentDialog({
           client: apiClient,
           body: {
             network: state.network,
-            sellingWalletVkey: data.selectedWallet,
+            sellingWalletVkey: selectedWalletVkey,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
@@ -403,7 +404,15 @@ export function RegisterAIAgentDialog({
         setIsLoading(false);
       }
     },
-    [apiClient, state.network, state.paymentSources, onSuccess, onClose, reset],
+    [
+      apiClient,
+      state.network,
+      state.paymentSources,
+      onSuccess,
+      onClose,
+      reset,
+      sellingWallets,
+    ],
   );
 
   // Tag management
@@ -609,6 +618,7 @@ export function RegisterAIAgentDialog({
                   <Input
                     type="number"
                     placeholder="0.00"
+                    onWheel={(e) => e.currentTarget.blur()}
                     disabled={watch('isFree')}
                     value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}

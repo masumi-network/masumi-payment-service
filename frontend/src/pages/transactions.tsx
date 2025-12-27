@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -8,43 +7,19 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPayment,
-  GetPaymentResponses,
-  getPurchase,
-  GetPurchaseResponses,
-} from '@/lib/api/generated';
-import { toast } from 'react-toastify';
 import { Spinner } from '@/components/ui/spinner';
 import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
-import { parseError } from '@/lib/utils';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
+import { useTransactions } from '@/lib/hooks/useTransactions';
 
-type Transaction =
-  | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
-  | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
-
-interface ApiError {
-  message: string;
-  error?: {
-    message?: string;
-  };
-}
-
-const handleError = (error: ApiError) => {
-  const errorMessage =
-    error.error?.message || error.message || 'An error occurred';
-  toast.error(errorMessage);
-};
+type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
 const formatTimestamp = (timestamp: string | null | undefined): string => {
   if (!timestamp) return '—';
@@ -58,6 +33,14 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 
 export default function Transactions() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const {
+    transactions,
+    isLoading,
+    hasMore,
+    loadMore,
+    refetch: refetchTransactions,
+    isFetchingNextPage,
+  } = useTransactions();
 
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
@@ -74,21 +57,17 @@ export default function Transactions() {
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
     [],
   );
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]
   >([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [purchaseCursorId, setPurchaseCursorId] = useState<string | null>(null);
-  const [paymentCursorId, setPaymentCursorId] = useState<string | null>(null);
-  const [hasMorePurchases, setHasMorePurchases] = useState(true);
-  const [hasMorePayments, setHasMorePayments] = useState(true);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
-  const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const isLoadingMore = isFetchingNextPage;
+  const isInitialLoading = isLoading && transactions.length === 0;
+  const allTransactions = useMemo(() => transactions, [transactions]);
 
   const tabs = useMemo(() => {
     // Apply the same deduplication logic as filterTransactions
@@ -194,142 +173,7 @@ export default function Transactions() {
     setFilteredTransactions(filtered);
   }, [allTransactions, searchQuery, activeTab]);
 
-  const fetchTransactions = useCallback(
-    async (
-      forceFetchPurchases = false,
-      forceFetchPayments = false,
-      resetCursor = false,
-    ) => {
-      try {
-        setIsLoadingMore(true);
-        const selectedPaymentSource = state.paymentSources.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress;
-        // Fetch purchases
-        let purchases: Transaction[] = [];
-        let newPurchaseCursor: string | null = purchaseCursorId;
-        let morePurchases = forceFetchPurchases || hasMorePurchases;
-        if (morePurchases) {
-          const purchaseRes = await getPurchase({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: resetCursor ? undefined : purchaseCursorId || undefined,
-              includeHistory: 'true',
-              limit: 10,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          });
-          if (purchaseRes.data?.data?.Purchases) {
-            purchases = purchaseRes.data.data.Purchases.map((purchase) => ({
-              ...purchase,
-              type: 'purchase',
-            }));
-            if (purchases.length > 0) {
-              newPurchaseCursor = purchases[purchases.length - 1].id;
-            }
-            morePurchases = purchases.length === 10;
-          } else {
-            morePurchases = false;
-          }
-        }
-
-        // Fetch payments
-        let payments: Transaction[] = [];
-        let newPaymentCursor: string | null = paymentCursorId;
-        let morePayments = forceFetchPayments || hasMorePayments;
-        if (morePayments) {
-          const paymentRes = await getPayment({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: resetCursor ? undefined : paymentCursorId || undefined,
-              includeHistory: 'true',
-              limit: 10,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          });
-          if (paymentRes.data?.data?.Payments) {
-            payments = paymentRes.data.data.Payments.map((payment) => ({
-              ...payment,
-              type: 'payment',
-            }));
-            if (payments.length > 0) {
-              newPaymentCursor = payments[payments.length - 1].id;
-            }
-            morePayments = payments.length === 10;
-          } else {
-            morePayments = false;
-          }
-        }
-
-        // Combine and dedupe by type+hash
-        const combined = [
-          ...purchases,
-          ...payments,
-          //fixes ordering for updates
-          ...allTransactions,
-        ];
-        const seen = new Set();
-        const deduped = combined.filter((tx) => {
-          const key = tx.id;
-          if (!key) return true;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        // Sort by createdAt
-        const sorted = deduped.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-        setAllTransactions(sorted);
-        setPurchaseCursorId(newPurchaseCursor);
-        setPaymentCursorId(newPaymentCursor);
-        setHasMorePurchases(morePurchases);
-        setHasMorePayments(morePayments);
-      } catch (error) {
-        console.error('Failed to fetch transactions:', error);
-        toast.error('Failed to load transactions');
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
-      }
-    },
-    [
-      selectedPaymentSourceId,
-      apiClient,
-      state.network,
-      purchaseCursorId,
-      paymentCursorId,
-      hasMorePurchases,
-      hasMorePayments,
-      allTransactions,
-      activeTab,
-      searchQuery,
-    ],
-  );
-
-  const refreshTransactions = () => {
-    setPurchaseCursorId(null);
-    setPaymentCursorId(null);
-    setHasMorePurchases(true);
-    setHasMorePayments(true);
-    setIsLoading(true);
-    setAllTransactions([]);
-    // Force fetch both purchases and payments
-
-    fetchTransactions(true, true, true);
-  };
-
   useEffect(() => {
-    fetchTransactions();
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
       localStorage.setItem(
@@ -344,11 +188,15 @@ export default function Transactions() {
     filterTransactions();
   }, [filterTransactions, searchQuery, activeTab]);
 
-  const handleLoadMore = () => {
-    if (!isLoadingMore && (hasMorePurchases || hasMorePayments)) {
-      fetchTransactions();
+  const refreshTransactions = useCallback(() => {
+    refetchTransactions?.();
+  }, [refetchTransactions]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isLoadingMore) {
+      loadMore();
     }
-  };
+  }, [hasMore, isLoadingMore, loadMore]);
 
   const handleSelectTransaction = (id: string) => {
     setSelectedTransactions((prev) =>
@@ -529,8 +377,6 @@ export default function Transactions() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
-              //setAllTransactions([]);
-              //fetchTransactions();
             }}
           />
 
@@ -581,7 +427,7 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isInitialLoading ? (
                   <tr>
                     <td colSpan={9}>
                       <Spinner size={20} addContainer />
@@ -705,17 +551,9 @@ export default function Transactions() {
           </div>
 
           <div className="flex flex-col gap-4 items-center">
-            {!isLoading && (
+            {!isInitialLoading && (
               <Pagination
-                hasMore={
-                  activeTab === 'All' ||
-                  activeTab === 'Refund Requests' ||
-                  activeTab === 'Disputes'
-                    ? hasMorePurchases || hasMorePayments
-                    : activeTab === 'Payments'
-                      ? hasMorePayments
-                      : hasMorePurchases
-                }
+                hasMore={hasMore}
                 isLoading={isLoadingMore}
                 onLoadMore={handleLoadMore}
               />
@@ -727,7 +565,7 @@ export default function Transactions() {
       <TransactionDetailsDialog
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
-        onRefresh={() => fetchTransactions()}
+        onRefresh={refreshTransactions}
         apiClient={apiClient}
         state={state}
       />

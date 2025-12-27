@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
-  getRegistry,
   deleteRegistry,
   GetRegistryResponses,
   postRegistryDeregister,
@@ -22,6 +21,7 @@ import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
 import { Spinner } from '@/components/ui/spinner';
+import { useAgents } from '@/lib/queries/useAgents';
 import formatBalance from '@/lib/formatBalance';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FaRegClock } from 'react-icons/fa';
@@ -66,15 +66,36 @@ export default function AIAgentsPage() {
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
+  // Use React Query for initial load (cached)
+  const {
+    data: agentsData,
+    isLoading: isLoadingInitial,
+    isFetching: isFetchingAgents,
+    refetch: refetchAgentsQuery,
+    hasNextPage: hasMoreAgents,
+    fetchNextPage: fetchMoreAgents,
+  } = useAgents();
+
+  // Initialize allAgents from cached data
+  useEffect(() => {
+    if (agentsData?.pages.flatMap((page) => page.agents)) {
+      setAllAgents(agentsData.pages.flatMap((page) => page.agents));
+    }
+  }, [agentsData]);
+
+  const isLoading = isLoadingInitial && allAgents.length === 0;
+
+  // Helper to refetch agents (uses React Query refetch)
+  const refetchAgents = useCallback(async () => {
+    await refetchAgentsQuery();
+  }, [refetchAgentsQuery]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] =
     useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
   const [activeTab, setActiveTab] = useState('All');
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
   const [initialDialogTab, setInitialDialogTab] = useState<
@@ -150,88 +171,7 @@ export default function AIAgentsPage() {
     setFilteredAgents(filtered);
   }, [allAgents, searchQuery, activeTab]);
 
-  const fetchAgents = useCallback(
-    async (cursor?: string | null) => {
-      if (!cursor) {
-        setIsLoading(true);
-        setAllAgents([]);
-      } else {
-        setIsLoadingMore(true);
-      }
-
-      const selectedPaymentSource = state.paymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-      const smartContractAddress = selectedPaymentSource?.smartContractAddress;
-
-      const response = await handleApiCall(
-        () =>
-          getRegistry({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: cursor || undefined,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Error fetching agents:', error);
-            toast.error(error.message || 'Failed to load AI agents');
-            if (!cursor) {
-              setAllAgents([]);
-            }
-            setHasMore(false);
-            setIsLoading(false);
-            setIsLoadingMore(false);
-          },
-          onFinally: () => {
-            setIsLoading(false);
-            setIsLoadingMore(false);
-          },
-          errorMessage: 'Failed to load AI agents',
-        },
-      );
-
-      if (!response) return;
-
-      if (response.data?.data?.Assets) {
-        const newAgents = response.data.data.Assets;
-        if (cursor) {
-          setAllAgents((prev) => [...prev, ...newAgents]);
-        } else {
-          setAllAgents(newAgents);
-        }
-
-        setHasMore(newAgents.length === 10);
-      } else {
-        if (!cursor) {
-          setAllAgents([]);
-        }
-        setHasMore(false);
-      }
-    },
-    [apiClient, state.network, selectedPaymentSourceId],
-  );
-
-  const handleLoadMore = () => {
-    if (!isLoadingMore && hasMore && allAgents.length > 0) {
-      const lastAgent = allAgents[allAgents.length - 1];
-      fetchAgents(lastAgent.id);
-    }
-  };
-
-  useEffect(() => {
-    if (
-      state.paymentSources &&
-      state.paymentSources.length > 0 &&
-      selectedPaymentSourceId
-    ) {
-      fetchAgents();
-    }
-  }, [state.network, state.paymentSources, selectedPaymentSourceId]);
+  // Initial load is handled by useAgents hook - no useEffect needed
 
   useEffect(() => {
     filterAgents();
@@ -309,7 +249,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deleted successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            fetchAgents();
+            refetchAgents();
           },
           onError: (error: any) => {
             console.error('Error deleting agent:', error);
@@ -341,7 +281,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            fetchAgents();
+            refetchAgents();
           },
           onError: (error: any) => {
             console.error('Error deregistering agent:', error);
@@ -424,8 +364,8 @@ export default function AIAgentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => fetchAgents()}
-              isRefreshing={isLoading}
+              onRefresh={refetchAgents}
+              isRefreshing={isFetchingAgents}
             />
             <Button
               className="flex items-center gap-2"
@@ -444,7 +384,7 @@ export default function AIAgentsPage() {
             onTabChange={(tab) => {
               setActiveTab(tab);
               setAllAgents([]);
-              fetchAgents();
+              refetchAgents();
             }}
           />
 
@@ -653,9 +593,9 @@ export default function AIAgentsPage() {
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (
               <Pagination
-                hasMore={hasMore}
-                isLoading={isLoadingMore}
-                onLoadMore={handleLoadMore}
+                hasMore={hasMoreAgents}
+                isLoading={isFetchingAgents}
+                onLoadMore={fetchMoreAgents}
               />
             )}
           </div>
@@ -666,8 +606,8 @@ export default function AIAgentsPage() {
           onClose={() => setIsRegisterDialogOpen(false)}
           onSuccess={() => {
             setTimeout(() => {
-              fetchAgents();
-            }, 2000);
+              refetchAgents();
+            }, 250);
           }}
         />
 
@@ -679,7 +619,7 @@ export default function AIAgentsPage() {
           }}
           onSuccess={() => {
             setTimeout(() => {
-              fetchAgents();
+              refetchAgents();
             }, 2000);
           }}
           initialTab={initialDialogTab}
