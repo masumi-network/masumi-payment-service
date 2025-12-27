@@ -44,7 +44,11 @@ interface AddWalletDialogProps {
 const walletSchema = z.object({
   mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
   note: z.string().min(1, 'Note is required'),
-  collectionAddress: z.string().min(1, 'Collection address is required').nullable().optional(),
+  collectionAddress: z
+    .string()
+    .min(1, 'Collection address is required')
+    .nullable()
+    .optional(),
 });
 
 type WalletFormValues = z.infer<typeof walletSchema>;
@@ -160,7 +164,8 @@ export function AddWalletDialog({
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
 
-    let collectionAddress: string | null = data.collectionAddress?.trim() || null;
+    let collectionAddress: string | null =
+      data.collectionAddress?.trim() || null;
 
     // Validate collection address if provided
     if (collectionAddress) {
@@ -326,7 +331,6 @@ export function AddWalletDialog({
             <Input
               {...register('collectionAddress')}
               placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
-              required
             />
             {errors.collectionAddress && (
               <p className="text-xs text-destructive mt-1">
