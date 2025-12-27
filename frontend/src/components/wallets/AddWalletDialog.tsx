@@ -209,12 +209,12 @@ export function AddWalletDialog({
             [type === 'Purchasing'
               ? 'AddPurchasingWallets'
               : 'AddSellingWallets']: [
-                {
-                  walletMnemonic: data.mnemonic.trim(),
-                  note: data.note.trim(),
-                  collectionAddress: collectionAddress,
-                },
-              ],
+              {
+                walletMnemonic: data.mnemonic.trim(),
+                note: data.note.trim(),
+                collectionAddress: collectionAddress,
+              },
+            ],
           },
         }),
       {
