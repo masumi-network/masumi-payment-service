@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps, react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
-  getRegistry,
   deleteRegistry,
   GetRegistryResponses,
   postRegistryDeregister,
@@ -70,19 +69,20 @@ export default function AIAgentsPage() {
 
   // Use React Query for initial load (cached)
   const {
-    data: initialAgentsData,
+    data: agentsData,
     isLoading: isLoadingInitial,
     isFetching: isFetchingAgents,
     refetch: refetchAgentsQuery,
+    hasNextPage: hasMoreAgents,
+    fetchNextPage: fetchMoreAgents,
   } = useAgents();
 
   // Initialize allAgents from cached data
   useEffect(() => {
-    if (initialAgentsData?.agents) {
-      setAllAgents(initialAgentsData.agents);
-      setHasMore(initialAgentsData.hasMore || false);
+    if (agentsData?.pages.flatMap((page) => page.agents)) {
+      setAllAgents(agentsData.pages.flatMap((page) => page.agents));
     }
-  }, [initialAgentsData]);
+  }, [agentsData]);
 
   const isLoading = isLoadingInitial && allAgents.length === 0;
 
@@ -96,8 +96,6 @@ export default function AIAgentsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
   const [activeTab, setActiveTab] = useState('All');
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
   const [initialDialogTab, setInitialDialogTab] = useState<
@@ -150,14 +148,14 @@ export default function AIAgentsPage() {
         const matchState = agent.state?.toLowerCase().includes(query) || false;
         const matchPrice =
           agent.AgentPricing &&
-          agent.AgentPricing.pricingType == 'Fixed' &&
-          agent.AgentPricing.Pricing?.[0]?.amount
+            agent.AgentPricing.pricingType == 'Fixed' &&
+            agent.AgentPricing.Pricing?.[0]?.amount
             ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-                .toFixed(2)
-                .includes(query)
+              .toFixed(2)
+              .includes(query)
             : agent.AgentPricing &&
-              agent.AgentPricing.pricingType == 'Free' &&
-              'free'.includes(query);
+            agent.AgentPricing.pricingType == 'Free' &&
+            'free'.includes(query);
 
         return (
           matchName ||
@@ -173,73 +171,6 @@ export default function AIAgentsPage() {
     setFilteredAgents(filtered);
   }, [allAgents, searchQuery, activeTab]);
 
-  // fetchAgents is now only used for pagination (load more)
-  // Initial load is handled by useAgents hook above
-  const loadMoreAgents = useCallback(
-    async (cursor: string) => {
-      setIsLoadingMore(true);
-
-      const selectedPaymentSource = state.paymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
-      const smartContractAddress = selectedPaymentSource?.smartContractAddress;
-
-      const response = await handleApiCall(
-        () =>
-          getRegistry({
-            client: apiClient,
-            query: {
-              network: state.network,
-              cursorId: cursor || undefined,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
-            },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Error fetching agents:', error);
-            toast.error(error.message || 'Failed to load AI agents');
-            if (!cursor) {
-              setAllAgents([]);
-            }
-            setHasMore(false);
-            setIsLoadingMore(false);
-          },
-          onFinally: () => {
-            setIsLoadingMore(false);
-          },
-          errorMessage: 'Failed to load AI agents',
-        },
-      );
-
-      if (!response) return;
-
-      if (response.data?.data?.Assets) {
-        const newAgents = response.data.data.Assets;
-        if (cursor) {
-          setAllAgents((prev) => [...prev, ...newAgents]);
-        } else {
-          setAllAgents(newAgents);
-        }
-
-        setHasMore(newAgents.length === 10);
-      } else {
-        if (!cursor) {
-          setAllAgents([]);
-        }
-        setHasMore(false);
-      }
-    },
-    [apiClient, state.network, selectedPaymentSourceId],
-  );
-
-  const handleLoadMore = () => {
-    if (!isLoadingMore && hasMore && allAgents.length > 0) {
-      const lastAgent = allAgents[allAgents.length - 1];
-      loadMoreAgents(lastAgent.id);
-    }
-  };
 
   // Initial load is handled by useAgents hook - no useEffect needed
 
@@ -605,7 +536,7 @@ export default function AIAgentsPage() {
                           variant={getStatusBadgeVariant(agent.state)}
                           className={cn(
                             agent.state === 'RegistrationConfirmed' &&
-                              'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            'bg-green-50 text-green-700 hover:bg-green-50/80',
                           )}
                         >
                           {parseAgentStatus(agent.state)}
@@ -663,9 +594,9 @@ export default function AIAgentsPage() {
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (
               <Pagination
-                hasMore={hasMore}
-                isLoading={isLoadingMore}
-                onLoadMore={handleLoadMore}
+                hasMore={hasMoreAgents}
+                isLoading={isFetchingAgents}
+                onLoadMore={fetchMoreAgents}
               />
             )}
           </div>
@@ -703,13 +634,13 @@ export default function AIAgentsPage() {
           }}
           title={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Delete ${selectedAgentToDelete?.name}`
               : `Deregister ${selectedAgentToDelete?.name}`
           }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Are you sure you want to delete "${selectedAgentToDelete?.name}"? This action cannot be undone.`
               : `Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`
           }

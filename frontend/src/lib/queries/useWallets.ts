@@ -44,7 +44,8 @@ async function fetchWalletBalance(
         },
       }),
     {
-      errorMessage: 'Error fetching wallet balance',
+      errorMessage:
+        'Error fetching wallet balance. Possible reason: Wallet has not been used before',
     },
   );
 

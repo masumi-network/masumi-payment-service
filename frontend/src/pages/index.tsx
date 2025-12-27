@@ -41,11 +41,11 @@ export default function Overview() {
   const queryClient = useQueryClient();
 
   // Use React Query hooks for cached data
-  const { data: agentsData, isLoading: isLoadingAgents } = useAgents();
+  const { data: agentsData, isLoading: isLoadingAgents, hasNextPage: hasMoreAgents, fetchNextPage: fetchMoreAgents } = useAgents();
   const { data: walletsData, isLoading: isLoadingWallets } = useWallets();
 
   // Memoize derived values to ensure they update when query data changes
-  const agents = useMemo(() => agentsData?.agents || [], [agentsData]);
+  const agents = useMemo(() => agentsData?.pages.flatMap((page) => page.agents) || [], [agentsData]);
   const wallets = useMemo(() => walletsData?.wallets || [], [walletsData]);
   const totalBalance = useMemo(
     () => walletsData?.totalBalance || '0',
@@ -77,18 +77,12 @@ export default function Overview() {
   const { rate, isLoading: isLoadingRate } = useRate();
   const { newTransactionsCount, isLoading: isLoadingTransactions } =
     useTransactions();
-  const hasMore = agentsData?.hasMore || false;
+
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
-  // Load more functionality - TODO: implement with useInfiniteQuery if needed
-  const handleLoadMore = () => {
-    // Pagination can be added later with useInfiniteQuery
-  };
-
-  // Old fetch functions removed - now using React Query hooks above
 
   const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
@@ -113,10 +107,10 @@ export default function Overview() {
             Showing data for{' '}
             {selectedPaymentSourceId
               ? shortenAddress(
-                  state.paymentSources.find(
-                    (source) => source.id === selectedPaymentSourceId,
-                  )?.smartContractAddress ?? 'invalid',
-                )
+                state.paymentSources.find(
+                  (source) => source.id === selectedPaymentSourceId,
+                )?.smartContractAddress ?? 'invalid',
+              )
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -138,7 +132,7 @@ export default function Overview() {
               {isLoadingAgents ? (
                 <Spinner size={20} addContainer />
               ) : (
-                <div className="text-2xl font-semibold">{agents.length}</div>
+                <div className="text-2xl font-semibold">{agents.length}{hasMoreAgents ? '+' : ''}</div>
               )}
             </div>
             <div className="border rounded-lg p-6">
@@ -251,8 +245,8 @@ export default function Overview() {
                             </span>
                           )}
                         {agent.AgentPricing &&
-                        agent.AgentPricing.pricingType == 'Fixed' &&
-                        agent.AgentPricing.Pricing?.[0] ? (
+                          agent.AgentPricing.pricingType == 'Fixed' &&
+                          agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {
@@ -283,13 +277,13 @@ export default function Overview() {
                       </div>
                     </div>
                   ))}
-                  {hasMore && (
+                  {agentsData?.pages?.[agentsData.pages.length - 1]?.nextCursor && (
                     <div className="flex justify-center pt-4">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleLoadMore}
-                        disabled={false}
+                        onClick={() => fetchMoreAgents()}
+                        disabled={!hasMoreAgents || isLoadingAgents}
                       >
                         Load more
                       </Button>

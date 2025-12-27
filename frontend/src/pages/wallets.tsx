@@ -94,13 +94,13 @@ export default function WalletsPage() {
               prev.map((w) =>
                 w.id === wallet.id
                   ? {
-                      ...w,
-                      collectionBalance: {
-                        ada: collectionBalance.ada,
-                        usdm: collectionBalance.usdm,
-                      },
-                      isLoadingCollectionBalance: false,
-                    }
+                    ...w,
+                    collectionBalance: {
+                      ada: collectionBalance.ada,
+                      usdm: collectionBalance.usdm,
+                    },
+                    isLoadingCollectionBalance: false,
+                  }
                   : w,
               ),
             );
@@ -108,13 +108,13 @@ export default function WalletsPage() {
               prev.map((w) =>
                 w.id === wallet.id
                   ? {
-                      ...w,
-                      collectionBalance: {
-                        ada: collectionBalance.ada,
-                        usdm: collectionBalance.usdm,
-                      },
-                      isLoadingCollectionBalance: false,
-                    }
+                    ...w,
+                    collectionBalance: {
+                      ada: collectionBalance.ada,
+                      usdm: collectionBalance.usdm,
+                    },
+                    isLoadingCollectionBalance: false,
+                  }
                   : w,
               ),
             );
@@ -181,7 +181,7 @@ export default function WalletsPage() {
           }),
         {
           onError: (error: any) => {
-            console.error('Error fetching wallet balance:', error);
+            console.error('Error fetching wallet balance:', error, " Possible reason: Wallet has not been used before");
             if (error.message) {
               toast.error(error.message);
             }
@@ -490,7 +490,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         {wallet.type === 'Selling' &&
-                        wallet.collectionAddress ? (
+                          wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -510,16 +510,16 @@ export default function WalletsPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                              wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
                                   ? formatBalance(
-                                      (
-                                        parseInt(wallet.balance) / 1000000
-                                      ).toFixed(2),
-                                    )
+                                    (
+                                      parseInt(wallet.balance) / 1000000
+                                    ).toFixed(2),
+                                  )
                                   : '0'}
                               </span>
                             )}
@@ -543,7 +543,7 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           {refreshingBalances.has(wallet.id) ||
-                          wallet.isLoadingBalance ? (
+                            wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>

@@ -1,33 +1,33 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { getRegistry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 
-export function useAgents(cursorId?: string | null) {
+export function useAgents() {
   const { apiClient, state, selectedPaymentSourceId } = useAppContext();
 
   const selectedPaymentSource = state.paymentSources?.find(
     (ps) => ps.id === selectedPaymentSourceId,
   );
+
   const smartContractAddress =
     selectedPaymentSource?.smartContractAddress ?? null;
 
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: [
       'agents',
       state.network,
       selectedPaymentSourceId,
       smartContractAddress,
-      cursorId,
     ],
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       const response = await handleApiCall(
         () =>
           getRegistry({
             client: apiClient,
             query: {
               network: state.network,
-              cursorId: cursorId || undefined,
+              cursorId: pageParam ?? undefined,
               filterSmartContractAddress: smartContractAddress
                 ? smartContractAddress
                 : undefined,
@@ -38,19 +38,31 @@ export function useAgents(cursorId?: string | null) {
         },
       );
 
-      if (!response?.data?.data?.Assets) {
-        return { agents: [], hasMore: false };
-      }
-      const agents = response.data.data.Assets;
+      const agents = response?.data?.data?.Assets ?? [];
+      const nextCursor =
+        agents.length === 10 && agents[agents.length - 1]?.id
+          ? agents[agents.length - 1].id
+          : undefined;
+
       return {
         agents,
-        hasMore: agents.length === 10,
+        nextCursor,
       };
     },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled:
       !!state.paymentSources &&
       state.paymentSources.length > 0 &&
       !!selectedPaymentSourceId,
-    staleTime: cursorId ? 60 * 1000 : 0,
+    staleTime: 0,
   });
+
+  const agents = query.data?.pages.flatMap((page) => page.agents) ?? [];
+
+  return {
+    ...query,
+    agents,
+    hasMore: Boolean(query.hasNextPage),
+  };
 }
