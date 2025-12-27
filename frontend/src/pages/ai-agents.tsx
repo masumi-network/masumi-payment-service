@@ -148,14 +148,14 @@ export default function AIAgentsPage() {
         const matchState = agent.state?.toLowerCase().includes(query) || false;
         const matchPrice =
           agent.AgentPricing &&
-            agent.AgentPricing.pricingType == 'Fixed' &&
-            agent.AgentPricing.Pricing?.[0]?.amount
+          agent.AgentPricing.pricingType == 'Fixed' &&
+          agent.AgentPricing.Pricing?.[0]?.amount
             ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-              .toFixed(2)
-              .includes(query)
+                .toFixed(2)
+                .includes(query)
             : agent.AgentPricing &&
-            agent.AgentPricing.pricingType == 'Free' &&
-            'free'.includes(query);
+              agent.AgentPricing.pricingType == 'Free' &&
+              'free'.includes(query);
 
         return (
           matchName ||
@@ -535,7 +535,7 @@ export default function AIAgentsPage() {
                           variant={getStatusBadgeVariant(agent.state)}
                           className={cn(
                             agent.state === 'RegistrationConfirmed' &&
-                            'bg-green-50 text-green-700 hover:bg-green-50/80',
+                              'bg-green-50 text-green-700 hover:bg-green-50/80',
                           )}
                         >
                           {parseAgentStatus(agent.state)}
@@ -633,13 +633,13 @@ export default function AIAgentsPage() {
           }}
           title={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Delete ${selectedAgentToDelete?.name}`
               : `Deregister ${selectedAgentToDelete?.name}`
           }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Are you sure you want to delete "${selectedAgentToDelete?.name}"? This action cannot be undone.`
               : `Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`
           }

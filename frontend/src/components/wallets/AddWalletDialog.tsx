@@ -209,12 +209,12 @@ export function AddWalletDialog({
             [type === 'Purchasing'
               ? 'AddPurchasingWallets'
               : 'AddSellingWallets']: [
-                {
-                  walletMnemonic: data.mnemonic.trim(),
-                  note: data.note.trim(),
-                  collectionAddress: collectionAddress,
-                },
-              ],
+              {
+                walletMnemonic: data.mnemonic.trim(),
+                note: data.note.trim(),
+                collectionAddress: collectionAddress,
+              },
+            ],
           },
         }),
       {
@@ -325,7 +325,8 @@ export function AddWalletDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
+              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection
+              Address{' '}
             </label>
             <Input
               {...register('collectionAddress')}

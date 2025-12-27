@@ -118,10 +118,10 @@ export default function Overview() {
             Showing data for{' '}
             {selectedPaymentSourceId
               ? shortenAddress(
-                state.paymentSources.find(
-                  (source) => source.id === selectedPaymentSourceId,
-                )?.smartContractAddress ?? 'invalid',
-              )
+                  state.paymentSources.find(
+                    (source) => source.id === selectedPaymentSourceId,
+                  )?.smartContractAddress ?? 'invalid',
+                )
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -259,8 +259,8 @@ export default function Overview() {
                             </span>
                           )}
                         {agent.AgentPricing &&
-                          agent.AgentPricing.pricingType == 'Fixed' &&
-                          agent.AgentPricing.Pricing?.[0] ? (
+                        agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {
@@ -293,17 +293,17 @@ export default function Overview() {
                   ))}
                   {agentsData?.pages?.[agentsData.pages.length - 1]
                     ?.nextCursor && (
-                      <div className="flex justify-center pt-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchMoreAgents()}
-                          disabled={!hasMoreAgents || isLoadingAgents}
-                        >
-                          Load more
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex justify-center pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchMoreAgents()}
+                        disabled={!hasMoreAgents || isLoadingAgents}
+                      >
+                        Load more
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground mb-4 py-4">
