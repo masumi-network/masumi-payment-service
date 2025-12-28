@@ -12,18 +12,15 @@ import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, GetUtxosResponses } from '@/lib/api/generated';
-import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { GetUtxosResponses } from '@/lib/api/generated';
 import { Checkbox } from '@/components/ui/checkbox';
-import { cn, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
 import { Spinner } from '@/components/ui/spinner';
 import { fetchWalletBalance, useWallets } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
-import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
 import {
@@ -37,6 +34,7 @@ import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
 
 interface WalletWithBalance extends BaseWalletWithBalance {
+  network: 'Preprod' | 'Mainnet';
   collectionBalance?: {
     ada: string;
     usdm: string;
@@ -47,7 +45,6 @@ interface WalletWithBalance extends BaseWalletWithBalance {
 
 export default function WalletsPage() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState(
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
@@ -71,11 +68,9 @@ export default function WalletsPage() {
   const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(
     new Set(),
   );
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
-  const { rate, isLoading: isLoadingRate } = useRate();
+  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
-  const [selectedWalletForSwap, setSelectedWalletForSwap] =
     useState<WalletWithBalance | null>(null);
   const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -105,22 +100,23 @@ export default function WalletsPage() {
         const collectionAddress = (wallet as any).collectionAddress;
         if (collectionAddress) {
           try {
+            const collectionNetwork = wallet.network;
             const collectionBalance = await fetchWalletBalance(
               apiClient,
-              state.network,
+              collectionNetwork,
               collectionAddress,
             );
             setAllWallets((prev) =>
               prev.map((w) =>
                 w.id === wallet.id
                   ? {
-                      ...w,
-                      collectionBalance: {
-                        ada: collectionBalance.ada,
-                        usdm: collectionBalance.usdm,
-                      },
-                      isLoadingCollectionBalance: false,
-                    }
+                    ...w,
+                    collectionBalance: {
+                      ada: collectionBalance.ada,
+                      usdm: collectionBalance.usdm,
+                    },
+                    isLoadingCollectionBalance: false,
+                  }
                   : w,
               ),
             );
@@ -143,7 +139,7 @@ export default function WalletsPage() {
       // Handle empty wallets array
       setAllWallets([]);
     }
-  }, [apiClient, state.network, walletsList]);
+  }, [apiClient, network, walletsList]);
   // Helper to refetch wallets (uses React Query refetch)
   const refetchWallets = useCallback(async () => {
     await refetchWalletsQuery();
@@ -168,7 +164,7 @@ export default function WalletsPage() {
   }, [router.query.action, router]);
 
   const filterWallets = useCallback(() => {
-    let filtered = [...allWallets];
+    let filtered = [...allWallets]
 
     if (activeTab === 'Purchasing') {
       filtered = filtered.filter((wallet) => wallet.type === 'Purchasing');
@@ -234,13 +230,13 @@ export default function WalletsPage() {
       try {
         const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
         setRefreshingBalances((prev) => new Set(prev).add(walletId));
-
         const address = isCollection
           ? wallet.collectionAddress!
           : wallet.walletAddress;
+        const walletNetwork = wallet.network;
         const balances = await fetchWalletBalance(
           apiClient,
-          state.network,
+          walletNetwork,
           address,
         );
 
@@ -276,7 +272,7 @@ export default function WalletsPage() {
         });
       }
     },
-    [apiClient, state.network],
+    [apiClient],
   );
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
@@ -420,7 +416,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         {wallet.type === 'Selling' &&
-                        wallet.collectionAddress ? (
+                          wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -440,16 +436,16 @@ export default function WalletsPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                              wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
                                   ? formatBalance(
-                                      (
-                                        parseInt(wallet.balance) / 1000000
-                                      ).toFixed(2),
-                                    )
+                                    (
+                                      parseInt(wallet.balance) / 1000000
+                                    ).toFixed(2),
+                                  )
                                   : '0'}
                               </span>
                             )}
@@ -473,7 +469,7 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           {refreshingBalances.has(wallet.id) ||
-                          wallet.isLoadingBalance ? (
+                            wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>

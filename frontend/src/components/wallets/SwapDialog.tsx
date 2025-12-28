@@ -34,8 +34,6 @@ interface SwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
-  network: string;
-  blockfrostApiKey: string;
   walletType: string;
   walletId: string;
 }
@@ -44,13 +42,11 @@ export function SwapDialog({
   isOpen,
   onClose,
   walletAddress,
-  network,
-  blockfrostApiKey,
   walletType,
   walletId,
 }: SwapDialogProps) {
   return <div></div>;
-  const { state, apiClient } = useAppContext();
+  const { network, apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
   const [nmkrBalance, setNmkrBalance] = useState<number>(0);
@@ -143,7 +139,7 @@ export function SwapDialog({
         },
         query: {
           address: effectiveWalletAddress,
-          network: state.network,
+          network: network,
         },
       });
       const lovelace =
@@ -158,7 +154,7 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
-      const usdmConfig = getUsdmConfig(state.network);
+      const usdmConfig = getUsdmConfig(network);
       const usdm =
         result?.data?.data?.Utxos?.reduce((acc, utxo) => {
           return (
@@ -202,7 +198,7 @@ export function SwapDialog({
       if (isDev) {
         setMnemonic(process.env.NEXT_PUBLIC_DEV_WALLET_MNEMONIC || null);
       } else {
-        if (!state?.apiKey) {
+        if (!apiKey) {
           throw new Error('No API key found');
         }
 
@@ -240,9 +236,9 @@ export function SwapDialog({
   const canSwap = isDev
     ? true
     : adaBalance > 0 &&
-      selectedFromToken.symbol !== selectedToToken.symbol &&
-      network?.toLowerCase() !== 'preprod' &&
-      mnemonic !== null;
+    selectedFromToken.symbol !== selectedToToken.symbol &&
+    network?.toLowerCase() !== 'preprod' &&
+    mnemonic !== null;
 
   const handleSwitch = () => {
     if (
@@ -509,11 +505,10 @@ export function SwapDialog({
                       <div className="relative w-full">
                         <input
                           type="number"
-                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
-                            fromAmount > getMaxAmount(selectedFromToken.symbol)
-                              ? 'text-red-500'
-                              : ''
-                          }`}
+                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${fromAmount > getMaxAmount(selectedFromToken.symbol)
+                            ? 'text-red-500'
+                            : ''
+                            }`}
                           placeholder="0"
                           value={fromAmount || ''}
                           onChange={handleFromAmountChange}

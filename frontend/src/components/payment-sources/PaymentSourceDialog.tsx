@@ -24,7 +24,7 @@ export function PaymentSourceDialog({
   onClose,
   paymentSource,
 }: PaymentSourceDialogProps) {
-  const { state } = useAppContext();
+  const { network } = useAppContext();
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
@@ -89,7 +89,7 @@ export function PaymentSourceDialog({
               <a
                 href={getExplorerUrl(
                   paymentSource.smartContractAddress,
-                  state.network,
+                  network,
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -140,7 +140,7 @@ export function PaymentSourceDialog({
                           <a
                             href={getExplorerUrl(
                               wallet.walletAddress,
-                              state.network,
+                              network,
                             )}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -156,10 +156,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.AdminWallets ||
                   paymentSource.AdminWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No admin wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No admin wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -206,7 +206,7 @@ export function PaymentSourceDialog({
                           <a
                             href={getExplorerUrl(
                               wallet.walletAddress,
-                              state.network,
+                              network,
                             )}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -224,7 +224,7 @@ export function PaymentSourceDialog({
                             <a
                               href={getExplorerUrl(
                                 wallet.collectionAddress,
-                                state.network,
+                                network,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -250,10 +250,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.PurchasingWallets ||
                   paymentSource.PurchasingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No purchasing wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No purchasing wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -299,7 +299,7 @@ export function PaymentSourceDialog({
                           <a
                             href={getExplorerUrl(
                               wallet.walletAddress,
-                              state.network,
+                              network,
                             )}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -317,7 +317,7 @@ export function PaymentSourceDialog({
                             <a
                               href={getExplorerUrl(
                                 wallet.collectionAddress,
-                                state.network,
+                                network,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -343,10 +343,10 @@ export function PaymentSourceDialog({
                 )}
                 {(!paymentSource.SellingWallets ||
                   paymentSource.SellingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No selling wallets found
-                  </div>
-                )}
+                    <div className="text-sm text-muted-foreground">
+                      No selling wallets found
+                    </div>
+                  )}
               </div>
             )}
           </div>
@@ -372,7 +372,7 @@ export function PaymentSourceDialog({
                       <a
                         href={getExplorerUrl(
                           paymentSource.FeeReceiverNetworkWallet.walletAddress,
-                          state.network,
+                          network,
                         )}
                         target="_blank"
                         rel="noopener noreferrer"

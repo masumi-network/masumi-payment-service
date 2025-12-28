@@ -32,7 +32,7 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 };
 
 export default function Transactions() {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
   const {
     transactions,
     isLoading,
@@ -216,7 +216,7 @@ export default function Transactions() {
       );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
-  }, [state.network, apiClient, selectedPaymentSourceId]);
+  }, [network, apiClient, selectedPaymentSourceId]);
 
   useEffect(() => {
     filterTransactions();
@@ -274,7 +274,7 @@ export default function Transactions() {
   };
 
   // Generate CSV data for transactions
-  const generateCSVData = (transactions: Transaction[]): string => {
+  const generateCSVData = useCallback((transactions: Transaction[]): string => {
     const headers = [
       'Transaction Type',
       'Transaction Hash',
@@ -285,9 +285,7 @@ export default function Transactions() {
       'Fee Rate Permille',
     ];
     const rows = transactions.map((transaction) => {
-      const selectedPaymentSource = state.paymentSources.find(
-        (ps) => ps.id === transaction.PaymentSource.id,
-      );
+
       const feeRatePermille =
         selectedPaymentSource?.feeRatePermille ?? 'Unknown';
       const paymentAmounts = [];
@@ -295,14 +293,14 @@ export default function Transactions() {
         paymentAmounts.push(
           ...transaction.RequestedFunds.map((fund) => ({
             amount: formatPrice(fund.amount),
-            unit: formatFundUnit(fund.unit, state.network),
+            unit: formatFundUnit(fund.unit, network),
           })),
         );
       } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
         paymentAmounts.push(
           ...transaction.PaidFunds.map((fund) => ({
             amount: formatPrice(fund.amount),
-            unit: formatFundUnit(fund.unit, state.network),
+            unit: formatFundUnit(fund.unit, network),
           })),
         );
       }
@@ -328,7 +326,7 @@ export default function Transactions() {
     return [headers, ...rows]
       .map((row) => row.map((field) => `"${field}"`).join(','))
       .join('\n');
-  };
+  }, [selectedPaymentSource?.feeRatePermille, network]);
 
   // Download CSV file
   const downloadCSV = (
@@ -368,9 +366,6 @@ export default function Transactions() {
                 </a>
               </p>
               {(() => {
-                const selectedPaymentSource = state.paymentSources.find(
-                  (ps) => ps.id === selectedPaymentSourceId,
-                );
                 const feeRate = selectedPaymentSource?.feeRatePermille;
 
                 if (!feeRate) {
@@ -441,7 +436,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                          filteredTransactions.length
+                        filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -515,12 +510,26 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.length
+                          transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
+                            const amount = formatPrice(fund.amount);
+                            const unit = formatFundUnit(
+                              fund.unit,
+                              network,
+                            );
+                            return (
+                              <div key={index} className="text-sm">
+                                {amount} {unit}
+                              </div>
+                            );
+                          })
+                          : transaction.type === 'purchase' &&
+                            transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(
                                 fund.unit,
-                                state.network,
+                                network,
                               );
                               return (
                                 <div key={index} className="text-sm">
@@ -528,20 +537,6 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(
-                                  fund.unit,
-                                  state.network,
-                                );
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -600,8 +595,6 @@ export default function Transactions() {
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
         onRefresh={refreshTransactions}
-        apiClient={apiClient}
-        state={state}
       />
 
       <DownloadDetailsDialog

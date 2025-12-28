@@ -18,12 +18,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   patchPaymentSourceExtended,
-  getPaymentSourceExtended,
   postWallet,
   getUtxos,
+  PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface AddWalletDialogProps {
   open: boolean;
@@ -63,7 +64,7 @@ export function AddWalletDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string>('');
   const [paymentSourceId, setPaymentSourceId] = useState<string | null>(null);
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
 
   const {
     register,
@@ -79,48 +80,22 @@ export function AddWalletDialog({
       collectionAddress: null,
     },
   });
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+  }, [paymentSources, network]);
 
   useEffect(() => {
     if (open) {
-      fetchPaymentSource();
+      setPaymentSourceId(currentNetworkPaymentSources[0]?.id || null);
     } else {
       reset();
       setError('');
     }
   }, [open]);
 
-  const fetchPaymentSource = useCallback(async () => {
-    try {
-      const response = await getPaymentSourceExtended({
-        client: apiClient,
-      });
 
-      if (response.error) {
-        const error = response.error as { message: string };
-        setError(error.message || 'Failed to load payment source');
-        onClose();
-        return;
-      }
-
-      const paymentSources =
-        response.data?.data?.ExtendedPaymentSources?.filter((p) => {
-          return p.network == state.network;
-        });
-      if (paymentSources?.length == 0) {
-        console.error('No payment source for network found');
-      }
-      if (paymentSources?.[0]?.id) {
-        setPaymentSourceId(paymentSources?.[0].id);
-      } else {
-        setError('No payment source found');
-        onClose();
-      }
-    } catch (error) {
-      console.error('Error fetching payment source:', error);
-      setError('Failed to load payment source');
-      onClose();
-    }
-  }, [state, state.network]);
 
   const handleGenerateMnemonic = async () => {
     try {
@@ -130,7 +105,7 @@ export function AddWalletDialog({
       const response: any = await postWallet({
         client: apiClient,
         body: {
-          network: state.network,
+          network: network,
         },
       });
 
@@ -171,7 +146,7 @@ export function AddWalletDialog({
     if (collectionAddress) {
       const validation = validateCardanoAddress(
         collectionAddress,
-        state.network,
+        network,
       );
 
       if (!validation.isValid) {
@@ -183,7 +158,7 @@ export function AddWalletDialog({
         client: apiClient,
         query: {
           address: collectionAddress,
-          network: state.network,
+          network: network,
         },
       });
       if (balance.error || balance.data?.data?.Utxos?.length === 0) {
@@ -209,12 +184,12 @@ export function AddWalletDialog({
             [type === 'Purchasing'
               ? 'AddPurchasingWallets'
               : 'AddSellingWallets']: [
-              {
-                walletMnemonic: data.mnemonic.trim(),
-                note: data.note.trim(),
-                collectionAddress: collectionAddress,
-              },
-            ],
+                {
+                  walletMnemonic: data.mnemonic.trim(),
+                  note: data.note.trim(),
+                  collectionAddress: collectionAddress,
+                },
+              ],
           },
         }),
       {

@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/exhaustive-deps */
-import { AppProvider, initialAppState } from '@/lib/contexts/AppContext';
-import { useEffect, useState, useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { AppProvider } from '@/lib/contexts/AppContext';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import '@/styles/globals.css';
 import '@/styles/styles.scss';
@@ -11,7 +11,6 @@ import 'react-toastify/dist/ReactToastify.css';
 import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import {
   getHealth,
-  getPaymentSource,
   getApiKeyStatus,
 } from '@/lib/api/generated';
 import { ThemeProvider } from '@/lib/contexts/ThemeContext';
@@ -25,12 +24,13 @@ import { Button } from '@/components/ui/button';
 import { handleApiCall } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
       <QueryProvider>
-        <AppProvider initialState={initialAppState}>
+        <AppProvider>
           <SidebarProvider>
             <TooltipProvider delayDuration={200}>
               <ThemedApp
@@ -50,7 +50,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { state, dispatch, setSelectedPaymentSourceId, apiClient, signOut } =
+  const { apiClient, signOut, apiKey, setAuthorized, updateApiKey, network, setNetwork, authorized } =
     useAppContext();
 
   // Add dynamic favicon functionality
@@ -71,53 +71,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const fetchPaymentSources = useCallback(async () => {
-    const sourceResponse = await getPaymentSource({
-      client: apiClient,
-    });
 
-    if (sourceResponse.error) {
-      const error = sourceResponse.error as { message: string };
-      console.error('Failed to fetch payment sources:', error);
-      toast.error(
-        error.message ||
-          'Error fetching payment sources. Please try again later.',
-      );
-      return;
-    }
+  const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
-    const { data } = sourceResponse;
 
-    const sources = data?.data?.PaymentSources ?? [];
-    // Filter by network
-    const filteredSources = sources.filter(
-      (source: any) => source.network === state.network,
-    );
-    // Sort by createdAt descending (newest first) and add index
-    const sortedSources = filteredSources
-      .sort(
-        (a: any, b: any) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      )
-      .map((source: any, index: number) => ({
-        ...source,
-        index: index + 1,
-      }));
-
-    dispatch({ type: 'SET_PAYMENT_SOURCES', payload: sortedSources });
-
-    if (sortedSources.length === 1) {
-      setSelectedPaymentSourceId(sortedSources[0].id);
-    }
-
-    // If no payment sources, redirect to setup
-    if (sortedSources.length === 0 && isHealthy && state.apiKey) {
-      if (router.pathname !== '/setup') {
-        router.push(`/setup?network=${encodeURIComponent(state.network)}`);
-      }
-    }
-
-    if (state.apiKey && isHealthy && filteredSources.length === 0) {
+  useEffect(() => {
+    if (isLoading) return;
+    const currentNetworkPaymentSources = network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = [
         '/',
         '/ai-agents',
@@ -126,25 +87,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         '/api-keys',
       ];
       if (protectedPages.includes(router.pathname)) {
-        router.replace('/payment-sources');
+        router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
-    } else if (state.apiKey && isHealthy && filteredSources.length > 0) {
+    } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
       if (router.pathname === '/setup') {
         router.replace('/');
       }
     }
-  }, [
-    apiClient,
-    dispatch,
-    isHealthy,
-    state.apiKey,
-    state.network,
-    router.pathname,
-  ]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
+  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
+
 
   useEffect(() => {
     const init = async () => {
-      dispatch({ type: 'SET_UNAUTHORIZED', payload: false });
       const response = await handleApiCall(
         () => getHealth({ client: apiClient }),
         {
@@ -156,11 +110,15 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         },
       );
 
-      if (!response) return;
+      if (!response) {
+        setIsHealthy(false);
+        return;
+      }
 
       const hexedKey = localStorage.getItem('payment_api_key');
       if (!hexedKey) {
         setIsHealthy(true);
+        setAuthorized(false);
         return;
       }
 
@@ -176,7 +134,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           onError: (error: any) => {
             console.error('API key status check failed:', error);
             setIsHealthy(true);
-            dispatch({ type: 'SET_UNAUTHORIZED', payload: true });
+            setAuthorized(false);
           },
           errorMessage: 'API key validation failed',
         },
@@ -184,7 +142,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
-        dispatch({ type: 'SET_UNAUTHORIZED', payload: true });
+        setAuthorized(false);
         return;
       }
 
@@ -196,30 +154,26 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         signOut();
         return;
       }
-      dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
+      setAuthorized(true);
+      updateApiKey(storedApiKey);
       setIsHealthy(true);
     };
 
     init();
-  }, [apiClient, dispatch, signOut]);
-
-  useEffect(() => {
-    if (isHealthy && state.apiKey) {
-      fetchPaymentSources();
-    }
-  }, [isHealthy, state.apiKey, fetchPaymentSources, state.network]);
+  }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
   // Watch for network changes in URL and update state
   useEffect(() => {
     const networkParam = router.query.network as string;
 
-    if (networkParam && networkParam !== state.network) {
-      dispatch({
-        type: 'SET_NETWORK',
-        payload: networkParam as 'Mainnet' | 'Preprod',
-      });
+    if (networkParam && networkParam !== network) {
+      if (networkParam.toLowerCase() === 'mainnet') {
+        setNetwork('Mainnet');
+      } else if (networkParam.toLowerCase() === 'preprod') {
+        setNetwork('Preprod');
+      }
     }
-  }, [router.query.network, state.network, dispatch]);
+  }, [router.query.network, network, setNetwork]);
 
   if (isHealthy === null) {
     return (
@@ -231,7 +185,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     );
   }
 
-  if (state.isUnauthorized) {
+  if (!authorized && apiKey) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">
@@ -291,7 +245,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   return (
     <>
-      {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
+      {apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
       {mounted &&
         createPortal(
           <ToastContainer

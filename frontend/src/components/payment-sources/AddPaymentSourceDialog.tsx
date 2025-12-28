@@ -91,7 +91,7 @@ export function AddPaymentSourceDialog({
   onClose,
   onSuccess,
 }: AddPaymentSourceDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network: currentNetwork } = useAppContext();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedAddresses, setCopiedAddresses] = useState<{
@@ -116,12 +116,12 @@ export function AddPaymentSourceDialog({
   } = useForm<FormSchema>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      network: state.network,
+      network: currentNetwork,
       blockfrostApiKey: '',
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
+      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
       purchasingWallets: [
         { walletMnemonic: '', note: '', collectionAddress: '' },
       ],
@@ -129,13 +129,13 @@ export function AddPaymentSourceDialog({
       useCustomAdminWallets: false,
       customAdminWallets: [
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][0].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
         },
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][1].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
         },
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][2].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
         },
       ],
     },
@@ -162,12 +162,12 @@ export function AddPaymentSourceDialog({
   useEffect(() => {
     if (open) {
       reset({
-        network: state.network,
+        network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
+        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
         purchasingWallets: [
           { walletMnemonic: '', note: '', collectionAddress: '' },
         ],
@@ -178,21 +178,21 @@ export function AddPaymentSourceDialog({
         customAdminWallets: [
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][0].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
           },
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][1].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
           },
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][2].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
           },
         ],
       });
       setError('');
     }
-  }, [open, state.network, reset]);
+  }, [open, currentNetwork, reset]);
 
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
@@ -220,9 +220,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for purchasing wallet ' +
-              (index + 1) +
-              ': ' +
-              validation.error,
+            (index + 1) +
+            ': ' +
+            validation.error,
           );
           return;
         }
@@ -236,8 +236,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for purchasing wallet ' +
-              (index + 1) +
-              ' has not been used yet, please check if this is the correct address',
+            (index + 1) +
+            ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -252,9 +252,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for selling wallet ' +
-              (index + 1) +
-              ': ' +
-              validation.error,
+            (index + 1) +
+            ': ' +
+            validation.error,
           );
           return;
         }
@@ -268,8 +268,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for selling wallet ' +
-              (index + 1) +
-              ' has not been used yet, please check if this is the correct address',
+            (index + 1) +
+            ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -283,9 +283,9 @@ export function AddPaymentSourceDialog({
       if (!validation.isValid) {
         toast.error(
           'Invalid admin wallet address for admin wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+          (index + 1) +
+          ': ' +
+          validation.error,
         );
         return;
       }
@@ -298,7 +298,7 @@ export function AddPaymentSourceDialog({
     if (!feeReceiverWalletValidation.isValid) {
       toast.error(
         'Invalid fee receiver wallet address: ' +
-          feeReceiverWalletValidation.error,
+        feeReceiverWalletValidation.error,
       );
       return;
     }
@@ -317,10 +317,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,

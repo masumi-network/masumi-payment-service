@@ -24,7 +24,7 @@ export function TransakWidget({
   walletAddress,
   onSuccess,
 }: TransakWidgetProps) {
-  const { state } = useAppContext();
+  const { network } = useAppContext();
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -48,9 +48,7 @@ export function TransakWidget({
 
   if (!isOpen) return null;
 
-  const isPreprod = state.network === 'Preprod';
-
-  if (isPreprod) {
+  if (network === 'Preprod') {
     const handleOpenFaucet = () => {
       window.open(
         'https://docs.cardano.org/cardano-testnet/tools/faucet/',
@@ -87,7 +85,7 @@ export function TransakWidget({
   transakUrl.searchParams.set(
     'apiKey',
     process.env.NEXT_PUBLIC_TRANSAK_API_KEY ||
-      '558f0caf-41d4-40fb-a2a9-808283540e40',
+    '558f0caf-41d4-40fb-a2a9-808283540e40',
   );
   transakUrl.searchParams.set('environment', 'PRODUCTION');
   transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');

@@ -10,11 +10,9 @@ import Head from 'next/head';
 import { CopyButton } from '@/components/ui/copy-button';
 
 export default function Settings() {
-  const { state, signOut } = useAppContext();
+  const { apiKey, signOut } = useAppContext();
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
-
-  const adminApiKey = state.apiKey || '';
 
   return (
     <MainLayout>
@@ -42,7 +40,7 @@ export default function Settings() {
               <div className="relative flex-1 max-w-[400px]">
                 <Input
                   type={showApiKey ? 'text' : 'password'}
-                  value={adminApiKey}
+                  value={apiKey || ''}
                   readOnly
                   className="pr-20 font-mono text-sm"
                 />
@@ -59,7 +57,7 @@ export default function Settings() {
                       <LuEye className="h-4 w-4" />
                     )}
                   </Button>
-                  <CopyButton value={adminApiKey} />
+                  <CopyButton value={apiKey || ''} />
                 </div>
               </div>
             </div>

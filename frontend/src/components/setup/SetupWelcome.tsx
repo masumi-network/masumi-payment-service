@@ -102,7 +102,7 @@ function SeedPhrasesScreen({
   ) => void;
   ignoreSetup: () => void;
 }) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(true);
   const [buyingWallet, setBuyingWallet] = useState<{
@@ -130,7 +130,7 @@ function SeedPhrasesScreen({
           postWallet({
             client: apiClient,
             body: {
-              network: state.network,
+              network: network,
             },
           }),
         {
@@ -166,7 +166,7 @@ function SeedPhrasesScreen({
           postWallet({
             client: apiClient,
             body: {
-              network: state.network,
+              network: network,
             },
           }),
         {
@@ -199,7 +199,7 @@ function SeedPhrasesScreen({
     };
 
     generateWallets();
-  }, [apiClient, state.network]);
+  }, [apiClient, network]);
 
   return (
     <div className="space-y-6 max-w-[600px] w-full">
@@ -410,12 +410,11 @@ function PaymentSourceSetupScreen({
   sellingWallet: { address: string; mnemonic: string } | null;
   ignoreSetup: () => void;
 }) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  const networkType = state.network === 'Mainnet' ? 'Mainnet' : 'Preprod';
-  const adminWallets = DEFAULT_ADMIN_WALLETS[networkType];
+  const adminWallets = DEFAULT_ADMIN_WALLETS[network];
 
   const {
     register,
@@ -426,9 +425,9 @@ function PaymentSourceSetupScreen({
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[networkType].feeWalletAddress,
+        walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
       },
-      feePermille: DEFAULT_FEE_CONFIG[networkType].feePermille,
+      feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
     },
   });
 
@@ -451,7 +450,7 @@ function PaymentSourceSetupScreen({
         postPaymentSourceExtended({
           client: apiClient,
           body: {
-            network: state.network,
+            network: network,
             PaymentSourceConfig: {
               rpcProviderApiKey: data.blockfrostApiKey,
               rpcProvider: 'Blockfrost',
@@ -460,10 +459,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -630,7 +629,7 @@ function AddAiAgentScreen({
   ignoreSetup: () => void;
   onAgentCreated?: () => void;
 }) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -780,7 +779,7 @@ function AddAiAgentScreen({
 
       const paymentSources = response.data?.data?.ExtendedPaymentSources ?? [];
       const filteredSources = paymentSources.filter(
-        (source: any) => source.network === state.network,
+        (source: any) => source.network == network,
       );
 
       if (filteredSources.length === 0) {
@@ -803,7 +802,7 @@ function AddAiAgentScreen({
       const registryResponse = await postRegistry({
         client: apiClient,
         body: {
-          network: state.network,
+          network: network,
           sellingWalletVkey: sellingWalletData.walletVkey,
           name: data.name,
           description: data.description,
@@ -815,18 +814,18 @@ function AddAiAgentScreen({
               : { name: 'Custom Agent', version: '1.0.0' },
           AgentPricing: data.isFree
             ? {
-                pricingType: 'Free',
-              }
+              pricingType: 'Free',
+            }
             : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getUsdmConfig(state.network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+              pricingType: 'Fixed',
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getUsdmConfig(network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            },
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
@@ -959,7 +958,7 @@ function AddAiAgentScreen({
               </Button>
               {sellingWallet?.address ? (
                 <a
-                  href={getExplorerUrl(sellingWallet.address, state.network)}
+                  href={getExplorerUrl(sellingWallet.address, network)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-sm break-all hover:underline text-primary"
@@ -1336,7 +1335,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     <div className="min-h-screen flex flex-col w-full">
       <Header />
       <main className="flex-1 container w-full max-w-[1200px] mx-auto py-32 px-4">
-        <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <div className="flex items-center justify-center min-h-[calc(100vh-200px)] overflow-y-auto">
           {steps[currentStep]}
         </div>
       </main>
