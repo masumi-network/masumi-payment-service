@@ -81,9 +81,12 @@ export function AddWalletDialog({
     },
   });
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
 
   useEffect(() => {
@@ -94,8 +97,6 @@ export function AddWalletDialog({
       setError('');
     }
   }, [open]);
-
-
 
   const handleGenerateMnemonic = async () => {
     try {
@@ -144,10 +145,7 @@ export function AddWalletDialog({
 
     // Validate collection address if provided
     if (collectionAddress) {
-      const validation = validateCardanoAddress(
-        collectionAddress,
-        network,
-      );
+      const validation = validateCardanoAddress(collectionAddress, network);
 
       if (!validation.isValid) {
         setError('Invalid collection address: ' + validation.error);
@@ -184,12 +182,12 @@ export function AddWalletDialog({
             [type === 'Purchasing'
               ? 'AddPurchasingWallets'
               : 'AddSellingWallets']: [
-                {
-                  walletMnemonic: data.mnemonic.trim(),
-                  note: data.note.trim(),
-                  collectionAddress: collectionAddress,
-                },
-              ],
+              {
+                walletMnemonic: data.mnemonic.trim(),
+                note: data.note.trim(),
+                collectionAddress: collectionAddress,
+              },
+            ],
           },
         }),
       {

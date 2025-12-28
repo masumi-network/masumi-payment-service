@@ -139,24 +139,50 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
-
 
   const [hasPaymentSources, setHasPaymentSources] = useState(false);
   useEffect(() => {
-    setHasPaymentSources(currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0);
+    setHasPaymentSources(
+      currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
+    );
   }, [currentNetworkPaymentSources]);
-  const [navItems, setNavItems] = useState<{ href: string; name: string; icon: React.ReactNode; badge: React.ReactNode | null }[]>([]);
+  const [navItems, setNavItems] = useState<
+    {
+      href: string;
+      name: string;
+      icon: React.ReactNode;
+      badge: React.ReactNode | null;
+    }[]
+  >([]);
 
   useEffect(() => {
     if (hasPaymentSources) {
       setNavItems([
-        { href: '/', name: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" />, badge: null },
-        { href: '/ai-agents', name: 'AI Agents', icon: <Bot className="h-4 w-4" />, badge: null },
-        { href: '/wallets', name: 'Wallets', icon: <Wallet className="h-4 w-4" />, badge: null },
+        {
+          href: '/',
+          name: 'Dashboard',
+          icon: <LayoutDashboard className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/ai-agents',
+          name: 'AI Agents',
+          icon: <Bot className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/wallets',
+          name: 'Wallets',
+          icon: <Wallet className="h-4 w-4" />,
+          badge: null,
+        },
         {
           href: '/transactions',
           name: 'Transactions',
@@ -175,9 +201,19 @@ export function MainLayout({ children }: MainLayoutProps) {
           icon: <NotebookPen className="h-4 w-4" />,
           badge: null,
         },
-        { href: '/api-keys', name: 'API keys', icon: <Key className="h-4 w-4" />, badge: null },
-        { href: '/settings', name: 'Settings', icon: <Settings className="h-4 w-4" />, badge: null },
-      ])
+        {
+          href: '/api-keys',
+          name: 'API keys',
+          icon: <Key className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/settings',
+          name: 'Settings',
+          icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+      ]);
       return;
     }
     setNavItems([
@@ -187,10 +223,14 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <FileInput className="h-4 w-4" />,
         badge: null,
       },
-      { href: '/settings', name: 'Settings', icon: <Settings className="h-4 w-4" />, badge: null },
+      {
+        href: '/settings',
+        name: 'Settings',
+        icon: <Settings className="h-4 w-4" />,
+        badge: null,
+      },
     ]);
-  }, [hasPaymentSources, newTransactionsCount])
-
+  }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
@@ -254,7 +294,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
-                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
@@ -267,7 +307,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
-                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
@@ -294,8 +334,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                 style={
                   shouldAnimateIcon && collapsed && !isHovered
                     ? {
-                      animation: 'rotateIn 0.3s ease-out',
-                    }
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
                     : undefined
                 }
               >
@@ -339,7 +379,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   ? 'h-10 w-10 justify-center'
                   : 'px-3 h-10 gap-3',
                 router.pathname === item.href &&
-                'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                  'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
               title={collapsed && !isHovered ? item.name : undefined}
             >

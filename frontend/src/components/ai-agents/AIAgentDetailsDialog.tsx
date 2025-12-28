@@ -10,7 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import { PaymentSourceExtended, postRegistryDeregister } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistryDeregister,
+} from '@/lib/api/generated';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
 
@@ -83,9 +86,12 @@ export function AIAgentDetailsDialog({
   const [isPurchaseDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
@@ -151,8 +157,7 @@ export function AIAgentDetailsDialog({
             body: {
               agentIdentifier: agent.agentIdentifier!,
               network: network,
-              smartContractAddress:
-                selectedPaymentSource.smartContractAddress,
+              smartContractAddress: selectedPaymentSource.smartContractAddress,
             },
           }),
         {
@@ -173,7 +178,17 @@ export function AIAgentDetailsDialog({
         'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
       );
     }
-  }, [agent?.state, agent?.id, agent?.agentIdentifier, apiClient, onClose, onSuccess, currentNetworkPaymentSources, selectedPaymentSourceId, network]);
+  }, [
+    agent?.state,
+    agent?.id,
+    agent?.agentIdentifier,
+    apiClient,
+    onClose,
+    onSuccess,
+    currentNetworkPaymentSources,
+    selectedPaymentSourceId,
+    network,
+  ]);
 
   return (
     <>
@@ -212,7 +227,7 @@ export function AIAgentDetailsDialog({
                         variant={getStatusBadgeVariant(agent.state)}
                         className={cn(
                           agent.state === 'RegistrationConfirmed' &&
-                          'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            'bg-green-50 text-green-700 hover:bg-green-50/80',
                           'w-fit min-w-fit truncate',
                         )}
                       >
@@ -321,8 +336,7 @@ export function AIAgentDetailsDialog({
                                     {price.unit === 'lovelace' || !price.unit
                                       ? 'ADA'
                                       : price.unit ===
-                                        getUsdmConfig(network)
-                                          .fullAssetId
+                                          getUsdmConfig(network).fullAssetId
                                         ? 'USDM'
                                         : price.unit === TESTUSDM_CONFIG.unit
                                           ? 'tUSDM'
@@ -340,10 +354,10 @@ export function AIAgentDetailsDialog({
                           {(!agent.AgentPricing ||
                             (agent.AgentPricing.pricingType == 'Fixed' &&
                               agent.AgentPricing.Pricing.length === 0)) && (
-                              <div className="text-sm text-muted-foreground">
-                                No pricing information available
-                              </div>
-                            )}
+                            <div className="text-sm text-muted-foreground">
+                              No pricing information available
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -454,10 +468,10 @@ export function AIAgentDetailsDialog({
                           )}
                           {(!agent.Legal ||
                             Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
+                            <span className="text-muted-foreground">
+                              No legal information provided.
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

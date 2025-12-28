@@ -8,10 +8,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  deleteApiKey,
-  GetApiKeyResponses,
-} from '@/lib/api/generated';
+import { deleteApiKey, GetApiKeyResponses } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
@@ -46,7 +43,6 @@ export default function ApiKeys() {
   const [activeTab, setActiveTab] = useState('All');
   const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
 
-
   const tabs = [
     { name: 'All', count: null },
     { name: 'Read', count: null },
@@ -58,8 +54,8 @@ export default function ApiKeys() {
     let filtered = [...allApiKeys];
 
     // Filter by network first
-    filtered = filtered.filter((key) =>
-      key.networkLimit.includes(network) || key.permission === 'Admin',
+    filtered = filtered.filter(
+      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
     );
 
     // Then filter by permission tab
@@ -97,7 +93,6 @@ export default function ApiKeys() {
 
     setFilteredApiKeys(filtered);
   }, [allApiKeys, searchQuery, activeTab, network]);
-
 
   useEffect(() => {
     filterApiKeys();
@@ -182,7 +177,9 @@ export default function ApiKeys() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton
-                onRefresh={() => { refetch(); }}
+                onRefresh={() => {
+                  refetch();
+                }}
                 isRefreshing={isLoading}
               />
               <Button onClick={() => setIsAddDialogOpen(true)}>
@@ -261,7 +258,7 @@ export default function ApiKeys() {
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr key={index} className="border-b" onClick={() => { }}>
+                    <tr key={index} className="border-b" onClick={() => {}}>
                       <td className="p-4">
                         <Checkbox
                           checked={selectedKeys.includes(key.token)}
@@ -309,10 +306,11 @@ export default function ApiKeys() {
                       </td>
                       <td className="p-4 text-sm">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${key.status === 'Active'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                            }`}
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                            key.status === 'Active'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}
                         >
                           {key.status}
                         </span>
@@ -333,8 +331,14 @@ export default function ApiKeys() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="update">Update</SelectItem>
-                            <SelectItem disabled={key.token === apiKey} value="delete" className="text-red-600">
-                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
+                            <SelectItem
+                              disabled={key.token === apiKey}
+                              value="delete"
+                              className="text-red-600"
+                            >
+                              {key.token === apiKey
+                                ? 'Cannot delete current API key'
+                                : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -361,14 +365,18 @@ export default function ApiKeys() {
       <AddApiKeyDialog
         open={isAddDialogOpen}
         onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={() => { refetch(); }}
+        onSuccess={() => {
+          refetch();
+        }}
       />
 
       {keyToUpdate && (
         <UpdateApiKeyDialog
           open={true}
           onClose={() => setKeyToUpdate(null)}
-          onSuccess={() => { refetch(); }}
+          onSuccess={() => {
+            refetch();
+          }}
           apiKey={keyToUpdate}
         />
       )}

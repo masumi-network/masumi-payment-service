@@ -56,7 +56,6 @@ export default function Overview() {
     isLoading: isLoadingWallets,
   } = useWallets();
 
-
   const totalBalance = useMemo(
     () => totalBalanceValue || '0',
     [totalBalanceValue],
@@ -86,7 +85,6 @@ export default function Overview() {
     useState<WalletWithBalance | null>(null);
   const { rate, isLoading: isLoadingRate } = useRate();
 
-
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -114,9 +112,7 @@ export default function Overview() {
           <p className="text-xs text-muted-foreground mt-5">
             Showing data for{' '}
             {selectedPaymentSource?.smartContractAddress
-              ? shortenAddress(
-                selectedPaymentSource?.smartContractAddress,
-              )
+              ? shortenAddress(selectedPaymentSource?.smartContractAddress)
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -254,8 +250,8 @@ export default function Overview() {
                             </span>
                           )}
                         {agent.AgentPricing &&
-                          agent.AgentPricing.pricingType == 'Fixed' &&
-                          agent.AgentPricing.Pricing?.[0] ? (
+                        agent.AgentPricing.pricingType == 'Fixed' &&
+                        agent.AgentPricing.Pricing?.[0] ? (
                           <>
                             <span className="text-xs font-normal text-muted-foreground">
                               {(() => {
@@ -267,10 +263,7 @@ export default function Overview() {
                                 ).toFixed(2);
                                 if (unit === 'lovelace' || !unit)
                                   return `${formatted} ADA`;
-                                if (
-                                  unit ===
-                                  getUsdmConfig(network).fullAssetId
-                                )
+                                if (unit === getUsdmConfig(network).fullAssetId)
                                   return `${formatted} USDM`;
                                 if (unit === TESTUSDM_CONFIG.unit)
                                   return `${formatted} tUSDM`;

@@ -13,37 +13,31 @@ import { PaymentSource, PaymentSourceExtended } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
-
-
 export const AppContext = createContext<
   | {
-    selectedPaymentSource: PaymentSource | null;
-    apiKey: string | null;
-    updateApiKey: (apiKey: string | null) => void;
-    authorized: boolean;
-    setAuthorized: (authorized: boolean) => void;
-    network: NetworkType;
-    setNetwork: (network: NetworkType) => void;
-    showError: (error: {
-      code?: number;
-      message: string;
-      details?: unknown;
-    }) => void;
-    apiClient: Client;
-    setApiClient: React.Dispatch<React.SetStateAction<Client>>;
-    selectedPaymentSourceId: string | null;
-    setSelectedPaymentSourceId: (id: string | null) => void;
-    signOut: () => void;
-    isChangingNetwork: boolean;
-  }
+      selectedPaymentSource: PaymentSource | null;
+      apiKey: string | null;
+      updateApiKey: (apiKey: string | null) => void;
+      authorized: boolean;
+      setAuthorized: (authorized: boolean) => void;
+      network: NetworkType;
+      setNetwork: (network: NetworkType) => void;
+      showError: (error: {
+        code?: number;
+        message: string;
+        details?: unknown;
+      }) => void;
+      apiClient: Client;
+      setApiClient: React.Dispatch<React.SetStateAction<Client>>;
+      selectedPaymentSourceId: string | null;
+      setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
+      isChangingNetwork: boolean;
+    }
   | undefined
 >(undefined);
 
-export function AppProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function AppProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<{
     code?: number;
     message: string;
@@ -64,13 +58,14 @@ export function AppProvider({
     apiKey,
   });
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
 
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
-
-
 
   const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<
     string | null
@@ -82,9 +77,8 @@ export function AppProvider({
     return null;
   });
 
-  const [selectedPaymentSource, setSelectedPaymentSource] = useState<
-    PaymentSource | null
-  >(null);
+  const [selectedPaymentSource, setSelectedPaymentSource] =
+    useState<PaymentSource | null>(null);
 
   const [isChangingNetwork, setIsChangingNetwork] = useState(false);
   const previousNetworkRef = useRef<NetworkType>(network);
@@ -106,7 +100,9 @@ export function AppProvider({
       setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
     }
     if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      const foundPaymentSource = currentNetworkPaymentSources.find(ps => ps.id === selectedPaymentSourceId);
+      const foundPaymentSource = currentNetworkPaymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
 
       if (foundPaymentSource) {
         if (foundPaymentSource.network !== network) {
@@ -167,17 +163,21 @@ export function AppProvider({
           }
           setApiKey(newApiKey);
           if (newApiKey) {
-            setApiClient(createClient({
-              headers: { token: newApiKey },
-              baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
-            }));
+            setApiClient(
+              createClient({
+                headers: { token: newApiKey },
+                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+              }),
+            );
             setAuthorized(true);
           } else {
             setAuthorized(false);
-            setApiClient(createClient({
-              headers: { token: "invalid-api" },
-              baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
-            }));
+            setApiClient(
+              createClient({
+                headers: { token: 'invalid-api' },
+                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+              }),
+            );
           }
         },
         setAuthorized,
@@ -213,4 +213,3 @@ export function useAppContext() {
   }
   return context;
 }
-

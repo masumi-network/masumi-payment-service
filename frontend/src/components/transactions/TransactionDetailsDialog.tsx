@@ -24,8 +24,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
   | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface ApiError {
   message: string;
@@ -115,7 +115,6 @@ export default function TransactionDetailsDialog({
   const [isLoading, setIsLoading] = React.useState(false);
   const clearTransactionError = async () => {
     try {
-
       toast.warning('Not implemented');
       return true;
     } catch (error) {
@@ -388,8 +387,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                    transaction.RequestedFunds &&
-                    transaction.RequestedFunds.length > 0 ? (
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =

@@ -236,9 +236,9 @@ export function SwapDialog({
   const canSwap = isDev
     ? true
     : adaBalance > 0 &&
-    selectedFromToken.symbol !== selectedToToken.symbol &&
-    network?.toLowerCase() !== 'preprod' &&
-    mnemonic !== null;
+      selectedFromToken.symbol !== selectedToToken.symbol &&
+      network?.toLowerCase() !== 'preprod' &&
+      mnemonic !== null;
 
   const handleSwitch = () => {
     if (
@@ -505,10 +505,11 @@ export function SwapDialog({
                       <div className="relative w-full">
                         <input
                           type="number"
-                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${fromAmount > getMaxAmount(selectedFromToken.symbol)
-                            ? 'text-red-500'
-                            : ''
-                            }`}
+                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
+                            fromAmount > getMaxAmount(selectedFromToken.symbol)
+                              ? 'text-red-500'
+                              : ''
+                          }`}
                           placeholder="0"
                           value={fromAmount || ''}
                           onChange={handleFromAmountChange}

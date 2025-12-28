@@ -204,15 +204,30 @@ export function RegisterAIAgentDialog({
   });
 
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
 
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
   useEffect(() => {
-    setSellingWallets(wallets.filter((w) => w.type === 'Selling').map((w) => ({ wallet: { id: w.id, walletVkey: w.walletVkey, walletAddress: w.walletAddress, note: w.note }, balance: parseInt(w.balance, 10) })));
+    setSellingWallets(
+      wallets
+        .filter((w) => w.type === 'Selling')
+        .map((w) => ({
+          wallet: {
+            id: w.id,
+            walletVkey: w.walletVkey,
+            walletAddress: w.walletAddress,
+            note: w.note,
+          },
+          balance: parseInt(w.balance, 10),
+        })),
+    );
   }, [wallets]);
 
   useEffect(() => {
@@ -220,8 +235,6 @@ export function RegisterAIAgentDialog({
       reset();
     }
   }, [open, reset]);
-
-
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -270,9 +283,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-              name: data.capabilityName,
-              version: data.capabilityVersion,
-            }
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -337,7 +350,15 @@ export function RegisterAIAgentDialog({
         setIsLoading(false);
       }
     },
-    [sellingWallets, currentNetworkPaymentSources, apiClient, network, onSuccess, onClose, reset],
+    [
+      sellingWallets,
+      currentNetworkPaymentSources,
+      apiClient,
+      network,
+      onSuccess,
+      onClose,
+      reset,
+    ],
   );
 
   // Tag management

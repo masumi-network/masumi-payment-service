@@ -78,7 +78,6 @@ export default function AIAgentsPage() {
     loadMore,
   } = useAgents();
 
-
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] =
     useState<AIAgent | null>(null);
@@ -146,14 +145,14 @@ export default function AIAgentsPage() {
         const matchState = agent.state?.toLowerCase().includes(query) || false;
         const matchPrice =
           agent.AgentPricing &&
-            agent.AgentPricing.pricingType == 'Fixed' &&
-            agent.AgentPricing.Pricing?.[0]?.amount
+          agent.AgentPricing.pricingType == 'Fixed' &&
+          agent.AgentPricing.Pricing?.[0]?.amount
             ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-              .toFixed(2)
-              .includes(query)
+                .toFixed(2)
+                .includes(query)
             : agent.AgentPricing &&
-            agent.AgentPricing.pricingType == 'Free' &&
-            'free'.includes(query);
+              agent.AgentPricing.pricingType == 'Free' &&
+              'free'.includes(query);
 
         return (
           matchName ||
@@ -302,42 +301,45 @@ export default function AIAgentsPage() {
     setSelectedAgentForDetails(agent);
   };
 
-  const handleWalletClick = useCallback(async (walletVkey: string) => {
-    // Find the wallet by vkey from payment sources in context
-    const filteredSources = currentNetworkPaymentSources.filter(
-      (source: any) =>
-      (selectedPaymentSourceId
-        ? source.id === selectedPaymentSourceId
-        : true),
-    );
+  const handleWalletClick = useCallback(
+    async (walletVkey: string) => {
+      // Find the wallet by vkey from payment sources in context
+      const filteredSources = currentNetworkPaymentSources.filter(
+        (source: any) =>
+          selectedPaymentSourceId
+            ? source.id === selectedPaymentSourceId
+            : true,
+      );
 
-    // Flatten all wallets from filtered sources
-    const allWallets = filteredSources.flatMap((source: any) => [
-      ...(source.SellingWallets || []).map((wallet: any) => ({
-        ...wallet,
-        type: 'Selling' as const,
-        balance: '0',
-        usdmBalance: '0',
-      })),
-      ...(source.PurchasingWallets || []).map((wallet: any) => ({
-        ...wallet,
-        type: 'Purchasing' as const,
-        balance: '0',
-        usdmBalance: '0',
-      })),
-    ]);
+      // Flatten all wallets from filtered sources
+      const allWallets = filteredSources.flatMap((source: any) => [
+        ...(source.SellingWallets || []).map((wallet: any) => ({
+          ...wallet,
+          type: 'Selling' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+        ...(source.PurchasingWallets || []).map((wallet: any) => ({
+          ...wallet,
+          type: 'Purchasing' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+      ]);
 
-    const foundWallet = allWallets.find(
-      (wallet: any) => wallet.walletVkey === walletVkey,
-    );
+      const foundWallet = allWallets.find(
+        (wallet: any) => wallet.walletVkey === walletVkey,
+      );
 
-    if (!foundWallet) {
-      toast.error('Wallet not found');
-      return;
-    }
+      if (!foundWallet) {
+        toast.error('Wallet not found');
+        return;
+      }
 
-    setSelectedWalletForDetails(foundWallet as WalletWithBalance);
-  }, [currentNetworkPaymentSources, selectedPaymentSourceId]);
+      setSelectedWalletForDetails(foundWallet as WalletWithBalance);
+    },
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
+  );
 
   return (
     <MainLayout>
@@ -361,7 +363,9 @@ export default function AIAgentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => { refetch(); }}
+              onRefresh={() => {
+                refetch();
+              }}
               isRefreshing={isFetchingAgents}
             />
             <Button
@@ -531,7 +535,7 @@ export default function AIAgentsPage() {
                           variant={getStatusBadgeVariant(agent.state)}
                           className={cn(
                             agent.state === 'RegistrationConfirmed' &&
-                            'bg-green-50 text-green-700 hover:bg-green-50/80',
+                              'bg-green-50 text-green-700 hover:bg-green-50/80',
                           )}
                         >
                           {parseAgentStatus(agent.state)}
@@ -629,13 +633,13 @@ export default function AIAgentsPage() {
           }}
           title={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Delete ${selectedAgentToDelete?.name}`
               : `Deregister ${selectedAgentToDelete?.name}`
           }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Are you sure you want to delete "${selectedAgentToDelete?.name}"? This action cannot be undone.`
               : `Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`
           }

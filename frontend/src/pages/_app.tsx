@@ -9,10 +9,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
-import {
-  getHealth,
-  getApiKeyStatus,
-} from '@/lib/api/generated';
+import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
 import { ThemeProvider } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
@@ -50,8 +47,16 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { apiClient, signOut, apiKey, setAuthorized, updateApiKey, network, setNetwork, authorized } =
-    useAppContext();
+  const {
+    apiClient,
+    signOut,
+    apiKey,
+    setAuthorized,
+    updateApiKey,
+    network,
+    setNetwork,
+    authorized,
+  } = useAppContext();
 
   // Add dynamic favicon functionality
   useDynamicFavicon();
@@ -71,13 +76,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-
-  const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
-
+  const { mainnetPaymentSources, preprodPaymentSources, isLoading } =
+    usePaymentSourceExtendedAll();
 
   useEffect(() => {
     if (isLoading) return;
-    const currentNetworkPaymentSources = network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    const currentNetworkPaymentSources =
+      network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = [
         '/',
@@ -87,15 +92,24 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         '/api-keys',
       ];
       if (protectedPages.includes(router.pathname)) {
-        router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
+        router.replace(
+          '/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'),
+        );
       }
     } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
       if (router.pathname === '/setup') {
         router.replace('/');
       }
     }
-  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
-
+  }, [
+    apiKey,
+    isHealthy,
+    router,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+  ]);
 
   useEffect(() => {
     const init = async () => {

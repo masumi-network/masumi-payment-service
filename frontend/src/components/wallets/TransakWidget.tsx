@@ -85,7 +85,7 @@ export function TransakWidget({
   transakUrl.searchParams.set(
     'apiKey',
     process.env.NEXT_PUBLIC_TRANSAK_API_KEY ||
-    '558f0caf-41d4-40fb-a2a9-808283540e40',
+      '558f0caf-41d4-40fb-a2a9-808283540e40',
   );
   transakUrl.searchParams.set('environment', 'PRODUCTION');
   transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');

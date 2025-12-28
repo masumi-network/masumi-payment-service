@@ -162,16 +162,18 @@ export default function PaymentSourcesPage() {
     PaymentSource[]
   >([]);
 
-  const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
+  const {
+    paymentSources: ps,
+    isLoading,
+    refetch,
+  } = usePaymentSourceExtendedAll();
 
-  const [paymentSources, setPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [paymentSources, setPaymentSources] = useState<PaymentSourceExtended[]>(
+    [],
+  );
   useEffect(() => {
-    setPaymentSources(
-      ps.filter((ps) => ps.network === network),
-    );
+    setPaymentSources(ps.filter((ps) => ps.network === network));
   }, [ps, network]);
-
 
   const [sourceToSelect, setSourceToSelect] = useState<
     PaymentSource | undefined
@@ -195,8 +197,6 @@ export default function PaymentSourcesPage() {
 
     setFilteredPaymentSources(filtered);
   }, [paymentSources, searchQuery]);
-
-
 
   useEffect(() => {
     filterPaymentSources();
@@ -255,7 +255,6 @@ export default function PaymentSourcesPage() {
       },
     );
   };
-
 
   return (
     <MainLayout>
@@ -455,13 +454,17 @@ export default function PaymentSourcesPage() {
         <AddPaymentSourceDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
-          onSuccess={() => { refetch() }}
+          onSuccess={() => {
+            refetch();
+          }}
         />
 
         <UpdatePaymentSourceDialog
           open={!!sourceToUpdate}
           onClose={() => setSourceToUpdate(null)}
-          onSuccess={() => { refetch() }}
+          onSuccess={() => {
+            refetch();
+          }}
           paymentSourceId={sourceToUpdate?.id || ''}
           currentApiKey={
             sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''

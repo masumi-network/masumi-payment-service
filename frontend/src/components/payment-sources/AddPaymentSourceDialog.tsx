@@ -220,9 +220,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for purchasing wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -236,8 +236,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for purchasing wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -252,9 +252,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for selling wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -268,8 +268,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for selling wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -283,9 +283,9 @@ export function AddPaymentSourceDialog({
       if (!validation.isValid) {
         toast.error(
           'Invalid admin wallet address for admin wallet ' +
-          (index + 1) +
-          ': ' +
-          validation.error,
+            (index + 1) +
+            ': ' +
+            validation.error,
         );
         return;
       }
@@ -298,7 +298,7 @@ export function AddPaymentSourceDialog({
     if (!feeReceiverWalletValidation.isValid) {
       toast.error(
         'Invalid fee receiver wallet address: ' +
-        feeReceiverWalletValidation.error,
+          feeReceiverWalletValidation.error,
       );
       return;
     }
@@ -317,10 +317,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
