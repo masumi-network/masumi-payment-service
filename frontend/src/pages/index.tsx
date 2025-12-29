@@ -36,16 +36,18 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { state, selectedPaymentSourceId } = useAppContext();
+  const { network, selectedPaymentSource } = useAppContext();
 
   const queryClient = useQueryClient();
+  const { newTransactionsCount, isLoading: isLoadingTransactions } =
+    useTransactions();
 
   // Use React Query hooks for cached data
   const {
-    data: agentsData,
+    agents,
     isLoading: isLoadingAgents,
-    hasNextPage: hasMoreAgents,
-    fetchNextPage: fetchMoreAgents,
+    hasMore: hasMoreAgents,
+    loadMore: loadMoreAgents,
   } = useAgents();
   const {
     wallets: walletsList,
@@ -54,11 +56,6 @@ export default function Overview() {
     isLoading: isLoadingWallets,
   } = useWallets();
 
-  // Memoize derived values to ensure they update when query data changes
-  const agents = useMemo(
-    () => agentsData?.pages.flatMap((page) => page.agents) || [],
-    [agentsData],
-  );
   const totalBalance = useMemo(
     () => totalBalanceValue || '0',
     [totalBalanceValue],
@@ -87,8 +84,6 @@ export default function Overview() {
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const { rate, isLoading: isLoadingRate } = useRate();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
 
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
@@ -116,12 +111,8 @@ export default function Overview() {
           </p>
           <p className="text-xs text-muted-foreground mt-5">
             Showing data for{' '}
-            {selectedPaymentSourceId
-              ? shortenAddress(
-                  state.paymentSources.find(
-                    (source) => source.id === selectedPaymentSourceId,
-                  )?.smartContractAddress ?? 'invalid',
-                )
+            {selectedPaymentSource?.smartContractAddress
+              ? shortenAddress(selectedPaymentSource?.smartContractAddress)
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -272,10 +263,7 @@ export default function Overview() {
                                 ).toFixed(2);
                                 if (unit === 'lovelace' || !unit)
                                   return `${formatted} ADA`;
-                                if (
-                                  unit ===
-                                  getUsdmConfig(state.network).fullAssetId
-                                )
+                                if (unit === getUsdmConfig(network).fullAssetId)
                                   return `${formatted} USDM`;
                                 if (unit === TESTUSDM_CONFIG.unit)
                                   return `${formatted} tUSDM`;
@@ -291,13 +279,12 @@ export default function Overview() {
                       </div>
                     </div>
                   ))}
-                  {agentsData?.pages?.[agentsData.pages.length - 1]
-                    ?.nextCursor && (
+                  {hasMoreAgents && (
                     <div className="flex justify-center pt-4">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => fetchMoreAgents()}
+                        onClick={() => loadMoreAgents()}
                         disabled={!hasMoreAgents || isLoadingAgents}
                       >
                         Load more

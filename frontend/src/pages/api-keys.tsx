@@ -8,11 +8,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getApiKey,
-  deleteApiKey,
-  GetApiKeyResponses,
-} from '@/lib/api/generated';
+import { deleteApiKey, GetApiKeyResponses } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
@@ -31,23 +27,21 @@ import {
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
+import { useApiKey } from '@/lib/hooks/useApiKey';
 type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
 
 export default function ApiKeys() {
   const router = useRouter();
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network, apiKey } = useAppContext();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [allApiKeys, setAllApiKeys] = useState<ApiKey[]>([]);
   const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
   const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
 
   const tabs = [
     { name: 'All', count: null },
@@ -60,8 +54,8 @@ export default function ApiKeys() {
     let filtered = [...allApiKeys];
 
     // Filter by network first
-    filtered = filtered.filter((key) =>
-      key.networkLimit.includes(state.network),
+    filtered = filtered.filter(
+      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
     );
 
     // Then filter by permission tab
@@ -98,112 +92,7 @@ export default function ApiKeys() {
     }
 
     setFilteredApiKeys(filtered);
-  }, [allApiKeys, searchQuery, activeTab, state.network]);
-
-  const fetchApiKeys = useCallback(
-    async (cursor?: string | null) => {
-      if (!cursor) {
-        setIsLoading(true);
-        setAllApiKeys([]);
-      } else {
-        setIsLoadingMore(true);
-      }
-
-      const response = await handleApiCall(
-        () =>
-          getApiKey({
-            client: apiClient,
-            query: {
-              limit: 10,
-              cursorToken: cursor || undefined,
-            },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Error fetching API keys:', error);
-            toast.error(error.message || 'Failed to fetch API keys');
-            if (!cursor) {
-              setAllApiKeys([]);
-            }
-            setHasMore(false);
-          },
-          onFinally: () => {
-            setIsLoading(false);
-            setIsLoadingMore(false);
-          },
-          errorMessage: 'Failed to fetch API keys',
-        },
-      );
-
-      if (!response) return;
-
-      if (response?.data?.data?.ApiKeys) {
-        const newKeys = response.data.data.ApiKeys;
-
-        if (cursor) {
-          setAllApiKeys((prev) => {
-            // Create a map of existing keys by token to prevent duplicates
-            const existingKeysMap = new Map(
-              prev.map((key) => [key.token, key]),
-            );
-
-            // Add new keys, overwriting any existing ones with the same token
-            newKeys.forEach((key) => {
-              existingKeysMap.set(key.token, key);
-            });
-
-            const combinedKeys = Array.from(existingKeysMap.values());
-
-            // Check if we need to fetch more
-            const filteredCount = combinedKeys.filter((key) =>
-              key.networkLimit.includes(state.network),
-            ).length;
-
-            if (newKeys.length === 10 && filteredCount < 10) {
-              const lastKey = newKeys[newKeys.length - 1];
-              fetchApiKeys(lastKey.token);
-            }
-
-            return combinedKeys;
-          });
-        } else {
-          setAllApiKeys(newKeys);
-          // Check if we need to fetch more for initial load
-          const filteredCount = newKeys.filter((key) =>
-            key.networkLimit.includes(state.network),
-          ).length;
-
-          if (newKeys.length === 10 && filteredCount < 10) {
-            const lastKey = newKeys[newKeys.length - 1];
-            fetchApiKeys(lastKey.token);
-          }
-        }
-
-        setHasMore(newKeys.length === 10);
-      } else {
-        if (!cursor) {
-          setAllApiKeys([]);
-        }
-        setHasMore(false);
-      }
-
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    },
-    [apiClient, state.network],
-  );
-
-  // Separate effect for initial load
-  useEffect(() => {
-    fetchApiKeys();
-  }, [fetchApiKeys]);
-
-  // Separate effect for network changes
-  useEffect(() => {
-    if (state.network) {
-      fetchApiKeys();
-    }
-  }, [state.network, fetchApiKeys]);
+  }, [allApiKeys, searchQuery, activeTab, network]);
 
   useEffect(() => {
     filterApiKeys();
@@ -219,10 +108,7 @@ export default function ApiKeys() {
   }, [router.query.action, router]);
 
   const handleLoadMore = () => {
-    if (!isLoadingMore && hasMore && allApiKeys.length > 0) {
-      const lastKey = allApiKeys[allApiKeys.length - 1];
-      fetchApiKeys(lastKey.token);
-    }
+    loadMore();
   };
 
   const handleSelectKey = (token: string) => {
@@ -253,7 +139,7 @@ export default function ApiKeys() {
       {
         onSuccess: () => {
           toast.success('API key deleted successfully');
-          fetchApiKeys();
+          refetch();
         },
         onError: (error: any) => {
           console.error('Error deleting API key:', error);
@@ -291,7 +177,9 @@ export default function ApiKeys() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton
-                onRefresh={() => fetchApiKeys()}
+                onRefresh={() => {
+                  refetch();
+                }}
                 isRefreshing={isLoading}
               />
               <Button onClick={() => setIsAddDialogOpen(true)}>
@@ -308,8 +196,7 @@ export default function ApiKeys() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
-              setAllApiKeys([]);
-              fetchApiKeys();
+              refetch();
             }}
           />
 
@@ -444,8 +331,14 @@ export default function ApiKeys() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="update">Update</SelectItem>
-                            <SelectItem value="delete" className="text-red-600">
-                              Delete
+                            <SelectItem
+                              disabled={key.token === apiKey}
+                              value="delete"
+                              className="text-red-600"
+                            >
+                              {key.token === apiKey
+                                ? 'Cannot delete current API key'
+                                : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -461,7 +354,7 @@ export default function ApiKeys() {
             {!isLoading && (
               <Pagination
                 hasMore={hasMore}
-                isLoading={isLoadingMore}
+                isLoading={isLoading}
                 onLoadMore={handleLoadMore}
               />
             )}
@@ -472,14 +365,18 @@ export default function ApiKeys() {
       <AddApiKeyDialog
         open={isAddDialogOpen}
         onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={fetchApiKeys}
+        onSuccess={() => {
+          refetch();
+        }}
       />
 
       {keyToUpdate && (
         <UpdateApiKeyDialog
           open={true}
           onClose={() => setKeyToUpdate(null)}
-          onSuccess={fetchApiKeys}
+          onSuccess={() => {
+            refetch();
+          }}
           apiKey={keyToUpdate}
         />
       )}

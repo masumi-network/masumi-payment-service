@@ -59,7 +59,7 @@ export function WalletDetailsDialog({
   onClose,
   wallet,
 }: WalletDetailsDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +92,7 @@ export function WalletDetailsDialog({
           },
           query: {
             address: wallet.walletAddress,
-            network: state.network,
+            network: network,
           },
         }),
       {
@@ -175,7 +175,7 @@ export function WalletDetailsDialog({
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(state.network);
+    const usdmConfig = getUsdmConfig(network);
     const isUSDM =
       token.policyId === usdmConfig.policyId &&
       token.assetName === hexToAscii(usdmConfig.assetName);
@@ -265,7 +265,7 @@ export function WalletDetailsDialog({
     if (newCollectionAddress.trim()) {
       const validation = validateCardanoAddress(
         newCollectionAddress.trim(),
-        state.network,
+        network,
       );
       if (!validation.isValid) {
         toast.error('Invalid collection address: ' + validation.error);
@@ -275,7 +275,7 @@ export function WalletDetailsDialog({
         client: apiClient,
         query: {
           address: newCollectionAddress.trim(),
-          network: state.network,
+          network: network,
         },
       });
       if (balance.error || balance.data?.data?.Utxos?.length === 0) {
@@ -340,7 +340,7 @@ export function WalletDetailsDialog({
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
                 <a
-                  href={getExplorerUrl(wallet.walletAddress, state.network)}
+                  href={getExplorerUrl(wallet.walletAddress, network)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-sm break-all hover:underline text-primary"
@@ -469,7 +469,7 @@ export function WalletDetailsDialog({
                         <a
                           href={getExplorerUrl(
                             wallet.collectionAddress,
-                            state.network,
+                            network,
                           )}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -538,7 +538,7 @@ export function WalletDetailsDialog({
                     const adaToken = tokenBalances.find(
                       (t) => t.unit === 'lovelace',
                     );
-                    const usdmConfig = getUsdmConfig(state.network);
+                    const usdmConfig = getUsdmConfig(network);
                     const usdmToken = tokenBalances.find(
                       (t) =>
                         t.policyId === usdmConfig.policyId &&

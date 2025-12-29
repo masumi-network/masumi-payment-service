@@ -1,12 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, GetPaymentResponses } from '@/lib/api/generated';
+import {
+  getPayment,
+  GetPaymentResponses,
+  PaymentSourceExtended,
+} from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from 'lucide-react';
 import formatBalance from '@/lib/formatBalance';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface AgentEarningsData {
   totalPayments: number;
@@ -24,7 +29,7 @@ export function AgentEarningsOverview({
   agentIdentifier,
   agentName,
 }: AgentEarningsOverviewProps) {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network } = useAppContext();
   const [earningsData, setEarningsData] = useState<AgentEarningsData | null>(
     null,
   );
@@ -32,12 +37,21 @@ export function AgentEarningsOverview({
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30d');
 
+  const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
   const fetchAgentEarnings = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const selectedPaymentSource = state.paymentSources.find(
+      const selectedPaymentSource = currentNetworkPaymentSources.find(
         (ps) => ps.id === selectedPaymentSourceId,
       );
       const smartContractAddress = selectedPaymentSource?.smartContractAddress;
@@ -62,7 +76,7 @@ export function AgentEarningsOverview({
         const paymentsResponse = await getPayment({
           client: apiClient,
           query: {
-            network: state.network,
+            network: network,
             includeHistory: 'true',
             limit: 100, // Get more transactions for better accuracy
             filterSmartContractAddress: smartContractAddress || undefined,
@@ -124,8 +138,8 @@ export function AgentEarningsOverview({
       setIsLoading(false);
     }
   }, [
-    state.paymentSources,
-    state.network,
+    currentNetworkPaymentSources,
+    network,
     selectedPeriod,
     selectedPaymentSourceId,
     apiClient,
@@ -192,7 +206,7 @@ export function AgentEarningsOverview({
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(state.network);
+    const usdmConfig = getUsdmConfig(network);
     const isUSDM = token.unit === usdmConfig.fullAssetId;
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
@@ -268,7 +282,7 @@ export function AgentEarningsOverview({
       {/* Fee Rate Info */}
       <div className="text-center text-sm text-muted-foreground">
         {(() => {
-          const selectedPaymentSource = state.paymentSources.find(
+          const selectedPaymentSource = currentNetworkPaymentSources.find(
             (ps) => ps.id === selectedPaymentSourceId,
           );
           const feeRate = selectedPaymentSource?.feeRatePermille ?? 50;

@@ -15,6 +15,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteRegistry,
   GetRegistryResponses,
+  PaymentSourceExtended,
   postRegistryDeregister,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -34,6 +35,7 @@ import {
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -64,37 +66,32 @@ export default function AIAgentsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
-  const [allAgents, setAllAgents] = useState<AIAgent[]>([]);
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
 
   // Use React Query for initial load (cached)
   const {
-    data: agentsData,
-    isLoading: isLoadingInitial,
+    agents,
+    isLoading,
     isFetching: isFetchingAgents,
-    refetch: refetchAgentsQuery,
-    hasNextPage: hasMoreAgents,
-    fetchNextPage: fetchMoreAgents,
+    refetch,
+    hasMore: hasMoreAgents,
+    loadMore,
   } = useAgents();
 
-  // Initialize allAgents from cached data
-  useEffect(() => {
-    if (agentsData?.pages.flatMap((page) => page.agents)) {
-      setAllAgents(agentsData.pages.flatMap((page) => page.agents));
-    }
-  }, [agentsData]);
-
-  const isLoading = isLoadingInitial && allAgents.length === 0;
-
-  // Helper to refetch agents (uses React Query refetch)
-  const refetchAgents = useCallback(async () => {
-    await refetchAgentsQuery();
-  }, [refetchAgentsQuery]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] =
     useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
   const [activeTab, setActiveTab] = useState('All');
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
@@ -113,7 +110,7 @@ export default function AIAgentsPage() {
   ];
 
   const filterAgents = useCallback(() => {
-    let filtered = [...allAgents];
+    let filtered = [...agents];
 
     if (activeTab === 'Registered') {
       filtered = filtered.filter(
@@ -169,7 +166,7 @@ export default function AIAgentsPage() {
     }
 
     setFilteredAgents(filtered);
-  }, [allAgents, searchQuery, activeTab]);
+  }, [agents, searchQuery, activeTab]);
 
   // Initial load is handled by useAgents hook - no useEffect needed
 
@@ -195,15 +192,15 @@ export default function AIAgentsPage() {
   };
 
   const handleSelectAll = () => {
-    if (allAgents.length === 0) {
+    if (agents.length === 0) {
       setSelectedAgents([]);
       return;
     }
 
-    if (selectedAgents.length === allAgents.length) {
+    if (selectedAgents.length === agents.length) {
       setSelectedAgents([]);
     } else {
-      setSelectedAgents(allAgents.map((agent) => agent.id));
+      setSelectedAgents(agents.map((agent) => agent.id));
     }
   };
 
@@ -249,7 +246,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deleted successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetchAgents();
+            refetch();
           },
           onError: (error: any) => {
             console.error('Error deleting agent:', error);
@@ -273,7 +270,7 @@ export default function AIAgentsPage() {
             client: apiClient,
             body: {
               agentIdentifier: selectedAgentToDelete.agentIdentifier!,
-              network: state.network,
+              network: network,
             },
           }),
         {
@@ -281,7 +278,7 @@ export default function AIAgentsPage() {
             toast.success('AI agent deregistered successfully');
             setIsDeleteDialogOpen(false);
             setSelectedAgentToDelete(null);
-            refetchAgents();
+            refetch();
           },
           onError: (error: any) => {
             console.error('Error deregistering agent:', error);
@@ -304,43 +301,45 @@ export default function AIAgentsPage() {
     setSelectedAgentForDetails(agent);
   };
 
-  const handleWalletClick = async (walletVkey: string) => {
-    // Find the wallet by vkey from payment sources in context
-    const filteredSources = state.paymentSources.filter(
-      (source: any) =>
-        source.network === state.network &&
-        (selectedPaymentSourceId
-          ? source.id === selectedPaymentSourceId
-          : true),
-    );
+  const handleWalletClick = useCallback(
+    async (walletVkey: string) => {
+      // Find the wallet by vkey from payment sources in context
+      const filteredSources = currentNetworkPaymentSources.filter(
+        (source: any) =>
+          selectedPaymentSourceId
+            ? source.id === selectedPaymentSourceId
+            : true,
+      );
 
-    // Flatten all wallets from filtered sources
-    const allWallets = filteredSources.flatMap((source: any) => [
-      ...(source.SellingWallets || []).map((wallet: any) => ({
-        ...wallet,
-        type: 'Selling' as const,
-        balance: '0',
-        usdmBalance: '0',
-      })),
-      ...(source.PurchasingWallets || []).map((wallet: any) => ({
-        ...wallet,
-        type: 'Purchasing' as const,
-        balance: '0',
-        usdmBalance: '0',
-      })),
-    ]);
+      // Flatten all wallets from filtered sources
+      const allWallets = filteredSources.flatMap((source: any) => [
+        ...(source.SellingWallets || []).map((wallet: any) => ({
+          ...wallet,
+          type: 'Selling' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+        ...(source.PurchasingWallets || []).map((wallet: any) => ({
+          ...wallet,
+          type: 'Purchasing' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+      ]);
 
-    const foundWallet = allWallets.find(
-      (wallet: any) => wallet.walletVkey === walletVkey,
-    );
+      const foundWallet = allWallets.find(
+        (wallet: any) => wallet.walletVkey === walletVkey,
+      );
 
-    if (!foundWallet) {
-      toast.error('Wallet not found');
-      return;
-    }
+      if (!foundWallet) {
+        toast.error('Wallet not found');
+        return;
+      }
 
-    setSelectedWalletForDetails(foundWallet as WalletWithBalance);
-  };
+      setSelectedWalletForDetails(foundWallet as WalletWithBalance);
+    },
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
+  );
 
   return (
     <MainLayout>
@@ -364,7 +363,9 @@ export default function AIAgentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={refetchAgents}
+              onRefresh={() => {
+                refetch();
+              }}
               isRefreshing={isFetchingAgents}
             />
             <Button
@@ -383,8 +384,7 @@ export default function AIAgentsPage() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
-              setAllAgents([]);
-              refetchAgents();
+              refetch();
             }}
           />
 
@@ -408,8 +408,8 @@ export default function AIAgentsPage() {
                   <th className="w-12 p-4">
                     <Checkbox
                       checked={
-                        allAgents.length > 0 &&
-                        selectedAgents.length === allAgents.length
+                        agents.length > 0 &&
+                        selectedAgents.length === agents.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -519,7 +519,7 @@ export default function AIAgentsPage() {
                             <div key={index} className="whitespace-nowrap">
                               {price.unit === 'lovelace' || !price.unit
                                 ? `${useFormatPrice(price.amount)} ADA`
-                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(state.network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                             </div>
                           ))}
                       </td>
@@ -595,7 +595,7 @@ export default function AIAgentsPage() {
               <Pagination
                 hasMore={hasMoreAgents}
                 isLoading={isFetchingAgents}
-                onLoadMore={fetchMoreAgents}
+                onLoadMore={loadMore}
               />
             )}
           </div>
@@ -606,7 +606,7 @@ export default function AIAgentsPage() {
           onClose={() => setIsRegisterDialogOpen(false)}
           onSuccess={() => {
             setTimeout(() => {
-              refetchAgents();
+              refetch();
             }, 250);
           }}
         />
@@ -619,7 +619,7 @@ export default function AIAgentsPage() {
           }}
           onSuccess={() => {
             setTimeout(() => {
-              refetchAgents();
+              refetch();
             }, 2000);
           }}
           initialTab={initialDialogTab}
