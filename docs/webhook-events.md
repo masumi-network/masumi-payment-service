@@ -8,6 +8,173 @@ The webhook system uses strongly-typed enums and predefined payload structures t
 
 **Important**: The webhook payload data structure exactly matches the GET endpoints for purchases and payments, ensuring consistency across the API.
 
+## Getting Started
+
+Webhooks notify external services when payments or purchases change status. Instead of polling the API, external services receive instant HTTP notifications.
+
+**When to use**: When you need real-time notifications about payment/purchase events.
+
+**Quick Overview**:
+1. External service registers webhook URL
+2. Payment/purchase status changes in Masumi
+3. System queues webhook delivery
+4. Background job sends HTTP POST to registered URL (every 10 seconds)
+5. Retry automatically if delivery fails
+
+## How to Implement Webhooks
+
+### Add Trigger Code
+
+Import the webhook service:
+```typescript
+import { webhookEventsService } from '../webhook-handler/webhook-events.service';
+```
+
+Add trigger after status changes:
+```typescript
+// After payment completes
+await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
+
+// After purchase completes
+await webhookEventsService.triggerPurchaseOnChainStatusChanged(purchaseId);
+
+// On error
+await webhookEventsService.triggerPaymentOnError(paymentId);
+await webhookEventsService.triggerPurchaseOnError(purchaseId);
+```
+
+### Handle Errors Gracefully
+
+Always wrap in try-catch:
+```typescript
+try {
+  await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
+} catch (error) {
+  logger.error('Webhook trigger failed', { error, paymentId });
+  // Don't throw - webhook failures shouldn't break main flow
+}
+```
+
+### Best Practices
+
+- Trigger webhooks AFTER database updates complete
+- Never throw errors from webhook triggers
+- Log all webhook triggers for debugging
+- Use specific event types for each scenario
+
+## Testing Webhooks Locally
+
+### Quick Test with webhook.site
+
+1. Go to https://webhook.site
+2. Copy your unique URL (e.g., `https://webhook.site/abc-123`)
+3. Register webhook via API:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/webhooks \
+  -H "token: your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://webhook.site/abc-123",
+    "authToken": "test-token",
+    "events": ["PAYMENT_ON_CHAIN_STATUS_CHANGED"]
+  }'
+```
+
+4. Trigger a payment event in your code
+5. See the webhook appear on webhook.site instantly
+
+### Check Database
+
+View pending deliveries:
+```sql
+SELECT * FROM "WebhookDelivery" WHERE status = 'Pending';
+```
+
+View failed deliveries:
+```sql
+SELECT * FROM "WebhookDelivery" WHERE status = 'Failed' ORDER BY "createdAt" DESC LIMIT 10;
+```
+
+View all registered webhooks:
+```sql
+SELECT id, url, "isActive", events FROM "WebhookEndpoint";
+```
+
+## Troubleshooting
+
+### Webhooks Not Being Sent?
+
+1. **Check if webhook is active:**
+```sql
+SELECT url, "isActive", events FROM "WebhookEndpoint";
+```
+
+2. **Check if deliveries are created:**
+```sql
+SELECT * FROM "WebhookDelivery" ORDER BY "createdAt" DESC LIMIT 5;
+```
+
+3. **Check logs:**
+```bash
+docker logs <container> | grep -i webhook
+```
+
+### Webhook Auto-Disabled?
+
+After 10 consecutive failures, webhooks auto-disable.
+
+**Re-enable:**
+```sql
+UPDATE "WebhookEndpoint" 
+SET "isActive" = true, "consecutiveFailures" = 0, "disabledAt" = NULL
+WHERE id = 'your-webhook-id';
+```
+
+### Deliveries Stuck in Pending?
+
+Check if background job is running:
+```bash
+docker logs <container> | grep "webhook delivery processor"
+```
+
+Should appear every 10 seconds.
+
+## Complete Example
+
+```typescript
+import { webhookEventsService } from '../webhook-handler/webhook-events.service';
+import { logger } from '@/utils/logger';
+
+async function processPayment(paymentId: string) {
+  try {
+    // 1. Process payment
+    await updatePaymentStatus(paymentId, 'Completed');
+    
+    // 2. Trigger webhook (non-blocking)
+    try {
+      logger.info('Triggering payment webhook', { paymentId });
+      await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
+    } catch (webhookError) {
+      logger.error('Webhook trigger failed', { webhookError });
+      // Continue - don't let webhook failures break main flow
+    }
+    
+  } catch (error) {
+    // On main error, trigger error webhook
+    logger.error('Payment processing failed', { error });
+    
+    try {
+      await webhookEventsService.triggerPaymentOnError(paymentId);
+    } catch (webhookError) {
+      logger.error('Error webhook trigger failed', { webhookError });
+    }
+    
+    throw error;
+  }
+}
+```
+
 ## Event Types
 
 All webhook events use the `WebhookEventType` enum:
