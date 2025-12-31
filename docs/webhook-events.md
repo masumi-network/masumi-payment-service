@@ -12,7 +12,6 @@ The webhook system uses strongly-typed enums and predefined payload structures t
 
 Webhooks notify external services when payments or purchases change status. Instead of polling the API, external services receive instant HTTP notifications.
 
-**When to use**: When you need real-time notifications about payment/purchase events.
 
 **Quick Overview**:
 1. External service registers webhook URL
