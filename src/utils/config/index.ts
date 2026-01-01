@@ -7,56 +7,56 @@ if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length <= 20)
     'Undefined or unsecure ENCRYPTION_KEY ENV variable. Require min 20 char',
   );
 
-const batchPaymentInterval = Number(process.env.BATCH_PAYMENT_INTERVAL ?? '80');
+const batchPaymentInterval = Number(process.env.BATCH_PAYMENT_INTERVAL ?? '30');
 if (batchPaymentInterval < 5)
   throw new Error('BATCH_PAYMENT_INTERVAL must be at least 5 seconds');
 const checkTxInterval = Number(process.env.CHECK_TX_INTERVAL ?? '20');
-if (checkTxInterval < 20)
-  throw new Error('CHECK_TX_INTERVAL must be at least 20 seconds');
+if (checkTxInterval < 15)
+  throw new Error('CHECK_TX_INTERVAL must be at least 15 seconds');
 const checkCollectionInterval = Number(
-  process.env.CHECK_COLLECTION_INTERVAL ?? '30',
+  process.env.CHECK_COLLECTION_INTERVAL ?? '15',
 );
 if (checkCollectionInterval < 5)
   throw new Error('CHECK_COLLECTION_INTERVAL must be at least 5 seconds');
 const checkCollectRefundInterval = Number(
-  process.env.CHECK_COLLECT_REFUND_INTERVAL ?? '30',
+  process.env.CHECK_COLLECT_REFUND_INTERVAL ?? '15',
 );
 if (checkCollectRefundInterval < 5)
   throw new Error('CHECK_COLLECT_REFUND_INTERVAL must be at least 5 seconds');
 const checkSetRefundInterval = Number(
-  process.env.CHECK_SET_REFUND_INTERVAL ?? '30',
+  process.env.CHECK_SET_REFUND_INTERVAL ?? '15',
 );
 if (checkSetRefundInterval < 5)
   throw new Error('CHECK_SET_REFUND_INTERVAL must be at least 5 seconds');
 const checkUnsetRefundInterval = Number(
-  process.env.CHECK_UNSET_REFUND_INTERVAL ?? '30',
+  process.env.CHECK_UNSET_REFUND_INTERVAL ?? '15',
 );
 if (checkUnsetRefundInterval < 5)
   throw new Error('CHECK_UNSET_REFUND_INTERVAL must be at least 5 seconds');
 const checkWalletTransactionHashInterval = Number(
-  process.env.CHECK_WALLET_TRANSACTION_HASH_INTERVAL ?? '30',
+  process.env.CHECK_WALLET_TRANSACTION_HASH_INTERVAL ?? '20',
 );
 if (checkWalletTransactionHashInterval < 5)
   throw new Error(
     'CHECK_WALLET_TRANSACTION_HASH_INTERVAL must be at least 5 seconds',
   );
 const checkAuthorizeRefundInterval = Number(
-  process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '30',
+  process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '15',
 );
 if (checkAuthorizeRefundInterval < 5)
   throw new Error('CHECK_AUTHORIZE_REFUND_INTERVAL must be at least 5 seconds');
 const checkSubmitResultInterval = Number(
-  process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '30',
+  process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '15',
 );
 if (checkSubmitResultInterval < 5)
   throw new Error('CHECK_SUBMIT_RESULT_INTERVAL must be at least 5 seconds');
 const registerAgentInterval = Number(
-  process.env.REGISTER_AGENT_INTERVAL ?? '30',
+  process.env.REGISTER_AGENT_INTERVAL ?? '15',
 );
 if (registerAgentInterval < 5)
   throw new Error('REGISTER_AGENT_INTERVAL must be at least 5 seconds');
 const deregisterAgentInterval = Number(
-  process.env.DEREGISTER_AGENT_INTERVAL ?? '30',
+  process.env.DEREGISTER_AGENT_INTERVAL ?? '15',
 );
 if (deregisterAgentInterval < 5)
   throw new Error('DEREGISTER_AGENT_INTERVAL must be at least 5 seconds');
@@ -71,7 +71,7 @@ const autoWithdrawRefunds =
   process.env.AUTO_WITHDRAW_REFUNDS == undefined;
 
 const checkRegistryTransactionsInterval = Number(
-  process.env.CHECK_REGISTRY_TRANSACTIONS_INTERVAL ?? '30',
+  process.env.CHECK_REGISTRY_TRANSACTIONS_INTERVAL ?? '15',
 );
 if (checkRegistryTransactionsInterval < 5)
   throw new Error(
@@ -140,7 +140,7 @@ export const CONFIG = {
 
 export const CONSTANTS = {
   REVEAL_DATA_VALIDITY_TIME: 1000 * 60 * 60 * 2,
-  DEFAULT_MAX_PARALLEL_TRANSACTIONS: 50,
+  DEFAULT_MAX_PARALLEL_TRANSACTIONS_EXTENDED_LOOKUP: 50,
   MUTEX_TIMEOUT_MINUTES: 3,
   MIN_COLLATERAL_LOVELACE: 1435230n,
   MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
@@ -155,6 +155,43 @@ export const CONSTANTS = {
     BACKOFF_MULTIPLIER: 2,
     INITIAL_DELAY_MS: 500,
     MAX_DELAY_MS: 15000,
+  },
+} as const;
+
+export const SERVICE_CONSTANTS = {
+  // Unified retry configuration for all services
+  RETRY: {
+    maxRetries: 5,
+    backoffMultiplier: 5,
+    initialDelayMs: 500,
+    maxDelayMs: 7500,
+  },
+
+  // Common transaction settings
+  TRANSACTION: {
+    timeBufferMs: 150000, // ±2.5 minutes buffer for all transactions
+    blockTimeBufferMs: 60000, // 1 minute block time buffer
+    validitySlotBuffer: 5,
+    resultTimeSlotBuffer: 3,
+    maxUtxos: 4, // Max UTXOs per transaction
+  },
+
+  // Smart contract constants
+  SMART_CONTRACT: {
+    collateralAmount: '5000000', // 5 ADA collateral
+    mintQuantity: '1',
+    defaultExUnits: { mem: 7000000, steps: 3000000000 },
+  },
+
+  // Metadata labels
+  METADATA: {
+    nftLabel: 721, // Standard NFT metadata
+    masumiLabel: 674, // Masumi-specific metadata
+  },
+
+  // Cardano native token identifier
+  CARDANO: {
+    NATIVE_TOKEN: 'lovelace', // ADA's smallest unit identifier
   },
 } as const;
 

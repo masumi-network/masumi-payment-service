@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
@@ -11,6 +10,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
+import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   GetPaymentResponses,
@@ -19,6 +19,7 @@ import {
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
 } from '@/lib/api/generated';
+import { useAppContext } from '@/lib/contexts/AppContext';
 
 type Transaction =
   | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
@@ -37,8 +38,6 @@ interface TransactionDetailsDialogProps {
   transaction: Transaction | null;
   onClose: () => void;
   onRefresh: () => void;
-  apiClient: any;
-  state: any;
 }
 
 const handleError = (error: ApiError) => {
@@ -107,21 +106,16 @@ export default function TransactionDetailsDialog({
   transaction,
   onClose,
   onRefresh,
-  apiClient,
-  state,
 }: TransactionDetailsDialogProps) {
+  const { network, apiClient } = useAppContext();
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<
     'refund' | 'cancel' | null
   >(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const clearTransactionError = async (transaction: Transaction) => {
+  const clearTransactionError = async () => {
     try {
-      await apiClient.request({
-        method: 'PUT',
-        url: `/transactions/${transaction.id}/clear-error`,
-      });
-      toast.success('Error state cleared successfully');
+      toast.warning('Not implemented');
       return true;
     } catch (error) {
       handleError(error as ApiError);
@@ -151,18 +145,20 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPurchaseRequestRefund({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund request failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request submitted successfully');
         onRefresh();
         onClose();
@@ -179,32 +175,20 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPaymentAuthorizeRefund({
         client: apiClient,
         body,
       });
-      if (
-        response?.data &&
-        typeof response.data === 'object' &&
-        'error' in response.data &&
-        response.data.error &&
-        typeof response.data.error === 'object' &&
-        'message' in response.data.error &&
-        typeof response.data.error.message === 'string'
-      ) {
-        throw {
-          message: response.data.error.message,
-          error: response.data.error,
-        };
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund authorization failed');
+        return;
       }
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.data?.data) {
         toast.success('Refund authorized successfully');
         onRefresh();
         onClose();
@@ -221,18 +205,20 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
         body,
       });
-      if (
-        response?.status &&
-        response.status >= 200 &&
-        response.status < 300 &&
-        response.data?.data
-      ) {
+
+      if (response.error) {
+        const error = response.error as { message: string };
+        toast.error(error.message || 'Refund cancel failed');
+        return;
+      }
+
+      if (response.data?.data) {
         toast.success('Refund request cancelled successfully');
         onRefresh();
         onClose();
@@ -399,15 +385,59 @@ export default function TransactionDetailsDialog({
 
               <div>
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
-                <p className="text-sm">
+                <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds?.[0]
-                    ? `${(parseInt(transaction.RequestedFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                    : transaction.type === 'purchase' &&
-                        transaction.PaidFunds?.[0]
-                      ? `${(parseInt(transaction.PaidFunds[0].amount) / 1000000).toFixed(2)} ₳`
-                      : '—'}
-                </p>
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : transaction.type === 'purchase' &&
+                    transaction.PaidFunds &&
+                    transaction.PaidFunds.length > 0 ? (
+                    transaction.PaidFunds.map((fund, index) => {
+                      const usdmConfig = getUsdmConfig(network);
+                      const isUsdm =
+                        fund.unit === usdmConfig.fullAssetId ||
+                        fund.unit === usdmConfig.policyId ||
+                        fund.unit === 'USDM' ||
+                        fund.unit === 'tUSDM';
+                      const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
+
+                      return (
+                        <p key={index}>
+                          {fund.unit === 'lovelace' || !fund.unit
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            : isUsdm
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                              : isTestUsdm
+                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                        </p>
+                      );
+                    })
+                  ) : (
+                    <p>—</p>
+                  )}
+                </div>
               </div>
 
               <div className="col-span-2">
@@ -417,7 +447,7 @@ export default function TransactionDetailsDialog({
                     <a
                       href={getExplorerUrl(
                         transaction.CurrentTransaction.txHash,
-                        state.network,
+                        network,
                         'transaction',
                       )}
                       target="_blank"
@@ -496,7 +526,7 @@ export default function TransactionDetailsDialog({
                       <a
                         href={getExplorerUrl(
                           transaction.SmartContractWallet.walletAddress,
-                          state.network,
+                          network,
                           'address',
                         )}
                         target="_blank"
@@ -534,7 +564,7 @@ export default function TransactionDetailsDialog({
                       variant="secondary"
                       size="sm"
                       onClick={async () => {
-                        if (await clearTransactionError(transaction)) {
+                        if (await clearTransactionError()) {
                           onClose();
                           onRefresh();
                         }

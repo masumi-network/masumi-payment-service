@@ -17,6 +17,10 @@ export const TOOLTIP_TEXTS = {
     'These wallets are used to make purchases when buying services through the Masumi Network. They hold funds that will be spent on transactions. Add multiple wallets for better fund distribution.',
   SELLING_WALLETS:
     'These wallets receive payments when you sell services through the Masumi Network. They collect revenue from your transactions. Multiple wallets help distribute incoming payments.',
+  BUYING_WALLET_TYPE:
+    'A buying wallet pays for AI agent services on Masumi Network. When you use an AI service (e.g., data analysis for 10 ADA), funds are automatically sent from your wallet to the provider.\n\n𝗡𝗼𝘁𝗲: You only need to top up this wallet if you plan to hire AI agents for services.',
+  SELLING_WALLET_TYPE:
+    'A selling wallet receives money when customers use your AI services (e.g., 5 ADA for image generation). Payments go here automatically, then you can move them to your revenue collection address.\n\n𝗜𝗺𝗽𝗼𝗿𝘁𝗮𝗻𝘁: This wallet must be topped up with ADA to successfully register your AI agent on the network.',
   // Add more tooltip texts here as needed
 } as const;
 

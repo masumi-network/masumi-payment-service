@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,9 +7,15 @@ import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress, getExplorerUrl } from '@/lib/utils';
+import {
+  handleApiCall,
+  shortenAddress,
+  getExplorerUrl,
+  validateCardanoAddress,
+  hexToAscii,
+} from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -23,7 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-interface TokenBalance {
+export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
@@ -53,7 +59,7 @@ export function WalletDetailsDialog({
   onClose,
   wallet,
 }: WalletDetailsDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -74,64 +80,76 @@ export function WalletDetailsDialog({
     setIsLoading(true);
     setError(null);
     setTokenBalances([]); // Reset balances when refreshing
-    try {
-      const response = await getUtxos({
-        client: apiClient,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-          Expires: '0',
-        },
-        query: {
-          address: wallet.walletAddress,
-          network: state.network,
-        },
-      });
 
-      if (response.data?.data?.Utxos) {
-        const balanceMap = new Map<string, number>();
+    await handleApiCall(
+      () =>
+        getUtxos({
+          client: apiClient,
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            Pragma: 'no-cache',
+            Expires: '0',
+          },
+          query: {
+            address: wallet.walletAddress,
+            network: network,
+          },
+        }),
+      {
+        onSuccess: (response: any) => {
+          if (response.data?.data?.Utxos) {
+            const balanceMap = new Map<string, number>();
 
-        response.data.data.Utxos.forEach((utxo) => {
-          utxo.Amounts.forEach((amount) => {
-            const currentAmount = balanceMap.get(amount.unit) || 0;
-            balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
-          });
-        });
-
-        const tokens: TokenBalance[] = [];
-        balanceMap.forEach((quantity, unit) => {
-          if (unit === 'lovelace' || unit === '') {
-            tokens.push({
-              unit: 'lovelace',
-              policyId: '',
-              assetName: 'ADA',
-              quantity,
-              displayName: 'ADA',
+            response.data.data.Utxos.forEach((utxo: any) => {
+              utxo.Amounts.forEach((amount: any) => {
+                const currentAmount = balanceMap.get(amount.unit) || 0;
+                balanceMap.set(
+                  amount.unit,
+                  currentAmount + (amount.quantity || 0),
+                );
+              });
             });
-          } else {
-            // For other tokens, split into policy ID and asset name
-            const policyId = unit.slice(0, 56);
-            const assetNameHex = unit.slice(56);
-            const assetName = hexToAscii(assetNameHex);
 
-            tokens.push({
-              unit,
-              policyId,
-              assetName,
-              quantity,
-              displayName: assetName || unit,
+            const tokens: TokenBalance[] = [];
+            balanceMap.forEach((quantity, unit) => {
+              if (unit === 'lovelace' || unit === '') {
+                tokens.push({
+                  unit: 'lovelace',
+                  policyId: '',
+                  assetName: 'ADA',
+                  quantity,
+                  displayName: 'ADA',
+                });
+              } else {
+                // For other tokens, split into policy ID and asset name
+                const policyId = unit.slice(0, 56);
+                const assetNameHex = unit.slice(56);
+                const assetName = hexToAscii(assetNameHex);
+
+                tokens.push({
+                  unit,
+                  policyId,
+                  assetName,
+                  quantity,
+                  displayName: assetName || unit,
+                });
+              }
             });
+
+            setTokenBalances(tokens);
           }
-        });
-
-        setTokenBalances(tokens);
-      }
-    } catch (error) {
-      console.error('Failed to fetch token balances:', error);
-      setError('Failed to fetch token balances');
-    } finally {
-      setIsLoading(false);
-    }
+        },
+        onError: () => {
+          // Don't set error for no token balances - treat as normal state
+          setTokenBalances([]);
+          setError(null);
+        },
+        onFinally: () => {
+          setIsLoading(false);
+        },
+        errorMessage: 'Failed to fetch token balances',
+      },
+    );
   };
 
   useEffect(() => {
@@ -145,21 +163,11 @@ export function WalletDetailsDialog({
     }
   }, [isOpen, wallet?.walletAddress]);
 
-  const hexToAscii = (hex: string) => {
-    try {
-      const bytes =
-        hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [];
-      return bytes.map((byte) => String.fromCharCode(byte)).join('');
-    } catch {
-      return hex;
-    }
-  };
-
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
       const ada = token.quantity / 1000000;
       const formattedAmount =
-        ada === 0 ? 'zero' : useFormatBalance(ada.toFixed(6));
+        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
@@ -167,14 +175,14 @@ export function WalletDetailsDialog({
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(state.network);
+    const usdmConfig = getUsdmConfig(network);
     const isUSDM =
       token.policyId === usdmConfig.policyId &&
       token.assetName === hexToAscii(usdmConfig.assetName);
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
       const formattedAmount =
-        usdm === 0 ? 'zero' : useFormatBalance(usdm.toFixed(6));
+        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: `≈ $${usdm.toFixed(2)}`,
@@ -184,7 +192,7 @@ export function WalletDetailsDialog({
     // For other tokens, divide by 10^6 as a default
     const amount = token.quantity / 1000000;
     const formattedAmount =
-      amount === 0 ? 'zero' : useFormatBalance(amount.toFixed(6));
+      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
     return {
       amount: formattedAmount,
       usdValue: undefined,
@@ -194,21 +202,29 @@ export function WalletDetailsDialog({
   const handleExport = async () => {
     if (!wallet || wallet.type === 'Collection') return;
     setIsExporting(true);
-    try {
-      const response = await getWallet({
-        client: apiClient,
-        query: {
-          walletType: wallet.type as 'Purchasing' | 'Selling',
-          id: wallet.id,
-          includeSecret: 'true',
+    await handleApiCall(
+      () =>
+        getWallet({
+          client: apiClient,
+          query: {
+            walletType: wallet.type as 'Purchasing' | 'Selling',
+            id: wallet.id,
+            includeSecret: 'true',
+          },
+        }),
+      {
+        onSuccess: (response: any) => {
+          setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
         },
-      });
-      setExportedMnemonic(response.data?.data?.Secret?.mnemonic || '');
-    } catch {
-      toast.error('Failed to export wallet');
-    } finally {
-      setIsExporting(false);
-    }
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to export wallet');
+        },
+        onFinally: () => {
+          setIsExporting(false);
+        },
+        errorMessage: 'Failed to export wallet',
+      },
+    );
   };
 
   const handleCopyMnemonic = async () => {
@@ -245,24 +261,52 @@ export function WalletDetailsDialog({
   const handleSaveCollection = async () => {
     if (!wallet) return;
 
-    try {
-      await patchWallet({
+    // Validate the address if provided
+    if (newCollectionAddress.trim()) {
+      const validation = validateCardanoAddress(
+        newCollectionAddress.trim(),
+        network,
+      );
+      if (!validation.isValid) {
+        toast.error('Invalid collection address: ' + validation.error);
+        return;
+      }
+      const balance = await getUtxos({
         client: apiClient,
-        body: {
-          id: wallet.id,
-          newCollectionAddress: newCollectionAddress || null,
+        query: {
+          address: newCollectionAddress.trim(),
+          network: network,
         },
       });
-
-      toast.success('Collection address updated successfully');
-      setIsEditingCollectionAddress(false);
-
-      // Update the wallet object with the new collection address
-      wallet.collectionAddress = newCollectionAddress || null;
-    } catch (error) {
-      console.error('Failed to update collection address:', error);
-      toast.error('Failed to update collection address');
+      if (balance.error || balance.data?.data?.Utxos?.length === 0) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
     }
+    await handleApiCall(
+      () =>
+        patchWallet({
+          client: apiClient,
+          body: {
+            id: wallet.id,
+            newCollectionAddress: newCollectionAddress.trim() || null,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Collection address updated successfully');
+          setIsEditingCollectionAddress(false);
+
+          // Update the wallet object with the new collection address
+          wallet.collectionAddress = newCollectionAddress.trim() || null;
+        },
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to update collection address');
+        },
+        errorMessage: 'Failed to update collection address',
+      },
+    );
   };
 
   const handleCancelEdit = () => {
@@ -296,7 +340,7 @@ export function WalletDetailsDialog({
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
                 <a
-                  href={getExplorerUrl(wallet.walletAddress, state.network)}
+                  href={getExplorerUrl(wallet.walletAddress, network)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-sm break-all hover:underline text-primary"
@@ -425,7 +469,7 @@ export function WalletDetailsDialog({
                         <a
                           href={getExplorerUrl(
                             wallet.collectionAddress,
-                            state.network,
+                            network,
                           )}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -494,7 +538,7 @@ export function WalletDetailsDialog({
                     const adaToken = tokenBalances.find(
                       (t) => t.unit === 'lovelace',
                     );
-                    const usdmConfig = getUsdmConfig(state.network);
+                    const usdmConfig = getUsdmConfig(network);
                     const usdmToken = tokenBalances.find(
                       (t) =>
                         t.policyId === usdmConfig.policyId &&

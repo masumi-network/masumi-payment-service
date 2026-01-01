@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
+import { PaymentSourceExtended } from '../api/generated';
 import { useAppContext } from '../contexts/AppContext';
 
 export interface SearchableItem {
@@ -40,7 +42,7 @@ const searchableItems: SearchableItem[] = [
     id: 'add-ai-agent',
     title: 'Add AI Agent',
     type: 'action',
-    href: '/ai-agents',
+    href: '/ai-agents?action=register_agent',
     elementId: 'add-ai-agent-button',
     keywords: ['create agent', 'new agent'],
   },
@@ -48,7 +50,7 @@ const searchableItems: SearchableItem[] = [
     id: 'add-wallet',
     title: 'Add Wallet',
     type: 'action',
-    href: '/wallets',
+    href: '/wallets?action=add_wallet',
     elementId: 'add-wallet-button',
     keywords: ['create wallet', 'new wallet'],
   },
@@ -56,7 +58,7 @@ const searchableItems: SearchableItem[] = [
     id: 'add-payment-source',
     title: 'Add Payment Source',
     type: 'action',
-    href: '/payment-sources',
+    href: '/payment-sources?action=add_payment_source',
     elementId: 'add-payment-source-button',
     keywords: ['create payment source', 'new payment source'],
   },
@@ -64,7 +66,7 @@ const searchableItems: SearchableItem[] = [
     id: 'add-api-key',
     title: 'Add API Key',
     type: 'action',
-    href: '/api-keys',
+    href: '/api-keys?action=add_api_key',
     elementId: 'add-api-key-button',
     keywords: ['create api key', 'new api key'],
   },
@@ -102,49 +104,46 @@ const searchableItems: SearchableItem[] = [
 ];
 
 export function useSearch() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);
-  const { state } = useAppContext();
+  const [allResults, setAllResults] = useState<SearchableItem[]>([]);
+  const { network } = useAppContext();
 
-  const handleSearch = async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
+  const { paymentSources } = usePaymentSourceExtendedAll();
 
-    const queryLower = query.toLowerCase();
-
-    const staticResults = searchableItems.filter(
-      (item) =>
-        item.title.toLowerCase().includes(queryLower) ||
-        item.description?.toLowerCase().includes(queryLower) ||
-        item.keywords?.some((keyword) =>
-          keyword.toLowerCase().includes(queryLower),
-        ),
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
     );
+  }, [paymentSources, network]);
+
+  useEffect(() => {
+    const staticResults = searchableItems;
 
     const dynamicResults: SearchableItem[] = [];
 
-    state.paymentSources?.forEach((source) => {
+    currentNetworkPaymentSources?.forEach((source) => {
       source.PurchasingWallets?.forEach((wallet) => {
         dynamicResults.push({
-          id: wallet.walletMnemonic,
+          id: wallet.walletAddress,
           title: 'Buying Wallet',
-          description: wallet.note ?? `Address: ${wallet.walletMnemonic}`,
+          description:
+            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
-          href: `/wallets?searched=${wallet.walletMnemonic}`,
-          elementId: `wallet-${wallet.walletMnemonic}`,
+          href: `/wallets?searched=${wallet.walletAddress}`,
+          elementId: `wallet-${wallet.walletAddress}`,
         });
       });
 
       source.SellingWallets?.forEach((wallet) => {
         dynamicResults.push({
-          id: wallet.walletMnemonic,
+          id: wallet.walletAddress,
           title: 'Selling Wallet',
-          description: wallet.note ?? `Address: ${wallet.walletMnemonic}`,
+          description:
+            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
-          href: `/wallets?searched=${wallet.walletMnemonic}`,
-          elementId: `wallet-${wallet.walletMnemonic}`,
+          href: `/wallets?searched=${wallet.walletAddress}`,
+          elementId: `wallet-${wallet.walletAddress}`,
         });
       });
 
@@ -158,19 +157,31 @@ export function useSearch() {
       });
     });
 
-    const filteredDynamicResults = dynamicResults.filter(
-      (item) =>
-        item.title.toLowerCase().includes(queryLower) ||
-        item.description?.toLowerCase().includes(queryLower),
-    );
+    setAllResults([...staticResults, ...dynamicResults]);
+  }, [currentNetworkPaymentSources]);
 
-    setSearchResults([...staticResults, ...filteredDynamicResults]);
-  };
+  const handleSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        return allResults;
+      }
+
+      const queryLower = query.toLowerCase();
+      const filteredResults = allResults.filter(
+        (item) =>
+          item.title.toLowerCase().includes(queryLower) ||
+          item.description?.toLowerCase().includes(queryLower) ||
+          item.keywords?.some((keyword) =>
+            keyword.toLowerCase().includes(queryLower),
+          ),
+      );
+
+      return filteredResults;
+    },
+    [allResults],
+  );
 
   return {
-    searchQuery,
-    setSearchQuery,
-    searchResults,
     handleSearch,
   };
 }

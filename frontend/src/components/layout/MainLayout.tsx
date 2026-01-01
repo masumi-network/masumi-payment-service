@@ -14,28 +14,23 @@ import {
   Moon,
   MessageSquare,
   BookOpen,
-  ChevronLeft,
+  PanelLeft,
   Bell,
   Search,
   NotebookPen,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { useSearch, SearchableItem } from '@/lib/hooks/useSearch';
+import { SearchDialog } from '@/components/search/SearchDialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
+import MasumiIconFlat from '@/components/MasumiIconFlat';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { PaymentSourceExtended } from '@/lib/api/generated';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -46,19 +41,17 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  });
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { searchQuery, setSearchQuery, searchResults, handleSearch } =
-    useSearch();
-  const { state, dispatch } = useAppContext();
+  const { network, setNetwork, isChangingNetwork } = useAppContext();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -101,8 +94,38 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [isChangingTheme]);
 
   useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-  }, [collapsed]);
+    if (isChangingNetwork) {
+      const app = document.getElementById('__next');
+      if (app) {
+        app.style.transition = 'all 0.2s ease';
+        app.style.filter = 'blur(10px)';
+        app.style.pointerEvents = 'none';
+        app.style.opacity = '1';
+        app.style.scale = '1.1';
+      }
+
+      const timer = setTimeout(() => {
+        if (app) {
+          app.style.filter = '';
+          app.style.pointerEvents = 'auto';
+          app.style.opacity = '1';
+          app.style.scale = '1';
+        }
+      }, 200);
+
+      return () => {
+        clearTimeout(timer);
+        const app = document.getElementById('__next');
+        if (app) {
+          app.style.filter = '';
+          app.style.transition = '';
+          app.style.pointerEvents = 'auto';
+          app.style.opacity = '1';
+          app.style.scale = '1';
+        }
+      };
+    }
+  }, [isChangingNetwork]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -115,79 +138,106 @@ export function MainLayout({ children }: MainLayoutProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
 
-  // Check if user has payment sources
-  const hasPaymentSources =
-    state.paymentSources && state.paymentSources.length > 0;
+  const [hasPaymentSources, setHasPaymentSources] = useState(false);
+  useEffect(() => {
+    setHasPaymentSources(
+      currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
+    );
+  }, [currentNetworkPaymentSources]);
+  const [navItems, setNavItems] = useState<
+    {
+      href: string;
+      name: string;
+      icon: React.ReactNode;
+      badge: React.ReactNode | null;
+    }[]
+  >([]);
 
-  const navItems = hasPaymentSources
-    ? [
-        { href: '/', name: 'Dashboard', icon: LayoutDashboard, badge: null },
-        { href: '/ai-agents', name: 'AI Agents', icon: Bot, badge: null },
-        { href: '/wallets', name: 'Wallets', icon: Wallet, badge: null },
+  useEffect(() => {
+    if (hasPaymentSources) {
+      setNavItems([
+        {
+          href: '/',
+          name: 'Dashboard',
+          icon: <LayoutDashboard className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/ai-agents',
+          name: 'AI Agents',
+          icon: <Bot className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/wallets',
+          name: 'Wallets',
+          icon: <Wallet className="h-4 w-4" />,
+          badge: null,
+        },
         {
           href: '/transactions',
           name: 'Transactions',
-          icon: FileText,
+          icon: <FileText className="h-4 w-4" />,
           badge: formatCount(newTransactionsCount),
         },
         {
           href: '/payment-sources',
           name: 'Payment sources',
-          icon: FileInput,
+          icon: <FileInput className="h-4 w-4" />,
           badge: null,
         },
         {
           href: '/input-schema-validator',
           name: 'Input Schema Validator',
-          icon: NotebookPen,
+          icon: <NotebookPen className="h-4 w-4" />,
           badge: null,
         },
-        { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-      ]
-    : [
         {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: FileInput,
+          href: '/api-keys',
+          name: 'API keys',
+          icon: <Key className="h-4 w-4" />,
           badge: null,
         },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-      ];
+        {
+          href: '/settings',
+          name: 'Settings',
+          icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+      ]);
+      return;
+    }
+    setNavItems([
+      {
+        href: '/payment-sources',
+        name: 'Payment sources',
+        icon: <FileInput className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/settings',
+        name: 'Settings',
+        icon: <Settings className="h-4 w-4" />,
+        badge: null,
+      },
+    ]);
+  }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
-    // Don't mark as read immediately, let user view notifications first
-  };
-
-  const handleSearchSelect = (result: SearchableItem) => {
-    setIsSearchOpen(false);
-    router.push(result.href).then(() => {
-      if (result.elementId) {
-        setTimeout(() => {
-          const element = document.getElementById(result.elementId || '');
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            element.classList.add('highlight-element');
-            setTimeout(() => {
-              element.classList.remove('highlight-element');
-            }, 4000);
-          }
-        }, 100);
-      }
-    });
-  };
-
-  const handleCommandSelect = (value: string) => {
-    const result = searchResults.find((r) => r.id === value);
-    if (result) {
-      handleSearchSelect(result);
-    }
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    dispatch({ type: 'SET_NETWORK', payload: network });
+    setNetwork(network);
   };
 
   return (
@@ -209,89 +259,113 @@ export function MainLayout({ children }: MainLayoutProps) {
       <aside
         className={cn(
           'fixed left-0 top-0 z-40 h-screen border-r transition-[width] duration-300',
-          'bg-[#FAFAFA] dark:bg-background',
+          'bg-[#FAFAFA] dark:bg-[#111]',
         )}
         data-collapsed={collapsed}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         style={{
-          width: collapsed ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
+          width:
+            collapsed && !isHovered
+              ? `${sideBarWidthCollapsed}px`
+              : `${sideBarWidth}px`,
+          pointerEvents: 'auto',
         }}
       >
-        <div className="flex flex-col space-y-6">
+        <div className="flex flex-col">
           <div
             className={cn(
               'flex gap-2 border-b p-2.5 px-4 w-full',
-              collapsed ? 'justify-center items-center' : '',
+              collapsed && !isHovered ? 'justify-center items-center' : '',
             )}
           >
             <div
               className={cn(
                 'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
+                collapsed && !isHovered
+                  ? 'grid-cols-2 w-auto gap-0.5'
+                  : 'grid-cols-2 gap-2',
               )}
             >
               <Button
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300',
-                  collapsed && 'px-2',
-                  state.network === 'Preprod' &&
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  collapsed && !isHovered && 'px-2',
+                  network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
-                {collapsed ? 'P' : 'Preprod'}
+                {collapsed && !isHovered ? 'P' : 'Preprod'}
               </Button>
               <Button
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300',
-                  collapsed && 'px-2',
-                  state.network === 'Mainnet' &&
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  collapsed && !isHovered && 'px-2',
+                  network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
-                {collapsed ? 'M' : 'Mainnet'}
+                {collapsed && !isHovered ? 'M' : 'Mainnet'}
               </Button>
             </div>
           </div>
 
           <div
             className={cn(
-              'flex items-center p-2 px-4',
-              collapsed ? 'justify-center' : 'justify-between',
+              'flex items-center p-2 px-4 border-b border-border',
+              collapsed && !isHovered ? 'justify-center' : 'justify-between',
             )}
           >
-            {!collapsed && (
-              <Link href="/">
+            {!(collapsed && !isHovered) ? (
+              <Link href="/" key="masumi-logo-full">
                 <MasumiLogo />
               </Link>
-            )}
-            <Button
-              variant={collapsed ? 'ghost' : 'muted'}
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setCollapsed(!collapsed)}
-            >
-              <div
-                className={cn(
-                  'flex transition-transform duration-300',
-                  collapsed && 'rotate-180',
-                )}
+            ) : (
+              <Link
+                href="/"
+                key="masumi-logo-icon"
+                className="flex items-center justify-center w-8 h-8"
+                style={
+                  shouldAnimateIcon && collapsed && !isHovered
+                    ? {
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
+                    : undefined
+                }
               >
-                <ChevronLeft className="h-4 w-4" />
-                <ChevronLeft className="h-4 w-4 -ml-2" />
-              </div>
-            </Button>
+                <MasumiIconFlat className="w-6 h-6" />
+              </Link>
+            )}
+            {!(collapsed && !isHovered) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-8 w-8',
+                  collapsed
+                    ? 'text-muted-foreground opacity-50'
+                    : 'text-foreground opacity-100',
+                )}
+                onClick={() => setCollapsed(!collapsed)}
+              >
+                <PanelLeft
+                  className={cn('h-4 w-4 transition-transform duration-300')}
+                />
+              </Button>
+            )}
           </div>
         </div>
 
         <nav
           className={cn(
-            'flex flex-col gap-1 mt-4',
-            collapsed ? 'px-0 items-center' : 'p-2',
+            'flex flex-col gap-1 mt-2 p-2',
+            collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
           {navItems.map((item) => (
@@ -301,20 +375,24 @@ export function MainLayout({ children }: MainLayoutProps) {
               className={cn(
                 'flex items-center rounded-lg text-sm transition-all relative',
                 'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed ? 'h-10 w-10 justify-center' : 'px-3 py-2 gap-3',
+                collapsed && !isHovered
+                  ? 'h-10 w-10 justify-center'
+                  : 'px-3 h-10 gap-3',
                 router.pathname === item.href &&
                   'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
-              title={collapsed ? item.name : undefined}
+              title={collapsed && !isHovered ? item.name : undefined}
             >
-              <item.icon className="h-4 w-4" />
-              {!collapsed && <span>{item.name}</span>}
-              {!collapsed && item.badge && (
+              {item.icon}
+              {!(collapsed && !isHovered) && (
+                <span className="truncate">{item.name}</span>
+              )}
+              {!(collapsed && !isHovered) && item.badge && (
                 <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
               )}
-              {collapsed && item.badge && (
+              {collapsed && !isHovered && item.badge && (
                 <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
                 </span>
@@ -325,29 +403,35 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <div
           className={cn(
-            'absolute bottom-4 left-0 right-0',
-            collapsed ? 'px-2' : 'px-4',
+            'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
+            collapsed && !isHovered ? 'px-2' : 'px-4',
           )}
         >
           <div className="flex items-center justify-between">
             <div
               className={cn(
                 'flex gap-4 text-xs text-muted-foreground',
-                collapsed && 'hidden',
+                collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link href="https://www.masumi.network/about" target="_blank">
+              <Link
+                href="https://www.masumi.network/about"
+                target="_blank"
+                className="truncate"
+              >
                 About
               </Link>
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
+                className="truncate"
               >
                 Privacy Policy
               </Link>
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
+                className="truncate"
               >
                 Changelog
               </Link>
@@ -355,7 +439,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <Button
               variant="ghost"
               size="icon"
-              className={cn('h-8 w-8', collapsed && 'mx-auto')}
+              className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() =>
                 setThemePreference(theme === 'dark' ? 'light' : 'dark')
               }
@@ -373,16 +457,17 @@ export function MainLayout({ children }: MainLayoutProps) {
       <div
         className="flex flex-col min-h-screen w-[100vw] transition-all duration-300"
         style={{
-          paddingLeft: collapsed
-            ? `${sideBarWidthCollapsed}px`
-            : `${sideBarWidth}px`,
+          paddingLeft:
+            collapsed && !isHovered
+              ? `${sideBarWidthCollapsed}px`
+              : `${sideBarWidth}px`,
         }}
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="max-w-[1400px] mx-auto w-full">
             <div className="h-14 px-4 flex items-center justify-between gap-4">
               <div
-                className="flex flex-1 max-w-[190px] justify-start gap-1 relative items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
+                className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
                 onClick={() => setIsSearchOpen(true)}
               >
                 <Search className="h-4 w-4 text-muted-foreground" />
@@ -437,42 +522,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </main>
       </div>
 
-      <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
-        <DialogContent>
-          <Command className="py-2">
-            <CommandInput
-              placeholder="Type to search..."
-              value={searchQuery}
-              onValueChange={(value) => {
-                setSearchQuery(value);
-                handleSearch(value);
-              }}
-              className="p-1 px-2 mb-2"
-            />
-            <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandGroup>
-                {searchResults.map((result) => (
-                  <CommandItem
-                    key={result.id}
-                    onSelect={() => handleCommandSelect(result.id)}
-                    onClick={() => handleCommandSelect(result.id)}
-                    className="flex flex-col items-start p-2 cursor-pointer pointer-events-auto"
-                    style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                  >
-                    <div className="font-medium">{result.title || '...'}</div>
-                    {result.description && (
-                      <div className="text-sm text-muted-foreground">
-                        {result.description}
-                      </div>
-                    )}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </DialogContent>
-      </Dialog>
+      <SearchDialog open={isSearchOpen} onOpenChange={setIsSearchOpen} />
 
       {isNotificationsOpen && (
         <NotificationsDialog
