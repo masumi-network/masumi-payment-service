@@ -14,6 +14,7 @@ import { submitResultV1 } from '@/services/cardano-submit-result-handler/';
 import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/';
 import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
 import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
+import { checkAllWalletBalances } from '@/utils/wallet-balance-checker';
 
 export async function initJobs() {
   const start = new Date();
@@ -187,6 +188,24 @@ export async function initJobs() {
           's',
       );
     }, CONFIG.CHECK_SUBMIT_RESULT_INTERVAL * 1000); // Convert seconds to milliseconds
+  });
+
+  void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {
+    // Wallet balance monitoring - checks every 60 seconds
+
+    AsyncInterval.start(async () => {
+      logger.info('Starting database-driven wallet balance monitoring check', {
+        component: 'wallet_monitoring',
+      });
+      const start = new Date();
+      await checkAllWalletBalances();
+      logger.info(
+        'Finished database-driven wallet balance monitoring check in ' +
+          (new Date().getTime() - start.getTime()) / 1000 +
+          's',
+        { component: 'wallet_monitoring' },
+      );
+    }, 60000); // Check every minute (fast polling, smart filtering)
   });
 
   void new Promise((resolve) => setTimeout(resolve, 7500)).then(() => {
