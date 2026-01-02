@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
@@ -459,7 +460,9 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isInitialLoading ? (
+                {isLoading ? (
+                  <TransactionTableSkeleton rows={5} />
+                ) : isInitialLoading ? (
                   <tr>
                     <td colSpan={9}>
                       <Spinner size={20} addContainer />
