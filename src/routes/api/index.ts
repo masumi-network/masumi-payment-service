@@ -7,7 +7,9 @@ import {
   deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
+import { getPurchaseEarnings } from './purchases/earnings';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
+import { getPaymentEarnings } from './payments/earnings';
 import {
   deleteAgentRegistration,
   queryRegistryRequestGet,
@@ -57,6 +59,9 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePurchaseRequestPost,
       }),
+      earnings: new DependsOnMethod({
+        get: getPurchaseEarnings,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -70,6 +75,9 @@ export const apiRouter: Routing = {
       }),
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePaymentRequestPost,
+      }),
+      earnings: new DependsOnMethod({
+        get: getPaymentEarnings,
       }),
     }),
     registry: new DependsOnMethod({
