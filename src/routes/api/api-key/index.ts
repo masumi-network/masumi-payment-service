@@ -52,6 +52,12 @@ export const apiKeyOutputSchema = z
     status: z
       .nativeEnum(ApiKeyStatus)
       .describe('Current status of the API key'),
+    allowedWalletIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'List of wallet IDs this API key can access (only populated for WalletScoped keys)',
+      ),
   })
   .openapi('APIKey');
 
@@ -71,7 +77,17 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: true,
+        WalletScopedHotWallets: {
+          where: {
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
     });
     return {
       ApiKeys: result.map((data) => ({
@@ -79,6 +95,11 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
         RemainingUsageCredits: transformBigIntAmounts(
           data.RemainingUsageCredits,
         ),
+        allowedWalletIds:
+          data.permission === Permission.WalletScoped
+            ? data.WalletScopedHotWallets.map((wallet) => wallet.id)
+            : undefined,
+        WalletScopedHotWallets: undefined,
       })),
     };
   },
@@ -120,6 +141,12 @@ export const addAPIKeySchemaInput = z.object({
     .nativeEnum(Permission)
     .default(Permission.Read)
     .describe('The permission of the API key'),
+  hotWalletIds: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'List of HotWallet IDs to assign to this API key. Required if permission is WalletScoped.',
+    ),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -134,6 +161,75 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     input: z.infer<typeof addAPIKeySchemaInput>;
   }) => {
     const isAdmin = input.permission == Permission.Admin;
+    const isWalletScoped = input.permission === Permission.WalletScoped;
+
+    if (isWalletScoped) {
+      const hotWalletIds = input.hotWalletIds || [];
+
+      if (hotWalletIds.length > 0) {
+        const wallets = await prisma.hotWallet.findMany({
+          where: {
+            id: { in: hotWalletIds },
+            deletedAt: null,
+          },
+          include: {
+            PaymentSource: {
+              select: {
+                id: true,
+                network: true,
+                deletedAt: true,
+              },
+            },
+          },
+        });
+
+        if (wallets.length !== hotWalletIds.length) {
+          throw createHttpError(
+            404,
+            'One or more HotWallets not found or deleted',
+          );
+        }
+
+        // Validate wallets belong to non-deleted PaymentSources
+        const invalidWallets = wallets.filter(
+          (w) => w.PaymentSource.deletedAt !== null,
+        );
+        if (invalidWallets.length > 0) {
+          throw createHttpError(
+            400,
+            'One or more HotWallets belong to deleted PaymentSources',
+          );
+        }
+
+        const assignedWallets = await prisma.hotWallet.findMany({
+          where: {
+            id: { in: hotWalletIds },
+            walletScopedApiKeyId: { not: null },
+          },
+          select: {
+            id: true,
+            walletScopedApiKeyId: true,
+          },
+        });
+
+        if (assignedWallets.length > 0) {
+          throw createHttpError(
+            400,
+            `Wallets already assigned to another API key: ${assignedWallets.map((w) => w.id).join(', ')}`,
+          );
+        }
+
+        // Auto-detect network from wallets
+        const networks = new Set<Network>();
+        for (const wallet of wallets) {
+          networks.add(wallet.PaymentSource.network);
+        }
+        input.networkLimit = Array.from(networks);
+      } else {
+        input.networkLimit = [];
+      }
+    }
+
     const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
     const result = await prisma.apiKey.create({
       data: {
@@ -159,11 +255,25 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
       },
       include: { RemainingUsageCredits: true },
     });
+
+    if (isWalletScoped && input.hotWalletIds && input.hotWalletIds.length > 0) {
+      await prisma.hotWallet.updateMany({
+        where: {
+          id: { in: input.hotWalletIds },
+        },
+        data: {
+          walletScopedApiKeyId: result.id,
+        },
+      });
+    }
+
     return {
       ...result,
       RemainingUsageCredits: transformBigIntAmounts(
         result.RemainingUsageCredits,
       ),
+      allowedWalletIds:
+        isWalletScoped && input.hotWalletIds ? input.hotWalletIds : undefined,
     };
   },
 });
@@ -216,6 +326,18 @@ export const updateAPIKeySchemaInput = z.object({
     .default([Network.Mainnet, Network.Preprod])
     .optional()
     .describe('The networks the API key is allowed to use'),
+  walletsToAdd: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Array of wallet IDs to assign to this WalletScoped API key. Only applicable for WalletScoped keys.',
+    ),
+  walletsToRemove: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Array of wallet IDs to unassign from this WalletScoped API key. Only applicable for WalletScoped keys.',
+    ),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -239,6 +361,89 @@ export const updateAPIKeyEndpointPatch =
           if (!apiKey) {
             throw createHttpError(404, 'API key not found');
           }
+
+          if (input.walletsToAdd && input.walletsToAdd.length > 0) {
+            if (apiKey.permission !== Permission.WalletScoped) {
+              throw createHttpError(
+                400,
+                'Can only add wallets to WalletScoped API keys',
+              );
+            }
+
+            const walletsToAdd = await prisma.hotWallet.findMany({
+              where: {
+                id: { in: input.walletsToAdd },
+                deletedAt: null,
+              },
+            });
+
+            if (walletsToAdd.length !== input.walletsToAdd.length) {
+              throw createHttpError(
+                404,
+                'One or more wallets not found or deleted',
+              );
+            }
+
+            const alreadyAssigned = await prisma.hotWallet.findMany({
+              where: {
+                id: { in: input.walletsToAdd },
+                walletScopedApiKeyId: { not: null },
+              },
+              select: {
+                id: true,
+                walletScopedApiKeyId: true,
+              },
+            });
+
+            if (alreadyAssigned.length > 0) {
+              throw createHttpError(
+                400,
+                `Wallets already assigned to another API key: ${alreadyAssigned.map((w) => w.id).join(', ')}`,
+              );
+            }
+
+            await prisma.hotWallet.updateMany({
+              where: {
+                id: { in: input.walletsToAdd },
+              },
+              data: {
+                walletScopedApiKeyId: apiKey.id,
+              },
+            });
+          }
+
+          if (input.walletsToRemove && input.walletsToRemove.length > 0) {
+            if (apiKey.permission !== Permission.WalletScoped) {
+              throw createHttpError(
+                400,
+                'Can only remove wallets from WalletScoped API keys',
+              );
+            }
+
+            const walletsToRemove = await prisma.hotWallet.findMany({
+              where: {
+                id: { in: input.walletsToRemove },
+                walletScopedApiKeyId: apiKey.id,
+              },
+            });
+
+            if (walletsToRemove.length !== input.walletsToRemove.length) {
+              throw createHttpError(
+                400,
+                'One or more wallets do not belong to this API key',
+              );
+            }
+
+            await prisma.hotWallet.updateMany({
+              where: {
+                id: { in: input.walletsToRemove },
+              },
+              data: {
+                walletScopedApiKeyId: null,
+              },
+            });
+          }
+
           if (input.UsageCreditsToAddOrRemove) {
             for (const usageCredit of input.UsageCreditsToAddOrRemove) {
               const parsedAmount = BigInt(usageCredit.amount);
@@ -284,7 +489,17 @@ export const updateAPIKeyEndpointPatch =
               status: input.status,
               networkLimit: input.networkLimit,
             },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: true,
+              WalletScopedHotWallets: {
+                where: {
+                  deletedAt: null,
+                },
+                select: {
+                  id: true,
+                },
+              },
+            },
           });
           return result;
         },
@@ -299,6 +514,11 @@ export const updateAPIKeyEndpointPatch =
         RemainingUsageCredits: transformBigIntAmounts(
           apiKey.RemainingUsageCredits,
         ),
+        allowedWalletIds:
+          apiKey.permission === Permission.WalletScoped
+            ? apiKey.WalletScopedHotWallets.map((wallet) => wallet.id)
+            : undefined,
+        WalletScopedHotWallets: undefined,
       };
     },
   });
@@ -322,6 +542,11 @@ export const deleteAPIKeyEndpointDelete =
     }: {
       input: z.infer<typeof deleteAPIKeySchemaInput>;
     }) => {
+      await prisma.hotWallet.updateMany({
+        where: { walletScopedApiKeyId: input.id },
+        data: { walletScopedApiKeyId: null },
+      });
+
       const apiKey = await prisma.apiKey.update({
         where: { id: input.id },
         data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
@@ -332,6 +557,7 @@ export const deleteAPIKeyEndpointDelete =
         RemainingUsageCredits: transformBigIntAmounts(
           apiKey.RemainingUsageCredits,
         ),
+        allowedWalletIds: undefined, // No wallets after deletion
       };
     },
   });

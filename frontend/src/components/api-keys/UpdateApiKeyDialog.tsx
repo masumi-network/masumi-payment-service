@@ -32,7 +32,7 @@ interface UpdateApiKeyDialogProps {
   apiKey: {
     id: string;
     token: string;
-    permission: 'Read' | 'ReadAndPay' | 'Admin';
+    permission: 'Read' | 'ReadAndPay' | 'Admin' | 'WalletScoped';
     networkLimit: Array<'Preprod' | 'Mainnet'>;
     usageLimited: boolean;
     status: 'Active' | 'Revoked';

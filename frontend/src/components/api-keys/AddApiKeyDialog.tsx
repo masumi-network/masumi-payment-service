@@ -33,7 +33,7 @@ interface AddApiKeyDialogProps {
 
 const apiKeySchema = z
   .object({
-    permission: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    permission: z.enum(['Read', 'ReadAndPay', 'Admin', 'WalletScoped']),
     networks: z
       .array(z.enum(['Preprod', 'Mainnet']))
       .min(1, 'Select at least one network'),
@@ -42,6 +42,7 @@ const apiKeySchema = z
       lovelace: z.string().optional(),
       usdm: z.string().optional(),
     }),
+    hotWalletIds: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (
@@ -54,6 +55,14 @@ const apiKeySchema = z
         code: z.ZodIssueCode.custom,
         message: 'Please specify usage credits for Read and Pay permission',
         path: ['credits', 'lovelace'],
+      });
+    }
+    if (val.permission === 'WalletScoped' && !val.hotWalletIds) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Please specify at least one HotWallet ID for WalletScoped permission',
+        path: ['hotWalletIds'],
       });
     }
   });
@@ -83,6 +92,7 @@ export function AddApiKeyDialog({
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
       credits: { lovelace: '', usdm: '' },
+      hotWalletIds: '',
     },
   });
 
@@ -105,6 +115,16 @@ export function AddApiKeyDialog({
         amount: '1000000000', // 1000 ADA
       },
     ];
+
+    // Parse hotWalletIds if WalletScoped
+    const hotWalletIds =
+      data.permission === 'WalletScoped' && data.hotWalletIds
+        ? data.hotWalletIds
+            .split(',')
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0)
+        : undefined;
+
     await handleApiCall(
       () =>
         postApiKey({
@@ -113,6 +133,7 @@ export function AddApiKeyDialog({
             permission: data.permission,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
             networkLimit: data.networks,
+            hotWalletIds: hotWalletIds,
             UsageCredits: isReadOnly
               ? defaultCredits
               : data.usageLimited
@@ -180,6 +201,7 @@ export function AddApiKeyDialog({
                     <SelectItem value="Read">Read</SelectItem>
                     <SelectItem value="ReadAndPay">Read and Pay</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="WalletScoped">Wallet Scoped</SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -243,6 +265,25 @@ export function AddApiKeyDialog({
               </p>
             )}
           </div>
+
+          {permission === 'WalletScoped' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">HotWallet IDs</label>
+              <Input
+                type="text"
+                placeholder="Enter HotWallet IDs (comma-separated)"
+                {...register('hotWalletIds')}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter one or more HotWallet IDs separated by commas
+              </p>
+              {errors.hotWalletIds && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.hotWalletIds.message}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <div className="flex items-center gap-2">

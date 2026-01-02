@@ -36,7 +36,8 @@
                         "enum": [
                             "Read",
                             "ReadAndPay",
-                            "Admin"
+                            "Admin",
+                            "WalletScoped"
                         ],
                         "description": "Permission level of the API key"
                     },
@@ -83,6 +84,13 @@
                             "Revoked"
                         ],
                         "description": "Current status of the API key"
+                    },
+                    "allowedWalletIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "List of wallet IDs this API key can access (only populated for WalletScoped keys)"
                     }
                 },
                 "required": [
@@ -2825,10 +2833,18 @@
                                         "enum": [
                                             "Read",
                                             "ReadAndPay",
-                                            "Admin"
+                                            "Admin",
+                                            "WalletScoped"
                                         ],
                                         "default": "Read",
                                         "description": "The permission of the API key"
+                                    },
+                                    "hotWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "List of HotWallet IDs to assign to this API key. Required if permission is WalletScoped."
                                     }
                                 },
                                 "required": [
@@ -2982,6 +2998,20 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "walletsToAdd": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Array of wallet IDs to assign to this WalletScoped API key. Only applicable for WalletScoped keys."
+                                    },
+                                    "walletsToRemove": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "description": "Array of wallet IDs to unassign from this WalletScoped API key. Only applicable for WalletScoped keys."
                                     }
                                 },
                                 "required": [

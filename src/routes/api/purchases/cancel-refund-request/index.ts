@@ -1,4 +1,5 @@
 import { z } from '@/utils/zod-openapi';
+import { WalletAccess } from '@/services/wallet-access';
 import {
   Network,
   PurchasingAction,
@@ -44,6 +45,7 @@ export const cancelPurchaseRefundRequestPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -113,6 +115,16 @@ export const cancelPurchaseRefundRequestPost =
       if (purchase.SmartContractWallet == null) {
         throw createHttpError(404, 'Smart contract wallet not set on purchase');
       }
+
+      // Validate wallet access for WalletScoped keys
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        { smartContractWalletId: purchase.SmartContractWallet.id },
+      );
 
       const result = await prisma.purchaseRequest.update({
         where: { id: purchase.id },

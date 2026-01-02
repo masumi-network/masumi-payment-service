@@ -1,4 +1,5 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { WalletAccess } from '@/services/wallet-access';
 import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
@@ -44,6 +45,7 @@ export const authorizePaymentRefundEndpointPost =
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -99,6 +101,17 @@ export const authorizePaymentRefundEndpointPost =
       if (payment.SmartContractWallet == null) {
         throw createHttpError(404, 'Smart contract wallet not found');
       }
+
+      // Validate wallet access for WalletScoped keys
+      await WalletAccess.validateResourceAccess(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        { smartContractWalletId: payment.SmartContractWallet.id },
+      );
+
       if (payment.CurrentTransaction == null) {
         throw createHttpError(400, 'Payment in invalid state');
       }

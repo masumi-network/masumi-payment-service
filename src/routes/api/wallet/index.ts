@@ -1,9 +1,11 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
+import { WalletAccess } from '@/services/wallet-access';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { $Enums, HotWalletType, Network } from '@prisma/client';
+import { $Enums, HotWalletType, Network, Prisma } from '@prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -75,7 +77,7 @@ export const getWalletSchemaOutput = z
   })
   .openapi('Wallet');
 
-export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
+export const queryWalletEndpointGet = readAuthenticatedEndpointFactory.build({
   method: 'get',
   input: getWalletSchemaInput,
   output: getWalletSchemaOutput,
@@ -89,20 +91,32 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
       permission: $Enums.Permission;
       networkLimit: $Enums.Network[];
       usageLimited: boolean;
+      allowedWalletIds: string[];
     };
   }) => {
     const startTime = Date.now();
     try {
       if (input.walletType == 'Selling') {
-        const result = await prisma.hotWallet.findFirst({
-          where: {
-            id: input.id,
-            type: HotWalletType.Selling,
-            PaymentSource: {
-              network: { in: options.networkLimit },
-            },
-            deletedAt: null,
+        const baseWhere: Prisma.HotWalletWhereInput = {
+          id: input.id,
+          type: HotWalletType.Selling,
+          PaymentSource: {
+            network: { in: options.networkLimit },
           },
+          deletedAt: null,
+        };
+
+        const whereClause = WalletAccess.buildFilter(
+          {
+            apiKeyId: options.id,
+            permission: options.permission,
+            allowedWalletIds: options.allowedWalletIds,
+          },
+          baseWhere,
+        );
+
+        const result = await prisma.hotWallet.findFirst({
+          where: whereClause,
           include: {
             Secret: true,
             PendingTransaction: true,
@@ -163,15 +177,26 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
           walletAddress: result.walletAddress,
         };
       } else if (input.walletType == 'Purchasing') {
-        const result = await prisma.hotWallet.findFirst({
-          where: {
-            id: input.id,
-            type: HotWalletType.Purchasing,
-            PaymentSource: {
-              network: { in: options.networkLimit },
-            },
-            deletedAt: null,
+        const baseWhere: Prisma.HotWalletWhereInput = {
+          id: input.id,
+          type: HotWalletType.Purchasing,
+          PaymentSource: {
+            network: { in: options.networkLimit },
           },
+          deletedAt: null,
+        };
+
+        const whereClause = WalletAccess.buildFilter(
+          {
+            apiKeyId: options.id,
+            permission: options.permission,
+            allowedWalletIds: options.allowedWalletIds,
+          },
+          baseWhere,
+        );
+
+        const result = await prisma.hotWallet.findFirst({
+          where: whereClause,
           include: {
             Secret: true,
             PendingTransaction: true,

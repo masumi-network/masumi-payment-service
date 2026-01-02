@@ -1,5 +1,6 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, $Enums } from '@prisma/client';
+import { Network, $Enums, Prisma } from '@prisma/client';
+import { WalletAccess } from '@/services/wallet-access';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -51,6 +52,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
         permission: $Enums.Permission;
         networkLimit: $Enums.Network[];
         usageLimited: boolean;
+        allowedWalletIds: string[];
       };
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
@@ -59,15 +61,26 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
         options.permission,
       );
 
-      const result = await prisma.paymentRequest.findUnique({
-        where: {
-          PaymentSource: {
-            deletedAt: null,
-            network: input.network,
-            smartContractAddress: input.filterSmartContractAddress ?? undefined,
-          },
-          blockchainIdentifier: input.blockchainIdentifier,
+      const baseWhere: Prisma.PaymentRequestWhereInput = {
+        PaymentSource: {
+          deletedAt: null,
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
         },
+        blockchainIdentifier: input.blockchainIdentifier,
+      };
+
+      const whereClause = WalletAccess.buildFilter(
+        {
+          apiKeyId: options.id,
+          permission: options.permission,
+          allowedWalletIds: options.allowedWalletIds,
+        },
+        baseWhere,
+      );
+
+      const result = await prisma.paymentRequest.findFirst({
+        where: whereClause,
         include: {
           BuyerWallet: true,
           SmartContractWallet: { where: { deletedAt: null } },
