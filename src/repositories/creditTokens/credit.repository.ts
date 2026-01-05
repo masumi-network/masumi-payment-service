@@ -224,7 +224,7 @@ async function handlePurchaseCreditInit({
           WithdrawnForSeller: {
             select: { id: true, amount: true, unit: true },
           },
-          WithdrawnForBuyer: true,
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
         },
       });
 
