@@ -213,8 +213,8 @@ model PaymentRequest {
   CurrentTransaction        Transaction?      @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
   NextAction                PaymentActionData @relation("NextAction", fields: [nextActionId], references: [id])
   PaymentSource             PaymentSource     @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  totalBuyerCardanoFees     BigInt
-  totalSellerCardanoFees    BigInt
+  totalBuyerCardanoFees     BigInt            @default(0)
+  totalSellerCardanoFees    BigInt            @default(0)
   requestedBy               ApiKey            @relation(fields: [requestedById], references: [id])
   SmartContractWallet       HotWallet?        @relation(fields: [smartContractWalletId], references: [id])
   TransactionHistory        Transaction[]     @relation("PaymentTransactionHistory")
@@ -253,8 +253,8 @@ model PurchaseRequest {
   onChainState              OnChainState?
   sellerCoolDownTime        BigInt
   buyerCoolDownTime         BigInt
-  totalBuyerCardanoFees     BigInt
-  totalSellerCardanoFees    BigInt
+  totalBuyerCardanoFees     BigInt             @default(0)
+  totalSellerCardanoFees    BigInt             @default(0)
   nextActionId              String             @unique
   requestedById             String
   currentTransactionId      String?            @unique
