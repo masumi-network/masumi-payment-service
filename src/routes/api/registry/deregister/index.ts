@@ -72,8 +72,16 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        PaymentSourceConfig: true,
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
+        PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+        HotWallets: {
+          include: { Secret: { select: { encryptedMnemonic: true } } },
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            walletVkey: true,
+            walletAddress: true,
+          },
+        },
       },
     });
     if (paymentSource == null) {

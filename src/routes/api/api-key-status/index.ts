@@ -17,7 +17,9 @@ export const queryAPIKeyStatusEndpointGet =
     handler: async ({ options }) => {
       const result = await prisma.apiKey.findFirst({
         where: { id: options.id },
-        include: { RemainingUsageCredits: true },
+        include: {
+          RemainingUsageCredits: { select: { amount: true, unit: true } },
+        },
       });
       if (!result) {
         throw createHttpError(404, 'API key not found');

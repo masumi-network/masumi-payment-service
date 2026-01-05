@@ -438,10 +438,34 @@ export const paymentSourceExtendedEndpointPost =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -689,10 +713,34 @@ export const paymentSourceExtendedEndpointPatch =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -733,10 +781,34 @@ export const paymentSourceExtendedEndpointDelete =
         where: { id: input.id, network: { in: options.networkLimit } },
         data: { deletedAt: new Date() },
         include: {
-          HotWallets: { where: { deletedAt: null } },
-          PaymentSourceConfig: true,
-          AdminWallets: true,
-          FeeReceiverNetworkWallet: true,
+          HotWallets: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              walletVkey: true,
+              walletAddress: true,
+              type: true,
+              collectionAddress: true,
+              note: true,
+            },
+          },
+          PaymentSourceConfig: {
+            select: {
+              rpcProviderApiKey: true,
+              rpcProvider: true,
+            },
+          },
+          AdminWallets: {
+            select: {
+              walletAddress: true,
+              order: true,
+            },
+          },
+          FeeReceiverNetworkWallet: {
+            select: {
+              walletAddress: true,
+            },
+          },
         },
       });
       const { HotWallets, ...rest } = paymentSource;

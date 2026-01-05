@@ -327,8 +327,16 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        PaymentSourceConfig: true,
-        HotWallets: { where: { deletedAt: null } },
+        PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+        HotWallets: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            walletVkey: true,
+            walletAddress: true,
+            type: true,
+          },
+        },
       },
     });
     if (paymentSource == null) {

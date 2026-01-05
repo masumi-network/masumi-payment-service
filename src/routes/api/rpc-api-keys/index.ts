@@ -64,11 +64,12 @@ export const queryRpcProviderKeysEndpointGet =
         orderBy: { createdAt: 'asc' },
         where: {
           PaymentSource: {
+            deletedAt: null,
             network: { in: options.networkLimit },
           },
         },
         include: {
-          PaymentSource: true,
+          PaymentSource: { select: { network: true } },
         },
       });
 

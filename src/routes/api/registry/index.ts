@@ -241,10 +241,35 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
       take: 10,
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       include: {
-        SmartContractWallet: true,
-        CurrentTransaction: true,
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        ExampleOutputs: true,
+        SmartContractWallet: {
+          select: { walletVkey: true, walletAddress: true },
+        },
+        CurrentTransaction: {
+          select: {
+            txHash: true,
+            status: true,
+            confirmations: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+          },
+        },
+        Pricing: {
+          select: {},
+          include: {
+            FixedPricing: {
+              select: {},
+              include: { Amounts: { select: { unit: true, amount: true } } },
+            },
+          },
+        },
+        ExampleOutputs: {
+          select: {
+            name: true,
+            url: true,
+            mimeType: true,
+          },
+        },
       },
     });
 
@@ -436,19 +461,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         where: {
           walletVkey: input.sellingWalletVkey,
           type: HotWalletType.Selling,
-
           deletedAt: null,
-        },
-        include: {
           PaymentSource: {
-            include: {
-              AdminWallets: true,
-              HotWallets: {
-                include: { Secret: true },
-                where: { deletedAt: null },
-              },
-              PaymentSourceConfig: true,
-            },
+            deletedAt: null,
+            network: input.network,
           },
         },
       });
@@ -491,56 +507,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         );
         throw createHttpError(404, 'Selling wallet not found');
       }
-      const paymentSource = sellingWallet.PaymentSource;
-      if (paymentSource == null) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          404,
-          'Selling wallet has no payment source',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'payment_source_validation',
-            wallet_id: sellingWallet.id,
-          },
-        );
-        throw createHttpError(404, 'Selling wallet has no payment source');
-      }
-      if (paymentSource.network != input.network) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          400,
-          'Selling wallet is not on the requested network',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'network_validation',
-            wallet_network: paymentSource.network,
-            requested_network: input.network,
-          },
-        );
-        throw createHttpError(
-          400,
-          'Selling wallet is not on the requested network',
-        );
-      }
-      if (paymentSource.deletedAt != null) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          400,
-          'Payment source is deleted',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'payment_source_validation',
-            payment_source_id: paymentSource.id,
-          },
-        );
-        throw createHttpError(400, 'Payment source is deleted');
-      }
+
       const result = await prisma.registryRequest.create({
         data: {
           name: input.name,
@@ -578,7 +545,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
           PaymentSource: {
             connect: {
-              id: paymentSource.id,
+              id: sellingWallet.paymentSourceId,
             },
           },
           tags: input.Tags,
@@ -610,11 +577,32 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         },
         include: {
           Pricing: {
-            include: { FixedPricing: { include: { Amounts: true } } },
+            include: {
+              FixedPricing: {
+                include: { Amounts: { select: { unit: true, amount: true } } },
+              },
+            },
           },
-          SmartContractWallet: true,
-          ExampleOutputs: true,
-          CurrentTransaction: true,
+          SmartContractWallet: {
+            select: { walletVkey: true, walletAddress: true },
+          },
+          ExampleOutputs: {
+            select: {
+              name: true,
+              url: true,
+              mimeType: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              txHash: true,
+              status: true,
+              confirmations: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+            },
+          },
         },
       });
 

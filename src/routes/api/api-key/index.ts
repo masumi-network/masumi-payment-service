@@ -71,7 +71,9 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
     return {
       ApiKeys: result.map((data) => ({
@@ -157,7 +159,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
           },
         },
       },
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
     return {
       ...result,
@@ -284,7 +288,9 @@ export const updateAPIKeyEndpointPatch =
               status: input.status,
               networkLimit: input.networkLimit,
             },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: { select: { amount: true, unit: true } },
+            },
           });
           return result;
         },
@@ -325,7 +331,9 @@ export const deleteAPIKeyEndpointDelete =
       const apiKey = await prisma.apiKey.update({
         where: { id: input.id },
         data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
-        include: { RemainingUsageCredits: true },
+        include: {
+          RemainingUsageCredits: { select: { amount: true, unit: true } },
+        },
       });
       return {
         ...apiKey,
