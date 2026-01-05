@@ -72,8 +72,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        PaymentSourceConfig: true,
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
+        PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+        HotWallets: {
+          include: { Secret: { select: { encryptedMnemonic: true } } },
+          where: { deletedAt: null },
+        },
       },
     });
     if (paymentSource == null) {
@@ -129,10 +132,27 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         state: RegistrationState.DeregistrationRequested,
       },
       include: {
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        SmartContractWallet: true,
-        ExampleOutputs: true,
-        CurrentTransaction: true,
+        Pricing: {
+          include: {
+            FixedPricing: {
+              include: { Amounts: { select: { unit: true, amount: true } } },
+            },
+          },
+        },
+        SmartContractWallet: {
+          select: { walletVkey: true, walletAddress: true },
+        },
+        ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+        CurrentTransaction: {
+          select: {
+            txHash: true,
+            status: true,
+            confirmations: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+          },
+        },
       },
     });
 
