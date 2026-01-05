@@ -178,25 +178,8 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
 export const getDiagnosticsResponseSchema = z
   .object({
     recentCount: z.number().describe('Number of recent registry requests'),
-    recentRequests: z
-      .array(
-        z.object({
-          id: z.string().describe('Unique identifier for the registry request'),
-          state: z.string().describe('Current state of the registry request'),
-          updatedAt: z
-            .string()
-            .describe(
-              'ISO timestamp when the registry request was last updated',
-            ),
-          network: z
-            .string()
-            .optional()
-            .describe('The Cardano network for this registry request'),
-        }),
-      )
-      .describe('List of recent registry requests'),
     allStates: z
-      .array(z.string())
+      .array(z.object({ state: z.string(), count: z.number() }))
       .describe('List of all possible registry request states'),
   })
   .openapi('DiagnosticsData');
@@ -214,12 +197,6 @@ export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
 
     return {
       recentCount: diagnostic.recentCount,
-      recentRequests: diagnostic.recent.map((reg) => ({
-        id: reg.id,
-        state: reg.state,
-        updatedAt: reg.updatedAt.toISOString(),
-        network: reg.PaymentSource?.network,
-      })),
       allStates: diagnostic.allStates,
     };
   },
