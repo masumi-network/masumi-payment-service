@@ -76,11 +76,6 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         HotWallets: {
           include: { Secret: { select: { encryptedMnemonic: true } } },
           where: { deletedAt: null },
-          select: {
-            id: true,
-            walletVkey: true,
-            walletAddress: true,
-          },
         },
       },
     });
