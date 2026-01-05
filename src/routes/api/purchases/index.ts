@@ -418,10 +418,13 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                 fees: purchase.CurrentTransaction.fees?.toString() ?? null,
               }
             : null,
-          TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-            ...tx,
-            fees: tx.fees?.toString() ?? null,
-          })),
+          TransactionHistory:
+            purchase.TransactionHistory != null
+              ? purchase.TransactionHistory.map((tx) => ({
+                  ...tx,
+                  fees: tx.fees?.toString() ?? null,
+                }))
+              : [],
         };
       }),
     };

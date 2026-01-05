@@ -590,18 +590,6 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        HotWallets: {
-          include: { Secret: { select: { encryptedMnemonic: true } } },
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            walletVkey: true,
-            walletAddress: true,
-            type: true,
-            collectionAddress: true,
-            note: true,
-          },
-        },
         PaymentSourceConfig: {
           select: { rpcProviderApiKey: true, rpcProvider: true },
         },
@@ -746,15 +734,21 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const vKey = resolvePaymentKeyHash(assetInWallet[0].address);
 
-    const sellingWallet = specifiedPaymentContract.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == vKey && wallet.type == HotWalletType.Selling,
-    );
+    const sellingWallet = await prisma.hotWallet.findFirst({
+      where: {
+        deletedAt: null,
+        type: HotWalletType.Selling,
+        walletVkey: vKey,
+        paymentSourceId: specifiedPaymentContract.id,
+      },
+      include: {
+        Secret: {
+          select: { encryptedMnemonic: true },
+        },
+      },
+    });
     if (sellingWallet == null) {
-      throw createHttpError(
-        404,
-        'Agent identifier not found in selling wallets',
-      );
+      throw createHttpError(404, 'Selling wallet not found');
     }
     const sellerCUID = cuid2.createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
@@ -771,6 +765,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
       sellerAddress: sellingWallet.walletAddress,
     };
+
     const meshWallet = new MeshWallet({
       networkId: convertNetworkToId(input.network),
       key: {

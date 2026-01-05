@@ -152,10 +152,13 @@ export const resolvePurchaseRequestPost =
               fees: purchase.CurrentTransaction.fees?.toString() ?? null,
             }
           : null,
-        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
+        TransactionHistory:
+          input.includeHistory == true
+            ? purchase.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : [],
       };
     },
   });
