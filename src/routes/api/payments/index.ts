@@ -33,7 +33,6 @@ import {
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
-import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -125,6 +124,16 @@ export const paymentResponseSchema = z
       .string()
       .nullable()
       .describe('SHA256 hash of the input data for the payment (hex string)'),
+    totalBuyerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
     cooldownTime: z
       .number()
       .describe('Cooldown period in milliseconds for the seller to dispute'),
@@ -284,16 +293,6 @@ export const paymentResponseSchema = z
         }),
       )
       .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
-    totalBuyerFees: z
-      .string()
-      .describe(
-        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
-      ),
-    totalSellerFees: z
-      .string()
-      .describe(
-        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
-      ),
     PaymentSource: z
       .object({
         id: z.string().describe('Unique identifier for the payment source'),
@@ -395,10 +394,11 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         CurrentTransaction: true,
         WithdrawnForSeller: true,
         WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
-        },
+        TransactionHistory: input.includeHistory
+          ? {
+              orderBy: { createdAt: 'desc' },
+            }
+          : undefined,
       },
     });
     if (result == null) {
@@ -407,17 +407,14 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 
     return {
       Payments: result.map((payment) => {
-        const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
-          payment.CurrentTransaction,
-          payment.TransactionHistory,
-        );
-
         return {
           ...payment,
           ...transformPaymentGetTimestamps(payment),
           ...transformPaymentGetAmounts(payment),
-          totalBuyerFees,
-          totalSellerFees,
+          totalBuyerCardanoFees:
+            Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
           agentIdentifier:
             decodeBlockchainIdentifier(payment.blockchainIdentifier)
               ?.agentIdentifier ?? null,
@@ -734,6 +731,8 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const payment = await prisma.paymentRequest.create({
       data: {
+        totalBuyerCardanoFees: BigInt(0),
+        totalSellerCardanoFees: BigInt(0),
         blockchainIdentifier: compressedEncodedBlockchainIdentifier,
         PaymentSource: { connect: { id: specifiedPaymentContract.id } },
         RequestedFunds: {
@@ -777,17 +776,15 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     if (payment.SmartContractWallet == null) {
       throw createHttpError(500, 'Smart contract wallet not connected');
     }
-    const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
-      payment.CurrentTransaction,
-      payment.TransactionHistory,
-    );
 
     return {
       ...payment,
       ...transformPaymentGetTimestamps(payment),
       ...transformPaymentGetAmounts(payment),
-      totalBuyerFees,
-      totalSellerFees,
+      totalBuyerCardanoFees:
+        Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+      totalSellerCardanoFees:
+        Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
       agentIdentifier:
         decodeBlockchainIdentifier(payment.blockchainIdentifier)
           ?.agentIdentifier ?? null,

@@ -158,6 +158,8 @@ async function handlePurchaseCreditInit({
 
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
+          totalBuyerCardanoFees: BigInt(0),
+          totalSellerCardanoFees: BigInt(0),
           requestedBy: { connect: { id: id } },
           PaidFunds: {
             create: Array.from(totalCost.entries()).map(([unit, amount]) => ({

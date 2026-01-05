@@ -16,7 +16,6 @@ import {
   transformPurchaseGetAmounts,
   transformPurchaseGetTimestamps,
 } from '@/utils/shared/transformers';
-import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const requestPurchaseRefundSchemaInput = z.object({
   blockchainIdentifier: z
@@ -142,17 +141,15 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
     const decoded = decodeBlockchainIdentifier(
       newPurchase.blockchainIdentifier,
     );
-    const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
-      newPurchase.CurrentTransaction,
-      newPurchase.TransactionHistory,
-    );
 
     return {
       ...newPurchase,
       ...transformPurchaseGetTimestamps(newPurchase),
       ...transformPurchaseGetAmounts(newPurchase),
-      totalBuyerFees,
-      totalSellerFees,
+      totalBuyerCardanoFees:
+        Number(newPurchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+      totalSellerCardanoFees:
+        Number(newPurchase.totalSellerCardanoFees.toString()) / 1_000_000,
       agentIdentifier: decoded?.agentIdentifier ?? null,
       CurrentTransaction: newPurchase.CurrentTransaction
         ? {

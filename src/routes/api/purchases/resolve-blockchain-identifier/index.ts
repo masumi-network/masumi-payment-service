@@ -10,7 +10,6 @@ import {
 } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
-import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -86,17 +85,15 @@ export const resolvePurchaseRequestPost =
       if (purchase == null) {
         throw createHttpError(404, 'Purchase not found');
       }
-      const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
-        purchase.CurrentTransaction,
-        purchase.TransactionHistory,
-      );
 
       return {
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
         ...transformPurchaseGetAmounts(purchase),
-        totalBuyerFees,
-        totalSellerFees,
+        totalBuyerCardanoFees:
+          Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier:
           decodeBlockchainIdentifier(purchase.blockchainIdentifier)
             ?.agentIdentifier ?? null,

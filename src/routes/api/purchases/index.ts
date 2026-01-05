@@ -30,7 +30,6 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
-import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -104,6 +103,16 @@ export const purchaseResponseSchema = z
       .string()
       .describe(
         'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
+      ),
+    totalBuyerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
       ),
     requestedById: z
       .string()
@@ -246,16 +255,6 @@ export const purchaseResponseSchema = z
         unit: z.string(),
       }),
     ),
-    totalBuyerFees: z
-      .string()
-      .describe(
-        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
-      ),
-    totalSellerFees: z
-      .string()
-      .describe(
-        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
-      ),
     PaymentSource: z.object({
       id: z.string(),
       network: z.nativeEnum(Network),
@@ -342,10 +341,11 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
         CurrentTransaction: true,
         WithdrawnForSeller: true,
         WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
-        },
+        TransactionHistory: input.includeHistory
+          ? {
+              orderBy: { createdAt: 'desc' },
+            }
+          : undefined,
       },
     });
     if (result == null) {
@@ -353,17 +353,14 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     }
     return {
       Purchases: result.map((purchase) => {
-        const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
-          purchase.CurrentTransaction,
-          purchase.TransactionHistory,
-        );
-
         return {
           ...purchase,
           ...transformPurchaseGetTimestamps(purchase),
           ...transformPurchaseGetAmounts(purchase),
-          totalBuyerFees,
-          totalSellerFees,
+          totalBuyerCardanoFees:
+            Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
           agentIdentifier:
             decodeBlockchainIdentifier(purchase.blockchainIdentifier)
               ?.agentIdentifier ?? null,
@@ -509,6 +506,13 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           existingPurchaseRequest.id,
           {
             ...existingPurchaseRequest,
+            totalBuyerCardanoFees:
+              Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) /
+              1_000_000,
+            totalSellerCardanoFees:
+              Number(
+                existingPurchaseRequest.totalSellerCardanoFees.toString(),
+              ) / 1_000_000,
             CurrentTransaction: existingPurchaseRequest.CurrentTransaction
               ? {
                   id: existingPurchaseRequest.CurrentTransaction.id,
@@ -911,8 +915,8 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         ...initialPurchaseRequest,
         ...transformPurchaseGetTimestamps(initialPurchaseRequest),
         ...transformPurchaseGetAmounts(initialPurchaseRequest),
-        totalBuyerFees: '0',
-        totalSellerFees: '0',
+        totalBuyerCardanoFees: 0,
+        totalSellerCardanoFees: 0,
         agentIdentifier: input.agentIdentifier,
         TransactionHistory: [],
         CurrentTransaction: null,
