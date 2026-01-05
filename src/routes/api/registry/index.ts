@@ -255,10 +255,8 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
           },
         },
         Pricing: {
-          select: {},
           include: {
             FixedPricing: {
-              select: {},
               include: { Amounts: { select: { unit: true, amount: true } } },
             },
           },
