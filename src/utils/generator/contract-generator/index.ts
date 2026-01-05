@@ -11,6 +11,7 @@ import { Network, OnChainState, PaymentSource } from '@prisma/client';
 import { applyParamsToScript } from '@meshsdk/core';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { validateHexString } from '@/utils/validator/hex';
 
 export async function getPaymentScriptFromPaymentSourceV1(
   paymentSourceSupported: PaymentSource & {
@@ -175,13 +176,6 @@ function getSmartContractStateDatum(state: SmartContractState) {
         fields: [],
       };
   }
-}
-
-export function validateHexString(hexString: string) {
-  if (hexString.length % 2 !== 0) {
-    return false;
-  }
-  return /^[0-9a-fA-F]+$/.test(hexString);
 }
 
 export function getDatumFromBlockchainIdentifier({

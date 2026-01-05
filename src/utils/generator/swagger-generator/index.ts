@@ -101,7 +101,6 @@ const paymentSchemaOutputExample = {
     resultHash: null,
   },
   CurrentTransaction: null,
-  TransactionHistory: [],
   RequestedFunds: [
     {
       unit: '', // Empty string = ADA/lovelace
@@ -789,7 +788,9 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    Payments: [paymentSchemaOutputExample],
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
                   },
                 },
               }),

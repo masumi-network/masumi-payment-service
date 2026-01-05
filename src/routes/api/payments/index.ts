@@ -27,7 +27,7 @@ import {
   decodeBlockchainIdentifier,
   generateBlockchainIdentifier,
 } from '@/utils/generator/blockchain-identifier-generator';
-import { validateHexString } from '@/utils/generator/contract-generator';
+import { validateHexString } from '@/utils/validator/hex';
 import {
   transformPaymentGetTimestamps,
   transformPaymentGetAmounts,
@@ -387,18 +387,68 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
       take: input.limit,
       include: {
         BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        RequestedFunds: { include: { AgentFixedPricing: true } },
-        NextAction: true,
-        CurrentTransaction: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
-        TransactionHistory: input.includeHistory
-          ? {
-              orderBy: { createdAt: 'desc' },
-            }
-          : undefined,
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
+        TransactionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  txHash: true,
+                  status: true,
+                  fees: true,
+                  blockHeight: true,
+                  blockTime: true,
+                  previousOnChainState: true,
+                  newOnChainState: true,
+                  confirmations: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -506,7 +556,9 @@ export const createPaymentsSchemaInput = z.object({
     ),
 });
 
-export const createPaymentSchemaOutput = paymentResponseSchema;
+export const createPaymentSchemaOutput = paymentResponseSchema.omit({
+  TransactionHistory: true,
+});
 
 export const paymentInitPost = readAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -762,15 +814,50 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         metadata: input.metadata,
       },
       include: {
-        RequestedFunds: true,
         BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        NextAction: true,
-        CurrentTransaction: true,
-        TransactionHistory: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
       },
     });
     if (payment.SmartContractWallet == null) {
@@ -793,12 +880,6 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
             ...payment.CurrentTransaction,
             fees: payment.CurrentTransaction.fees?.toString() ?? null,
           }
-        : null,
-      TransactionHistory: payment.TransactionHistory
-        ? payment.TransactionHistory.map((tx) => ({
-            ...tx,
-            fees: tx.fees?.toString() ?? null,
-          }))
         : null,
     };
   },

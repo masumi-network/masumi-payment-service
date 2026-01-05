@@ -1,5 +1,5 @@
 import LZString from 'lz-string';
-import { validateHexString } from '../contract-generator';
+import { validateHexString } from '@/utils/validator/hex';
 
 export type DecodedBlockchainIdentifier = {
   sellerId: string;

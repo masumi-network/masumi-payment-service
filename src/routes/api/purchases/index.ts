@@ -22,7 +22,7 @@ import { handlePurchaseCreditInit } from '@/services/token-credit';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
-import { validateHexString } from '@/utils/generator/contract-generator';
+import { validateHexString } from '@/utils/validator/hex';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
@@ -333,19 +333,67 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       take: input.limit,
       orderBy: { createdAt: 'desc' },
       include: {
-        SellerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaidFunds: true,
-        NextAction: true,
-        PaymentSource: true,
-        CurrentTransaction: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
-        TransactionHistory: input.includeHistory
-          ? {
-              orderBy: { createdAt: 'desc' },
-            }
-          : undefined,
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            txHash: true,
+            status: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        PaidFunds: { select: { id: true, amount: true, unit: true } },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            policyId: true,
+            smartContractAddress: true,
+          },
+        },
+        SellerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+
+        TransactionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  txHash: true,
+                  status: true,
+                  fees: true,
+                  blockHeight: true,
+                  blockTime: true,
+                  previousOnChainState: true,
+                  newOnChainState: true,
+                  confirmations: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
