@@ -599,6 +599,14 @@
                         },
                         "description": "List of assets and amounts withdrawn for the buyer (refunds)"
                     },
+                    "totalBuyerFees": {
+                        "type": "string",
+                        "description": "Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)"
+                    },
+                    "totalSellerFees": {
+                        "type": "string",
+                        "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
+                    },
                     "PaymentSource": {
                         "type": "object",
                         "properties": {
@@ -705,6 +713,8 @@
                     "RequestedFunds",
                     "WithdrawnForSeller",
                     "WithdrawnForBuyer",
+                    "totalBuyerFees",
+                    "totalSellerFees",
                     "PaymentSource",
                     "BuyerWallet",
                     "SmartContractWallet",
@@ -1092,6 +1102,14 @@
                             ]
                         }
                     },
+                    "totalBuyerFees": {
+                        "type": "string",
+                        "description": "Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)"
+                    },
+                    "totalSellerFees": {
+                        "type": "string",
+                        "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
+                    },
                     "PaymentSource": {
                         "type": "object",
                         "properties": {
@@ -1193,6 +1211,8 @@
                     "PaidFunds",
                     "WithdrawnForSeller",
                     "WithdrawnForBuyer",
+                    "totalBuyerFees",
+                    "totalSellerFees",
                     "PaymentSource",
                     "SellerWallet",
                     "SmartContractWallet",
@@ -3297,7 +3317,9 @@
                                                     "WithdrawnForBuyer": [],
                                                     "BuyerWallet": null,
                                                     "SmartContractWallet": null,
-                                                    "metadata": null
+                                                    "metadata": null,
+                                                    "totalBuyerFees": "0.000000",
+                                                    "totalSellerFees": "0.000000"
                                                 }
                                             ]
                                         }
@@ -3541,7 +3563,9 @@
                                             "WithdrawnForBuyer": [],
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
-                                            "metadata": null
+                                            "metadata": null,
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -3675,7 +3699,9 @@
                                             "WithdrawnForBuyer": [],
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
-                                            "metadata": null
+                                            "metadata": null,
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -3802,7 +3828,9 @@
                                             "WithdrawnForBuyer": [],
                                             "BuyerWallet": null,
                                             "SmartContractWallet": null,
-                                            "metadata": null
+                                            "metadata": null,
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -3964,7 +3992,9 @@
                                                     "CurrentTransaction": null,
                                                     "TransactionHistory": [],
                                                     "WithdrawnForSeller": [],
-                                                    "WithdrawnForBuyer": []
+                                                    "WithdrawnForBuyer": [],
+                                                    "totalBuyerFees": "0.000000",
+                                                    "totalSellerFees": "0.000000"
                                                 }
                                             ]
                                         }
@@ -4172,7 +4202,9 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": []
+                                            "WithdrawnForBuyer": [],
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -4267,7 +4299,9 @@
                                         "SmartContractWallet": null,
                                         "metadata": null,
                                         "WithdrawnForSeller": [],
-                                        "WithdrawnForBuyer": []
+                                        "WithdrawnForBuyer": [],
+                                        "totalBuyerFees": "0.000000",
+                                        "totalSellerFees": "0.000000"
                                     }
                                 }
                             }
@@ -4386,7 +4420,9 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": []
+                                            "WithdrawnForBuyer": [],
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -4512,7 +4548,9 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": []
+                                            "WithdrawnForBuyer": [],
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -4649,7 +4687,9 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": []
+                                            "WithdrawnForBuyer": [],
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }
@@ -4788,7 +4828,9 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "WithdrawnForSeller": [],
-                                            "WithdrawnForBuyer": []
+                                            "WithdrawnForBuyer": [],
+                                            "totalBuyerFees": "0.000000",
+                                            "totalSellerFees": "0.000000"
                                         }
                                     }
                                 }

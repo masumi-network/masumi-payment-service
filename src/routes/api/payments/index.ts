@@ -33,6 +33,7 @@ import {
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -283,6 +284,16 @@ export const paymentResponseSchema = z
         }),
       )
       .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
+    totalBuyerFees: z
+      .string()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerFees: z
+      .string()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
     PaymentSource: z
       .object({
         id: z.string().describe('Unique identifier for the payment source'),
@@ -395,26 +406,35 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     }
 
     return {
-      Payments: result.map((payment) => ({
-        ...payment,
-        ...transformPaymentGetTimestamps(payment),
-        ...transformPaymentGetAmounts(payment),
-        agentIdentifier:
-          decodeBlockchainIdentifier(payment.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
-        CurrentTransaction: payment.CurrentTransaction
-          ? {
-              ...payment.CurrentTransaction,
-              fees: payment.CurrentTransaction.fees?.toString() ?? null,
-            }
-          : null,
-        TransactionHistory: payment.TransactionHistory
-          ? payment.TransactionHistory.map((tx) => ({
-              ...tx,
-              fees: tx.fees?.toString() ?? null,
-            }))
-          : null,
-      })),
+      Payments: result.map((payment) => {
+        const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
+          payment.CurrentTransaction,
+          payment.TransactionHistory,
+        );
+
+        return {
+          ...payment,
+          ...transformPaymentGetTimestamps(payment),
+          ...transformPaymentGetAmounts(payment),
+          totalBuyerFees,
+          totalSellerFees,
+          agentIdentifier:
+            decodeBlockchainIdentifier(payment.blockchainIdentifier)
+              ?.agentIdentifier ?? null,
+          CurrentTransaction: payment.CurrentTransaction
+            ? {
+                ...payment.CurrentTransaction,
+                fees: payment.CurrentTransaction.fees?.toString() ?? null,
+              }
+            : null,
+          TransactionHistory: payment.TransactionHistory
+            ? payment.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : null,
+        };
+      }),
     };
   },
 });
@@ -757,10 +777,17 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     if (payment.SmartContractWallet == null) {
       throw createHttpError(500, 'Smart contract wallet not connected');
     }
+    const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
+      payment.CurrentTransaction,
+      payment.TransactionHistory,
+    );
+
     return {
       ...payment,
       ...transformPaymentGetTimestamps(payment),
       ...transformPaymentGetAmounts(payment),
+      totalBuyerFees,
+      totalSellerFees,
       agentIdentifier:
         decodeBlockchainIdentifier(payment.blockchainIdentifier)
           ?.agentIdentifier ?? null,

@@ -30,6 +30,7 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { calculateTransactionFees } from '@/utils/shared/fee-calculator';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -245,6 +246,16 @@ export const purchaseResponseSchema = z
         unit: z.string(),
       }),
     ),
+    totalBuyerFees: z
+      .string()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerFees: z
+      .string()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
     PaymentSource: z.object({
       id: z.string(),
       network: z.nativeEnum(Network),
@@ -341,24 +352,33 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       throw createHttpError(404, 'Purchase not found');
     }
     return {
-      Purchases: result.map((purchase) => ({
-        ...purchase,
-        ...transformPurchaseGetTimestamps(purchase),
-        ...transformPurchaseGetAmounts(purchase),
-        agentIdentifier:
-          decodeBlockchainIdentifier(purchase.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
-        CurrentTransaction: purchase.CurrentTransaction
-          ? {
-              ...purchase.CurrentTransaction,
-              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-            }
-          : null,
-        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
-      })),
+      Purchases: result.map((purchase) => {
+        const { totalBuyerFees, totalSellerFees } = calculateTransactionFees(
+          purchase.CurrentTransaction,
+          purchase.TransactionHistory,
+        );
+
+        return {
+          ...purchase,
+          ...transformPurchaseGetTimestamps(purchase),
+          ...transformPurchaseGetAmounts(purchase),
+          totalBuyerFees,
+          totalSellerFees,
+          agentIdentifier:
+            decodeBlockchainIdentifier(purchase.blockchainIdentifier)
+              ?.agentIdentifier ?? null,
+          CurrentTransaction: purchase.CurrentTransaction
+            ? {
+                ...purchase.CurrentTransaction,
+                fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+              }
+            : null,
+          TransactionHistory: purchase.TransactionHistory.map((tx) => ({
+            ...tx,
+            fees: tx.fees?.toString() ?? null,
+          })),
+        };
+      }),
     };
   },
 });
@@ -891,6 +911,8 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         ...initialPurchaseRequest,
         ...transformPurchaseGetTimestamps(initialPurchaseRequest),
         ...transformPurchaseGetAmounts(initialPurchaseRequest),
+        totalBuyerFees: '0',
+        totalSellerFees: '0',
         agentIdentifier: input.agentIdentifier,
         TransactionHistory: [],
         CurrentTransaction: null,
