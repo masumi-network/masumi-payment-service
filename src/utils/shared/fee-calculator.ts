@@ -53,6 +53,9 @@ export function calculateTransactionFees(
     totalSellerFees: lovelaceToAda(sellerFeesTotal),
   };
 }
+
+//This ignores Disputed->Disputed transactions, as we can not clearly see who initiated them (either request refund or submit result again)
+//Not a priority as not really used and will be improved in the new contract
 function isBuyerTransaction(
   from: OnChainState | null,
   to: OnChainState,
@@ -83,6 +86,9 @@ function isBuyerTransaction(
 
   return false;
 }
+
+//This ignores Disputed->Disputed transactions, as we can not clearly see who initiated them (either request refund or submit result again)
+//Not a priority as not really used and will be improved in the new contract
 function isSellerTransaction(
   from: OnChainState | null,
   to: OnChainState,
@@ -117,6 +123,5 @@ function isSellerTransaction(
   // Invalid state - NOT counted for seller
   if (to === OnChainState.FundsOrDatumInvalid) return false;
 
-  // Default unknown transitions to seller (conservative approach)
-  return true;
+  return false;
 }
