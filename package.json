@@ -26,8 +26,6 @@
     "prisma:seed": "npx prisma db seed",
     "dev": "tsx watch ./src/index.ts",
     "build": "npx prisma generate && tsc --noEmit && pkgroll",
-    "start:trace": "tsx --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
-    "dev:trace": "tsx watch --import dotenv/config --import ./src/tracing.ts ./src/index.ts",
     "start": "cross-env NODE_ENV=production node ./dist/index.js",
     "swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation tsx ./src/utils/generator/swagger-generator/cli.ts",
     "knip": "knip"

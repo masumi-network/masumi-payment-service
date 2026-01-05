@@ -605,7 +605,7 @@ export function WalletDetailsDialog({
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
         walletVkey={selectedWalletForSwap?.walletVkey || ''}
-        network={state.network}
+        network={network}
       />
 
       <TransakWidget

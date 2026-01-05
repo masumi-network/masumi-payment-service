@@ -330,12 +330,12 @@ export function SwapDialog({
       const fromToken = {
         policyId:
           selectedFromToken.policyId === 'NATIVE' ||
-            selectedFromToken.policyId === ''
+          selectedFromToken.policyId === ''
             ? ''
             : selectedFromToken.policyId || '',
         assetName:
           selectedFromToken.assetName === 'ADA' ||
-            selectedFromToken.assetName === 'NATIVE'
+          selectedFromToken.assetName === 'NATIVE'
             ? ''
             : selectedFromToken.assetName || '',
         name: selectedFromToken.name || selectedFromToken.symbol,
@@ -344,12 +344,12 @@ export function SwapDialog({
       const toToken = {
         policyId:
           selectedToToken.policyId === 'NATIVE' ||
-            selectedToToken.policyId === ''
+          selectedToToken.policyId === ''
             ? ''
             : selectedToToken.policyId || '',
         assetName:
           selectedToToken.assetName === 'ADA' ||
-            selectedToToken.assetName === 'NATIVE'
+          selectedToToken.assetName === 'NATIVE'
             ? ''
             : selectedToToken.assetName || '',
         name: selectedToToken.name || selectedToToken.symbol,
@@ -547,11 +547,12 @@ export function SwapDialog({
                           <div className="relative w-full">
                             <input
                               type="number"
-                              className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${fromAmount >
+                              className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
+                                fromAmount >
                                 getMaxAmount(selectedFromToken.symbol)
-                                ? 'text-red-500'
-                                : ''
-                                }`}
+                                  ? 'text-red-500'
+                                  : ''
+                              }`}
                               placeholder="0"
                               value={fromAmount || ''}
                               onChange={handleFromAmountChange}

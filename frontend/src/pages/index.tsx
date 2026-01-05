@@ -324,7 +324,7 @@ export default function Overview() {
                   <ChevronRight className="h-4 w-4" />
                 </div>
                 <RefreshButton
-                  onRefresh={() => fetchWallets()}
+                  onRefresh={() => refetchWallets()}
                   isRefreshing={isLoadingWallets || isLoadingBalances}
                 />
               </div>
@@ -489,7 +489,7 @@ export default function Overview() {
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
         walletVkey={selectedWalletForSwap?.walletVkey || ''}
-        network={state.network}
+        network={network}
       />
 
       <TransakWidget
