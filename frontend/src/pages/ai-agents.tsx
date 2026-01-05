@@ -21,6 +21,7 @@ import {
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import Head from 'next/head';
+import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useAgents } from '@/lib/queries/useAgents';
 import formatBalance from '@/lib/formatBalance';
@@ -430,11 +431,7 @@ export default function AIAgentsPage() {
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
+                  <AIAgentTableSkeleton rows={5} />
                 ) : filteredAgents.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
