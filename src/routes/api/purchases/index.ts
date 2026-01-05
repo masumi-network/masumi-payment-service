@@ -538,14 +538,38 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           },
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          WithdrawnForBuyer: true,
-          WithdrawnForSeller: true,
-          PaidFunds: true,
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          PaidFunds: { select: { id: true, amount: true, unit: true } },
           NextAction: true,
-          CurrentTransaction: true,
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              status: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+              utxoCount: true,
+              withdrawalCount: true,
+              assetMintOrBurnCount: true,
+              redeemerCount: true,
+              validContract: true,
+              outputAmount: true,
+            },
+          },
         },
       });
       if (existingPurchaseRequest != null) {
@@ -649,7 +673,11 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           network: input.network,
           deletedAt: null,
         },
-        include: { PaymentSourceConfig: true },
+        include: {
+          PaymentSourceConfig: {
+            select: { rpcProviderApiKey: true, rpcProvider: true },
+          },
+        },
       });
       const inputHash = input.inputHash;
       if (validateHexString(inputHash) == false) {

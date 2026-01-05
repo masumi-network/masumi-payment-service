@@ -386,7 +386,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         : undefined,
       take: input.limit,
       include: {
-        BuyerWallet: true,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
         SmartContractWallet: {
           where: { deletedAt: null },
           select: { id: true, walletVkey: true, walletAddress: true },
@@ -590,8 +590,21 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
-        PaymentSourceConfig: true,
+        HotWallets: {
+          include: { Secret: { select: { encryptedMnemonic: true } } },
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            walletVkey: true,
+            walletAddress: true,
+            type: true,
+            collectionAddress: true,
+            note: true,
+          },
+        },
+        PaymentSourceConfig: {
+          select: { rpcProviderApiKey: true, rpcProvider: true },
+        },
       },
     });
     if (specifiedPaymentContract == null) {
@@ -814,7 +827,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         metadata: input.metadata,
       },
       include: {
-        BuyerWallet: true,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
         SmartContractWallet: {
           where: { deletedAt: null },
           select: { id: true, walletVkey: true, walletAddress: true },

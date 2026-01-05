@@ -238,7 +238,11 @@ export const updateAPIKeyEndpointPatch =
         async (prisma) => {
           const apiKey = await prisma.apiKey.findUnique({
             where: { id: input.id },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: {
+                select: { id: true, amount: true, unit: true },
+              },
+            },
           });
           if (!apiKey) {
             throw createHttpError(404, 'API key not found');

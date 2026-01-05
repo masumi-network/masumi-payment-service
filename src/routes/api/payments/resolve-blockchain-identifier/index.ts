@@ -69,7 +69,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
           blockchainIdentifier: input.blockchainIdentifier,
         },
         include: {
-          BuyerWallet: true,
+          BuyerWallet: { select: { id: true, walletVkey: true } },
           SmartContractWallet: {
             where: { deletedAt: null },
             select: { id: true, walletVkey: true, walletAddress: true },

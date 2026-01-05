@@ -110,7 +110,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
     );
     const paymentSource = await prisma.paymentSource.findFirst({
       where: { network: input.network, deletedAt: null },
-      include: { PaymentSourceConfig: true },
+      include: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
     });
     if (paymentSource == null) {
       throw createHttpError(404, 'Network not found');

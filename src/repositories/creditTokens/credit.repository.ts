@@ -188,13 +188,42 @@ async function handlePurchaseCreditInit({
           metadata: metadata,
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          PaidFunds: true,
-          NextAction: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              smartContractAddress: true,
+              policyId: true,
+            },
+          },
+          PaidFunds: { select: { amount: true, unit: true } },
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              txHash: true,
+              status: true,
+              confirmations: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+            },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
           WithdrawnForBuyer: true,
         },
       });
