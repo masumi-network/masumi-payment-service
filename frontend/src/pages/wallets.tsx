@@ -12,21 +12,14 @@ import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPaymentSource,
-  GetPaymentSourceResponses,
-  getUtxos,
-  GetUtxosResponses,
-} from '@/lib/api/generated';
-import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { cn, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
+import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
+import { fetchWalletBalance, useWallets } from '@/lib/queries/useWallets';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
-import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
 import {
@@ -35,19 +28,9 @@ import {
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
-
-type Wallet =
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
-      type: 'Purchasing';
-    })
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
-      type: 'Selling';
-    });
-
-type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
 
 interface WalletWithBalance extends BaseWalletWithBalance {
+  network: 'Preprod' | 'Mainnet';
   collectionBalance?: {
     ada: string;
     usdm: string;
@@ -63,18 +46,28 @@ export default function WalletsPage() {
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
+
+  // Use React Query for cached wallet data
+  const {
+    wallets: walletsList,
+    isLoading: isLoadingWallets,
+    isFetching: isFetchingWallets,
+    refetch: refetchWalletsQuery,
+  } = useWallets();
+
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
   const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>(
     [],
   );
-  const [isLoading, setIsLoading] = useState(true);
+
+  const isLoading = isLoadingWallets && allWallets.length === 0;
   const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(
     new Set(),
   );
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
-  const { rate, isLoading: isLoadingRate } = useRate();
+  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<Wallet | null>(null);
+    useState<WalletWithBalance | null>(null);
   const [selectedWalletForSwap, setSelectedWalletForSwap] =
     useState<WalletWithBalance | null>(null);
   const [activeTab, setActiveTab] = useState('All');
@@ -86,6 +79,87 @@ export default function WalletsPage() {
     { name: 'Purchasing', count: null },
     { name: 'Selling', count: null },
   ];
+
+  // Initialize wallets from cached data and fetch collection balances
+  useEffect(() => {
+    if (walletsList && walletsList.length > 0) {
+      const walletsWithCollections: WalletWithBalance[] = walletsList.map(
+        (wallet) =>
+          ({
+            ...wallet,
+            collectionBalance: null,
+            isLoadingCollectionBalance: !!(wallet as any).collectionAddress,
+          }) as WalletWithBalance,
+      );
+      setAllWallets(walletsWithCollections);
+
+      // Fetch collection balances for wallets that have collection addresses
+      walletsWithCollections.forEach(async (wallet) => {
+        const collectionAddress = (wallet as any).collectionAddress;
+        if (collectionAddress) {
+          try {
+            const collectionNetwork = wallet.network;
+            const collectionBalance = await fetchWalletBalance(
+              apiClient,
+              collectionNetwork,
+              collectionAddress,
+            );
+            setAllWallets((prev) =>
+              prev.map((w) =>
+                w.id === wallet.id
+                  ? {
+                    ...w,
+                    collectionBalance: {
+                      ada: collectionBalance.ada,
+                      usdm: collectionBalance.usdm,
+                    },
+                    isLoadingCollectionBalance: false,
+                  }
+                  : w,
+              ),
+            );
+          } catch (error) {
+            console.error(
+              `Failed to fetch collection balance for wallet ${wallet.id}:`,
+              error,
+            );
+            setAllWallets((prev) =>
+              prev.map((w) =>
+                w.id === wallet.id
+                  ? { ...w, isLoadingCollectionBalance: false }
+                  : w,
+              ),
+            );
+          }
+        }
+      });
+    } else if (walletsList && walletsList.length === 0) {
+      // Handle empty wallets array
+      setAllWallets([]);
+    }
+  }, [apiClient, network, walletsList]);
+  // Helper to refetch wallets (uses React Query refetch)
+  const refetchWallets = useCallback(async () => {
+    await refetchWalletsQuery();
+  }, [refetchWalletsQuery]);
+
+  // Initial load is handled by useWallets hook - no useEffect needed
+
+  // Initialize searchQuery from router query parameter
+  useEffect(() => {
+    if (router.query.searched && typeof router.query.searched === 'string') {
+      setSearchQuery(router.query.searched);
+    }
+  }, [router.query.searched]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_wallet') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/wallets', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const filterWallets = useCallback(() => {
     let filtered = [...allWallets];
@@ -101,12 +175,13 @@ export default function WalletsPage() {
       filtered = filtered.filter((wallet) => {
         const matchAddress =
           wallet.walletAddress?.toLowerCase().includes(query) ||
-          wallet.collectionAddress?.toLowerCase().includes(query) ||
+          (wallet as any).collectionAddress?.toLowerCase().includes(query) ||
           false;
-        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
+        const matchNote =
+          (wallet as any).note?.toLowerCase().includes(query) || false;
         const matchType = wallet.type?.toLowerCase().includes(query) || false;
         const matchBalance = wallet.balance
-          ? (parseInt(wallet.balance) / 1000000).toFixed(2).includes(query)
+          ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
           : false;
         const matchUsdmBalance = wallet.usdmBalance?.includes(query) || false;
 
@@ -125,198 +200,7 @@ export default function WalletsPage() {
 
   useEffect(() => {
     filterWallets();
-  }, [filterWallets, searchQuery, activeTab]);
-
-  const fetchWalletBalance = useCallback(
-    async (address: string) => {
-      const response = await handleApiCall(
-        () =>
-          getUtxos({
-            client: apiClient,
-            query: {
-              address: address,
-              network: state.network,
-            },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Error fetching wallet balance:', error);
-            if (error.message) {
-              toast.error(error.message);
-            }
-          },
-          errorMessage: 'Failed to fetch wallet balance',
-        },
-      );
-
-      if (!response) return { ada: '0', usdm: '0' };
-
-      if (response.data?.data?.Utxos) {
-        let adaBalance = 0;
-        let usdmBalance = 0;
-
-        response.data.data.Utxos.forEach((utxo: UTXO) => {
-          utxo.Amounts.forEach((amount) => {
-            if (amount.unit === 'lovelace' || amount.unit == '') {
-              adaBalance += amount.quantity || 0;
-            } else if (
-              amount.unit === getUsdmConfig(state.network).fullAssetId
-            ) {
-              usdmBalance += amount.quantity || 0;
-            }
-          });
-        });
-
-        return {
-          ada: adaBalance.toString(),
-          usdm: usdmBalance.toString(),
-        };
-      }
-      return { ada: '0', usdm: '0' };
-    },
-    [apiClient, state.network],
-  );
-
-  const fetchWallets = useCallback(async () => {
-    setIsLoading(true);
-    const response = await handleApiCall(
-      () => getPaymentSource({ client: apiClient }),
-      {
-        onError: (error: any) => {
-          console.error('Error fetching wallets:', error);
-          toast.error(error.message || 'Failed to load wallets');
-        },
-        onFinally: () => {
-          setIsLoading(false);
-        },
-        errorMessage: 'Failed to load wallets',
-      },
-    );
-
-    if (!response) return;
-
-    if (response.data?.data?.PaymentSources) {
-      const paymentSources = response.data.data.PaymentSources.filter(
-        (source: any) =>
-          selectedPaymentSourceId
-            ? source.id === selectedPaymentSourceId
-            : true,
-      );
-      const purchasingWallets = paymentSources
-        .map((source: any) => source.PurchasingWallets)
-        .flat();
-      const sellingWallets = paymentSources
-        .map((source: any) => source.SellingWallets)
-        .flat();
-
-      if (paymentSources.length > 0) {
-        const allWallets: Wallet[] = [
-          ...purchasingWallets.map((wallet: any) => ({
-            ...wallet,
-            type: 'Purchasing' as const,
-          })),
-          ...sellingWallets.map((wallet: any) => ({
-            ...wallet,
-            type: 'Selling' as const,
-          })),
-        ];
-
-        // Display wallets immediately with loading states
-        const initialWallets: WalletWithBalance[] = allWallets.map(
-          (wallet: any) => ({
-            id: wallet.id,
-            walletVkey: wallet.walletVkey,
-            walletAddress: wallet.walletAddress,
-            note: wallet.note,
-            type: wallet.type,
-            balance: '0',
-            usdmBalance: '0',
-            collectionAddress: wallet.collectionAddress,
-            collectionBalance: null,
-            isLoadingBalance: true,
-            isLoadingCollectionBalance: !!wallet.collectionAddress,
-          }),
-        );
-
-        setAllWallets(initialWallets);
-        setFilteredWallets(initialWallets);
-
-        // Fetch balances progressively
-        const updateWalletBalance = (
-          walletId: string,
-          updates: Partial<WalletWithBalance>,
-        ) => {
-          setAllWallets((prev) =>
-            prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w)),
-          );
-          setFilteredWallets((prev) =>
-            prev.map((w) => (w.id === walletId ? { ...w, ...updates } : w)),
-          );
-        };
-
-        // Fetch balances for each wallet
-        allWallets.forEach(async (wallet: any) => {
-          try {
-            const balance = await fetchWalletBalance(wallet.walletAddress);
-            updateWalletBalance(wallet.id, {
-              balance: balance.ada,
-              usdmBalance: balance.usdm,
-              isLoadingBalance: false,
-            });
-
-            if (wallet.collectionAddress) {
-              const collectionBalance = await fetchWalletBalance(
-                wallet.collectionAddress,
-              );
-              updateWalletBalance(wallet.id, {
-                collectionBalance: {
-                  ada: collectionBalance.ada,
-                  usdm: collectionBalance.usdm,
-                },
-                isLoadingCollectionBalance: false,
-              });
-            }
-          } catch (error) {
-            console.error(
-              `Failed to fetch balance for wallet ${wallet.id}:`,
-              error,
-            );
-            updateWalletBalance(wallet.id, {
-              balance: '0',
-              usdmBalance: '0',
-              isLoadingBalance: false,
-              isLoadingCollectionBalance: false,
-            });
-          }
-        });
-      } else {
-        setAllWallets([]);
-        setFilteredWallets([]);
-      }
-    }
-
-    setIsLoading(false);
-  }, [apiClient, fetchWalletBalance, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    fetchWallets();
-  }, [fetchWallets, state.network, selectedPaymentSourceId]);
-
-  // Initialize searchQuery from router query parameter
-  useEffect(() => {
-    if (router.query.searched && typeof router.query.searched === 'string') {
-      setSearchQuery(router.query.searched);
-    }
-  }, [router.query.searched]);
-
-  // Handle action query parameter from search
-  useEffect(() => {
-    if (router.query.action === 'add_wallet') {
-      setIsAddDialogOpen(true);
-      // Clean up the query parameter
-      router.replace('/wallets', undefined, { shallow: true });
-    }
-  }, [router.query.action, router]);
+  }, [allWallets, searchQuery, activeTab, filterWallets]);
 
   const handleSelectWallet = (id: string) => {
     setSelectedWallets((prev) =>
@@ -339,51 +223,55 @@ export default function WalletsPage() {
     }
   };
 
-  const refreshWalletBalance = async (
-    wallet: WalletWithBalance,
-    isCollection: boolean = false,
-  ) => {
-    try {
-      const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
-      setRefreshingBalances((prev) => new Set(prev).add(walletId));
+  const refreshWalletBalance = useCallback(
+    async (wallet: WalletWithBalance, isCollection: boolean = false) => {
+      try {
+        const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
+        setRefreshingBalances((prev) => new Set(prev).add(walletId));
+        const address = isCollection
+          ? wallet.collectionAddress!
+          : wallet.walletAddress;
+        const walletNetwork = wallet.network;
+        const balances = await fetchWalletBalance(
+          apiClient,
+          walletNetwork,
+          address,
+        );
 
-      const address = isCollection
-        ? wallet.collectionAddress!
-        : wallet.walletAddress;
-      const balances = await fetchWalletBalance(address);
-
-      setFilteredWallets((prev) =>
-        prev.map((w) => {
-          if (w.id === wallet.id) {
-            if (isCollection) {
+        setFilteredWallets((prev) =>
+          prev.map((w) => {
+            if (w.id === wallet.id) {
+              if (isCollection) {
+                return {
+                  ...w,
+                  collectionBalance: {
+                    ada: balances.ada,
+                    usdm: balances.usdm,
+                  },
+                };
+              }
               return {
                 ...w,
-                collectionBalance: {
-                  ada: balances.ada,
-                  usdm: balances.usdm,
-                },
+                balance: balances.ada,
+                usdmBalance: balances.usdm,
               };
             }
-            return {
-              ...w,
-              balance: balances.ada,
-              usdmBalance: balances.usdm,
-            };
-          }
-          return w;
-        }),
-      );
-    } catch (error) {
-      console.error('Error refreshing wallet balance:', error);
-    } finally {
-      const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
-      setRefreshingBalances((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(walletId);
-        return newSet;
-      });
-    }
-  };
+            return w;
+          }),
+        );
+      } catch (error) {
+        console.error('Error refreshing wallet balance:', error);
+      } finally {
+        const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
+        setRefreshingBalances((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(walletId);
+          return newSet;
+        });
+      }
+    },
+    [apiClient],
+  );
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
@@ -411,8 +299,8 @@ export default function WalletsPage() {
           </div>
           <div className="flex items-center gap-2">
             <RefreshButton
-              onRefresh={() => fetchWallets()}
-              isRefreshing={isLoading}
+              onRefresh={refetchWallets}
+              isRefreshing={isFetchingWallets}
             />
             <Button
               className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
@@ -469,11 +357,7 @@ export default function WalletsPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={8}>
-                    <Spinner size={20} addContainer />
-                  </td>
-                </tr>
+                <WalletTableSkeleton rows={2} />
               ) : filteredWallets.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="text-center py-8">
@@ -526,7 +410,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         {wallet.type === 'Selling' &&
-                        wallet.collectionAddress ? (
+                          wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -546,16 +430,16 @@ export default function WalletsPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                              wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
                                   ? formatBalance(
-                                      (
-                                        parseInt(wallet.balance) / 1000000
-                                      ).toFixed(2),
-                                    )
+                                    (
+                                      parseInt(wallet.balance) / 1000000
+                                    ).toFixed(2),
+                                  )
                                   : '0'}
                               </span>
                             )}
@@ -579,7 +463,7 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           {refreshingBalances.has(wallet.id) ||
-                          wallet.isLoadingBalance ? (
+                            wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>
@@ -619,7 +503,7 @@ export default function WalletsPage() {
                             className="h-8"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedWalletForTopup(wallet as Wallet);
+                              setSelectedWalletForTopup(wallet);
                             }}
                           >
                             Top Up
@@ -639,7 +523,7 @@ export default function WalletsPage() {
       <AddWalletDialog
         open={isAddDialogOpen}
         onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={fetchWallets}
+        onSuccess={refetchWallets}
       />
 
       <SwapDialog
@@ -654,7 +538,7 @@ export default function WalletsPage() {
         isOpen={!!selectedWalletForTopup}
         onClose={() => setSelectedWalletForTopup(null)}
         walletAddress={selectedWalletForTopup?.walletAddress || ''}
-        onSuccess={fetchWallets}
+        onSuccess={refetchWallets}
       />
 
       <WalletDetailsDialog

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
+import { PaymentSourceExtended } from '../api/generated';
 import { useAppContext } from '../contexts/AppContext';
 
 export interface SearchableItem {
@@ -103,14 +105,24 @@ const searchableItems: SearchableItem[] = [
 
 export function useSearch() {
   const [allResults, setAllResults] = useState<SearchableItem[]>([]);
-  const { state } = useAppContext();
+  const { network } = useAppContext();
+
+  const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
 
   useEffect(() => {
     const staticResults = searchableItems;
 
     const dynamicResults: SearchableItem[] = [];
 
-    state.paymentSources?.forEach((source) => {
+    currentNetworkPaymentSources?.forEach((source) => {
       source.PurchasingWallets?.forEach((wallet) => {
         dynamicResults.push({
           id: wallet.walletAddress,
@@ -146,7 +158,7 @@ export function useSearch() {
     });
 
     setAllResults([...staticResults, ...dynamicResults]);
-  }, [state.paymentSources]);
+  }, [currentNetworkPaymentSources]);
 
   const handleSearch = useCallback(
     async (query: string) => {

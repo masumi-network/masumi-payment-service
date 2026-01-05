@@ -29,6 +29,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { PaymentSourceExtended } from '@/lib/api/generated';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -49,7 +51,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { state, dispatch, isChangingNetwork } = useAppContext();
+  const { network, setNetwork, isChangingNetwork } = useAppContext();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -136,52 +138,106 @@ export function MainLayout({ children }: MainLayoutProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
 
-  const hasPaymentSources =
-    state.paymentSources && state.paymentSources.length > 0;
+  const [hasPaymentSources, setHasPaymentSources] = useState(false);
+  useEffect(() => {
+    setHasPaymentSources(
+      currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
+    );
+  }, [currentNetworkPaymentSources]);
+  const [navItems, setNavItems] = useState<
+    {
+      href: string;
+      name: string;
+      icon: React.ReactNode;
+      badge: React.ReactNode | null;
+    }[]
+  >([]);
 
-  const navItems = hasPaymentSources
-    ? [
-        { href: '/', name: 'Dashboard', icon: LayoutDashboard, badge: null },
-        { href: '/ai-agents', name: 'AI Agents', icon: Bot, badge: null },
-        { href: '/wallets', name: 'Wallets', icon: Wallet, badge: null },
+  useEffect(() => {
+    if (hasPaymentSources) {
+      setNavItems([
+        {
+          href: '/',
+          name: 'Dashboard',
+          icon: <LayoutDashboard className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/ai-agents',
+          name: 'AI Agents',
+          icon: <Bot className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/wallets',
+          name: 'Wallets',
+          icon: <Wallet className="h-4 w-4" />,
+          badge: null,
+        },
         {
           href: '/transactions',
           name: 'Transactions',
-          icon: FileText,
+          icon: <FileText className="h-4 w-4" />,
           badge: formatCount(newTransactionsCount),
         },
         {
           href: '/payment-sources',
           name: 'Payment sources',
-          icon: FileInput,
+          icon: <FileInput className="h-4 w-4" />,
           badge: null,
         },
         {
           href: '/input-schema-validator',
           name: 'Input Schema Validator',
-          icon: NotebookPen,
+          icon: <NotebookPen className="h-4 w-4" />,
           badge: null,
         },
-        { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-      ]
-    : [
         {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: FileInput,
+          href: '/api-keys',
+          name: 'API keys',
+          icon: <Key className="h-4 w-4" />,
           badge: null,
         },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-      ];
+        {
+          href: '/settings',
+          name: 'Settings',
+          icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+      ]);
+      return;
+    }
+    setNavItems([
+      {
+        href: '/payment-sources',
+        name: 'Payment sources',
+        icon: <FileInput className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/settings',
+        name: 'Settings',
+        icon: <Settings className="h-4 w-4" />,
+        badge: null,
+      },
+    ]);
+  }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    dispatch({ type: 'SET_NETWORK', payload: network });
+    setNetwork(network);
   };
 
   return (
@@ -237,7 +293,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
-                  state.network === 'Preprod' &&
+                  network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
@@ -250,7 +306,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
-                  state.network === 'Mainnet' &&
+                  network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
@@ -327,7 +383,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               )}
               title={collapsed && !isHovered ? item.name : undefined}
             >
-              <item.icon className="h-4 w-4 min-w-4" />
+              {item.icon}
               {!(collapsed && !isHovered) && (
                 <span className="truncate">{item.name}</span>
               )}
