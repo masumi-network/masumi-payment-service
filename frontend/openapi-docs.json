@@ -4097,9 +4097,10 @@
                                     "format": "date-time"
                                 }
                             ],
+                            "default": "1970-01-01T00:00:00.000Z",
                             "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
                         },
-                        "required": true,
+                        "required": false,
                         "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
                         "name": "lastUpdate",
                         "in": "query"
@@ -4295,9 +4296,10 @@
                                     "format": "date-time"
                                 }
                             ],
+                            "default": "1970-01-01T00:00:00.000Z",
                             "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
                         },
-                        "required": true,
+                        "required": false,
                         "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
                         "name": "lastUpdate",
                         "in": "query"
@@ -4493,9 +4495,10 @@
                                     "format": "date-time"
                                 }
                             ],
+                            "default": "1970-01-01T00:00:00.000Z",
                             "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
                         },
-                        "required": true,
+                        "required": false,
                         "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
                         "name": "lastUpdate",
                         "in": "query"
@@ -8919,9 +8922,10 @@
                                     "format": "date-time"
                                 }
                             ],
+                            "default": "1970-01-01T00:00:00.000Z",
                             "description": "Return registry entries whose registration state changed at/after this ISO timestamp"
                         },
-                        "required": true,
+                        "required": false,
                         "description": "Return registry entries whose registration state changed at/after this ISO timestamp",
                         "name": "lastUpdate",
                         "in": "query"
