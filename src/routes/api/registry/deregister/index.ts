@@ -10,12 +10,12 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -86,9 +86,10 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    const blockfrost = new BlockFrostAPI({
-      projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const blockfrost = getBlockfrostInstance(
+      input.network,
+      paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
