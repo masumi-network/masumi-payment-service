@@ -145,7 +145,6 @@ export async function cancelRefundsV1() {
         );
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const purchaseRequests = paymentContract.PurchaseRequests;

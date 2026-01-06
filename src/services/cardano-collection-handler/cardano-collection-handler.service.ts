@@ -345,7 +345,6 @@ export async function collectOutstandingPaymentsV1() {
 
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const paymentRequests = paymentContract.PaymentRequests;

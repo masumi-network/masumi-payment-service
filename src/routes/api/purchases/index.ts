@@ -14,7 +14,6 @@ import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
@@ -30,6 +29,7 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -818,9 +818,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           'Submit result time must be before unlock time with at least 15 minutes difference',
         );
       }
-      const provider = new BlockFrostAPI({
-        projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-      });
+      const provider = getBlockfrostInstance(
+        input.network,
+        paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+      );
 
       const assetId = input.agentIdentifier;
       const policyAsset = assetId.startsWith(policyId)
