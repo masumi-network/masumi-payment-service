@@ -14,7 +14,6 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { ez } from 'express-zod-api';
 import cuid2 from '@paralleldrive/cuid2';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';

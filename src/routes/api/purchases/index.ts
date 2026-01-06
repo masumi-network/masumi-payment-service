@@ -14,7 +14,6 @@ import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';

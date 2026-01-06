@@ -3,7 +3,6 @@ import { z } from '@/utils/zod-openapi';
 import { $Enums, Network } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { errorToString } from 'advanced-retry';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
