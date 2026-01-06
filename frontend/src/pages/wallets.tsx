@@ -9,10 +9,9 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { GetUtxosResponses } from '@/lib/api/generated';
 import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -20,7 +19,6 @@ import { useRate } from '@/lib/hooks/useRate';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { fetchWalletBalance, useWallets } from '@/lib/queries/useWallets';
-import { useQueryClient } from '@tanstack/react-query';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
@@ -30,9 +28,6 @@ import {
 } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
-import { getUsdmConfig } from '@/lib/constants/defaultWallets';
-
-type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
@@ -72,6 +67,8 @@ export default function WalletsPage() {
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
+    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] =
     useState<WalletWithBalance | null>(null);
   const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -496,7 +493,7 @@ export default function WalletsPage() {
                             className="h-8 w-8"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedWalletForSwap(wallet as Wallet);
+                              setSelectedWalletForSwap(wallet);
                             }}
                           >
                             <FaExchangeAlt className="h-4 w-4" />
@@ -529,15 +526,13 @@ export default function WalletsPage() {
         onSuccess={refetchWallets}
       />
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

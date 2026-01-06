@@ -17,7 +17,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -64,8 +64,8 @@ export function WalletDetailsDialog({
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { rate } = useRate();
-  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
-  //  useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] =
+    useState<WalletWithBalance | null>(null);
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
@@ -319,10 +319,10 @@ export function WalletDetailsDialog({
   return (
     <>
       <Dialog
-        open={isOpen && !selectedWalletForTopup}
+        open={isOpen && !selectedWalletForTopup && !selectedWalletForSwap}
         onOpenChange={(open) => {
           if (!open) {
-            //setSelectedWalletForSwap(null);
+            setSelectedWalletForSwap(null);
             setSelectedWalletForTopup(null);
             onClose();
           }
@@ -388,13 +388,13 @@ export function WalletDetailsDialog({
                 >
                   <span>Top Up</span>
                 </Button>
-                {/*<Button
+                <Button
                   variant="outline"
                   onClick={() => setSelectedWalletForSwap(wallet)}
                   title="Swap Assets"
                 >
                   <span>Swap Assets</span>
-                </Button>*/}
+                </Button>
               </div>
             )}
             {exportedMnemonic && (
@@ -600,15 +600,13 @@ export function WalletDetailsDialog({
         </DialogContent>
       </Dialog>
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}

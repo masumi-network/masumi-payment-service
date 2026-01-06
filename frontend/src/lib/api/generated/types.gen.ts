@@ -1438,6 +1438,100 @@ export type PostRevealDataResponses = {
 
 export type PostRevealDataResponse = PostRevealDataResponses[keyof PostRevealDataResponses];
 
+export type PostSwapData = {
+    /**
+     * Swap request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) to identify the wallet
+         */
+        walletVkey: string;
+        /**
+         * Amount to swap (in ADA or token units)
+         */
+        amount: number;
+        /**
+         * Source token information
+         */
+        fromToken: {
+            /**
+             * Policy ID of the source token. Use empty string "" for ADA (native token)
+             */
+            policyId: string;
+            /**
+             * Asset name of the source token. Use empty string "" for ADA
+             */
+            assetName: string;
+            /**
+             * Name of the source token
+             */
+            name: string;
+        };
+        /**
+         * Destination token information
+         */
+        toToken: {
+            /**
+             * Policy ID of the destination token. Use empty string "" for ADA (native token)
+             */
+            policyId: string;
+            /**
+             * Asset name of the destination token. Use empty string "" for ADA
+             */
+            assetName: string;
+            /**
+             * Name of the destination token
+             */
+            name: string;
+        };
+        /**
+         * SundaeSwap pool identifier
+         */
+        poolId: string;
+        /**
+         * Slippage tolerance (0-1, default: 0.03 for 3%)
+         */
+        slippage?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/';
+};
+
+export type PostSwapErrors = {
+    /**
+     * Bad Request (missing or invalid parameters)
+     */
+    400: unknown;
+    /**
+     * Unauthorized (invalid API key or insufficient permissions)
+     */
+    401: unknown;
+    /**
+     * Internal Server Error (swap failed)
+     */
+    500: unknown;
+};
+
+export type PostSwapResponses = {
+    /**
+     * Swap executed successfully
+     */
+    200: {
+        /**
+         * Transaction hash of the swap
+         */
+        txHash: string;
+        /**
+         * Wallet address used for the swap
+         */
+        walletAddress: string;
+    };
+};
+
+export type PostSwapResponse = PostSwapResponses[keyof PostSwapResponses];
+
 export type DeleteApiKeyData = {
     body?: {
         /**

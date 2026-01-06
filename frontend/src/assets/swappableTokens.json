@@ -15,14 +15,5 @@
     "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
     "assetName": "USDM",
     "hexedAssetName": "0014df105553444d"
-  },
-  {
-    "name": "NMKR",
-    "address": "nmkr-address",
-    "symbol": "NMKR",
-    "poolId": "0942fcc29a051e6c2ae052264257001f8cf91e55251f4de6118f4e35",
-    "policyId": "5dac8536653edc12f6f5e1045d8164b9f59998d3bdc300fc92843489",
-    "assetName": "NMKR",
-    "hexedAssetName": "4e4d4b52"
   }
 ]

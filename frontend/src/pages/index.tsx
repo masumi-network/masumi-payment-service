@@ -4,6 +4,7 @@ import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Plus } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { GetRegistryResponses } from '@/lib/api/generated';
@@ -14,14 +15,14 @@ import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
-//import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
 import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
 import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
 import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-//import { FaExchangeAlt } from 'react-icons/fa';
+import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { useTransactions } from '@/lib/hooks/useTransactions';
@@ -81,8 +82,8 @@ export default function Overview() {
   const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] =
     useState(false);
 
-  //const [selectedWalletForSwap, setSelectedWalletForSwap] =
-  //  useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] =
+    useState<WalletWithBalance | null>(null);
 
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
@@ -322,6 +323,10 @@ export default function Overview() {
                   </Link>
                   <ChevronRight className="h-4 w-4" />
                 </div>
+                <RefreshButton
+                  onRefresh={() => refetchWallets()}
+                  isRefreshing={isLoadingWallets || isLoadingBalances}
+                />
               </div>
               <p className="text-sm text-muted-foreground mb-4">
                 Manage your buying and selling wallets.
@@ -409,7 +414,7 @@ export default function Overview() {
                             </td>
                             <td className="py-3 px-2 w-32">
                               <div className="flex items-center gap-2">
-                                {/*<Button
+                                <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8"
@@ -418,8 +423,8 @@ export default function Overview() {
                                     setSelectedWalletForSwap(wallet);
                                   }}
                                 >
-                                  <FaExchangeAlt className="h-2 w-2" />
-                                </Button>*/}
+                                  <FaExchangeAlt className="h-4 w-4" />
+                                </Button>
                                 <Button
                                   variant="muted"
                                   className="h-8"
@@ -479,15 +484,13 @@ export default function Overview() {
         }}
       />
 
-      {/*<SwapDialog
+      <SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        network={state.network}
-        blockfrostApiKey={process.env.NEXT_PUBLIC_BLOCKFROST_API_KEY || ''}
-        walletType={selectedWalletForSwap?.type || ''}
-        walletId={selectedWalletForSwap?.id || ''}
-      />*/}
+        walletVkey={selectedWalletForSwap?.walletVkey || ''}
+        network={network}
+      />
 
       <TransakWidget
         isOpen={!!selectedWalletForTopup}
