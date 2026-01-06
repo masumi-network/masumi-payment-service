@@ -5,6 +5,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 const mutex = new Mutex();
 
@@ -30,10 +31,10 @@ export async function checkRegistryTransactions() {
     try {
       const results = await Promise.allSettled(
         paymentContracts.map(async (paymentContract) => {
-          const blockfrost = new BlockFrostAPI({
-            projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-            network: convertNetwork(paymentContract.network),
-          });
+          const blockfrost = getBlockfrostInstance(
+            paymentContract.network,
+            paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+          );
 
           const registryRequests = await getRegistrationRequestsToSync(
             paymentContract.id,

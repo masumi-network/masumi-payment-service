@@ -16,6 +16,7 @@ import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -86,9 +87,10 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    const blockfrost = new BlockFrostAPI({
-      projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const blockfrost = getBlockfrostInstance(
+      input.network,
+      paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);

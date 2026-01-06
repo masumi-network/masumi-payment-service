@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { errorToString } from 'advanced-retry';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const getUTXOSchemaInput = z.object({
   address: z.string().max(150).describe('The address to get the UTXOs for'),
@@ -116,9 +117,10 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
       throw createHttpError(404, 'Network not found');
     }
     try {
-      const blockfrost = new BlockFrostAPI({
-        projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-      });
+      const blockfrost = getBlockfrostInstance(
+        input.network,
+        paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+      );
       const utxos = await blockfrost.addressesUtxos(input.address, {
         count: input.count,
         page: input.page,

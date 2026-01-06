@@ -30,6 +30,7 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -807,9 +808,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           'Submit result time must be before unlock time with at least 15 minutes difference',
         );
       }
-      const provider = new BlockFrostAPI({
-        projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-      });
+      const provider = getBlockfrostInstance(
+        input.network,
+        paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+      );
 
       const assetId = input.agentIdentifier;
       const policyAsset = assetId.startsWith(policyId)

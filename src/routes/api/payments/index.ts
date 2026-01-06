@@ -33,6 +33,7 @@ import {
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -674,9 +675,10 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
 
-    const provider = new BlockFrostAPI({
-      projectId: specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const provider = getBlockfrostInstance(
+      input.network,
+      specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     if (input.agentIdentifier.startsWith(policyId) == false) {
       throw createHttpError(
