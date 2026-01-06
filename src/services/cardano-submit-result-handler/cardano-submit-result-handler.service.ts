@@ -101,7 +101,7 @@ async function handlePaymentRequestResults(
         where: { id: request.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PaymentAction.WaitingForManualAction,
               errorType: PaymentErrorType.Unknown,
               errorNote:
@@ -303,7 +303,7 @@ async function processSinglePaymentRequest(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PaymentAction.SubmitResultInitiated,
         },
       },
@@ -353,10 +353,11 @@ async function processSinglePaymentRequest(
       where: { id: request.id },
       data: {
         NextAction: {
-          update: {
+          create: {
             requestedAction: PaymentAction.SubmitResultRequested,
             errorType: null,
             errorNote: null,
+            resultHash: request.NextAction.resultHash,
           },
         },
         SmartContractWallet: {

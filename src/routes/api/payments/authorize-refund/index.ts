@@ -95,7 +95,7 @@ export const authorizePaymentRefundEndpointPost =
         where: { id: payment.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PaymentAction.AuthorizeRefundRequested,
             },
           },

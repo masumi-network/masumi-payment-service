@@ -180,7 +180,7 @@ async function processSingleRefundCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PurchasingAction.WithdrawRefundInitiated,
           submittedTxHash: null,
         },
@@ -301,7 +301,7 @@ export async function collectRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

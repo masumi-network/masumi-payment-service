@@ -240,9 +240,8 @@ export async function authorizeRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.AuthorizeRefundInitiated,
-                    resultHash: request.NextAction.resultHash,
                   },
                 },
                 CurrentTransaction: {
@@ -298,7 +297,7 @@ export async function authorizeRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:

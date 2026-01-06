@@ -266,6 +266,18 @@
                         "nullable": true,
                         "description": "SHA256 hash of the result submitted by the seller (hex string)"
                     },
+                    "nextActionLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the next action was last changed"
+                    },
+                    "onChainStateOrResultLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the on-chain state or result was last changed"
+                    },
+                    "nextActionOrOnChainStateOrResultLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the next action or on-chain state or result was last changed"
+                    },
                     "inputHash": {
                         "type": "string",
                         "nullable": true,
@@ -703,6 +715,9 @@
                     "externalDisputeUnlockTime",
                     "requestedById",
                     "resultHash",
+                    "nextActionLastChangedAt",
+                    "onChainStateOrResultLastChangedAt",
+                    "nextActionOrOnChainStateOrResultLastChangedAt",
                     "inputHash",
                     "totalBuyerCardanoFees",
                     "totalSellerCardanoFees",
@@ -774,6 +789,18 @@
                     "totalSellerCardanoFees": {
                         "type": "number",
                         "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
+                    },
+                    "nextActionOrOnChainStateOrResultLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the next action or on-chain state or result was last changed"
+                    },
+                    "nextActionLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the next action was last changed"
+                    },
+                    "onChainStateOrResultLastChangedAt": {
+                        "type": "string",
+                        "description": "Timestamp when the on-chain state or result was last changed"
                     },
                     "requestedById": {
                         "type": "string",
@@ -1200,6 +1227,9 @@
                     "externalDisputeUnlockTime",
                     "totalBuyerCardanoFees",
                     "totalSellerCardanoFees",
+                    "nextActionOrOnChainStateOrResultLastChangedAt",
+                    "nextActionLastChangedAt",
+                    "onChainStateOrResultLastChangedAt",
                     "requestedById",
                     "onChainState",
                     "collateralReturnLovelace",
@@ -3319,6 +3349,9 @@
                                                     "metadata": null,
                                                     "totalBuyerCardanoFees": 0,
                                                     "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
                                                     "TransactionHistory": []
                                                 }
                                             ]
@@ -3568,6 +3601,18 @@
                                                     "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
+                                                },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
                                                 "inputHash": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -3905,6 +3950,9 @@
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
                                                 "inputHash",
                                                 "totalBuyerCardanoFees",
                                                 "totalSellerCardanoFees",
@@ -3975,7 +4023,604 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/diff": {
+            "get": {
+                "description": "Returns payments that changed since the provided timestamp (combined next-action + on-chain-state/result).",
+                "summary": "Diff payments by combined status timestamp (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of payments to return"
+                        },
+                        "required": false,
+                        "description": "The number of payments to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            ],
+                            "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
+                        },
+                        "required": true,
+                        "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the payments were made on"
+                        },
+                        "required": true,
+                        "description": "The network the payments were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the payments"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the payments",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Payments": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Payment"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Payments"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Payments": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "submitResultTime": "0",
+                                                    "unlockTime": "0",
+                                                    "externalDisputeUnlockTime": "0",
+                                                    "lastCheckedAt": null,
+                                                    "cooldownTime": 0,
+                                                    "payByTime": null,
+                                                    "cooldownTimeOtherParty": 0,
+                                                    "collateralReturnLovelace": null,
+                                                    "requestedById": "requester_id",
+                                                    "resultHash": "result_hash",
+                                                    "onChainState": null,
+                                                    "inputHash": "input_hash",
+                                                    "NextAction": {
+                                                        "requestedAction": "AuthorizeRefundRequested",
+                                                        "errorType": null,
+                                                        "errorNote": null,
+                                                        "resultHash": null
+                                                    },
+                                                    "CurrentTransaction": null,
+                                                    "RequestedFunds": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": "10000000"
+                                                        }
+                                                    ],
+                                                    "PaymentSource": {
+                                                        "id": "payment_source_id",
+                                                        "network": "Preprod",
+                                                        "smartContractAddress": "address",
+                                                        "policyId": "policy_id"
+                                                    },
+                                                    "WithdrawnForSeller": [],
+                                                    "WithdrawnForBuyer": [],
+                                                    "BuyerWallet": null,
+                                                    "SmartContractWallet": null,
+                                                    "metadata": null,
+                                                    "totalBuyerCardanoFees": 0,
+                                                    "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "TransactionHistory": []
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/diff/next-action": {
+            "get": {
+                "description": "Returns payments whose next action changed since lastUpdate.",
+                "summary": "Diff payments by next-action timestamp (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of payments to return"
+                        },
+                        "required": false,
+                        "description": "The number of payments to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            ],
+                            "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
+                        },
+                        "required": true,
+                        "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the payments were made on"
+                        },
+                        "required": true,
+                        "description": "The network the payments were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the payments"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the payments",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Payments": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Payment"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Payments"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Payments": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "submitResultTime": "0",
+                                                    "unlockTime": "0",
+                                                    "externalDisputeUnlockTime": "0",
+                                                    "lastCheckedAt": null,
+                                                    "cooldownTime": 0,
+                                                    "payByTime": null,
+                                                    "cooldownTimeOtherParty": 0,
+                                                    "collateralReturnLovelace": null,
+                                                    "requestedById": "requester_id",
+                                                    "resultHash": "result_hash",
+                                                    "onChainState": null,
+                                                    "inputHash": "input_hash",
+                                                    "NextAction": {
+                                                        "requestedAction": "AuthorizeRefundRequested",
+                                                        "errorType": null,
+                                                        "errorNote": null,
+                                                        "resultHash": null
+                                                    },
+                                                    "CurrentTransaction": null,
+                                                    "RequestedFunds": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": "10000000"
+                                                        }
+                                                    ],
+                                                    "PaymentSource": {
+                                                        "id": "payment_source_id",
+                                                        "network": "Preprod",
+                                                        "smartContractAddress": "address",
+                                                        "policyId": "policy_id"
+                                                    },
+                                                    "WithdrawnForSeller": [],
+                                                    "WithdrawnForBuyer": [],
+                                                    "BuyerWallet": null,
+                                                    "SmartContractWallet": null,
+                                                    "metadata": null,
+                                                    "totalBuyerCardanoFees": 0,
+                                                    "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "TransactionHistory": []
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/diff/onchain-state-or-result": {
+            "get": {
+                "description": "Returns payments whose on-chain state or result hash changed since lastUpdate.",
+                "summary": "Diff payments by on-chain-state/result timestamp (READ access required)",
+                "tags": [
+                    "payment"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of payments to return"
+                        },
+                        "required": false,
+                        "description": "The number of payments to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            ],
+                            "description": "Return payments whose selected status timestamp changed after this ISO timestamp"
+                        },
+                        "required": true,
+                        "description": "Return payments whose selected status timestamp changed after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the payments were made on"
+                        },
+                        "required": true,
+                        "description": "The network the payments were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the payments"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the payments",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Payment diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Payments": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Payment"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Payments"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Payments": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "submitResultTime": "0",
+                                                    "unlockTime": "0",
+                                                    "externalDisputeUnlockTime": "0",
+                                                    "lastCheckedAt": null,
+                                                    "cooldownTime": 0,
+                                                    "payByTime": null,
+                                                    "cooldownTimeOtherParty": 0,
+                                                    "collateralReturnLovelace": null,
+                                                    "requestedById": "requester_id",
+                                                    "resultHash": "result_hash",
+                                                    "onChainState": null,
+                                                    "inputHash": "input_hash",
+                                                    "NextAction": {
+                                                        "requestedAction": "AuthorizeRefundRequested",
+                                                        "errorType": null,
+                                                        "errorNote": null,
+                                                        "resultHash": null
+                                                    },
+                                                    "CurrentTransaction": null,
+                                                    "RequestedFunds": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": "10000000"
+                                                        }
+                                                    ],
+                                                    "PaymentSource": {
+                                                        "id": "payment_source_id",
+                                                        "network": "Preprod",
+                                                        "smartContractAddress": "address",
+                                                        "policyId": "policy_id"
+                                                    },
+                                                    "WithdrawnForSeller": [],
+                                                    "WithdrawnForBuyer": [],
+                                                    "BuyerWallet": null,
+                                                    "SmartContractWallet": null,
+                                                    "metadata": null,
+                                                    "totalBuyerCardanoFees": 0,
+                                                    "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "TransactionHistory": []
+                                                }
+                                            ]
                                         }
                                     }
                                 }
@@ -4114,6 +4759,18 @@
                                                     "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
+                                                },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
                                                 "inputHash": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -4451,6 +5108,9 @@
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
                                                 "inputHash",
                                                 "totalBuyerCardanoFees",
                                                 "totalSellerCardanoFees",
@@ -4521,7 +5181,10 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -4653,6 +5316,18 @@
                                                     "nullable": true,
                                                     "description": "SHA256 hash of the result submitted by the seller (hex string)"
                                                 },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
+                                                },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
                                                 "inputHash": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -4990,6 +5665,9 @@
                                                 "externalDisputeUnlockTime",
                                                 "requestedById",
                                                 "resultHash",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
                                                 "inputHash",
                                                 "totalBuyerCardanoFees",
                                                 "totalSellerCardanoFees",
@@ -5060,7 +5738,10 @@
                                             "SmartContractWallet": null,
                                             "metadata": null,
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -5224,7 +5905,10 @@
                                                     "WithdrawnForSeller": [],
                                                     "WithdrawnForBuyer": [],
                                                     "totalBuyerCardanoFees": 0,
-                                                    "totalSellerCardanoFees": 0
+                                                    "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                                 }
                                             ]
                                         }
@@ -5434,7 +6118,10 @@
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": [],
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -5531,11 +6218,454 @@
                                         "WithdrawnForSeller": [],
                                         "WithdrawnForBuyer": [],
                                         "totalBuyerCardanoFees": 0,
-                                        "totalSellerCardanoFees": 0
+                                        "totalSellerCardanoFees": 0,
+                                        "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                        "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                        "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                     }
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/diff": {
+            "get": {
+                "description": "Returns purchases that changed since the provided timestamp (combined next-action + on-chain-state/result).",
+                "summary": "Diff purchases by combined status timestamp (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of purchases to return"
+                        },
+                        "required": false,
+                        "description": "The number of purchases to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "1970-01-01T00:00:00.000Z",
+                            "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp"
+                        },
+                        "required": false,
+                        "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the purchases were made on"
+                        },
+                        "required": true,
+                        "description": "The network the purchases were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the purchases"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the purchases",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Purchase diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Purchases": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Purchase"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Purchases"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Purchases": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "blockchainIdentifier": "blockchain_identifier",
+                                                    "agentIdentifier": "agent_identifier",
+                                                    "lastCheckedAt": null,
+                                                    "onChainState": null,
+                                                    "metadata": null,
+                                                    "requestedById": "requester_id",
+                                                    "resultHash": "",
+                                                    "cooldownTime": 0,
+                                                    "payByTime": null,
+                                                    "cooldownTimeOtherParty": 0,
+                                                    "collateralReturnLovelace": null,
+                                                    "inputHash": "input_hash",
+                                                    "NextAction": {
+                                                        "requestedAction": "FundsLockingRequested",
+                                                        "errorType": null,
+                                                        "errorNote": null
+                                                    },
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "externalDisputeUnlockTime": "1713636260",
+                                                    "submitResultTime": "1970-01-20T20:00:36.260Z",
+                                                    "unlockTime": "1713636260",
+                                                    "PaidFunds": [],
+                                                    "PaymentSource": {
+                                                        "id": "payment_source_id",
+                                                        "network": "Preprod",
+                                                        "policyId": "policy_id",
+                                                        "smartContractAddress": "address"
+                                                    },
+                                                    "SellerWallet": null,
+                                                    "SmartContractWallet": null,
+                                                    "CurrentTransaction": null,
+                                                    "TransactionHistory": [],
+                                                    "WithdrawnForSeller": [],
+                                                    "WithdrawnForBuyer": [],
+                                                    "totalBuyerCardanoFees": 0,
+                                                    "totalSellerCardanoFees": 0,
+                                                    "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                                    "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/diff/next-action": {
+            "get": {
+                "description": "Returns purchases whose next action changed since lastUpdate.",
+                "summary": "Diff purchases by next-action timestamp (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of purchases to return"
+                        },
+                        "required": false,
+                        "description": "The number of purchases to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "1970-01-01T00:00:00.000Z",
+                            "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp"
+                        },
+                        "required": false,
+                        "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the purchases were made on"
+                        },
+                        "required": true,
+                        "description": "The network the purchases were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the purchases"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the purchases",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Purchase diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Purchases": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Purchase"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Purchases"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/diff/onchain-state-or-result": {
+            "get": {
+                "description": "Returns purchases whose on-chain state or result hash changed since lastUpdate.",
+                "summary": "Diff purchases by on-chain-state/result timestamp (READ access required)",
+                "tags": [
+                    "purchase"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of purchases to return"
+                        },
+                        "required": false,
+                        "description": "The number of purchases to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "1970-01-01T00:00:00.000Z",
+                            "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp"
+                        },
+                        "required": false,
+                        "description": "Return purchases whose selected status timestamp changed at/after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The network the purchases were made on"
+                        },
+                        "required": true,
+                        "description": "The network the purchases were made on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "default": "false",
+                            "description": "Whether to include the full transaction and status history of the purchases"
+                        },
+                        "required": false,
+                        "description": "Whether to include the full transaction and status history of the purchases",
+                        "name": "includeHistory",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Purchase diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Purchases": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/Purchase"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Purchases"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -5649,6 +6779,18 @@
                                                 "totalSellerCardanoFees": {
                                                     "type": "number",
                                                     "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
+                                                },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "requestedById": {
                                                     "type": "string",
@@ -5976,6 +7118,9 @@
                                                 "externalDisputeUnlockTime",
                                                 "totalBuyerCardanoFees",
                                                 "totalSellerCardanoFees",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
@@ -6047,7 +7192,10 @@
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": [],
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -6173,6 +7321,18 @@
                                                     "type": "number",
                                                     "description": "Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)"
                                                 },
+                                                "nextActionOrOnChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action or on-chain state or result was last changed"
+                                                },
+                                                "nextActionLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the next action was last changed"
+                                                },
+                                                "onChainStateOrResultLastChangedAt": {
+                                                    "type": "string",
+                                                    "description": "Timestamp when the on-chain state or result was last changed"
+                                                },
                                                 "requestedById": {
                                                     "type": "string",
                                                     "description": "ID of the API key that created this purchase"
@@ -6499,6 +7659,9 @@
                                                 "externalDisputeUnlockTime",
                                                 "totalBuyerCardanoFees",
                                                 "totalSellerCardanoFees",
+                                                "nextActionOrOnChainStateOrResultLastChangedAt",
+                                                "nextActionLastChangedAt",
+                                                "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
                                                 "collateralReturnLovelace",
@@ -6570,7 +7733,10 @@
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": [],
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -6709,7 +7875,10 @@
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": [],
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -6850,7 +8019,10 @@
                                             "WithdrawnForSeller": [],
                                             "WithdrawnForBuyer": [],
                                             "totalBuyerCardanoFees": 0,
-                                            "totalSellerCardanoFees": 0
+                                            "totalSellerCardanoFees": 0,
+                                            "nextActionOrOnChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "nextActionLastChangedAt": "1970-01-20T20:00:36.260Z",
+                                            "onChainStateOrResultLastChangedAt": "1970-01-20T20:00:36.260Z"
                                         }
                                     }
                                 }
@@ -7688,6 +8860,137 @@
                                 }
                             }
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/registry/diff": {
+            "get": {
+                "description": "Returns registry entries that changed since the provided timestamp (registrationStateLastChangedAt).",
+                "summary": "Diff registry entries by state-change timestamp (READ access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "The number of registry entries to return"
+                        },
+                        "required": false,
+                        "description": "The number of registry entries to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp"
+                        },
+                        "required": false,
+                        "description": "Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                }
+                            ],
+                            "description": "Return registry entries whose registration state changed at/after this ISO timestamp"
+                        },
+                        "required": true,
+                        "description": "Return registry entries whose registration state changed at/after this ISO timestamp",
+                        "name": "lastUpdate",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network used to register the agent on"
+                        },
+                        "required": true,
+                        "description": "The Cardano network used to register the agent on",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source"
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source",
+                        "name": "filterSmartContractAddress",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Agent metadata diff",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Assets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/RegistryEntry"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Assets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     },
                     "500": {
                         "description": "Internal Server Error"
