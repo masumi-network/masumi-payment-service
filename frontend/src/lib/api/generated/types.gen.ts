@@ -166,6 +166,18 @@ export type Payment = {
      */
     resultHash: string | null;
     /**
+     * Timestamp when the next action was last changed
+     */
+    nextActionLastChangedAt: string;
+    /**
+     * Timestamp when the on-chain state or result was last changed
+     */
+    onChainStateOrResultLastChangedAt: string;
+    /**
+     * Timestamp when the next action or on-chain state or result was last changed
+     */
+    nextActionOrOnChainStateOrResultLastChangedAt: string;
+    /**
      * SHA256 hash of the input data for the payment (hex string)
      */
     inputHash: string | null;
@@ -447,6 +459,18 @@ export type Purchase = {
      * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
      */
     totalSellerCardanoFees: number;
+    /**
+     * Timestamp when the next action or on-chain state or result was last changed
+     */
+    nextActionOrOnChainStateOrResultLastChangedAt: string;
+    /**
+     * Timestamp when the next action was last changed
+     */
+    nextActionLastChangedAt: string;
+    /**
+     * Timestamp when the on-chain state or result was last changed
+     */
+    onChainStateOrResultLastChangedAt: string;
     /**
      * ID of the API key that created this purchase
      */
@@ -1841,6 +1865,18 @@ export type PostPaymentResponses = {
              */
             resultHash: string | null;
             /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
              * SHA256 hash of the input data for the payment (hex string)
              */
             inputHash: string | null;
@@ -2029,6 +2065,189 @@ export type PostPaymentResponses = {
 
 export type PostPaymentResponse = PostPaymentResponses[keyof PostPaymentResponses];
 
+export type GetPaymentDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff';
+};
+
+export type GetPaymentDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffResponse = GetPaymentDiffResponses[keyof GetPaymentDiffResponses];
+
+export type GetPaymentDiffNextActionData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff/next-action';
+};
+
+export type GetPaymentDiffNextActionErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffNextActionResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffNextActionResponse = GetPaymentDiffNextActionResponses[keyof GetPaymentDiffNextActionResponses];
+
+export type GetPaymentDiffOnchainStateOrResultData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff/onchain-state-or-result';
+};
+
+export type GetPaymentDiffOnchainStateOrResultErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffOnchainStateOrResultResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffOnchainStateOrResultResponse = GetPaymentDiffOnchainStateOrResultResponses[keyof GetPaymentDiffOnchainStateOrResultResponses];
+
 export type PostPaymentSubmitResultData = {
     body?: {
         /**
@@ -2122,6 +2341,18 @@ export type PostPaymentSubmitResultResponses = {
              * SHA256 hash of the result submitted by the seller (hex string)
              */
             resultHash: string | null;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
             /**
              * SHA256 hash of the input data for the payment (hex string)
              */
@@ -2400,6 +2631,18 @@ export type PostPaymentAuthorizeRefundResponses = {
              * SHA256 hash of the result submitted by the seller (hex string)
              */
             resultHash: string | null;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
             /**
              * SHA256 hash of the input data for the payment (hex string)
              */
@@ -2751,6 +2994,189 @@ export type PostPurchaseResponses = {
 
 export type PostPurchaseResponse = PostPurchaseResponses[keyof PostPurchaseResponses];
 
+export type GetPurchaseDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff';
+};
+
+export type GetPurchaseDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffResponse = GetPurchaseDiffResponses[keyof GetPurchaseDiffResponses];
+
+export type GetPurchaseDiffNextActionData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff/next-action';
+};
+
+export type GetPurchaseDiffNextActionErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffNextActionResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffNextActionResponse = GetPurchaseDiffNextActionResponses[keyof GetPurchaseDiffNextActionResponses];
+
+export type GetPurchaseDiffOnchainStateOrResultData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff/onchain-state-or-result';
+};
+
+export type GetPurchaseDiffOnchainStateOrResultErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffOnchainStateOrResultResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffOnchainStateOrResultResponse = GetPurchaseDiffOnchainStateOrResultResponses[keyof GetPurchaseDiffOnchainStateOrResultResponses];
+
 export type PostPurchaseRequestRefundData = {
     body?: {
         /**
@@ -2836,6 +3262,18 @@ export type PostPurchaseRequestRefundResponses = {
              * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
              */
             totalSellerCardanoFees: number;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
             /**
              * ID of the API key that created this purchase
              */
@@ -3074,6 +3512,18 @@ export type PostPurchaseCancelRefundRequestResponses = {
              * Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)
              */
             totalSellerCardanoFees: number;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
             /**
              * ID of the API key that created this purchase
              */
@@ -3601,6 +4051,63 @@ export type PostRegistryResponses = {
 };
 
 export type PostRegistryResponse = PostRegistryResponses[keyof PostRegistryResponses];
+
+export type GetRegistryDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of registry entries to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return registry entries whose registration state changed at/after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/registry/diff';
+};
+
+export type GetRegistryDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetRegistryDiffResponses = {
+    /**
+     * Agent metadata diff
+     */
+    200: {
+        status: string;
+        data: {
+            Assets: Array<RegistryEntry>;
+        };
+    };
+};
+
+export type GetRegistryDiffResponse = GetRegistryDiffResponses[keyof GetRegistryDiffResponses];
 
 export type PostRegistryDeregisterData = {
     body?: {

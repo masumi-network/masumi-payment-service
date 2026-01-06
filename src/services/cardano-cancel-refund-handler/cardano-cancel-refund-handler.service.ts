@@ -275,7 +275,7 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction:
                       PurchasingAction.UnSetRefundRequestedInitiated,
                   },
@@ -333,7 +333,7 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

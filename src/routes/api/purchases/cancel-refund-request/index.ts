@@ -96,7 +96,7 @@ export const cancelPurchaseRefundRequestPost =
         where: { id: purchase.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
             },
           },

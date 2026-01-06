@@ -120,6 +120,17 @@ export const paymentResponseSchema = z
       .describe(
         'SHA256 hash of the result submitted by the seller (hex string)',
       ),
+    nextActionLastChangedAt: z
+      .date()
+      .describe('Timestamp when the next action was last changed'),
+    onChainStateOrResultLastChangedAt: z
+      .date()
+      .describe('Timestamp when the on-chain state or result was last changed'),
+    nextActionOrOnChainStateOrResultLastChangedAt: z
+      .date()
+      .describe(
+        'Timestamp when the next action or on-chain state or result was last changed',
+      ),
     inputHash: z
       .string()
       .nullable()

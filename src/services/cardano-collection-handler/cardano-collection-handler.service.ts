@@ -269,7 +269,7 @@ async function processSinglePaymentCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PaymentAction.WithdrawInitiated,
         },
       },
@@ -384,7 +384,7 @@ export async function collectOutstandingPaymentsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:

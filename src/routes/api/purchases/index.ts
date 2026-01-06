@@ -114,6 +114,17 @@ export const purchaseResponseSchema = z
       .describe(
         'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
       ),
+    nextActionOrOnChainStateOrResultLastChangedAt: z
+      .date()
+      .describe(
+        'Timestamp when the next action or on-chain state or result was last changed',
+      ),
+    nextActionLastChangedAt: z
+      .date()
+      .describe('Timestamp when the next action was last changed'),
+    onChainStateOrResultLastChangedAt: z
+      .date()
+      .describe('Timestamp when the on-chain state or result was last changed'),
     requestedById: z
       .string()
       .describe('ID of the API key that created this purchase'),
