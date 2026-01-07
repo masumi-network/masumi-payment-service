@@ -161,11 +161,13 @@ export class WebhookSenderService {
       return;
     }
 
-    await prisma.webhookDelivery.update({
+    const updatedDelivery = await prisma.webhookDelivery.update({
       where: { id: deliveryId },
       data: {
-        status: WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus,
         attempts: { increment: 1 },
+      },
+      select: {
+        attempts: true,
       },
     });
 
@@ -189,10 +191,10 @@ export class WebhookSenderService {
       // Update webhook endpoint success tracking
       await this.updateWebhookSuccessTracking(delivery.webhookEndpointId);
     } else {
-      const nextRetryDelay = this.calculateRetryDelay(delivery.attempts);
+      const nextRetryDelay = this.calculateRetryDelay(updatedDelivery.attempts);
       const nextRetryAt = new Date(Date.now() + nextRetryDelay);
 
-      const isFinalAttempt = delivery.attempts >= delivery.maxAttempts;
+      const isFinalAttempt = updatedDelivery.attempts >= delivery.maxAttempts;
 
       await prisma.webhookDelivery.update({
         where: { id: deliveryId },
