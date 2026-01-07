@@ -4,6 +4,7 @@ import {
   PurchasingAction,
   TransactionStatus,
   $Enums,
+  OnChainState,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -81,6 +82,12 @@ export const purchaseErrorStateRecoveryPost =
           'Purchase request not found with the provided blockchain identifier',
         );
       }
+      if (!purchaseRequest.onChainState) {
+        throw createHttpError(
+          400,
+          'Purchase request is in its initial on-chain state. Can not be recovered. Please start a new purchase request.',
+        );
+      }
 
       // Validate that the request is in WaitingForManualAction with error
       if (
@@ -102,26 +109,22 @@ export const purchaseErrorStateRecoveryPost =
 
       // Find the most recent successful transaction (confirmed or pending)
       // Priority 1: Most recent Confirmed transaction (fully successful)
-      const confirmedTransaction = purchaseRequest.TransactionHistory.filter(
+      const confirmedTransactions = purchaseRequest.TransactionHistory.filter(
         (tx) => tx.status === TransactionStatus.Confirmed,
-      ).sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      )[0];
+      );
+      const mostRecentConfirmedTransaction =
+        confirmedTransactions.length > 0 ? confirmedTransactions[0] : undefined;
 
       // Priority 2: If no confirmed, get most recent Pending transaction (in progress)
-      const pendingTransaction = !confirmedTransaction
-        ? purchaseRequest.TransactionHistory.filter(
-            (tx) => tx.status === TransactionStatus.Pending,
-          ).sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          )[0]
-        : null;
+      const pendingTransactions = purchaseRequest.TransactionHistory.filter(
+        (tx) => tx.status === TransactionStatus.Pending,
+      );
+      const mostRecentPendingTransaction =
+        pendingTransactions.length > 0 ? pendingTransactions[0] : undefined;
 
       // Use the best available transaction
       const lastSuccessfulTransaction =
-        confirmedTransaction || pendingTransaction;
+        mostRecentConfirmedTransaction ?? mostRecentPendingTransaction;
 
       const transactionsToFail = purchaseRequest.TransactionHistory.filter(
         (tx) => {
@@ -157,7 +160,7 @@ export const purchaseErrorStateRecoveryPost =
         for (const transaction of transactionsToFail) {
           await tx.transaction.update({
             where: { id: transaction.id },
-            data: { status: TransactionStatus.FailedViaTimeout },
+            data: { status: TransactionStatus.FailedViaManualReset },
           });
         }
 
@@ -166,12 +169,30 @@ export const purchaseErrorStateRecoveryPost =
           data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
         });
 
-        await tx.purchaseActionData.update({
+        const isCompletedState =
+          purchaseRequest.onChainState &&
+          (
+            [
+              OnChainState.ResultSubmitted,
+              OnChainState.RefundRequested,
+              OnChainState.Disputed,
+              OnChainState.Withdrawn,
+              OnChainState.RefundWithdrawn,
+              OnChainState.DisputedWithdrawn,
+            ] as OnChainState[]
+          ).includes(purchaseRequest.onChainState);
+
+        await tx.purchaseRequest.update({
           where: { id: purchaseRequest.NextAction.id },
           data: {
-            errorType: null,
-            errorNote: null,
-            requestedAction: PurchasingAction.WaitingForExternalAction,
+            NextAction: {
+              create: {
+                inputHash: purchaseRequest.NextAction.inputHash,
+                requestedAction: isCompletedState
+                  ? PurchasingAction.None
+                  : PurchasingAction.WaitingForExternalAction,
+              },
+            },
           },
         });
       });

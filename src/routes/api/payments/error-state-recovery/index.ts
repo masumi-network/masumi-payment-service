@@ -4,12 +4,14 @@ import {
   PaymentAction,
   TransactionStatus,
   $Enums,
+  OnChainState,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
+import { ez } from 'express-zod-api';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -19,6 +21,11 @@ export const paymentErrorStateRecoverySchemaInput = z.object({
   network: z
     .nativeEnum(Network)
     .describe('The network the transaction was made on'),
+  updatedAt: ez
+    .dateIn()
+    .describe(
+      'The time of the last update, to ensure you clear the correct error state',
+    ),
 });
 
 export const paymentErrorStateRecoverySchemaOutput = z.object({
@@ -61,6 +68,7 @@ export const paymentErrorStateRecoveryPost =
       const paymentRequest = await prisma.paymentRequest.findFirst({
         where: {
           blockchainIdentifier: input.blockchainIdentifier,
+          updatedAt: input.updatedAt,
           PaymentSource: {
             network: input.network,
             deletedAt: null,
@@ -78,7 +86,14 @@ export const paymentErrorStateRecoveryPost =
       if (!paymentRequest) {
         throw createHttpError(
           404,
-          'Payment request not found with the provided blockchain identifier',
+          'Payment request not found with the provided blockchain identifier or it was changed',
+        );
+      }
+
+      if (!paymentRequest.onChainState) {
+        throw createHttpError(
+          400,
+          'Payment request is in its initial on-chain state. Can not be recovered.',
         );
       }
 
@@ -102,26 +117,22 @@ export const paymentErrorStateRecoveryPost =
 
       // Find the most recent successful transaction (confirmed or pending)
       // Priority 1: Most recent Confirmed transaction (fully successful)
-      const confirmedTransaction = paymentRequest.TransactionHistory.filter(
+      const confirmedTransactions = paymentRequest.TransactionHistory.filter(
         (tx) => tx.status === TransactionStatus.Confirmed,
-      ).sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      )[0];
+      );
+      const mostRecentConfirmedTransaction =
+        confirmedTransactions.length > 0 ? confirmedTransactions[0] : undefined;
 
       // Priority 2: If no confirmed, get most recent Pending transaction (in progress)
-      const pendingTransaction = !confirmedTransaction
-        ? paymentRequest.TransactionHistory.filter(
-            (tx) => tx.status === TransactionStatus.Pending,
-          ).sort(
-            (a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-          )[0]
-        : null;
+      const pendingTransactions = paymentRequest.TransactionHistory.filter(
+        (tx) => tx.status === TransactionStatus.Pending,
+      );
+      const mostRecentPendingTransaction =
+        pendingTransactions.length > 0 ? pendingTransactions[0] : undefined;
 
       // Use the best available transaction
       const lastSuccessfulTransaction =
-        confirmedTransaction || pendingTransaction;
+        mostRecentConfirmedTransaction ?? mostRecentPendingTransaction;
 
       const transactionsToFail = paymentRequest.TransactionHistory.filter(
         (tx) => {
@@ -157,7 +168,7 @@ export const paymentErrorStateRecoveryPost =
         for (const transaction of transactionsToFail) {
           await tx.transaction.update({
             where: { id: transaction.id },
-            data: { status: TransactionStatus.FailedViaTimeout },
+            data: { status: TransactionStatus.FailedViaManualReset },
           });
         }
 
@@ -165,13 +176,29 @@ export const paymentErrorStateRecoveryPost =
           where: { id: paymentRequest.id },
           data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
         });
+        const isCompletedState =
+          paymentRequest.onChainState &&
+          (
+            [
+              OnChainState.ResultSubmitted,
+              OnChainState.RefundRequested,
+              OnChainState.Disputed,
+              OnChainState.Withdrawn,
+              OnChainState.RefundWithdrawn,
+              OnChainState.DisputedWithdrawn,
+            ] as OnChainState[]
+          ).includes(paymentRequest.onChainState);
 
-        await tx.paymentActionData.update({
+        await tx.paymentRequest.update({
           where: { id: paymentRequest.NextAction.id },
           data: {
-            errorType: null,
-            errorNote: null,
-            requestedAction: PaymentAction.WaitingForExternalAction,
+            NextAction: {
+              create: {
+                requestedAction: isCompletedState
+                  ? PaymentAction.None
+                  : PaymentAction.WaitingForExternalAction,
+              },
+            },
           },
         });
       });
