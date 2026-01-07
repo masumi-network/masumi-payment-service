@@ -140,7 +140,7 @@ export const paymentErrorStateRecoveryPost =
           if (!lastSuccessfulTransaction) return true;
 
           return (
-            new Date(tx.createdAt).getTime() >
+            new Date(tx.createdAt).getTime() >=
             new Date(lastSuccessfulTransaction.createdAt).getTime()
           );
         },
