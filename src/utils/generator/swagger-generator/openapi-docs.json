@@ -5849,48 +5849,12 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "success": {
-                                                    "type": "boolean"
-                                                },
-                                                "message": {
-                                                    "type": "string"
-                                                },
                                                 "id": {
                                                     "type": "string"
-                                                },
-                                                "currentTransactionId": {
-                                                    "type": "string",
-                                                    "nullable": true
-                                                },
-                                                "nextAction": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "requestedAction": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "WaitingForExternalAction"
-                                                            ]
-                                                        },
-                                                        "errorType": {
-                                                            "nullable": true
-                                                        },
-                                                        "errorNote": {
-                                                            "nullable": true
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "requestedAction",
-                                                        "errorType",
-                                                        "errorNote"
-                                                    ]
                                                 }
                                             },
                                             "required": [
-                                                "success",
-                                                "message",
-                                                "id",
-                                                "currentTransactionId",
-                                                "nextAction"
+                                                "id"
                                             ]
                                         }
                                     },
@@ -5901,15 +5865,7 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "success": true,
-                                            "message": "Error state cleared successfully for payment request",
-                                            "id": "cmf40vg7h0016ucj1u1ro6651",
-                                            "currentTransactionId": "cmf41enan001qucj18mm1ipnj",
-                                            "nextAction": {
-                                                "requestedAction": "WaitingForExternalAction",
-                                                "errorType": null,
-                                                "errorNote": null
-                                            }
+                                            "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
                                     }
                                 }
@@ -6028,15 +5984,34 @@
                                             "Mainnet"
                                         ],
                                         "description": "The network the transaction was made on"
+                                    },
+                                    "updatedAt": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        ],
+                                        "description": "The time of the last update, to ensure you clear the correct error state"
                                     }
                                 },
                                 "required": [
                                     "blockchainIdentifier",
-                                    "network"
+                                    "network",
+                                    "updatedAt"
                                 ],
                                 "example": {
                                     "blockchainIdentifier": "blockchain_identifier",
-                                    "network": "Preprod"
+                                    "network": "Preprod",
+                                    "updatedAt": "1970-01-20T20:00:36.260Z"
                                 }
                             }
                         }
@@ -6056,48 +6031,12 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "success": {
-                                                    "type": "boolean"
-                                                },
-                                                "message": {
-                                                    "type": "string"
-                                                },
                                                 "id": {
                                                     "type": "string"
-                                                },
-                                                "currentTransactionId": {
-                                                    "type": "string",
-                                                    "nullable": true
-                                                },
-                                                "nextAction": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "requestedAction": {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "WaitingForExternalAction"
-                                                            ]
-                                                        },
-                                                        "errorType": {
-                                                            "nullable": true
-                                                        },
-                                                        "errorNote": {
-                                                            "nullable": true
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "requestedAction",
-                                                        "errorType",
-                                                        "errorNote"
-                                                    ]
                                                 }
                                             },
                                             "required": [
-                                                "success",
-                                                "message",
-                                                "id",
-                                                "currentTransactionId",
-                                                "nextAction"
+                                                "id"
                                             ]
                                         }
                                     },
@@ -6108,15 +6047,7 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "success": true,
-                                            "message": "Error state cleared successfully for purchase request",
-                                            "id": "cmf40vg7h0016ucj1u1ro6651",
-                                            "currentTransactionId": "cmf41enan001qucj18mm1ipnj",
-                                            "nextAction": {
-                                                "requestedAction": "WaitingForExternalAction",
-                                                "errorType": null,
-                                                "errorNote": null
-                                            }
+                                            "id": "cmf40vg7h0016ucj1u1ro6651"
                                         }
                                     }
                                 }

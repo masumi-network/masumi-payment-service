@@ -18,6 +18,8 @@ import {
   postPurchaseRequestRefund,
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
+  postPurchaseErrorStateRecovery,
+  postPaymentErrorStateRecovery,
 } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -115,29 +117,67 @@ export default function TransactionDetailsDialog({
   const [isLoading, setIsLoading] = React.useState(false);
   const clearTransactionError = async () => {
     try {
-      toast.warning('Not implemented');
-      return true;
-    } catch (error) {
-      handleError(error as ApiError);
-      return false;
-    }
-  };
+      setIsLoading(true);
 
-  const updateTransactionState = async (
-    transaction: Transaction,
-    newState: string,
-  ) => {
-    try {
-      await apiClient.request({
-        method: 'PUT',
-        url: `/transactions/${transaction.id}/state`,
-        data: { state: newState },
-      });
-      toast.success('Transaction state updated successfully');
-      return true;
+      if (!transaction) {
+        toast.error('Transaction not found');
+        return false;
+      }
+      if (!transaction.onChainState) {
+        toast.error(
+          'Transaction is in its initial on-chain state. Can not be recovered. Please start a new purchase request.',
+        );
+        return false;
+      }
+      if (transaction.type === 'purchase') {
+        const response = await postPurchaseErrorStateRecovery({
+          client: apiClient,
+          body: {
+            blockchainIdentifier: transaction.blockchainIdentifier,
+            updatedAt: new Date(transaction.updatedAt),
+            network: network,
+          },
+        });
+        if (response.error) {
+          toast.error(
+            (response.error as { message: string }).message ||
+              'Failed to clear error state',
+          );
+          return false;
+        }
+        toast.success('Error state cleared successfully');
+        onRefresh();
+        onClose();
+        return true;
+      }
+      if (transaction.type === 'payment') {
+        const response = await postPaymentErrorStateRecovery({
+          client: apiClient,
+          body: {
+            blockchainIdentifier: transaction.blockchainIdentifier,
+            updatedAt: new Date(transaction.updatedAt),
+            network: network,
+          },
+        });
+        if (response.error) {
+          toast.error(
+            (response.error as { message: string }).message ||
+              'Failed to clear error state',
+          );
+          return false;
+        }
+        toast.success('Error state cleared successfully');
+        onRefresh();
+        onClose();
+        return true;
+      }
+
+      return false;
     } catch (error) {
       handleError(error as ApiError);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -563,6 +603,7 @@ export default function TransactionDetailsDialog({
                     <Button
                       variant="secondary"
                       size="sm"
+                      disabled={isLoading}
                       onClick={async () => {
                         if (await clearTransactionError()) {
                           onClose();
@@ -570,23 +611,9 @@ export default function TransactionDetailsDialog({
                         }
                       }}
                     >
-                      Clear Error State
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={async () => {
-                        const newState = prompt('Enter new state:');
-                        if (
-                          newState &&
-                          (await updateTransactionState(transaction, newState))
-                        ) {
-                          onClose();
-                          onRefresh();
-                        }
-                      }}
-                    >
-                      Set New State
+                      {isLoading
+                        ? 'Clearing error state...'
+                        : 'Clear Error State'}
                     </Button>
                   </div>
                 </div>

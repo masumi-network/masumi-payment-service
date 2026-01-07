@@ -3161,15 +3161,7 @@ export type PostPaymentErrorStateRecoveryResponses = {
   200: {
     status: string;
     data: {
-      success: boolean;
-      message: string;
       id: string;
-      currentTransactionId: string | null;
-      nextAction: {
-        requestedAction: 'WaitingForExternalAction';
-        errorType: unknown;
-        errorNote: unknown;
-      };
     };
   };
 };
@@ -3190,6 +3182,10 @@ export type PostPurchaseErrorStateRecoveryData = {
      * The network the transaction was made on
      */
     network: 'Preprod' | 'Mainnet';
+    /**
+     * The time of the last update, to ensure you clear the correct error state
+     */
+    updatedAt: Date;
   };
   path?: never;
   query?: never;
@@ -3235,15 +3231,7 @@ export type PostPurchaseErrorStateRecoveryResponses = {
   200: {
     status: string;
     data: {
-      success: boolean;
-      message: string;
       id: string;
-      currentTransactionId: string | null;
-      nextAction: {
-        requestedAction: 'WaitingForExternalAction';
-        errorType: unknown;
-        errorNote: unknown;
-      };
     };
   };
 };
