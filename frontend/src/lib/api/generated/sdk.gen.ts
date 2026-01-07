@@ -355,7 +355,7 @@ export const postPaymentAuthorizeRefund = <ThrowOnError extends boolean = false>
 
 /**
  * Clear error state for payment request (PAY access required)
- * Clears error states for payment requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).
+ * Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.
  */
 export const postPaymentErrorStateRecovery = <ThrowOnError extends boolean = false>(options?: Options<PostPaymentErrorStateRecoveryData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPaymentErrorStateRecoveryResponse, PostPaymentErrorStateRecoveryError, ThrowOnError>({
@@ -377,7 +377,7 @@ export const postPaymentErrorStateRecovery = <ThrowOnError extends boolean = fal
 
 /**
  * Clear error state for purchase request (PAY access required)
- * Clears error states for purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).
+ * Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.
  */
 export const postPurchaseErrorStateRecovery = <ThrowOnError extends boolean = false>(options?: Options<PostPurchaseErrorStateRecoveryData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).post<PostPurchaseErrorStateRecoveryResponse, PostPurchaseErrorStateRecoveryError, ThrowOnError>({
