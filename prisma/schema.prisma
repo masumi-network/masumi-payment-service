@@ -419,6 +419,7 @@ enum TransactionStatus {
   Pending
   Confirmed
   FailedViaTimeout
+  FailedViaManualReset
   RolledBack
 }
 

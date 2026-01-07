@@ -37,6 +37,8 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
+import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import {
   registerWebhookPost,
@@ -83,6 +85,9 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePurchaseRequestPost,
       }),
+      'error-state-recovery': new DependsOnMethod({
+        post: purchaseErrorStateRecoveryPost,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -106,6 +111,9 @@ export const apiRouter: Routing = {
       }),
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePaymentRequestPost,
+      }),
+      'error-state-recovery': new DependsOnMethod({
+        post: paymentErrorStateRecoveryPost,
       }),
     }),
     registry: new DependsOnMethod({
