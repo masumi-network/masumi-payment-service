@@ -22,7 +22,7 @@ import { MaestroProvider } from '@meshsdk/core';
 import { shortenAddress } from '@/lib/utils';
 import { Token } from '@/types/token';
 import { Spinner } from '../ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
@@ -34,8 +34,6 @@ interface SwapDialogProps {
   isOpen: boolean;
   onClose: () => void;
   walletAddress: string;
-  network: string;
-  blockfrostApiKey: string;
   walletType: string;
   walletId: string;
 }
@@ -44,13 +42,11 @@ export function SwapDialog({
   isOpen,
   onClose,
   walletAddress,
-  network,
-  blockfrostApiKey,
   walletType,
   walletId,
 }: SwapDialogProps) {
   return <div></div>;
-  const { state, apiClient } = useAppContext();
+  const { network, apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
   const [nmkrBalance, setNmkrBalance] = useState<number>(0);
@@ -143,7 +139,7 @@ export function SwapDialog({
         },
         query: {
           address: effectiveWalletAddress,
-          network: state.network,
+          network: network,
         },
       });
       const lovelace =
@@ -158,7 +154,7 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
-      const usdmConfig = getUsdmConfig(state.network);
+      const usdmConfig = getUsdmConfig(network);
       const usdm =
         result?.data?.data?.Utxos?.reduce((acc, utxo) => {
           return (
@@ -202,7 +198,7 @@ export function SwapDialog({
       if (isDev) {
         setMnemonic(process.env.NEXT_PUBLIC_DEV_WALLET_MNEMONIC || null);
       } else {
-        if (!state?.apiKey) {
+        if (!apiKey) {
           throw new Error('No API key found');
         }
 
@@ -498,7 +494,7 @@ export function SwapDialog({
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Balance:{' '}
-                        {useFormatBalance(
+                        {formatBalance(
                           getBalanceForToken(selectedFromToken.symbol).toFixed(
                             6,
                           ),
@@ -525,7 +521,7 @@ export function SwapDialog({
                           onClick={handleMaxClick}
                         >
                           Max:{' '}
-                          {useFormatBalance(
+                          {formatBalance(
                             getMaxAmount(selectedFromToken.symbol).toFixed(2),
                           ) || ''}
                         </span>
@@ -571,7 +567,7 @@ export function SwapDialog({
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Balance:{' '}
-                        {useFormatBalance(
+                        {formatBalance(
                           getBalanceForToken(selectedToToken.symbol).toFixed(6),
                         ) ?? ''}
                       </div>

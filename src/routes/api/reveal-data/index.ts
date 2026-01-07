@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { $Enums } from '@prisma/client';
@@ -9,10 +9,22 @@ import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { CONSTANTS } from '@/utils/config';
 
 export const postVerifyDataRevealSchemaInput = z.object({
-  signature: z.string().max(7500),
-  key: z.string().max(2500),
-  walletAddress: z.string().max(250),
-  validUntil: z.number().min(0).max(1000000000000000000),
+  signature: z
+    .string()
+    .max(7500)
+    .describe('Cryptographic signature from the admin wallet'),
+  key: z.string().max(2500).describe('Public key used to create the signature'),
+  walletAddress: z
+    .string()
+    .max(250)
+    .describe('Cardano address of the admin wallet signing the request'),
+  validUntil: z
+    .number()
+    .min(0)
+    .max(1000000000000000000)
+    .describe(
+      'Unix timestamp (in milliseconds) until which this signature is valid',
+    ),
   blockchainIdentifier: z
     .string()
     .min(1)
@@ -24,7 +36,9 @@ export const postVerifyDataRevealSchemaInput = z.object({
 });
 
 export const postRevealDataSchemaOutput = z.object({
-  isValid: z.boolean(),
+  isValid: z
+    .boolean()
+    .describe('Whether the signature is valid and the data can be revealed'),
 });
 
 export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({

@@ -11,6 +11,7 @@ import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
+import { ez } from 'express-zod-api';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -20,18 +21,15 @@ export const purchaseErrorStateRecoverySchemaInput = z.object({
   network: z
     .nativeEnum(Network)
     .describe('The network the transaction was made on'),
+  updatedAt: ez
+    .dateIn()
+    .describe(
+      'The time of the last update, to ensure you clear the correct error state',
+    ),
 });
 
 export const purchaseErrorStateRecoverySchemaOutput = z.object({
-  success: z.boolean(),
-  message: z.string(),
   id: z.string(),
-  currentTransactionId: z.string().nullable(),
-  nextAction: z.object({
-    requestedAction: z.literal(PurchasingAction.WaitingForExternalAction),
-    errorType: z.null(),
-    errorNote: z.null(),
-  }),
 });
 
 export const purchaseErrorStateRecoveryPost =
@@ -62,6 +60,7 @@ export const purchaseErrorStateRecoveryPost =
       const purchaseRequest = await prisma.purchaseRequest.findFirst({
         where: {
           blockchainIdentifier: input.blockchainIdentifier,
+          updatedAt: input.updatedAt,
           PaymentSource: {
             network: input.network,
             deletedAt: null,
@@ -71,7 +70,7 @@ export const purchaseErrorStateRecoveryPost =
           NextAction: true,
           CurrentTransaction: true,
           TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc', id: 'asc' },
           },
         },
       });
@@ -79,7 +78,7 @@ export const purchaseErrorStateRecoveryPost =
       if (!purchaseRequest) {
         throw createHttpError(
           404,
-          'Purchase request not found with the provided blockchain identifier',
+          'Purchase request not found with the provided blockchain identifier or it was changed',
         );
       }
       if (!purchaseRequest.onChainState) {
@@ -187,7 +186,7 @@ export const purchaseErrorStateRecoveryPost =
           data: {
             NextAction: {
               create: {
-                inputHash: purchaseRequest.NextAction.inputHash,
+                submittedTxHash: null,
                 requestedAction: isCompletedState
                   ? PurchasingAction.None
                   : PurchasingAction.WaitingForExternalAction,
@@ -203,15 +202,7 @@ export const purchaseErrorStateRecoveryPost =
       });
 
       return {
-        success: true,
-        message: 'Error state cleared successfully for purchase request',
         id: purchaseRequest.id,
-        currentTransactionId: lastSuccessfulTransaction?.id || null,
-        nextAction: {
-          requestedAction: PurchasingAction.WaitingForExternalAction,
-          errorType: null,
-          errorNote: null,
-        },
       };
     },
   });

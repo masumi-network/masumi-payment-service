@@ -1,7 +1,6 @@
 import {
   PaymentAction,
   PurchasingAction,
-  PaymentType,
   PaymentSource,
   OnChainState,
 } from '@prisma/client';
@@ -24,7 +23,6 @@ export async function handleAutomaticDecisions() {
   try {
     const paymentSources = await prisma.paymentSource.findMany({
       where: {
-        paymentType: PaymentType.Web3CardanoV1,
         syncInProgress: false,
         deletedAt: null,
       },
@@ -59,7 +57,7 @@ async function handleInitializeAutoWithdrawPayments(
               onChainState: {
                 in: [OnChainState.ResultSubmitted],
               },
-              resultHash: { not: '' },
+              resultHash: { not: null },
               unlockTime: {
                 //10 minutes for blockchain time offset
                 lte: Date.now() - 1000 * 60 * 10,
@@ -118,7 +116,7 @@ async function handleInitializeAutoWithdrawRefunds(
               onChainState: {
                 in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
               },
-              resultHash: '',
+              resultHash: null,
               submitResultTime: {
                 //10 minutes for blockchain time offset
                 lte: Date.now() - 1000 * 60 * 10,
@@ -138,7 +136,6 @@ async function handleInitializeAutoWithdrawRefunds(
                       create: {
                         requestedAction:
                           PurchasingAction.WithdrawRefundRequested,
-                        inputHash: purchaseRequest.inputHash,
                       },
                     },
                   },

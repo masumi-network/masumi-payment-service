@@ -2,9 +2,9 @@ import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import {
   Network,
-  PaymentType,
   Permission,
   PurchasingAction,
+  WalletBase,
   WalletType,
 } from '@prisma/client';
 
@@ -14,7 +14,6 @@ async function handlePurchaseCreditInit({
   metadata,
   network,
   blockchainIdentifier,
-  paymentType,
   contractAddress,
   sellerVkey,
   sellerAddress,
@@ -29,7 +28,6 @@ async function handlePurchaseCreditInit({
   metadata: string | null | undefined;
   network: Network;
   blockchainIdentifier: string;
-  paymentType: PaymentType;
   contractAddress: string;
   sellerVkey: string;
   sellerAddress: string;
@@ -40,8 +38,31 @@ async function handlePurchaseCreditInit({
   inputHash: string;
 }) {
   return await prisma.$transaction(
-    async (transaction) => {
-      const result = await transaction.apiKey.findUnique({
+    async (prisma) => {
+      const paymentSource = await prisma.paymentSource.findUnique({
+        where: {
+          network_smartContractAddress: {
+            network: network,
+            smartContractAddress: contractAddress,
+          },
+          deletedAt: null,
+        },
+      });
+      if (!paymentSource) {
+        throw Error('Invalid paymentSource: ' + paymentSource);
+      }
+      let sellerWallet: WalletBase | null = await prisma.walletBase.findUnique({
+        where: {
+          paymentSourceId_walletVkey_walletAddress_type: {
+            paymentSourceId: paymentSource.id,
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+          },
+        },
+      });
+
+      const result = await prisma.apiKey.findUnique({
         where: { id: id },
         include: {
           RemainingUsageCredits: true,
@@ -55,6 +76,17 @@ async function handlePurchaseCreditInit({
         !result.networkLimit.includes(network)
       ) {
         throw Error('No permission for network: ' + network + ' for id: ' + id);
+      }
+
+      if (!sellerWallet) {
+        sellerWallet = await prisma.walletBase.create({
+          data: {
+            walletVkey: sellerVkey,
+            walletAddress: sellerAddress,
+            type: WalletType.Seller,
+            PaymentSource: { connect: { id: paymentSource.id } },
+          },
+        });
       }
 
       const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<
@@ -114,7 +146,7 @@ async function handlePurchaseCreditInit({
         unit: unit,
       }));
       if (result.usageLimited) {
-        await transaction.apiKey.update({
+        await prisma.apiKey.update({
           where: { id: id },
           data: {
             RemainingUsageCredits: {
@@ -124,33 +156,10 @@ async function handlePurchaseCreditInit({
         });
       }
 
-      const paymentSource = await transaction.paymentSource.findUnique({
-        where: {
-          network_smartContractAddress: {
-            network: network,
-            smartContractAddress: contractAddress,
-          },
-          paymentType: paymentType,
-          deletedAt: null,
-        },
-      });
-      if (!paymentSource) {
-        throw Error('Invalid paymentSource: ' + paymentSource);
-      }
-
-      const sellerWallet = await transaction.walletBase.findUnique({
-        where: {
-          paymentSourceId_walletVkey_walletAddress_type: {
-            paymentSourceId: paymentSource.id,
-            walletVkey: sellerVkey,
-            walletAddress: sellerAddress,
-            type: WalletType.Seller,
-          },
-        },
-      });
-
       const purchaseRequest = await prisma.purchaseRequest.create({
         data: {
+          totalBuyerCardanoFees: BigInt(0),
+          totalSellerCardanoFees: BigInt(0),
           requestedBy: { connect: { id: id } },
           PaidFunds: {
             create: Array.from(totalCost.entries()).map(([unit, amount]) => ({
@@ -161,28 +170,17 @@ async function handlePurchaseCreditInit({
           payByTime: payByTime,
           submitResultTime: submitResultTime,
           PaymentSource: { connect: { id: paymentSource.id } },
-          resultHash: '',
+          resultHash: null,
           sellerCoolDownTime: 0,
           buyerCoolDownTime: 0,
           SellerWallet: {
-            connectOrCreate: {
-              where: {
-                id: sellerWallet?.id ?? 'not-found',
-              },
-              create: {
-                walletVkey: sellerVkey,
-                walletAddress: sellerAddress,
-                paymentSourceId: paymentSource.id,
-                type: WalletType.Seller,
-              },
-            },
+            connect: { id: sellerWallet.id },
           },
           blockchainIdentifier: blockchainIdentifier,
           inputHash: inputHash,
           NextAction: {
             create: {
               requestedAction: PurchasingAction.FundsLockingRequested,
-              inputHash: inputHash,
             },
           },
           externalDisputeUnlockTime: externalDisputeUnlockTime,
@@ -190,20 +188,49 @@ async function handlePurchaseCreditInit({
           metadata: metadata,
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          PaidFunds: true,
-          NextAction: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              smartContractAddress: true,
+              policyId: true,
+            },
+          },
+          PaidFunds: { select: { amount: true, unit: true } },
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              txHash: true,
+              status: true,
+              confirmations: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+            },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
         },
       });
 
       return purchaseRequest;
     },
-    { isolationLevel: 'ReadCommitted', maxWait: 15000, timeout: 15000 },
+    { isolationLevel: 'Serializable', maxWait: 15000, timeout: 15000 },
   );
 }
 

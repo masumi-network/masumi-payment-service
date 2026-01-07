@@ -10,14 +10,16 @@ import { generateOpenAPI } from '@/utils/generator/swagger-generator';
 import { cleanupDB, initDB, prisma } from '@/utils/db';
 import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
-import { DEFAULTS } from './../src/utils/config';
+import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
+import { setupTracing } from '@/tracing';
 
 const __dirname = path.resolve();
 
 async function initialize() {
+  await setupTracing();
   await initDB();
   const defaultKey = await prisma.apiKey.findUnique({
     where: {
@@ -115,7 +117,7 @@ initialize()
           ui.setup(JSON.parse(docsString) as JsonObject, {
             explorer: false,
             customSiteTitle: 'Payment Service API Documentation',
-            customfavIcon: '/assets/favicon.png',
+            customfavIcon: '/assets/swagger_favicon.svg',
             customCss: customCss,
             swaggerOptions: {
               persistAuthorization: true,
@@ -130,8 +132,12 @@ initialize()
         //serve the static admin files
         app.use('/admin', express.static('frontend/dist'));
         app.use('/_next', express.static('frontend/dist/_next'));
-        // Catch all routes for admin and serve index.html via rerouting
-        app.get('/admin/*name', (req, res) => {
+        // Catch all routes for admin and serve index.html via rerouting (excluding static files)
+        app.get('/admin/*name', (req, res, next) => {
+          // Skip static files (files with extensions)
+          if (req.path.match(/\.[a-zA-Z0-9]+$/)) {
+            return next();
+          }
           res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
         });
       },

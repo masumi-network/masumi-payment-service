@@ -23,8 +23,10 @@ import {
   checkIfTxIsInHistory,
   checkPaymentAmountsMatch,
   ExtractOnChainTransactionDataOutput,
+  getCardanoFeesBuyer,
+  getCardanoFeesSeller,
   redeemerToOnChainState,
-} from '../util';
+} from '@/services/cardano-tx-handler/util';
 import { deserializeDatum } from '@meshsdk/core';
 import {
   DecodedV1ContractDatum,
@@ -32,11 +34,13 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
+import { TransactionMetadata } from '@/services/cardano-tx-handler/blockchain';
 
 export type UpdateTransactionInput = {
   blockTime: number;
   tx: { tx_hash: string };
   block: { confirmations: number };
+  metadata: TransactionMetadata;
   utxos: {
     hash: string;
     inputs: Array<{
@@ -69,12 +73,16 @@ export async function handlePaymentTransactionCardanoV1(
   newState: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PaymentAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
+  metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -86,6 +94,7 @@ export async function handlePaymentTransactionCardanoV1(
         },
         include: {
           CurrentTransaction: { include: { BlocksWallet: true } },
+          NextAction: true,
         },
       });
 
@@ -99,26 +108,72 @@ export async function handlePaymentTransactionCardanoV1(
         newState,
       );
 
+      const isConfirmationTransaction =
+        paymentRequest.currentTransactionId &&
+        paymentRequest.CurrentTransaction?.txHash == tx_hash;
+
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           NextAction: {
             create: {
               requestedAction: newAction.action,
-              errorNote: newAction.errorNote,
+              errorNote:
+                paymentRequest.NextAction.errorNote != null
+                  ? paymentRequest.NextAction.errorNote +
+                    '(' +
+                    paymentRequest.NextAction.requestedAction +
+                    ')' +
+                    ' -> ' +
+                    newAction.errorNote
+                  : newAction.errorNote,
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            paymentRequest.currentTransactionId != null
-              ? { connect: { id: paymentRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: paymentRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: paymentRequest.onChainState,
+                  newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -175,12 +230,16 @@ export async function handlePurchasingTransactionCardanoV1(
   newStatus: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PurchasingAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
   sellerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
+  confirmations: number,
+  metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -192,6 +251,7 @@ export async function handlePurchasingTransactionCardanoV1(
         },
         include: {
           CurrentTransaction: { include: { BlocksWallet: true } },
+          NextAction: true,
         },
       });
 
@@ -203,29 +263,73 @@ export async function handlePurchasingTransactionCardanoV1(
         currentAction,
         newStatus,
       );
+      const isConfirmationTransaction =
+        purchasingRequest.currentTransactionId &&
+        purchasingRequest.CurrentTransaction?.txHash == tx_hash;
 
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           inputHash: purchasingRequest.inputHash,
           NextAction: {
             create: {
-              inputHash: purchasingRequest.inputHash,
               requestedAction: newAction.action,
-              errorNote: newAction.errorNote,
+              errorNote:
+                purchasingRequest.NextAction.errorNote != null
+                  ? purchasingRequest.NextAction.errorNote +
+                    '(' +
+                    purchasingRequest.NextAction.requestedAction +
+                    ')' +
+                    ' -> ' +
+                    newAction.errorNote
+                  : newAction.errorNote,
               errorType: newAction.errorType,
             },
           },
-          TransactionHistory:
-            purchasingRequest.currentTransactionId != null
-              ? { connect: { id: purchasingRequest.currentTransactionId } }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          TransactionHistory: !isConfirmationTransaction
+            ? {
+                connect: { id: purchasingRequest.currentTransactionId! },
+              }
+            : undefined,
+          CurrentTransaction: isConfirmationTransaction
+            ? {
+                update: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  previousOnChainState: purchasingRequest.onChainState,
+                  newOnChainState: newStatus,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              },
           WithdrawnForSeller: sellerWithdrawn
             ? {
                 createMany: {
@@ -367,9 +471,6 @@ export async function updateRolledBackTransaction(
                   errorNote:
                     'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
                   errorType: PurchaseErrorType.Unknown,
-                  inputHash:
-                    transaction.PurchaseRequestCurrent?.inputHash ??
-                    transaction.PurchaseRequestHistory!.inputHash,
                 },
               },
             },
@@ -406,11 +507,17 @@ export async function updateInitialTransactions(
       continue;
     }
 
+    const buyerCardanoFees = tx.metadata.fees;
+    const sellerCardanoFees = BigInt(0);
+
     await updateInitialPurchaseTransaction(
       paymentContract,
       decodedNewContract,
       output,
       tx,
+      tx.metadata,
+      buyerCardanoFees,
+      sellerCardanoFees,
     );
 
     await updateInitialPaymentTransaction(
@@ -418,6 +525,9 @@ export async function updateInitialTransactions(
       paymentContract,
       tx,
       output,
+      tx.metadata,
+      buyerCardanoFees,
+      sellerCardanoFees,
     );
   }
 }
@@ -429,6 +539,9 @@ export async function updateInitialPurchaseTransaction(
     { type: 'Initial' }
   >['valueOutputs'][number],
   tx: UpdateTransactionInput,
+  metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -480,7 +593,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No smart contract wallet set for purchase request in db. This is likely an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -502,7 +614,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No seller wallet set for purchase request in db. This seems like an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -514,6 +625,17 @@ export async function updateInitialPurchaseTransaction(
         logger.warn(
           'Reference script hash is not null, this should not be set',
           { tx: tx.tx.tx_hash },
+        );
+        return;
+      }
+      if (dbEntry.inputHash !== decodedNewContract.inputHash) {
+        logger.error(
+          'Purchase request input hash does not match input hash in contract. This is likely a spoofing attempt.',
+          {
+            purchaseRequest: dbEntry,
+            inputHash: dbEntry.inputHash,
+            inputHashContract: decodedNewContract.inputHash,
+          },
         );
         return;
       }
@@ -605,12 +727,9 @@ export async function updateInitialPurchaseTransaction(
         );
         return;
       }
-      if (
-        decodedNewContract.state == SmartContractState.RefundRequested ||
-        decodedNewContract.state == SmartContractState.Disputed
-      ) {
+      if (decodedNewContract.state != SmartContractState.FundsLocked) {
         logger.warn(
-          'Refund was requested. This likely is a spoofing attempt.',
+          'State is not funds locked. This likely is a spoofing attempt.',
           {
             purchaseRequest: dbEntry,
             state: decodedNewContract.state,
@@ -618,7 +737,7 @@ export async function updateInitialPurchaseTransaction(
         );
         return;
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         logger.warn('Result hash was set. This likely is a spoofing attempt.', {
           purchaseRequest: dbEntry,
           resultHash: decodedNewContract.resultHash,
@@ -686,25 +805,50 @@ export async function updateInitialPurchaseTransaction(
       await prisma.purchaseRequest.update({
         where: { id: dbEntry.id },
         data: {
-          inputHash: decodedNewContract.inputHash,
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           NextAction: {
             create: {
-              inputHash: decodedNewContract.inputHash,
               requestedAction: PurchasingAction.WaitingForExternalAction,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: OnChainState.FundsLocked,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              },
           onChainState: OnChainState.FundsLocked,
           resultHash: decodedNewContract.resultHash,
         },
@@ -748,6 +892,9 @@ export async function updateInitialPaymentTransaction(
     ExtractOnChainTransactionDataOutput,
     { type: 'Initial' }
   >['valueOutputs'][number],
+  metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -884,12 +1031,9 @@ export async function updateInitialPaymentTransaction(
         newState = OnChainState.FundsOrDatumInvalid;
         errorNote.push(errorMessage);
       }
-      if (
-        decodedNewContract.state == SmartContractState.RefundRequested ||
-        decodedNewContract.state == SmartContractState.Disputed
-      ) {
+      if (decodedNewContract.state != SmartContractState.FundsLocked) {
         const errorMessage =
-          'Refund was requested. This likely is a spoofing attempt.';
+          'State is not funds locked. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           state: decodedNewContract.state,
@@ -898,7 +1042,7 @@ export async function updateInitialPaymentTransaction(
         newState = OnChainState.FundsOrDatumInvalid;
         errorNote.push(errorMessage);
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         const errorMessage =
           'Result hash was set. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
@@ -1008,6 +1152,8 @@ export async function updateInitialPaymentTransaction(
       await prisma.paymentRequest.update({
         where: { id: dbEntry.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
           NextAction: {
             create: {
@@ -1016,18 +1162,43 @@ export async function updateInitialPaymentTransaction(
                 errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
             },
           },
-          TransactionHistory:
-            dbEntry.currentTransactionId != null
-              ? {
-                  connect: { id: dbEntry.currentTransactionId },
-                }
-              : undefined,
-          CurrentTransaction: {
-            create: {
-              txHash: tx.tx.tx_hash,
-              status: TransactionStatus.Confirmed,
-            },
-          },
+          CurrentTransaction: dbEntry.currentTransactionId
+            ? {
+                update: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
+                  fees: metadata?.fees ? metadata.fees : null,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              }
+            : {
+                create: {
+                  txHash: tx.tx.tx_hash,
+                  status: TransactionStatus.Confirmed,
+                  confirmations: tx.block.confirmations,
+                  previousOnChainState: null,
+                  newOnChainState: newState,
+                  fees: metadata.fees,
+                  blockHeight: metadata.block_height,
+                  blockTime: metadata.block_time,
+                  outputAmount: JSON.stringify(metadata.output_amount),
+                  utxoCount: metadata.utxo_count,
+                  withdrawalCount: metadata.withdrawal_count,
+                  assetMintOrBurnCount: metadata.asset_mint_or_burn_count,
+                  redeemerCount: metadata.redeemer_count,
+                  validContract: metadata.valid_contract,
+                },
+              },
           onChainState: newState,
           resultHash: decodedNewContract.resultHash,
           BuyerWallet: {
@@ -1181,6 +1352,15 @@ export async function updateTransaction(
     extractedData.decodedOldContract.collateralReturnLovelace,
   );
 
+  const buyerCardanoFees = getCardanoFeesBuyer(
+    extractedData.redeemerVersion,
+    tx.metadata,
+  );
+  const sellerCardanoFees = getCardanoFeesSeller(
+    extractedData.redeemerVersion,
+    tx.metadata,
+  );
+
   const newState: OnChainState | null = redeemerToOnChainState(
     extractedData.redeemerVersion,
     extractedData.decodedNewContract,
@@ -1223,6 +1403,10 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
+        tx.metadata,
+        buyerCardanoFees,
+        sellerCardanoFees,
       );
     }
   } catch (error) {
@@ -1244,6 +1428,10 @@ export async function updateTransaction(
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
         sellerWithdrawn,
         buyerWithdrawn,
+        tx.block.confirmations,
+        tx.metadata,
+        buyerCardanoFees,
+        sellerCardanoFees,
       );
     }
   } catch (error) {

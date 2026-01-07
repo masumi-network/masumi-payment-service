@@ -1,9 +1,4 @@
-import {
-  HotWallet,
-  HotWalletType,
-  PaymentType,
-  RegistrationState,
-} from '@prisma/client';
+import { HotWallet, HotWalletType, RegistrationState } from '@prisma/client';
 import { prisma } from '../index.js';
 
 export async function lockAndQueryRegistryRequests({
@@ -15,7 +10,6 @@ export async function lockAndQueryRegistryRequests({
     async (prisma) => {
       const paymentSources = await prisma.paymentSource.findMany({
         where: {
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           deletedAt: null,
           disablePaymentAt: null,

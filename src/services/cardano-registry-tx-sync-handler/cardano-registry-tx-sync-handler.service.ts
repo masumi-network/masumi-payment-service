@@ -1,14 +1,10 @@
-import {
-  PaymentType,
-  RegistrationState,
-  TransactionStatus,
-} from '@prisma/client';
+import { RegistrationState, TransactionStatus } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { convertNetwork } from '@/utils/converter/network-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 const mutex = new Mutex();
 
@@ -34,10 +30,10 @@ export async function checkRegistryTransactions() {
     try {
       const results = await Promise.allSettled(
         paymentContracts.map(async (paymentContract) => {
-          const blockfrost = new BlockFrostAPI({
-            projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-            network: convertNetwork(paymentContract.network),
-          });
+          const blockfrost = getBlockfrostInstance(
+            paymentContract.network,
+            paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+          );
 
           const registryRequests = await getRegistrationRequestsToSync(
             paymentContract.id,
@@ -67,7 +63,10 @@ async function syncRegistryRequests(
   registryRequests: Array<{
     id: string;
     state: RegistrationState;
-    CurrentTransaction: { BlocksWallet: { id: string } | null } | null;
+    CurrentTransaction: {
+      BlocksWallet: { id: string } | null;
+      txHash: string | null;
+    } | null;
     agentIdentifier: string | null;
   }>,
   blockfrost: BlockFrostAPI,
@@ -81,6 +80,17 @@ async function syncRegistryRequests(
 
       if (registryRequest.state == RegistrationState.RegistrationInitiated) {
         if (owner.length >= 1 && owner[0].quantity == '1') {
+          if (
+            registryRequest.CurrentTransaction == undefined ||
+            registryRequest.CurrentTransaction.txHash == null
+          ) {
+            throw new Error('Registry request has no tx hash');
+          }
+          const tx = await blockfrost.txs(
+            registryRequest.CurrentTransaction.txHash,
+          );
+          const block = await blockfrost.blocks(tx.block);
+          const confirmations = block.confirmations;
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
             data: {
@@ -88,6 +98,16 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  fees: BigInt(tx.fees),
+                  blockHeight: tx.block_height,
+                  blockTime: tx.block_time,
+                  outputAmount: JSON.stringify(tx.output_amount),
+                  utxoCount: tx.utxo_count,
+                  withdrawalCount: tx.withdrawal_count,
+                  assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+                  redeemerCount: tx.redeemer_count,
+                  validContract: tx.valid_contract,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
@@ -119,6 +139,17 @@ async function syncRegistryRequests(
         registryRequest.state == RegistrationState.DeregistrationInitiated
       ) {
         if (owner.length == 0 || owner[0].quantity == '0') {
+          if (
+            registryRequest.CurrentTransaction == undefined ||
+            registryRequest.CurrentTransaction.txHash == null
+          ) {
+            throw new Error('Deregistration request has no tx hash');
+          }
+          const tx = await blockfrost.txs(
+            registryRequest.CurrentTransaction.txHash,
+          );
+          const block = await blockfrost.blocks(tx.block);
+          const confirmations = block.confirmations;
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
             data: {
@@ -126,6 +157,16 @@ async function syncRegistryRequests(
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.Confirmed,
+                  confirmations: confirmations,
+                  fees: BigInt(tx.fees),
+                  blockHeight: tx.block_height,
+                  blockTime: tx.block_time,
+                  outputAmount: JSON.stringify(tx.output_amount),
+                  utxoCount: tx.utxo_count,
+                  withdrawalCount: tx.withdrawal_count,
+                  assetMintOrBurnCount: tx.asset_mint_or_burn_count,
+                  redeemerCount: tx.redeemer_count,
+                  validContract: tx.valid_contract,
                   BlocksWallet:
                     registryRequest.CurrentTransaction?.BlocksWallet != null
                       ? { disconnect: true }
@@ -208,7 +249,6 @@ async function getRegistrationRequestsToSync(paymentContractId: string) {
 async function getPaymentSourcesForSync() {
   return await prisma.paymentSource.findMany({
     where: {
-      paymentType: PaymentType.Web3CardanoV1,
       deletedAt: null,
       disableSyncAt: null,
     },

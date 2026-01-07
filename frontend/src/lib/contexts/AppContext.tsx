@@ -1,131 +1,27 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   createContext,
   useContext,
-  useReducer,
   useState,
   useCallback,
   useEffect,
+  useRef,
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@hey-api/client-axios';
+import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
+import { PaymentSource, PaymentSourceExtended } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
-interface AppState {
-  paymentSources: {
-    id: string;
-    name: string;
-    paymentContractAddress: string;
-    smartContractAddress: string;
-    network: string;
-    paymentType: string;
-    CollectionWallet: {
-      walletAddress: string;
-      note?: string;
-    };
-    PurchasingWallets: {
-      walletMnemonic: string;
-      note?: string;
-    }[];
-    SellingWallets: {
-      id: string;
-      walletVkey: string;
-      walletMnemonic: string;
-      note?: string;
-    }[];
-  }[];
-  contracts: {
-    id: string;
-    paymentContractAddress: string;
-    network: string;
-    paymentType: string;
-    adminWallets: {
-      walletAddress: string;
-      note?: string;
-    }[];
-  }[];
-  wallets: {
-    id: string;
-    walletAddress: string;
-    note?: string;
-  }[];
-  apiKey: string | null;
-  network: NetworkType;
-  rpcProviderApiKeys: {
-    id: string;
-    rpcProviderApiKey: string;
-    rpcProvider: string;
-    createdAt: string;
-    updatedAt: string;
-    network: string;
-  }[];
-}
-
-type AppAction =
-  | { type: 'SET_PAYMENT_SOURCES'; payload: any[] }
-  | { type: 'SET_CONTRACTS'; payload: any[] }
-  | { type: 'SET_WALLETS'; payload: any[] }
-  | { type: 'SET_API_KEY'; payload: string }
-  | { type: 'SET_NETWORK'; payload: NetworkType }
-  | { type: 'SET_RPC_API_KEYS'; payload: any[] };
-
-const initialAppState: AppState = {
-  paymentSources: [],
-  contracts: [],
-  wallets: [],
-  rpcProviderApiKeys: [],
-  apiKey: null,
-  network:
-    (typeof window !== 'undefined' &&
-      (localStorage.getItem('network') as NetworkType)) ||
-    'Preprod',
-};
-
-function appReducer(state: AppState, action: AppAction): AppState {
-  switch (action.type) {
-    case 'SET_PAYMENT_SOURCES':
-      return {
-        ...state,
-        paymentSources: action.payload,
-      };
-    case 'SET_CONTRACTS':
-      return {
-        ...state,
-        contracts: action.payload,
-      };
-    case 'SET_WALLETS':
-      return {
-        ...state,
-        wallets: action.payload,
-      };
-    case 'SET_API_KEY':
-      return {
-        ...state,
-        apiKey: action.payload,
-      };
-    case 'SET_NETWORK':
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('network', action.payload);
-      }
-      return {
-        ...state,
-        network: action.payload,
-      };
-    case 'SET_RPC_API_KEYS':
-      return {
-        ...state,
-        rpcProviderApiKeys: action.payload,
-      };
-    default:
-      return state;
-  }
-}
-
 export const AppContext = createContext<
   | {
-      state: AppState;
-      dispatch: React.Dispatch<AppAction>;
+      selectedPaymentSource: PaymentSource | null;
+      apiKey: string | null;
+      updateApiKey: (apiKey: string | null) => void;
+      authorized: boolean;
+      setAuthorized: (authorized: boolean) => void;
+      network: NetworkType;
+      setNetwork: (network: NetworkType) => void;
       showError: (error: {
         code?: number;
         message: string;
@@ -135,18 +31,13 @@ export const AppContext = createContext<
       setApiClient: React.Dispatch<React.SetStateAction<Client>>;
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
+      isChangingNetwork: boolean;
     }
   | undefined
 >(undefined);
 
-export function AppProvider({
-  children,
-  initialState,
-}: {
-  children: React.ReactNode;
-  initialState: AppState;
-}) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+export function AppProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<{
     code?: number;
     message: string;
@@ -158,6 +49,24 @@ export function AppProvider({
     }),
   );
 
+  const [authorized, setAuthorized] = useState(false);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [network, setNetwork] = useState<NetworkType>('Preprod');
+
+  const { paymentSources } = usePaymentSourceExtendedAllWithParams({
+    apiClient,
+    apiKey,
+  });
+
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
+
   const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<
     string | null
   >(() => {
@@ -167,6 +76,12 @@ export function AppProvider({
     }
     return null;
   });
+
+  const [selectedPaymentSource, setSelectedPaymentSource] =
+    useState<PaymentSource | null>(null);
+
+  const [isChangingNetwork, setIsChangingNetwork] = useState(false);
+  const previousNetworkRef = useRef<NetworkType>(network);
 
   // Persist selectedPaymentSourceId to localStorage whenever it changes
   const setSelectedPaymentSourceIdAndPersist = (id: string | null) => {
@@ -181,10 +96,37 @@ export function AppProvider({
   };
 
   useEffect(() => {
-    if (state.paymentSources.length > 0) {
-      setSelectedPaymentSourceIdAndPersist(selectedPaymentSourceId);
+    if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
     }
-  }, [selectedPaymentSourceId, state.paymentSources]);
+    if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      const foundPaymentSource = currentNetworkPaymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+
+      if (foundPaymentSource) {
+        if (foundPaymentSource.network !== network) {
+          setSelectedPaymentSourceIdAndPersist(null);
+        } else {
+          setSelectedPaymentSource(foundPaymentSource);
+        }
+      } else {
+        setSelectedPaymentSourceIdAndPersist(null);
+        setSelectedPaymentSource(null);
+      }
+    }
+  }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
+
+  // Track network changes for transition effect
+  useEffect(() => {
+    if (previousNetworkRef.current !== network) {
+      setIsChangingNetwork(true);
+      setTimeout(() => {
+        setIsChangingNetwork(false);
+      }, 500);
+      previousNetworkRef.current = network;
+    }
+  }, [network]);
 
   const showError = useCallback(
     (error: { code?: number; message: string; details?: unknown }) => {
@@ -193,16 +135,65 @@ export function AppProvider({
     [],
   );
 
+  const signOut = useCallback(() => {
+    setApiKey(null);
+    setAuthorized(false);
+    setNetwork('Preprod');
+    setSelectedPaymentSourceId(null);
+    setSelectedPaymentSource(null);
+    setIsChangingNetwork(false);
+    setError(null);
+
+    // Clear all localStorage items
+    localStorage.removeItem('payment_api_key');
+    localStorage.removeItem('selectedPaymentSourceId');
+    localStorage.removeItem('userIgnoredSetup');
+    localStorage.removeItem('masumi_last_transactions_visit');
+    localStorage.removeItem('masumi_new_transactions_count');
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
-        state,
-        dispatch,
+        selectedPaymentSource,
+        apiKey,
+        updateApiKey: (newApiKey: string | null) => {
+          if (newApiKey === apiKey) {
+            return;
+          }
+          setApiKey(newApiKey);
+          if (newApiKey) {
+            setApiClient(
+              createClient({
+                headers: { token: newApiKey },
+                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+              }),
+            );
+            setAuthorized(true);
+          } else {
+            setAuthorized(false);
+            setApiClient(
+              createClient({
+                headers: { token: 'invalid-api' },
+                baseURL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL,
+              }),
+            );
+          }
+        },
+        setAuthorized,
+        authorized,
+        network,
+        setNetwork: (network: NetworkType) => {
+          setNetwork(network);
+          setSelectedPaymentSourceIdAndPersist(null);
+        },
         showError,
         apiClient,
         setApiClient,
         selectedPaymentSourceId,
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
+        signOut,
+        isChangingNetwork,
       }}
     >
       {children}
@@ -222,5 +213,3 @@ export function useAppContext() {
   }
   return context;
 }
-
-export { initialAppState };

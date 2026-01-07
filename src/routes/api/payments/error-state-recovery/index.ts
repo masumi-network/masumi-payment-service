@@ -29,15 +29,7 @@ export const paymentErrorStateRecoverySchemaInput = z.object({
 });
 
 export const paymentErrorStateRecoverySchemaOutput = z.object({
-  success: z.boolean(),
-  message: z.string(),
   id: z.string(),
-  currentTransactionId: z.string().nullable(),
-  nextAction: z.object({
-    requestedAction: z.literal(PaymentAction.WaitingForExternalAction),
-    errorType: z.null(),
-    errorNote: z.null(),
-  }),
 });
 
 export const paymentErrorStateRecoveryPost =
@@ -78,7 +70,7 @@ export const paymentErrorStateRecoveryPost =
           NextAction: true,
           CurrentTransaction: true,
           TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'desc', id: 'asc' },
           },
         },
       });
@@ -209,15 +201,7 @@ export const paymentErrorStateRecoveryPost =
       });
 
       return {
-        success: true,
-        message: 'Error state cleared successfully for payment request',
         id: paymentRequest.id,
-        currentTransactionId: lastSuccessfulTransaction?.id || null,
-        nextAction: {
-          requestedAction: PaymentAction.WaitingForExternalAction,
-          errorType: null,
-          errorNote: null,
-        },
       };
     },
   });

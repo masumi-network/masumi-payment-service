@@ -1,28 +1,27 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
+import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
-  getPaymentSourceExtended,
   deletePaymentSourceExtended,
   patchPaymentSourceExtended,
   GetPaymentSourceResponses,
+  PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
-import { Spinner } from '@/components/ui/spinner';
+import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Pagination } from '@/components/ui/pagination';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +32,9 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
+import { handleApiCall } from '@/lib/utils';
+import { useRouter } from 'next/router';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface UpdatePaymentSourceDialogProps {
   open: boolean;
@@ -56,40 +58,31 @@ function UpdatePaymentSourceDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      setIsLoading(true);
+    setIsLoading(true);
 
-      await patchPaymentSourceExtended({
-        client: apiClient,
-        body: {
-          id: paymentSourceId,
-          PaymentSourceConfig: {
-            rpcProviderApiKey: apiKey,
-            rpcProvider: 'Blockfrost',
-          },
+    const response = await patchPaymentSourceExtended({
+      client: apiClient,
+      body: {
+        id: paymentSourceId,
+        PaymentSourceConfig: {
+          rpcProviderApiKey: apiKey,
+          rpcProvider: 'Blockfrost',
         },
-      });
+      },
+    });
 
-      toast.success('Payment source updated successfully');
-      onSuccess();
-      onClose();
-    } catch (error: any) {
+    if (response.error) {
+      const error = response.error as { message: string };
       console.error('Error updating payment source:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
+      toast.error(error.message || 'Failed to update payment source');
       setIsLoading(false);
+      return;
     }
+
+    toast.success('Payment source updated successfully');
+    onSuccess();
+    onClose();
+    setIsLoading(false);
   };
 
   return (
@@ -148,11 +141,10 @@ type PaymentSource =
   };
 
 export default function PaymentSourcesPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [paymentSources, setPaymentSources] = useState<PaymentSource[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [sourceToDelete, setSourceToDelete] = useState<PaymentSource | null>(
     null,
   );
@@ -162,17 +154,29 @@ export default function PaymentSourcesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const {
     apiClient,
-    state,
     selectedPaymentSourceId,
+    network,
     setSelectedPaymentSourceId,
   } = useAppContext();
   const [filteredPaymentSources, setFilteredPaymentSources] = useState<
     PaymentSource[]
   >([]);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const {
+    paymentSources: ps,
+    isLoading,
+    refetch,
+  } = usePaymentSourceExtendedAll();
+
+  const [paymentSources, setPaymentSources] = useState<PaymentSourceExtended[]>(
+    [],
+  );
+  useEffect(() => {
+    setPaymentSources(ps.filter((ps) => ps.network === network));
+  }, [ps, network]);
+
   const [sourceToSelect, setSourceToSelect] = useState<
-    PaymentSource | null | undefined
+    PaymentSource | undefined
   >(undefined);
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
     useState<PaymentSource | null>(null);
@@ -187,68 +191,25 @@ export default function PaymentSourcesPage() {
           source.smartContractAddress?.toLowerCase().includes(query) || false;
         const matchNetwork =
           source.network?.toLowerCase().includes(query) || false;
-        const matchType =
-          source.paymentType?.toLowerCase().includes(query) || false;
-
-        return matchAddress || matchNetwork || matchType;
+        return matchAddress || matchNetwork;
       });
     }
 
     setFilteredPaymentSources(filtered);
   }, [paymentSources, searchQuery]);
 
-  const fetchPaymentSources = async (cursor?: string | null) => {
-    try {
-      if (!cursor) {
-        setIsLoading(true);
-        setPaymentSources([]);
-      } else {
-        setIsLoadingMore(true);
-      }
-
-      const response = await getPaymentSourceExtended({
-        client: apiClient,
-        query: {
-          take: 10,
-          cursorId: cursor || undefined,
-        },
-      });
-
-      if (response.data?.data?.ExtendedPaymentSources) {
-        const filteredSources =
-          response.data.data.ExtendedPaymentSources.filter(
-            (source) => source.network === state.network,
-          );
-
-        if (cursor) {
-          setPaymentSources((prev) => [...prev, ...filteredSources]);
-        } else {
-          setPaymentSources(filteredSources);
-        }
-
-        setHasMore(response.data.data.ExtendedPaymentSources.length === 10);
-      } else {
-        if (!cursor) {
-          setPaymentSources([]);
-        }
-        setHasMore(false);
-      }
-    } catch (error) {
-      console.error('Error fetching payment sources:', error);
-      toast.error('Failed to load payment sources');
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPaymentSources();
-  }, [state.network]);
-
   useEffect(() => {
     filterPaymentSources();
   }, [filterPaymentSources, searchQuery]);
+
+  // Handle action query parameter from search
+  useEffect(() => {
+    if (router.query.action === 'add_payment_source') {
+      setIsAddDialogOpen(true);
+      // Clean up the query parameter
+      router.replace('/payment-sources', undefined, { shallow: true });
+    }
+  }, [router.query.action, router]);
 
   const handleSelectSource = (id: string) => {
     setSelectedSources((prev) =>
@@ -269,47 +230,30 @@ export default function PaymentSourcesPage() {
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
-    try {
-      setIsDeleting(true);
-
-      const response = await deletePaymentSourceExtended({
-        client: apiClient,
-        body: {
-          id: sourceToDelete.id,
+    await handleApiCall(
+      () =>
+        deletePaymentSourceExtended({
+          client: apiClient,
+          body: {
+            id: sourceToDelete.id,
+          },
+        }),
+      {
+        onSuccess: async () => {
+          toast.success('Payment source deleted successfully');
+          refetch();
         },
-      });
-
-      if (!response.data?.data?.id) {
-        throw new Error('Failed to delete payment source');
-      }
-
-      toast.success('Payment source deleted successfully');
-      fetchPaymentSources();
-    } catch (error: any) {
-      console.error('Error deleting payment source:', error);
-      let message = 'An unexpected error occurred';
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const apiError = error as {
-          response?: { data?: { error?: { message?: string } } };
-        };
-        message = apiError.response?.data?.error?.message || message;
-      }
-
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
-      setSourceToDelete(null);
-    }
-  };
-
-  const handleLoadMore = () => {
-    if (!isLoadingMore && hasMore && paymentSources.length > 0) {
-      const lastSource = paymentSources[paymentSources.length - 1];
-      fetchPaymentSources(lastSource.id);
-    }
+        onError: (error: any) => {
+          console.error('Error deleting payment source:', error);
+          toast.error(error.message || 'Failed to delete payment source');
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+          setSourceToDelete(null);
+        },
+        errorMessage: 'Failed to delete payment source',
+      },
+    );
   };
 
   return (
@@ -332,7 +276,7 @@ export default function PaymentSourcesPage() {
             <p className="text-sm text-muted-foreground">
               Manage your payment sources.{' '}
               <Link
-                href="https://docs.masumi.network/technical-documentation/payment-service-api/payment-source"
+                href="https://docs.masumi.network/api-reference/payment-service/get-payment-source"
                 target="_blank"
                 className="text-primary hover:underline"
               >
@@ -340,13 +284,21 @@ export default function PaymentSourcesPage() {
               </Link>
             </p>
           </div>
-          <Button
-            className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Add payment source
-          </Button>
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onRefresh={() => {
+                void refetch();
+              }}
+              isRefreshing={isLoading}
+            />
+            <Button
+              className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
+              onClick={() => setIsAddDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add payment source
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-6">
@@ -381,9 +333,6 @@ export default function PaymentSourcesPage() {
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Payment type
-                  </th>
                   <th className="p-4 text-left text-sm font-medium truncate">
                     Fee rate
                   </th>
@@ -391,39 +340,15 @@ export default function PaymentSourcesPage() {
                     Created at
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                  <th className="w-20 p-4">
-                    {' '}
-                    {selectedPaymentSourceId === null ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled
-                        className="text-green-600 border-green-600"
-                      >
-                        All Shown
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSourceToSelect(null)}
-                      >
-                        Show all
-                      </Button>
-                    )}
-                  </th>
+                  <th className="w-20 p-4"></th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
-                  <tr>
-                    <td colSpan={9}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
+                  <PaymentSourceTableSkeleton rows={5} />
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       No payment sources found
                     </td>
                   </tr>
@@ -454,9 +379,6 @@ export default function PaymentSourcesPage() {
                       </td>
                       <td className="p-4">
                         <div className="text-sm">{source.network}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">{source.paymentType}</div>
                       </td>
                       <td className="p-4">
                         <div className="text-sm">
@@ -496,6 +418,7 @@ export default function PaymentSourcesPage() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
+
                           {selectedPaymentSourceId === source.id ? (
                             <Button
                               variant="outline"
@@ -522,28 +445,22 @@ export default function PaymentSourcesPage() {
               </tbody>
             </table>
           </div>
-
-          <div className="flex flex-col gap-4 items-center">
-            {!isLoading && (
-              <Pagination
-                hasMore={hasMore}
-                isLoading={isLoadingMore}
-                onLoadMore={handleLoadMore}
-              />
-            )}
-          </div>
         </div>
 
         <AddPaymentSourceDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
-          onSuccess={fetchPaymentSources}
+          onSuccess={() => {
+            refetch();
+          }}
         />
 
         <UpdatePaymentSourceDialog
           open={!!sourceToUpdate}
           onClose={() => setSourceToUpdate(null)}
-          onSuccess={fetchPaymentSources}
+          onSuccess={() => {
+            refetch();
+          }}
           paymentSourceId={sourceToUpdate?.id || ''}
           currentApiKey={
             sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''
@@ -557,6 +474,9 @@ export default function PaymentSourcesPage() {
           description={`Are you sure you want to delete this payment source? This will also delete all associated wallets and transactions. This action cannot be undone.`}
           onConfirm={handleDeleteSource}
           isLoading={isDeleting}
+          requireConfirmation={true}
+          confirmationText="DELETE"
+          confirmationLabel="Type 'DELETE' to confirm deletion"
         />
 
         <ConfirmDialog
@@ -565,7 +485,9 @@ export default function PaymentSourcesPage() {
           title="Switch Payment Source"
           description="Switching payment source will update the displayed agents, wallets, and related content. Continue?"
           onConfirm={() => {
-            setSelectedPaymentSourceId(sourceToSelect?.id ?? null);
+            if (sourceToSelect?.id) {
+              setSelectedPaymentSourceId(sourceToSelect.id);
+            }
             setSourceToSelect(undefined);
           }}
           isLoading={false}

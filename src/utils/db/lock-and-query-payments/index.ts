@@ -1,9 +1,4 @@
-import {
-  HotWallet,
-  OnChainState,
-  PaymentAction,
-  PaymentType,
-} from '@prisma/client';
+import { HotWallet, OnChainState, PaymentAction } from '@prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({
@@ -17,7 +12,7 @@ export async function lockAndQueryPayments({
   paymentStatus: PaymentAction | { in: PaymentAction[] };
   submitResultTime?: { lte: number } | undefined | { gte: number };
   onChainState?: OnChainState | { in: OnChainState[] } | undefined;
-  resultHash?: string | { not: string } | undefined;
+  resultHash?: string | { not: string | null } | undefined;
   requestedResultHash?: string | { not: null } | undefined;
   unlockTime?: { lte: number } | undefined | { gte: number };
 }) {
@@ -26,7 +21,6 @@ export async function lockAndQueryPayments({
       const minCooldownTime = Date.now() - 1000 * 60 * 3;
       const paymentSources = await prisma.paymentSource.findMany({
         where: {
-          paymentType: PaymentType.Web3CardanoV1,
           syncInProgress: false,
           deletedAt: null,
           disablePaymentAt: null,

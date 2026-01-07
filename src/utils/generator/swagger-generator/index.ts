@@ -1,5 +1,4 @@
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   OpenAPIRegistry,
   OpenApiGeneratorV3,
@@ -8,6 +7,7 @@ import { healthResponseSchema } from '@/routes/api/health';
 import {
   addAPIKeySchemaInput,
   addAPIKeySchemaOutput,
+  apiKeyOutputSchema,
   deleteAPIKeySchemaInput,
   deleteAPIKeySchemaOutput,
   getAPIKeySchemaInput,
@@ -21,6 +21,7 @@ import {
   queryPaymentsSchemaInput,
   queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
+import { queryPaymentDiffSchemaInput } from '@/routes/api/payments/diff';
 import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
@@ -35,6 +36,7 @@ import {
   deleteAgentRegistrationSchemaInput,
   deleteAgentRegistrationSchemaOutput,
 } from '@/routes/api/registry';
+import { queryRegistryDiffSchemaInput } from '@/routes/api/registry/diff';
 import {
   unregisterAgentSchemaInput,
   unregisterAgentSchemaOutput,
@@ -59,13 +61,13 @@ import {
 } from '@/routes/api/payment-source';
 import {
   Network,
-  PaymentType,
   PurchasingAction,
   PaymentAction,
   Permission,
   ApiKeyStatus,
   RPCProvider,
   PricingType,
+  RegistrationState,
 } from '@prisma/client';
 import {
   authorizePaymentRefundSchemaInput,
@@ -75,6 +77,233 @@ import {
   submitPaymentResultSchemaInput,
   submitPaymentResultSchemaOutput,
 } from '@/routes/api/payments/submit-result';
+
+const paymentSchemaOutputExample = {
+  id: 'cuid_v2_auto_generated',
+  blockchainIdentifier: 'blockchain_identifier',
+  agentIdentifier: 'agent_identifier',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  submitResultTime: '0',
+  unlockTime: '0',
+  externalDisputeUnlockTime: '0',
+  lastCheckedAt: null,
+  cooldownTime: 0,
+  payByTime: null,
+  cooldownTimeOtherParty: 0,
+  collateralReturnLovelace: null,
+  requestedById: 'requester_id',
+  resultHash: 'result_hash',
+  onChainState: null,
+  inputHash: 'input_hash',
+  NextAction: {
+    requestedAction: PaymentAction.AuthorizeRefundRequested,
+    errorType: null,
+    errorNote: null,
+    resultHash: null,
+  },
+  CurrentTransaction: null,
+  RequestedFunds: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  PaymentSource: {
+    id: 'payment_source_id',
+    network: Network.Preprod,
+    smartContractAddress: 'address',
+    policyId: 'policy_id',
+  },
+  WithdrawnForSeller: [],
+  WithdrawnForBuyer: [],
+  BuyerWallet: null,
+  SmartContractWallet: null,
+  metadata: null,
+  totalBuyerCardanoFees: 0,
+  totalSellerCardanoFees: 0,
+  nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
+  nextActionLastChangedAt: new Date(1713636260),
+  onChainStateOrResultLastChangedAt: new Date(1713636260),
+} satisfies z.infer<typeof createPaymentSchemaOutput>;
+
+const paymentSourceExtendedExample = {
+  id: 'cuid_v2_auto_generated',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  network: Network.Mainnet,
+  policyId: 'policy_id',
+  smartContractAddress: 'address_of_the_smart_contract',
+  PaymentSourceConfig: {
+    rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
+    rpcProvider: RPCProvider.Blockfrost,
+  },
+  lastIdentifierChecked: 'identifier',
+  syncInProgress: true,
+  lastCheckedAt: new Date(1713636260),
+  AdminWallets: [
+    { walletAddress: 'wallet_address', order: 0 },
+    { walletAddress: 'wallet_address', order: 1 },
+    { walletAddress: 'wallet_address', order: 2 },
+  ],
+  PurchasingWallets: [
+    {
+      collectionAddress: null,
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+    {
+      collectionAddress: 'send_refunds_to_this_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+  ],
+  SellingWallets: [
+    {
+      collectionAddress: 'null_will_use_the_selling_wallet_as_revenue_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+    {
+      collectionAddress: 'send_revenue_to_this_address',
+      note: 'note',
+      walletVkey: 'wallet_vkey',
+      walletAddress: 'wallet_address',
+      id: 'unique_cuid_v2_auto_generated',
+    },
+  ],
+  FeeReceiverNetworkWallet: {
+    walletAddress: 'wallet_address',
+  },
+  feeRatePermille: 50,
+} satisfies z.infer<typeof paymentSourceExtendedCreateSchemaOutput>;
+
+const apiKeyExample = {
+  id: 'api_key_id',
+  token: 'masumi_payment_api_key_secret',
+  permission: Permission.Admin,
+  usageLimited: true,
+  networkLimit: [Network.Preprod],
+  RemainingUsageCredits: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  status: ApiKeyStatus.Active,
+} satisfies z.infer<typeof apiKeyOutputSchema>;
+
+const walletExample = {
+  walletVkey: 'wallet_vkey',
+  note: 'note',
+  PendingTransaction: null,
+  walletAddress: 'wallet_address',
+  collectionAddress: 'collection_address',
+  Secret: undefined,
+} satisfies z.infer<typeof getWalletSchemaOutput>;
+
+const registryEntryExample = {
+  error: null,
+  id: 'registry_id',
+  name: 'Agent Name',
+  description: 'Agent Description',
+  apiBaseUrl: 'https://api.example.com',
+  Capability: { name: 'Capability Name', version: '1.0.0' },
+  Author: {
+    name: 'Author Name',
+    contactEmail: 'author@example.com',
+    contactOther: 'contact-other',
+    organization: 'Author Org',
+  },
+  Legal: {
+    privacyPolicy: 'https://example.com/privacy',
+    terms: 'https://example.com/terms',
+    other: 'https://example.com/other',
+  },
+  state: RegistrationState.RegistrationRequested,
+  Tags: ['tag1', 'tag2'],
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  lastCheckedAt: null,
+  ExampleOutputs: [
+    {
+      name: 'example_output_name',
+      url: 'https://example.com/example_output',
+      mimeType: 'application/json',
+    },
+  ],
+  agentIdentifier:
+    'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+  AgentPricing: {
+    pricingType: PricingType.Fixed,
+    Pricing: [
+      {
+        unit: '', // Empty string = ADA/lovelace
+        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+      },
+    ],
+  },
+  SmartContractWallet: {
+    walletVkey: 'wallet_vkey',
+    walletAddress: 'wallet_address',
+  },
+  CurrentTransaction: null,
+} satisfies z.infer<typeof registerAgentSchemaOutput>;
+
+const purchaseResponseSchemaExample = {
+  id: 'cuid_v2_auto_generated',
+  blockchainIdentifier: 'blockchain_identifier',
+  agentIdentifier: 'agent_identifier',
+  createdAt: new Date(1713636260),
+  updatedAt: new Date(1713636260),
+  lastCheckedAt: null,
+  payByTime: null,
+  submitResultTime: '0',
+  unlockTime: '0',
+  externalDisputeUnlockTime: '0',
+  requestedById: 'requester_id',
+  onChainState: null,
+  collateralReturnLovelace: null,
+  cooldownTime: 0,
+  cooldownTimeOtherParty: 0,
+  inputHash: 'input_hash',
+  resultHash: null,
+  NextAction: {
+    requestedAction: PurchasingAction.FundsLockingRequested,
+    errorType: null,
+    errorNote: null,
+  },
+  CurrentTransaction: null,
+  TransactionHistory: [],
+  PaidFunds: [
+    {
+      unit: '', // Empty string = ADA/lovelace
+      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+    },
+  ],
+  PaymentSource: {
+    id: 'payment_source_id',
+    policyId: 'policy_id',
+    network: Network.Preprod,
+    smartContractAddress: 'address',
+  },
+  SellerWallet: null,
+  SmartContractWallet: null,
+  metadata: null,
+  WithdrawnForSeller: [],
+  WithdrawnForBuyer: [],
+  totalBuyerCardanoFees: 0,
+  totalSellerCardanoFees: 0,
+  nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
+  nextActionLastChangedAt: new Date(1713636260),
+  onChainStateOrResultLastChangedAt: new Date(1713636260),
+} satisfies z.infer<typeof createPurchaseInitSchemaOutput>;
 import {
   requestPurchaseRefundSchemaInput,
   requestPurchaseRefundSchemaOutput,
@@ -117,8 +346,6 @@ import {
   purchaseErrorStateRecoverySchemaInput,
   purchaseErrorStateRecoverySchemaOutput,
 } from '@/routes/api/purchases/error-state-recovery';
-
-extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -166,14 +393,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    status: ApiKeyStatus.Active,
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    networkLimit: [Network.Preprod],
-                    usageLimited: true,
-                    RemainingUsageCredits: [{ unit: '', amount: '10000000' }],
-                  },
+                  data: apiKeyExample,
                 },
               }),
           },
@@ -209,17 +429,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    walletVkey: 'wallet_vkey',
-                    note: 'note',
-                    PendingTransaction: null,
-                    walletAddress: 'wallet_address',
-                    Secret: {
-                      createdAt: new Date(1713636260),
-                      updatedAt: new Date(1713636260),
-                      mnemonic: 'decoded_secret',
-                    },
-                  },
+                  data: walletExample,
                 },
               }),
           },
@@ -296,14 +506,7 @@ export function generateOpenAPI() {
         content: {
           'application/json': {
             schema: patchWalletSchemaOutput.openapi({
-              example: {
-                id: 'unique_cuid_v2_of_entry_to_update',
-                collectionAddress: 'collection_address',
-                type: 'Selling',
-                walletVkey: 'wallet_vkey',
-                walletAddress: 'wallet_address',
-                note: 'note',
-              },
+              example: walletExample,
             }),
           },
         },
@@ -380,19 +583,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   data: {
-                    ApiKeys: [
-                      {
-                        id: 'unique_cuid_v2_of_entry',
-                        token: 'masumi_payment_api_key_secret',
-                        permission: Permission.Admin,
-                        usageLimited: true,
-                        RemainingUsageCredits: [
-                          { unit: '', amount: '10000000' },
-                        ],
-                        status: ApiKeyStatus.Active,
-                        networkLimit: [Network.Mainnet],
-                      },
-                    ],
+                    ApiKeys: [apiKeyExample],
                   },
                   status: 'success',
                 },
@@ -426,7 +617,12 @@ export function generateOpenAPI() {
             schema: addAPIKeySchemaInput.openapi({
               example: {
                 usageLimited: 'true',
-                UsageCredits: [{ unit: '', amount: '10000000' }],
+                UsageCredits: [
+                  {
+                    unit: '', // Empty string = ADA/lovelace
+                    amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                  },
+                ],
                 permission: Permission.Admin,
               },
             }),
@@ -445,14 +641,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    usageLimited: true,
-                    networkLimit: [Network.Preprod],
-                    status: ApiKeyStatus.Active,
-                  },
+                  data: apiKeyExample,
                 },
               }),
           },
@@ -486,8 +675,14 @@ export function generateOpenAPI() {
                 id: 'unique_cuid_v2_of_entry_to_update',
                 token: 'api_key_to_change_to',
                 UsageCreditsToAddOrRemove: [
-                  { unit: '', amount: '10000000' },
-                  { unit: 'usdm_policy_and_asset_id', amount: '-10000000' },
+                  {
+                    unit: '', // Empty string = ADA/lovelace
+                    amount: '10000000', // ADD 10 ADA (positive amount adds credits: 10 * 1,000,000 lovelace)
+                  },
+                  {
+                    unit: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d', // USDM token (policyId + assetName concatenated in hex)
+                    amount: '-25000000', // REMOVE 25 USDM (negative amount removes credits: -25 * 1,000,000)
+                  },
                 ],
                 status: ApiKeyStatus.Active,
               },
@@ -508,12 +703,8 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_payment_api_key_secret',
-                    permission: Permission.Admin,
-                    usageLimited: true,
+                    ...apiKeyExample,
                     networkLimit: [Network.Preprod, Network.Mainnet],
-                    status: ApiKeyStatus.Active,
                   },
                 },
               }),
@@ -564,13 +755,8 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    id: 'unique_cuid_v2_of_entry_to_delete',
-                    token: 'masumi_registry_api_key_secret',
+                    ...apiKeyExample,
                     status: ApiKeyStatus.Revoked,
-                    permission: Permission.Admin,
-                    usageLimited: true,
-                    networkLimit: [Network.Preprod, Network.Mainnet],
-                    deletedAt: new Date(1713636260),
                   },
                 },
               }),
@@ -619,51 +805,161 @@ export function generateOpenAPI() {
                   status: 'success',
                   data: {
                     Payments: [
-                      {
-                        id: 'cuid_v2_auto_generated',
-                        blockchainIdentifier: 'blockchain_identifier',
-                        createdAt: new Date(1713636260),
-                        updatedAt: new Date(1713636260),
-                        submitResultTime: '0',
-                        unlockTime: '0',
-                        externalDisputeUnlockTime: '0',
-                        lastCheckedAt: null,
-                        cooldownTime: 0,
-                        payByTime: null,
-                        cooldownTimeOtherParty: 0,
-                        collateralReturnLovelace: null,
-                        requestedById: 'requester_id',
-                        resultHash: 'result_hash',
-                        onChainState: null,
-                        inputHash: 'input_hash',
-                        NextAction: {
-                          requestedAction:
-                            PaymentAction.AuthorizeRefundRequested,
-                          errorType: null,
-                          errorNote: null,
-                          resultHash: null,
-                        },
-                        CurrentTransaction: null,
-                        TransactionHistory: [],
-                        RequestedFunds: [
-                          {
-                            amount: '10000000',
-                            unit: '',
-                          },
-                        ],
-                        PaymentSource: {
-                          id: 'payment_source_id',
-                          network: Network.Preprod,
-                          smartContractAddress: 'address',
-                          policyId: 'policy_id',
-                          paymentType: PaymentType.Web3CardanoV1,
-                        },
-                        WithdrawnForSeller: [],
-                        WithdrawnForBuyer: [],
-                        BuyerWallet: null,
-                        SmartContractWallet: null,
-                        metadata: null,
-                      },
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff',
+    description:
+      'Returns payments that changed since the provided timestamp (combined next-action + on-chain-state/result).',
+    summary:
+      'Diff payments by combined status timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff/next-action',
+    description: 'Returns payments whose next action changed since lastUpdate.',
+    summary: 'Diff payments by next-action timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff/onchain-state-or-result',
+    description:
+      'Returns payments whose on-chain state or result hash changed since lastUpdate.',
+    summary:
+      'Diff payments by on-chain-state/result timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
                     ],
                   },
                 },
@@ -704,7 +1000,6 @@ export function generateOpenAPI() {
                 payByTime: new Date(1713626260).toISOString(),
                 metadata:
                   '(private) metadata to be stored with the payment request',
-                paymentType: PaymentType.Web3CardanoV1,
                 submitResultTime: new Date(1713636260).toISOString(),
                 identifierFromPurchaser: 'aabbaabb11221122aabb',
               },
@@ -724,45 +1019,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    inputHash: 'input_hash',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    payByTime: '0',
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    requestedById: 'requester_id',
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -819,45 +1076,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    requestedById: 'requester_id',
-                    payByTime: null,
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      network: Network.Preprod,
-                      policyId: 'policy_id',
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -911,45 +1130,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    blockchainIdentifier: 'blockchain_identifier',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    lastCheckedAt: null,
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: 'result_hash',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PaymentAction.AuthorizeRefundRequested,
-                      errorType: null,
-                      errorNote: null,
-                      resultHash: null,
-                    },
-                    RequestedFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      network: Network.Preprod,
-                      policyId: 'policy_id',
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    BuyerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: paymentSchemaOutputExample,
                 },
               }),
           },
@@ -984,6 +1165,7 @@ export function generateOpenAPI() {
             schema: paymentErrorStateRecoverySchemaInput.openapi({
               example: {
                 blockchainIdentifier: 'blockchain_identifier',
+                updatedAt: new Date(1713636260).toISOString(),
                 network: Network.Preprod,
               },
             }),
@@ -1005,16 +1187,7 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    success: true,
-                    message:
-                      'Error state cleared successfully for payment request',
                     id: 'cmf40vg7h0016ucj1u1ro6651',
-                    currentTransactionId: 'cmf41enan001qucj18mm1ipnj',
-                    nextAction: {
-                      requestedAction: PaymentAction.WaitingForExternalAction,
-                      errorType: null,
-                      errorNote: null,
-                    },
                   },
                 },
               }),
@@ -1082,6 +1255,7 @@ export function generateOpenAPI() {
               example: {
                 blockchainIdentifier: 'blockchain_identifier',
                 network: Network.Preprod,
+                updatedAt: new Date(1713636260).toISOString(),
               },
             }),
           },
@@ -1102,17 +1276,7 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    success: true,
-                    message:
-                      'Error state cleared successfully for purchase request',
                     id: 'cmf40vg7h0016ucj1u1ro6651',
-                    currentTransactionId: 'cmf41enan001qucj18mm1ipnj',
-                    nextAction: {
-                      requestedAction:
-                        PurchasingAction.WaitingForExternalAction,
-                      errorType: null,
-                      errorNote: null,
-                    },
                   },
                 },
               }),
@@ -1163,6 +1327,43 @@ export function generateOpenAPI() {
   });
 
   /********************* PURCHASE *****************************/
+  const queryPurchaseDiffSchemaInputForDocs = z.object({
+    limit: z
+      .number({ coerce: true })
+      .min(1)
+      .max(100)
+      .default(10)
+      .describe('The number of purchases to return'),
+    cursorId: z
+      .string()
+      .optional()
+      .describe(
+        'Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp',
+      ),
+    lastUpdate: z
+      .string()
+      .optional()
+      .default(new Date(0).toISOString())
+      .describe(
+        'Return purchases whose selected status timestamp changed at/after this ISO timestamp',
+      ),
+    network: z
+      .nativeEnum(Network)
+      .describe('The network the purchases were made on'),
+    filterSmartContractAddress: z
+      .string()
+      .optional()
+      .nullable()
+      .describe('The smart contract address of the payment source'),
+    includeHistory: z
+      .string()
+      .optional()
+      .default('false')
+      .describe(
+        'Whether to include the full transaction and status history of the purchases',
+      ),
+  });
+
   registry.registerPath({
     method: 'get',
     path: '/purchase/',
@@ -1199,6 +1400,7 @@ export function generateOpenAPI() {
                       {
                         id: 'cuid_v2_auto_generated',
                         blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
                         lastCheckedAt: null,
                         onChainState: null,
                         metadata: null,
@@ -1214,7 +1416,6 @@ export function generateOpenAPI() {
                             PurchasingAction.FundsLockingRequested,
                           errorType: null,
                           errorNote: null,
-                          inputHash: 'input_hash',
                         },
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
@@ -1227,7 +1428,6 @@ export function generateOpenAPI() {
                           network: Network.Preprod,
                           policyId: 'policy_id',
                           smartContractAddress: 'address',
-                          paymentType: PaymentType.Web3CardanoV1,
                         },
                         SellerWallet: null,
                         SmartContractWallet: null,
@@ -1235,11 +1435,205 @@ export function generateOpenAPI() {
                         TransactionHistory: [],
                         WithdrawnForSeller: [],
                         WithdrawnForBuyer: [],
+                        totalBuyerCardanoFees: 0,
+                        totalSellerCardanoFees: 0,
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                          1713636260,
+                        ),
+                        nextActionLastChangedAt: new Date(1713636260),
+                        onChainStateOrResultLastChangedAt: new Date(1713636260),
                       },
                     ],
                   },
                 },
               }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff',
+    description:
+      'Returns purchases that changed since the provided timestamp (combined next-action + on-chain-state/result).',
+    summary:
+      'Diff purchases by combined status timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: queryPurchaseRequestSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Purchases: [
+                      {
+                        id: 'cuid_v2_auto_generated',
+                        blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
+                        lastCheckedAt: null,
+                        onChainState: null,
+                        metadata: null,
+                        requestedById: 'requester_id',
+                        resultHash: '',
+                        cooldownTime: 0,
+                        payByTime: null,
+                        cooldownTimeOtherParty: 0,
+                        collateralReturnLovelace: null,
+                        inputHash: 'input_hash',
+                        NextAction: {
+                          requestedAction:
+                            PurchasingAction.FundsLockingRequested,
+                          errorType: null,
+                          errorNote: null,
+                        },
+                        createdAt: new Date(1713636260),
+                        updatedAt: new Date(1713636260),
+                        externalDisputeUnlockTime: (1713636260).toString(),
+                        submitResultTime: new Date(1713636260).toISOString(),
+                        unlockTime: (1713636260).toString(),
+                        PaidFunds: [],
+                        PaymentSource: {
+                          id: 'payment_source_id',
+                          network: Network.Preprod,
+                          policyId: 'policy_id',
+                          smartContractAddress: 'address',
+                        },
+                        SellerWallet: null,
+                        SmartContractWallet: null,
+                        CurrentTransaction: null,
+                        TransactionHistory: [],
+                        WithdrawnForSeller: [],
+                        WithdrawnForBuyer: [],
+                        totalBuyerCardanoFees: 0,
+                        totalSellerCardanoFees: 0,
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                          1713636260,
+                        ),
+                        nextActionLastChangedAt: new Date(1713636260),
+                        onChainStateOrResultLastChangedAt: new Date(1713636260),
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff/next-action',
+    description:
+      'Returns purchases whose next action changed since lastUpdate.',
+    summary: 'Diff purchases by next-action timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryPurchaseRequestSchemaOutput,
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff/onchain-state-or-result',
+    description:
+      'Returns purchases whose on-chain state or result hash changed since lastUpdate.',
+    summary:
+      'Diff purchases by on-chain-state/result timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryPurchaseRequestSchemaOutput,
+            }),
           },
         },
       },
@@ -1272,7 +1666,6 @@ export function generateOpenAPI() {
                 identifierFromPurchaser: 'aabbaabb11221122aabb',
                 network: Network.Preprod,
                 sellerVkey: 'seller_vkey',
-                paymentType: PaymentType.Web3CardanoV1,
                 blockchainIdentifier: 'blockchain_identifier',
                 payByTime: (1713626260).toString(),
                 submitResultTime: (1713636260).toString(),
@@ -1301,45 +1694,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    inputHash: 'input_hash',
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    PaidFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1365,45 +1720,7 @@ export function generateOpenAPI() {
               status: 'error',
               error: { message: 'Purchase request already exists' },
               id: 'cuid_v2_auto_generated',
-              object: {
-                id: 'cuid_v2_auto_generated',
-                createdAt: new Date(1713636260),
-                updatedAt: new Date(1713636260),
-                blockchainIdentifier: 'blockchain_identifier',
-                lastCheckedAt: null,
-                submitResultTime: '0',
-                unlockTime: '0',
-                externalDisputeUnlockTime: '0',
-                payByTime: null,
-                requestedById: 'requester_id',
-                resultHash: '',
-                onChainState: null,
-                inputHash: 'input_hash',
-                NextAction: {
-                  requestedAction: PurchasingAction.FundsLockingRequested,
-                  errorType: null,
-                  errorNote: null,
-                },
-                CurrentTransaction: null,
-                PaidFunds: [
-                  {
-                    amount: '10000000',
-                    unit: '',
-                  },
-                ],
-                PaymentSource: {
-                  id: 'payment_source_id',
-                  policyId: 'policy_id',
-                  network: Network.Preprod,
-                  smartContractAddress: 'address',
-                  paymentType: PaymentType.Web3CardanoV1,
-                },
-                SellerWallet: null,
-                SmartContractWallet: null,
-                metadata: null,
-                WithdrawnForSeller: [],
-                WithdrawnForBuyer: [],
-              },
+              object: purchaseResponseSchemaExample,
             },
           },
         },
@@ -1451,44 +1768,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    PaidFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1542,44 +1822,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    blockchainIdentifier: 'blockchain_identifier',
-                    lastCheckedAt: null,
-                    submitResultTime: '0',
-                    unlockTime: '0',
-                    externalDisputeUnlockTime: '0',
-                    payByTime: null,
-                    requestedById: 'requester_id',
-                    resultHash: '',
-                    onChainState: null,
-                    NextAction: {
-                      requestedAction: PurchasingAction.FundsLockingRequested,
-                      errorType: null,
-                      errorNote: null,
-                    },
-                    CurrentTransaction: null,
-                    PaidFunds: [
-                      {
-                        amount: '10000000',
-                        unit: '',
-                      },
-                    ],
-                    PaymentSource: {
-                      id: 'payment_source_id',
-                      policyId: 'policy_id',
-                      network: Network.Preprod,
-                      smartContractAddress: 'address',
-                      paymentType: PaymentType.Web3CardanoV1,
-                    },
-                    SellerWallet: null,
-                    SmartContractWallet: null,
-                    metadata: null,
-                    WithdrawnForSeller: [],
-                    WithdrawnForBuyer: [],
-                  },
+                  data: purchaseResponseSchemaExample,
                 },
               }),
           },
@@ -1639,6 +1882,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1661,8 +1905,8 @@ export function generateOpenAPI() {
                     TransactionHistory: [],
                     RequestedFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1670,13 +1914,19 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       smartContractAddress: 'address',
                       policyId: 'policy_id',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     BuyerWallet: null,
                     SmartContractWallet: null,
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerCardanoFees: 0,
+                    totalSellerCardanoFees: 0,
+                    nextActionLastChangedAt: new Date(1713636260),
+                    onChainStateOrResultLastChangedAt: new Date(1713636260),
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                      1713636260,
+                    ),
                   },
                 },
               }),
@@ -1740,6 +1990,7 @@ export function generateOpenAPI() {
                     createdAt: new Date(1713636260),
                     updatedAt: new Date(1713636260),
                     blockchainIdentifier: 'blockchain_identifier',
+                    agentIdentifier: 'agent_identifier',
                     lastCheckedAt: null,
                     payByTime: null,
                     submitResultTime: '0',
@@ -1753,7 +2004,6 @@ export function generateOpenAPI() {
                     inputHash: 'input_hash',
                     resultHash: '',
                     NextAction: {
-                      inputHash: 'input_hash',
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: null,
                       errorNote: null,
@@ -1762,8 +2012,8 @@ export function generateOpenAPI() {
                     TransactionHistory: [],
                     PaidFunds: [
                       {
-                        amount: '10000000',
-                        unit: '',
+                        unit: '', // Empty string = ADA/lovelace
+                        amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                       },
                     ],
                     PaymentSource: {
@@ -1771,13 +2021,19 @@ export function generateOpenAPI() {
                       network: Network.Preprod,
                       smartContractAddress: 'address',
                       policyId: 'policy_id',
-                      paymentType: PaymentType.Web3CardanoV1,
                     },
                     SellerWallet: null,
                     SmartContractWallet: null,
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerCardanoFees: 0,
+                    totalSellerCardanoFees: 0,
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                      1713636260,
+                    ),
+                    nextActionLastChangedAt: new Date(1713636260),
+                    onChainStateOrResultLastChangedAt: new Date(1713636260),
                   },
                 },
               }),
@@ -1810,7 +2066,7 @@ export function generateOpenAPI() {
     tags: ['registry'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: queryAgentFromWalletSchemaInput.openapi({
+      query: queryAgentFromWalletSchemaInput.openapi('test', {
         example: {
           walletVKey: 'wallet_vkey',
           network: Network.Preprod,
@@ -1862,8 +2118,8 @@ export function generateOpenAPI() {
                             pricingType: PricingType.Fixed,
                             Pricing: [
                               {
-                                amount: '1000000',
-                                unit: 'unit',
+                                unit: '', // Empty string = ADA/lovelace
+                                amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                               },
                             ],
                           },
@@ -1943,8 +2199,8 @@ export function generateOpenAPI() {
                           pricingType: PricingType.Fixed,
                           Pricing: [
                             {
-                              unit: 'unit',
-                              amount: '1000000',
+                              unit: '', // Empty string = ADA/lovelace
+                              amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                             },
                           ],
                         },
@@ -1960,6 +2216,49 @@ export function generateOpenAPI() {
               }),
           },
         },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/registry/diff',
+    description:
+      'Returns registry entries that changed since the provided timestamp (registrationStateLastChangedAt).',
+    summary:
+      'Diff registry entries by state-change timestamp (READ access required)',
+    tags: ['registry'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: queryRegistryDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cursor_id',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Agent metadata diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryRegistryRequestSchemaOutput,
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
       },
     },
   });
@@ -2007,8 +2306,8 @@ export function generateOpenAPI() {
                   pricingType: PricingType.Fixed,
                   Pricing: [
                     {
-                      unit: '',
-                      amount: '10000000',
+                      unit: '', // Empty string = ADA/lovelace
+                      amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                     },
                   ],
                 },
@@ -2028,43 +2327,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid2',
-                    apiBaseUrl: 'api_url',
-                    Tags: ['tag1', 'tag2'],
-                    Capability: {
-                      name: 'capability_name',
-                      version: 'capability_version',
-                    },
-                    Legal: {
-                      privacyPolicy: 'privacy_policy',
-                      terms: 'terms',
-                      other: 'other',
-                    },
-                    AgentPricing: {
-                      pricingType: PricingType.Fixed,
-                      Pricing: [
-                        {
-                          unit: '',
-                          amount: '10000000',
-                        },
-                      ],
-                    },
-                    ExampleOutputs: [],
-                    Author: {
-                      name: 'author_name',
-                      organization: 'author_organization',
-                      contactEmail: 'author_contact_email',
-                      contactOther: 'author_contact_other',
-                    },
-                    SmartContractWallet: {
-                      walletVkey: 'wallet_vkey',
-                      walletAddress: 'wallet_address',
-                    },
-                    state: 'RegistrationRequested',
-                    description: 'description',
-                    name: 'name',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -2107,49 +2370,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid2',
-                    apiBaseUrl: 'api_url',
-                    Tags: ['tag1', 'tag2'],
-                    Capability: {
-                      name: 'capability_name',
-                      version: 'capability_version',
-                    },
-                    ExampleOutputs: [
-                      {
-                        name: 'example_output_name',
-                        url: 'https://example.com/example_output',
-                        mimeType: 'application/json',
-                      },
-                    ],
-                    Author: {
-                      name: 'author_name',
-                      organization: 'author_organization',
-                      contactEmail: 'author_contact_email',
-                      contactOther: 'author_contact_other',
-                    },
-                    Legal: {
-                      privacyPolicy: 'privacy_policy',
-                      terms: 'terms',
-                      other: 'other',
-                    },
-                    AgentPricing: {
-                      pricingType: PricingType.Fixed,
-                      Pricing: [
-                        {
-                          unit: '',
-                          amount: '10000000',
-                        },
-                      ],
-                    },
-                    SmartContractWallet: {
-                      walletVkey: 'wallet_vkey',
-                      walletAddress: 'wallet_address',
-                    },
-                    state: 'RegistrationRequested',
-                    description: 'description',
-                    name: 'name',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -2193,9 +2414,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'example_id',
-                  },
+                  data: registryEntryExample,
                 },
               }),
           },
@@ -2277,7 +2496,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         smartContractAddress: 'address_of_the_smart_contract',
                         policyId: 'policy_id',
                         AdminWallets: [
@@ -2372,7 +2590,6 @@ export function generateOpenAPI() {
                         createdAt: new Date(1713636260),
                         updatedAt: new Date(1713636260),
                         network: Network.Mainnet,
-                        paymentType: PaymentType.Web3CardanoV1,
                         feeRatePermille: 50,
                         syncInProgress: true,
                         policyId: 'policy_id',
@@ -2454,7 +2671,6 @@ export function generateOpenAPI() {
                   rpcProviderApiKey: 'rpc_provider_api_key',
                   rpcProvider: RPCProvider.Blockfrost,
                 },
-                paymentType: PaymentType.Web3CardanoV1,
                 AdminWallets: [
                   { walletAddress: 'wallet_address_1' },
                   { walletAddress: 'wallet_address_2' },
@@ -2495,63 +2711,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
-                    syncInProgress: true,
-                    smartContractAddress: 'address_of_the_smart_contract',
-                    AdminWallets: [
-                      { walletAddress: 'wallet_address', order: 0 },
-                      { walletAddress: 'wallet_address', order: 1 },
-                      { walletAddress: 'wallet_address', order: 2 },
-                    ],
-                    feeRatePermille: 50,
-                    FeeReceiverNetworkWallet: {
-                      walletAddress: 'wallet_address',
-                    },
-                    lastCheckedAt: new Date(1713636260),
-                    lastIdentifierChecked: 'identifier',
-                    PaymentSourceConfig: {
-                      rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
-                      rpcProvider: RPCProvider.Blockfrost,
-                    },
-                    PurchasingWallets: [
-                      {
-                        collectionAddress: null,
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_refunds_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                    SellingWallets: [
-                      {
-                        collectionAddress:
-                          'null_will_use_the_selling_wallet_as_revenue_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_revenue_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                  },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },
@@ -2615,63 +2775,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: {
-                    id: 'cuid_v2_auto_generated',
-                    createdAt: new Date(1713636260),
-                    updatedAt: new Date(1713636260),
-                    network: Network.Mainnet,
-                    paymentType: PaymentType.Web3CardanoV1,
-                    syncInProgress: true,
-                    smartContractAddress: 'address_of_the_smart_contract',
-                    AdminWallets: [
-                      { walletAddress: 'wallet_address', order: 0 },
-                      { walletAddress: 'wallet_address', order: 1 },
-                      { walletAddress: 'wallet_address', order: 2 },
-                    ],
-                    feeRatePermille: 50,
-                    FeeReceiverNetworkWallet: {
-                      walletAddress: 'wallet_address',
-                    },
-                    lastCheckedAt: new Date(1713636260),
-                    lastIdentifierChecked: 'identifier',
-                    PaymentSourceConfig: {
-                      rpcProviderApiKey: 'rpc_provider_api_key_blockfrost',
-                      rpcProvider: RPCProvider.Blockfrost,
-                    },
-                    PurchasingWallets: [
-                      {
-                        collectionAddress: null,
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_refunds_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                    SellingWallets: [
-                      {
-                        collectionAddress:
-                          'null_will_use_selling_wallet_as_revenue_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                      {
-                        collectionAddress: 'send_revenue_to_this_address',
-                        note: 'note',
-                        walletVkey: 'wallet_vkey',
-                        walletAddress: 'wallet_address',
-                        id: 'unique_cuid_v2_auto_generated',
-                      },
-                    ],
-                  },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },
@@ -2713,7 +2817,7 @@ export function generateOpenAPI() {
               .openapi({
                 example: {
                   status: 'success',
-                  data: { id: 'unique_cuid_v2_auto_generated' },
+                  data: paymentSourceExtendedExample,
                 },
               }),
           },
@@ -2756,7 +2860,12 @@ export function generateOpenAPI() {
                       {
                         txHash: 'tx_hash',
                         address: 'addr1qx2ej34k567890',
-                        Amounts: [{ unit: '', quantity: 10000000 }],
+                        Amounts: [
+                          {
+                            unit: '', // Empty string = ADA/lovelace
+                            quantity: 10000000, // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                          },
+                        ],
                         outputIndex: 1,
                         block: '1',
                         dataHash: 'data_hash',

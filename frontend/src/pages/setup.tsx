@@ -5,17 +5,24 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
 export default function SetupPage() {
-  const { state } = useAppContext();
+  const { apiKey } = useAppContext();
   const router = useRouter();
-  const { network = 'preprod' } = router.query;
+  const { network = 'Preprod' } = router.query;
+  let networkType = 'Preprod';
+  if (typeof network === 'string') {
+    networkType = network.toLowerCase();
+  }
+  if (typeof networkType !== 'string') {
+    networkType = 'Preprod';
+  }
 
   useEffect(() => {
-    if (!state.apiKey) {
+    if (!apiKey) {
       router.push('/');
     }
-  }, [state.apiKey, router]);
+  }, [apiKey, router]);
 
-  if (!state.apiKey) {
+  if (!apiKey) {
     return null;
   }
 
@@ -24,9 +31,9 @@ export default function SetupPage() {
       <Head>
         <title>
           {network
-            ? network === 'preprod'
-              ? 'Preprod Setup'
-              : 'Mainnet Setup'
+            ? networkType.toLocaleLowerCase() === 'mainnet'
+              ? 'Mainnet Setup'
+              : 'Preprod Setup'
             : 'Setup'}{' '}
           | Admin Interface
         </title>
