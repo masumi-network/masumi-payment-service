@@ -254,7 +254,7 @@ export type Payment = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Previous on-chain state before this transaction
          */
@@ -291,7 +291,7 @@ export type Payment = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -539,7 +539,7 @@ export type Purchase = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -588,7 +588,7 @@ export type Purchase = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -968,7 +968,7 @@ export type RegistryEntry = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Number of block confirmations for this transaction. Null if not yet confirmed
          */
@@ -1953,7 +1953,7 @@ export type PostPaymentResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2430,7 +2430,7 @@ export type PostPaymentSubmitResultResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2720,7 +2720,7 @@ export type PostPaymentAuthorizeRefundResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2831,6 +2831,142 @@ export type PostPaymentAuthorizeRefundResponses = {
 };
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
+
+export type PostPaymentErrorStateRecoveryData = {
+    /**
+     * Payment error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the payment request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The time of the last update, to ensure you clear the correct error state
+         */
+        updatedAt: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/error-state-recovery/';
+};
+
+export type PostPaymentErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentErrorStateRecoveryError = PostPaymentErrorStateRecoveryErrors[keyof PostPaymentErrorStateRecoveryErrors];
+
+export type PostPaymentErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for payment request
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostPaymentErrorStateRecoveryResponse = PostPaymentErrorStateRecoveryResponses[keyof PostPaymentErrorStateRecoveryResponses];
+
+export type PostPurchaseErrorStateRecoveryData = {
+    /**
+     * Purchase error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the purchase request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The time of the last update, to ensure you clear the correct error state
+         */
+        updatedAt: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/error-state-recovery/';
+};
+
+export type PostPurchaseErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Purchase request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseErrorStateRecoveryError = PostPurchaseErrorStateRecoveryErrors[keyof PostPurchaseErrorStateRecoveryErrors];
+
+export type PostPurchaseErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for purchase request
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostPurchaseErrorStateRecoveryResponse = PostPurchaseErrorStateRecoveryResponses[keyof PostPurchaseErrorStateRecoveryResponses];
 
 export type GetPurchaseData = {
     body?: never;
@@ -3342,7 +3478,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Fees of the transaction
                  */
@@ -3592,7 +3728,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Fees of the transaction
                  */

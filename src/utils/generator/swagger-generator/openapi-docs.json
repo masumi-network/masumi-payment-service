@@ -402,6 +402,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -486,6 +487,7 @@
                                         "Pending",
                                         "Confirmed",
                                         "FailedViaTimeout",
+                                        "FailedViaManualReset",
                                         "RolledBack"
                                     ],
                                     "description": "Current status of the transaction"
@@ -914,6 +916,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -1012,6 +1015,7 @@
                                         "Pending",
                                         "Confirmed",
                                         "FailedViaTimeout",
+                                        "FailedViaManualReset",
                                         "RolledBack"
                                     ],
                                     "description": "Current status of the transaction"
@@ -1753,6 +1757,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -3737,6 +3742,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -4898,6 +4904,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -5455,6 +5462,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -5756,6 +5764,370 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/error-state-recovery/": {
+            "post": {
+                "description": "Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.",
+                "summary": "Clear error state for payment request (PAY access required)",
+                "tags": [
+                    "error-state-recovery"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Payment error recovery request details",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The blockchain identifier of the payment request"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the transaction was made on"
+                                    },
+                                    "updatedAt": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        ],
+                                        "description": "The time of the last update, to ensure you clear the correct error state"
+                                    }
+                                },
+                                "required": [
+                                    "blockchainIdentifier",
+                                    "network",
+                                    "updatedAt"
+                                ],
+                                "example": {
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                    "network": "Preprod"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Error state cleared successfully for payment request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cmf40vg7h0016ucj1u1ro6651"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "error"
+                                    ]
+                                },
+                                "example": {
+                                    "status": "error",
+                                    "error": {
+                                        "message": "Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment request not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "error"
+                                    ]
+                                },
+                                "example": {
+                                    "status": "error",
+                                    "error": {
+                                        "message": "Payment request not found"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/purchase/error-state-recovery/": {
+            "post": {
+                "description": "Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.",
+                "summary": "Clear error state for purchase request (PAY access required)",
+                "tags": [
+                    "error-state-recovery"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Purchase error recovery request details",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The blockchain identifier of the purchase request"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the transaction was made on"
+                                    },
+                                    "updatedAt": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        ],
+                                        "description": "The time of the last update, to ensure you clear the correct error state"
+                                    }
+                                },
+                                "required": [
+                                    "blockchainIdentifier",
+                                    "network",
+                                    "updatedAt"
+                                ],
+                                "example": {
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "network": "Preprod",
+                                    "updatedAt": "1970-01-20T20:00:36.260Z"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Error state cleared successfully for purchase request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cmf40vg7h0016ucj1u1ro6651"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "error"
+                                    ]
+                                },
+                                "example": {
+                                    "status": "error",
+                                    "error": {
+                                        "message": "Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Purchase request not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "error": {
+                                            "type": "object",
+                                            "properties": {
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "message"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "error"
+                                    ]
+                                },
+                                "example": {
+                                    "status": "error",
+                                    "error": {
+                                        "message": "Purchase request not found"
+                                    }
+                                }
+                            }
+                        }
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -6907,6 +7279,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -7448,6 +7821,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"

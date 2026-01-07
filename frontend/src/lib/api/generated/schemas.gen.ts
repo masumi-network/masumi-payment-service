@@ -313,7 +313,7 @@ export const PaymentSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 previousOnChainState: {
@@ -362,7 +362,7 @@ export const PaymentSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -669,7 +669,7 @@ export const PurchaseSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 fees: {
@@ -732,7 +732,7 @@ export const PurchaseSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -1311,7 +1311,7 @@ export const RegistryEntrySchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 confirmations: {
