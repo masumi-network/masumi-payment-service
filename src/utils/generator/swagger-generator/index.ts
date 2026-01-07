@@ -1153,7 +1153,7 @@ export function generateOpenAPI() {
     method: 'post',
     path: '/payment/error-state-recovery/',
     description:
-      'Clears error states for payment requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
+      'Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
     summary: 'Clear error state for payment request (PAY access required)',
     tags: ['error-state-recovery'],
     security: [{ [apiKeyAuth.name]: [] }],
@@ -1242,7 +1242,7 @@ export function generateOpenAPI() {
     method: 'post',
     path: '/purchase/error-state-recovery/',
     description:
-      'Clears error states for purchase requests in WaitingForManualAction state and resets them for automatic retry. This endpoint provides manual intervention capability to recover from error states by clearing error fields and resetting the current transaction to the last successful one (confirmed or pending).',
+      'Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
     summary: 'Clear error state for purchase request (PAY access required)',
     tags: ['error-state-recovery'],
     security: [{ [apiKeyAuth.name]: [] }],

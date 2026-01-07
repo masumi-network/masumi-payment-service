@@ -85,7 +85,7 @@ export const paymentErrorStateRecoveryPost =
       if (!paymentRequest.onChainState) {
         throw createHttpError(
           400,
-          'Payment request is in its initial on-chain state. Can not be recovered.',
+          'Payment request is in its initial on-chain state. Can not be recovered. Please start a new payment request.',
         );
       }
 
