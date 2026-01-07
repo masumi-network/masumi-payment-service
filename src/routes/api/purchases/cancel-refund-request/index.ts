@@ -27,7 +27,10 @@ export const cancelPurchaseRefundRequestSchemaInput = z.object({
     .describe('The network the Cardano wallet will be used on'),
 });
 
-export const cancelPurchaseRefundRequestSchemaOutput = purchaseResponseSchema;
+export const cancelPurchaseRefundRequestSchemaOutput =
+  purchaseResponseSchema.omit({
+    TransactionHistory: true,
+  });
 
 export const cancelPurchaseRefundRequestPost =
   payAuthenticatedEndpointFactory.build({
@@ -63,38 +66,22 @@ export const cancelPurchaseRefundRequestPost =
           onChainState: {
             in: [OnChainState.RefundRequested, OnChainState.Disputed],
           },
-        },
-        include: {
           PaymentSource: {
-            include: {
-              FeeReceiverNetworkWallet: true,
-              AdminWallets: true,
-              PaymentSourceConfig: true,
-            },
+            network: input.network,
+            deletedAt: null,
           },
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          NextAction: true,
-          CurrentTransaction: true,
-          TransactionHistory: true,
-          PaidFunds: true,
+          SmartContractWallet: {
+            deletedAt: null,
+          },
+          CurrentTransaction: {
+            txHash: { not: null },
+          },
         },
       });
       if (purchase == null) {
         throw createHttpError(404, 'Purchase not found or in invalid state');
       }
-      if (purchase.PaymentSource == null) {
-        throw createHttpError(400, 'Purchase has no payment source');
-      }
-      if (purchase.PaymentSource.network != input.network) {
-        throw createHttpError(
-          400,
-          'Purchase was not made on the requested network',
-        );
-      }
-      if (purchase.PaymentSource.deletedAt != null) {
-        throw createHttpError(400, 'Payment source is deleted');
-      }
+
       if (
         purchase.requestedById != options.id &&
         options.permission != Permission.Admin
@@ -104,35 +91,58 @@ export const cancelPurchaseRefundRequestPost =
           'You are not authorized to cancel a refund request for this purchase',
         );
       }
-      if (purchase.CurrentTransaction == null) {
-        throw createHttpError(400, 'Purchase in invalid state');
-      }
-      if (purchase.CurrentTransaction.txHash == null) {
-        throw createHttpError(400, 'Purchase in invalid state');
-      }
-      if (purchase.SmartContractWallet == null) {
-        throw createHttpError(404, 'Smart contract wallet not set on purchase');
-      }
 
       const result = await prisma.purchaseRequest.update({
         where: { id: purchase.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
             },
           },
         },
         include: {
-          NextAction: true,
-          CurrentTransaction: true,
-          TransactionHistory: true,
-          PaidFunds: true,
-          PaymentSource: true,
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              status: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+            },
+          },
+          PaidFunds: { select: { id: true, amount: true, unit: true } },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              policyId: true,
+              smartContractAddress: true,
+            },
+          },
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
         },
       });
 
@@ -142,6 +152,10 @@ export const cancelPurchaseRefundRequestPost =
         ...result,
         ...transformPurchaseGetTimestamps(result),
         ...transformPurchaseGetAmounts(result),
+        totalBuyerCardanoFees:
+          Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier: decoded?.agentIdentifier ?? null,
         CurrentTransaction: result.CurrentTransaction
           ? {
@@ -149,10 +163,6 @@ export const cancelPurchaseRefundRequestPost =
               fees: result.CurrentTransaction.fees?.toString() ?? null,
             }
           : null,
-        TransactionHistory: result.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
       };
     },
   });

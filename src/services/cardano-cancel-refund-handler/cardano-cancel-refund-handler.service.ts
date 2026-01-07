@@ -145,7 +145,6 @@ export async function cancelRefundsV1() {
         );
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const purchaseRequests = paymentContract.PurchaseRequests;
@@ -227,8 +226,9 @@ export async function cancelRefundsV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                  BigInt(request.collateralReturnLovelace ?? 0) &&
+                BigInt(decodedContract.payByTime) ==
+                  BigInt(request.payByTime ?? 0)
               );
             });
 
@@ -275,7 +275,7 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction:
                       PurchasingAction.UnSetRefundRequestedInitiated,
                   },
@@ -333,7 +333,7 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

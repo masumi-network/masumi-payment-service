@@ -14,7 +14,6 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { ez } from 'express-zod-api';
 import cuid2 from '@paralleldrive/cuid2';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
@@ -27,12 +26,13 @@ import {
   decodeBlockchainIdentifier,
   generateBlockchainIdentifier,
 } from '@/utils/generator/blockchain-identifier-generator';
-import { validateHexString } from '@/utils/generator/contract-generator';
+import { validateHexString } from '@/utils/validator/hex';
 import {
   transformPaymentGetTimestamps,
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -120,10 +120,31 @@ export const paymentResponseSchema = z
       .describe(
         'SHA256 hash of the result submitted by the seller (hex string)',
       ),
+    nextActionLastChangedAt: z
+      .date()
+      .describe('Timestamp when the next action was last changed'),
+    onChainStateOrResultLastChangedAt: z
+      .date()
+      .describe('Timestamp when the on-chain state or result was last changed'),
+    nextActionOrOnChainStateOrResultLastChangedAt: z
+      .date()
+      .describe(
+        'Timestamp when the next action or on-chain state or result was last changed',
+      ),
     inputHash: z
       .string()
       .nullable()
       .describe('SHA256 hash of the input data for the payment (hex string)'),
+    totalBuyerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
     cooldownTime: z
       .number()
       .describe('Cooldown period in milliseconds for the seller to dispute'),
@@ -376,18 +397,69 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         : undefined,
       take: input.limit,
       include: {
-        BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        RequestedFunds: { include: { AgentFixedPricing: true } },
-        NextAction: true,
-        CurrentTransaction: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
         },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
+        TransactionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  txHash: true,
+                  status: true,
+                  fees: true,
+                  blockHeight: true,
+                  blockTime: true,
+                  previousOnChainState: true,
+                  newOnChainState: true,
+                  confirmations: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -395,26 +467,32 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     }
 
     return {
-      Payments: result.map((payment) => ({
-        ...payment,
-        ...transformPaymentGetTimestamps(payment),
-        ...transformPaymentGetAmounts(payment),
-        agentIdentifier:
-          decodeBlockchainIdentifier(payment.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
-        CurrentTransaction: payment.CurrentTransaction
-          ? {
-              ...payment.CurrentTransaction,
-              fees: payment.CurrentTransaction.fees?.toString() ?? null,
-            }
-          : null,
-        TransactionHistory: payment.TransactionHistory
-          ? payment.TransactionHistory.map((tx) => ({
-              ...tx,
-              fees: tx.fees?.toString() ?? null,
-            }))
-          : null,
-      })),
+      Payments: result.map((payment) => {
+        return {
+          ...payment,
+          ...transformPaymentGetTimestamps(payment),
+          ...transformPaymentGetAmounts(payment),
+          totalBuyerCardanoFees:
+            Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+          agentIdentifier:
+            decodeBlockchainIdentifier(payment.blockchainIdentifier)
+              ?.agentIdentifier ?? null,
+          CurrentTransaction: payment.CurrentTransaction
+            ? {
+                ...payment.CurrentTransaction,
+                fees: payment.CurrentTransaction.fees?.toString() ?? null,
+              }
+            : null,
+          TransactionHistory: payment.TransactionHistory
+            ? payment.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : null,
+        };
+      }),
     };
   },
 });
@@ -489,7 +567,9 @@ export const createPaymentsSchemaInput = z.object({
     ),
 });
 
-export const createPaymentSchemaOutput = paymentResponseSchema;
+export const createPaymentSchemaOutput = paymentResponseSchema.omit({
+  TransactionHistory: true,
+});
 
 export const paymentInitPost = readAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -521,8 +601,9 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
-        PaymentSourceConfig: true,
+        PaymentSourceConfig: {
+          select: { rpcProviderApiKey: true, rpcProvider: true },
+        },
       },
     });
     if (specifiedPaymentContract == null) {
@@ -604,9 +685,10 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
 
-    const provider = new BlockFrostAPI({
-      projectId: specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const provider = getBlockfrostInstance(
+      input.network,
+      specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     if (input.agentIdentifier.startsWith(policyId) == false) {
       throw createHttpError(
@@ -664,15 +746,21 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const vKey = resolvePaymentKeyHash(assetInWallet[0].address);
 
-    const sellingWallet = specifiedPaymentContract.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == vKey && wallet.type == HotWalletType.Selling,
-    );
+    const sellingWallet = await prisma.hotWallet.findFirst({
+      where: {
+        deletedAt: null,
+        type: HotWalletType.Selling,
+        walletVkey: vKey,
+        paymentSourceId: specifiedPaymentContract.id,
+      },
+      include: {
+        Secret: {
+          select: { encryptedMnemonic: true },
+        },
+      },
+    });
     if (sellingWallet == null) {
-      throw createHttpError(
-        404,
-        'Agent identifier not found in selling wallets',
-      );
+      throw createHttpError(404, 'Selling wallet not found');
     }
     const sellerCUID = cuid2.createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
@@ -689,6 +777,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
       sellerAddress: sellingWallet.walletAddress,
     };
+
     const meshWallet = new MeshWallet({
       networkId: convertNetworkToId(input.network),
       key: {
@@ -714,6 +803,8 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const payment = await prisma.paymentRequest.create({
       data: {
+        totalBuyerCardanoFees: BigInt(0),
+        totalSellerCardanoFees: BigInt(0),
         blockchainIdentifier: compressedEncodedBlockchainIdentifier,
         PaymentSource: { connect: { id: specifiedPaymentContract.id } },
         RequestedFunds: {
@@ -743,24 +834,64 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         metadata: input.metadata,
       },
       include: {
-        RequestedFunds: true,
-        BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        NextAction: true,
-        CurrentTransaction: true,
-        TransactionHistory: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
       },
     });
     if (payment.SmartContractWallet == null) {
       throw createHttpError(500, 'Smart contract wallet not connected');
     }
+
     return {
       ...payment,
       ...transformPaymentGetTimestamps(payment),
       ...transformPaymentGetAmounts(payment),
+      totalBuyerCardanoFees:
+        Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+      totalSellerCardanoFees:
+        Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
       agentIdentifier:
         decodeBlockchainIdentifier(payment.blockchainIdentifier)
           ?.agentIdentifier ?? null,
@@ -769,12 +900,6 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
             ...payment.CurrentTransaction,
             fees: payment.CurrentTransaction.fees?.toString() ?? null,
           }
-        : null,
-      TransactionHistory: payment.TransactionHistory
-        ? payment.TransactionHistory.map((tx) => ({
-            ...tx,
-            fees: tx.fees?.toString() ?? null,
-          }))
         : null,
     };
   },

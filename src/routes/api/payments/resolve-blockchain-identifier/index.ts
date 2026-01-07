@@ -69,18 +69,69 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
           blockchainIdentifier: input.blockchainIdentifier,
         },
         include: {
-          BuyerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          RequestedFunds: true,
-          NextAction: true,
-          PaymentSource: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-          TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
-            take: input.includeHistory == true ? undefined : 0,
+          BuyerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
           },
+          RequestedFunds: { select: { id: true, amount: true, unit: true } },
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+              resultHash: true,
+            },
+          },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              smartContractAddress: true,
+              policyId: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              txHash: true,
+              status: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+            },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: {
+            select: { id: true, amount: true, unit: true },
+          },
+          TransactionHistory:
+            input.includeHistory == true
+              ? {
+                  orderBy: { createdAt: 'desc' },
+                  select: {
+                    id: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    txHash: true,
+                    status: true,
+                    fees: true,
+                    blockHeight: true,
+                    blockTime: true,
+                    previousOnChainState: true,
+                    newOnChainState: true,
+                    confirmations: true,
+                  },
+                }
+              : undefined,
         },
       });
       if (result == null) {
@@ -88,10 +139,15 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
       }
 
       const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+
       return {
         ...result,
         ...transformPaymentGetTimestamps(result),
         ...transformPaymentGetAmounts(result),
+        totalBuyerCardanoFees:
+          Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier: decoded?.agentIdentifier ?? null,
         CurrentTransaction: result.CurrentTransaction
           ? {

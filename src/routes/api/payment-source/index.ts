@@ -156,9 +156,26 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        AdminWallets: { orderBy: { order: 'asc' } },
-        HotWallets: { where: { deletedAt: null } },
-        FeeReceiverNetworkWallet: true,
+        AdminWallets: {
+          orderBy: { order: 'asc' },
+          select: { walletAddress: true, order: true },
+        },
+        HotWallets: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            walletVkey: true,
+            walletAddress: true,
+            type: true,
+            collectionAddress: true,
+            note: true,
+          },
+        },
+        FeeReceiverNetworkWallet: {
+          select: {
+            walletAddress: true,
+          },
+        },
       },
     });
     const mappedPaymentSources = paymentSources.map((paymentSource) => {

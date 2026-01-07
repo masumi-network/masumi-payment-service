@@ -104,9 +104,21 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             deletedAt: null,
           },
           include: {
-            Secret: true,
-            PendingTransaction: true,
-            PaymentSource: true,
+            Secret: {
+              select: {
+                encryptedMnemonic: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            PendingTransaction: {
+              select: {
+                createdAt: true,
+                updatedAt: true,
+                txHash: true,
+                lastCheckedAt: true,
+              },
+            },
           },
         });
         if (result == null) {
@@ -173,9 +185,21 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             deletedAt: null,
           },
           include: {
-            Secret: true,
-            PendingTransaction: true,
-            PaymentSource: true,
+            Secret: {
+              select: {
+                encryptedMnemonic: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            PendingTransaction: {
+              select: {
+                createdAt: true,
+                updatedAt: true,
+                txHash: true,
+                lastCheckedAt: true,
+              },
+            },
           },
         });
         if (result == null) {
@@ -373,8 +397,14 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
         data: { collectionAddress: input.newCollectionAddress },
         include: {
           Secret: false,
-          PendingTransaction: true,
-          PaymentSource: true,
+          PendingTransaction: {
+            select: {
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              lastCheckedAt: true,
+            },
+          },
         },
       });
 

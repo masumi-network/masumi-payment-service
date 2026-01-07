@@ -68,27 +68,81 @@ export const resolvePurchaseRequestPost =
           blockchainIdentifier: input.blockchainIdentifier,
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaidFunds: true,
-          NextAction: true,
-          PaymentSource: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-          TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
-            take: input.includeHistory == true ? undefined : 0,
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+            },
           },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              status: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+            },
+          },
+          PaidFunds: { select: { id: true, amount: true, unit: true } },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              policyId: true,
+              smartContractAddress: true,
+            },
+          },
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+
+          TransactionHistory:
+            input.includeHistory == true
+              ? {
+                  orderBy: { createdAt: 'desc' },
+                  select: {
+                    id: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    txHash: true,
+                    status: true,
+                    fees: true,
+                    blockHeight: true,
+                    blockTime: true,
+                    previousOnChainState: true,
+                    newOnChainState: true,
+                    confirmations: true,
+                  },
+                }
+              : undefined,
         },
       });
       if (purchase == null) {
         throw createHttpError(404, 'Purchase not found');
       }
+
       return {
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
         ...transformPurchaseGetAmounts(purchase),
+        totalBuyerCardanoFees:
+          Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier:
           decodeBlockchainIdentifier(purchase.blockchainIdentifier)
             ?.agentIdentifier ?? null,
@@ -98,10 +152,13 @@ export const resolvePurchaseRequestPost =
               fees: purchase.CurrentTransaction.fees?.toString() ?? null,
             }
           : null,
-        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
+        TransactionHistory:
+          input.includeHistory == true
+            ? purchase.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : [],
       };
     },
   });

@@ -14,7 +14,6 @@ import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
@@ -22,7 +21,7 @@ import { handlePurchaseCreditInit } from '@/services/token-credit';
 import stringify from 'canonical-json';
 import { getPublicKeyFromCoseKey } from '@/utils/converter/public-key-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
-import { validateHexString } from '@/utils/generator/contract-generator';
+import { validateHexString } from '@/utils/validator/hex';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
@@ -30,6 +29,7 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({
   limit: z
@@ -104,6 +104,27 @@ export const purchaseResponseSchema = z
       .describe(
         'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
       ),
+    totalBuyerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
+    nextActionOrOnChainStateOrResultLastChangedAt: z
+      .date()
+      .describe(
+        'Timestamp when the next action or on-chain state or result was last changed',
+      ),
+    nextActionLastChangedAt: z
+      .date()
+      .describe('Timestamp when the next action was last changed'),
+    onChainStateOrResultLastChangedAt: z
+      .date()
+      .describe('Timestamp when the on-chain state or result was last changed'),
     requestedById: z
       .string()
       .describe('ID of the API key that created this purchase'),
@@ -323,42 +344,100 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
       take: input.limit,
       orderBy: { createdAt: 'desc' },
       include: {
-        SellerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaidFunds: true,
-        NextAction: true,
-        PaymentSource: true,
-        CurrentTransaction: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+          },
         },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            txHash: true,
+            status: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        PaidFunds: { select: { id: true, amount: true, unit: true } },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            policyId: true,
+            smartContractAddress: true,
+          },
+        },
+        SellerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+
+        TransactionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  txHash: true,
+                  status: true,
+                  fees: true,
+                  blockHeight: true,
+                  blockTime: true,
+                  previousOnChainState: true,
+                  newOnChainState: true,
+                  confirmations: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
       throw createHttpError(404, 'Purchase not found');
     }
     return {
-      Purchases: result.map((purchase) => ({
-        ...purchase,
-        ...transformPurchaseGetTimestamps(purchase),
-        ...transformPurchaseGetAmounts(purchase),
-        agentIdentifier:
-          decodeBlockchainIdentifier(purchase.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
-        CurrentTransaction: purchase.CurrentTransaction
-          ? {
-              ...purchase.CurrentTransaction,
-              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-            }
-          : null,
-        TransactionHistory: purchase.TransactionHistory.map((tx) => ({
-          ...tx,
-          fees: tx.fees?.toString() ?? null,
-        })),
-      })),
+      Purchases: result.map((purchase) => {
+        return {
+          ...purchase,
+          ...transformPurchaseGetTimestamps(purchase),
+          ...transformPurchaseGetAmounts(purchase),
+          totalBuyerCardanoFees:
+            Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+          agentIdentifier:
+            decodeBlockchainIdentifier(purchase.blockchainIdentifier)
+              ?.agentIdentifier ?? null,
+          CurrentTransaction: purchase.CurrentTransaction
+            ? {
+                ...purchase.CurrentTransaction,
+                fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+              }
+            : null,
+          TransactionHistory:
+            purchase.TransactionHistory != null
+              ? purchase.TransactionHistory.map((tx) => ({
+                  ...tx,
+                  fees: tx.fees?.toString() ?? null,
+                }))
+              : [],
+        };
+      }),
     };
   },
 });
@@ -473,14 +552,38 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           },
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          WithdrawnForBuyer: true,
-          WithdrawnForSeller: true,
-          PaidFunds: true,
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          PaidFunds: { select: { id: true, amount: true, unit: true } },
           NextAction: true,
-          CurrentTransaction: true,
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              status: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+              utxoCount: true,
+              withdrawalCount: true,
+              assetMintOrBurnCount: true,
+              redeemerCount: true,
+              validContract: true,
+              outputAmount: true,
+            },
+          },
         },
       });
       if (existingPurchaseRequest != null) {
@@ -489,6 +592,13 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           existingPurchaseRequest.id,
           {
             ...existingPurchaseRequest,
+            totalBuyerCardanoFees:
+              Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) /
+              1_000_000,
+            totalSellerCardanoFees:
+              Number(
+                existingPurchaseRequest.totalSellerCardanoFees.toString(),
+              ) / 1_000_000,
             CurrentTransaction: existingPurchaseRequest.CurrentTransaction
               ? {
                   id: existingPurchaseRequest.CurrentTransaction.id,
@@ -577,7 +687,11 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           network: input.network,
           deletedAt: null,
         },
-        include: { PaymentSourceConfig: true },
+        include: {
+          PaymentSourceConfig: {
+            select: { rpcProviderApiKey: true, rpcProvider: true },
+          },
+        },
       });
       const inputHash = input.inputHash;
       if (validateHexString(inputHash) == false) {
@@ -704,9 +818,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
           'Submit result time must be before unlock time with at least 15 minutes difference',
         );
       }
-      const provider = new BlockFrostAPI({
-        projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-      });
+      const provider = getBlockfrostInstance(
+        input.network,
+        paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+      );
 
       const assetId = input.agentIdentifier;
       const policyAsset = assetId.startsWith(policyId)
@@ -891,6 +1006,8 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         ...initialPurchaseRequest,
         ...transformPurchaseGetTimestamps(initialPurchaseRequest),
         ...transformPurchaseGetAmounts(initialPurchaseRequest),
+        totalBuyerCardanoFees: 0,
+        totalSellerCardanoFees: 0,
         agentIdentifier: input.agentIdentifier,
         TransactionHistory: [],
         CurrentTransaction: null,

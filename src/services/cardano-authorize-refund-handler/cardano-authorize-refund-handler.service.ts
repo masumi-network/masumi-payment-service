@@ -168,8 +168,9 @@ export async function authorizeRefundV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                  BigInt(request.collateralReturnLovelace ?? 0) &&
+                BigInt(decodedContract.payByTime) ==
+                  BigInt(request.payByTime ?? 0)
               );
             });
 
@@ -239,9 +240,8 @@ export async function authorizeRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.AuthorizeRefundInitiated,
-                    resultHash: request.NextAction.resultHash,
                   },
                 },
                 CurrentTransaction: {
@@ -297,7 +297,7 @@ export async function authorizeRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:

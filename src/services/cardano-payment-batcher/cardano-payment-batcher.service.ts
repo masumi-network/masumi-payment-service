@@ -138,7 +138,7 @@ async function executeSpecificBatchPayment(
       where: { id: request.paymentRequest.id },
       data: {
         NextAction: {
-          update: {
+          create: {
             requestedAction: PurchasingAction.FundsLockingInitiated,
           },
         },
@@ -689,7 +689,7 @@ export async function batchLatestPaymentEntriesV1() {
                     where: { id: batchedRequest.paymentRequest.id },
                     data: {
                       NextAction: {
-                        update: {
+                        create: {
                           requestedAction:
                             PurchasingAction.WaitingForManualAction,
                           errorType: PurchaseErrorType.Unknown,
@@ -748,7 +748,7 @@ export async function batchLatestPaymentEntriesV1() {
                 where: { id: x.id },
                 data: {
                   NextAction: {
-                    update: {
+                    create: {
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote:
