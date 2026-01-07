@@ -11,6 +11,7 @@ import { Network, OnChainState, PaymentSource } from '@prisma/client';
 import { applyParamsToScript } from '@meshsdk/core';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { validateHexString } from '@/utils/validator/hex';
 
 export async function getPaymentScriptFromPaymentSourceV1(
   paymentSourceSupported: PaymentSource & {
@@ -177,13 +178,6 @@ function getSmartContractStateDatum(state: SmartContractState) {
   }
 }
 
-export function validateHexString(hexString: string) {
-  if (hexString.length % 2 !== 0) {
-    return false;
-  }
-  return /^[0-9a-fA-F]+$/.test(hexString);
-}
-
 export function getDatumFromBlockchainIdentifier({
   buyerAddress,
   sellerAddress,
@@ -203,8 +197,8 @@ export function getDatumFromBlockchainIdentifier({
   sellerAddress: string;
   blockchainIdentifier: string;
   collateralReturnLovelace: bigint;
-  inputHash: string;
-  resultHash: string;
+  inputHash: string | null;
+  resultHash: string | null;
   payByTime: bigint;
   resultTime: bigint;
   unlockTime: bigint;
@@ -226,8 +220,8 @@ export function getDatumFromBlockchainIdentifier({
     sellerNonce: decoded.sellerId,
     buyerNonce: decoded.purchaserId,
     collateralReturnLovelace,
-    inputHash,
-    resultHash,
+    inputHash: inputHash,
+    resultHash: resultHash,
     payByTime,
     resultTime,
     unlockTime,
@@ -263,8 +257,8 @@ export function getDatum({
   sellerNonce: string;
   buyerNonce: string;
   collateralReturnLovelace: bigint;
-  inputHash: string;
-  resultHash: string;
+  inputHash: string | null;
+  resultHash: string | null;
   payByTime: bigint;
   resultTime: bigint;
   unlockTime: bigint;
@@ -294,10 +288,14 @@ export function getDatum({
   if (!validateHexString(buyerNonce)) {
     throw new Error('Buyer nonce is not a valid hex string');
   }
-  if (!validateHexString(inputHash)) {
+  if (inputHash != null && !validateHexString(inputHash)) {
     throw new Error('Input hash is not a valid hex string');
   }
-  if (resultHash.length > 0 && !validateHexString(resultHash)) {
+  if (
+    resultHash != null &&
+    resultHash.length > 0 &&
+    !validateHexString(resultHash)
+  ) {
     throw new Error('Result hash is not a valid hex string');
   }
 
@@ -312,8 +310,8 @@ export function getDatum({
         sellerNonce,
         buyerNonce,
         collateralReturnLovelace,
-        inputHash,
-        resultHash,
+        inputHash != null ? inputHash : '',
+        resultHash != null ? resultHash : '',
         payByTime,
         resultTime,
         unlockTime,

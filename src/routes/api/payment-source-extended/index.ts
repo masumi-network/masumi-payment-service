@@ -8,7 +8,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { HotWalletType, RPCProvider, Network, $Enums } from '@prisma/client';
 import createHttpError from 'http-errors';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
@@ -27,52 +27,131 @@ export const paymentSourceExtendedSchemaInput = z.object({
     .optional()
     .describe('Used to paginate through the payment sources'),
 });
+
+export const paymentSourceExtendedOutputSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the payment source'),
+    createdAt: z
+      .date()
+      .describe('Timestamp when the payment source was created'),
+    updatedAt: z
+      .date()
+      .describe('Timestamp when the payment source was last updated'),
+    network: z.nativeEnum(Network).describe('The Cardano network'),
+    policyId: z
+      .string()
+      .nullable()
+      .describe(
+        'Policy ID for the agent registry NFTs. Null if not applicable',
+      ),
+    smartContractAddress: z
+      .string()
+      .describe('Address of the smart contract for this payment source'),
+    PaymentSourceConfig: z
+      .object({
+        rpcProviderApiKey: z
+          .string()
+          .describe('The RPC provider API key (e.g., Blockfrost project ID)'),
+        rpcProvider: z
+          .nativeEnum(RPCProvider)
+          .describe('The RPC provider type (e.g., Blockfrost)'),
+      })
+      .describe('RPC provider configuration for blockchain interactions'),
+    lastIdentifierChecked: z
+      .string()
+      .nullable()
+      .describe(
+        'Last agent identifier checked during registry sync. Null if not synced yet',
+      ),
+    syncInProgress: z
+      .boolean()
+      .describe('Whether a registry sync is currently in progress'),
+    lastCheckedAt: z
+      .date()
+      .nullable()
+      .describe(
+        'Timestamp when the registry was last synced. Null if never synced',
+      ),
+    AdminWallets: z
+      .array(
+        z.object({
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the admin wallet'),
+          order: z.number().describe('Order/index of this admin wallet (0-2)'),
+        }),
+      )
+      .describe(
+        'List of admin wallets for dispute resolution (exactly 3 required)',
+      ),
+    PurchasingWallets: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .describe('Unique identifier for the purchasing wallet'),
+          walletVkey: z
+            .string()
+            .describe('Payment key hash of the purchasing wallet'),
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the purchasing wallet'),
+          collectionAddress: z
+            .string()
+            .nullable()
+            .describe(
+              'Optional collection address for this wallet. Null if not set',
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe('Optional note about this wallet. Null if not set'),
+        }),
+      )
+      .describe('List of wallets used for purchasing (buyer side)'),
+    SellingWallets: z
+      .array(
+        z.object({
+          id: z.string().describe('Unique identifier for the selling wallet'),
+          walletVkey: z
+            .string()
+            .describe('Payment key hash of the selling wallet'),
+          walletAddress: z
+            .string()
+            .describe('Cardano address of the selling wallet'),
+          collectionAddress: z
+            .string()
+            .nullable()
+            .describe(
+              'Optional collection address for this wallet. Null if not set',
+            ),
+          note: z
+            .string()
+            .nullable()
+            .describe('Optional note about this wallet. Null if not set'),
+        }),
+      )
+      .describe('List of wallets used for selling (seller side)'),
+    FeeReceiverNetworkWallet: z
+      .object({
+        walletAddress: z
+          .string()
+          .describe('Cardano address that receives network fees'),
+      })
+      .describe('Wallet that receives network fees from transactions'),
+    feeRatePermille: z
+      .number()
+      .min(0)
+      .max(1000)
+      .describe('Fee rate in permille (per thousand). Example: 50 = 5%'),
+  })
+  .openapi('PaymentSourceExtended');
 export const paymentSourceExtendedSchemaOutput = z.object({
-  ExtendedPaymentSources: z.array(
-    z.object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      network: z.nativeEnum(Network),
-      policyId: z.string().nullable(),
-      smartContractAddress: z.string(),
-      PaymentSourceConfig: z.object({
-        rpcProviderApiKey: z.string(),
-        rpcProvider: z.nativeEnum(RPCProvider),
-      }),
-      lastIdentifierChecked: z.string().nullable(),
-      syncInProgress: z.boolean(),
-      lastCheckedAt: z.date().nullable(),
-      AdminWallets: z.array(
-        z.object({
-          walletAddress: z.string(),
-          order: z.number(),
-        }),
-      ),
-      PurchasingWallets: z.array(
-        z.object({
-          id: z.string(),
-          walletVkey: z.string(),
-          walletAddress: z.string(),
-          collectionAddress: z.string().nullable(),
-          note: z.string().nullable(),
-        }),
-      ),
-      SellingWallets: z.array(
-        z.object({
-          id: z.string(),
-          walletVkey: z.string(),
-          walletAddress: z.string(),
-          collectionAddress: z.string().nullable(),
-          note: z.string().nullable(),
-        }),
-      ),
-      FeeReceiverNetworkWallet: z.object({
-        walletAddress: z.string(),
-      }),
-      feeRatePermille: z.number().min(0).max(1000),
-    }),
-  ),
+  ExtendedPaymentSources: z
+    .array(paymentSourceExtendedOutputSchema)
+    .describe(
+      'List of payment sources with extended details including RPC configuration',
+    ),
 });
 
 export const paymentSourceExtendedEndpointGet =
@@ -105,10 +184,27 @@ export const paymentSourceExtendedEndpointGet =
         },
         cursor: input.cursorId ? { id: input.cursorId } : undefined,
         include: {
-          AdminWallets: { orderBy: { order: 'asc' } },
-          HotWallets: { where: { deletedAt: null } },
-          FeeReceiverNetworkWallet: true,
-          PaymentSourceConfig: true,
+          AdminWallets: {
+            orderBy: { order: 'asc' },
+            select: { walletAddress: true, order: true },
+          },
+          HotWallets: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              walletVkey: true,
+              walletAddress: true,
+              type: true,
+              collectionAddress: true,
+              note: true,
+            },
+          },
+          FeeReceiverNetworkWallet: {
+            select: { walletAddress: true },
+          },
+          PaymentSourceConfig: {
+            select: { rpcProviderApiKey: true, rpcProvider: true },
+          },
         },
       });
       const mappedPaymentSources = paymentSources.map((paymentSource) => {
@@ -154,7 +250,10 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
   AdminWallets: z
     .array(
       z.object({
-        walletAddress: z.string().max(250),
+        walletAddress: z
+          .string()
+          .max(250)
+          .describe('Cardano address of the admin wallet'),
       }),
     )
     .min(3)
@@ -162,19 +261,27 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
     .describe('The wallet addresses of the admin wallets (exactly 3)'),
   FeeReceiverNetworkWallet: z
     .object({
-      walletAddress: z.string().max(250),
+      walletAddress: z
+        .string()
+        .max(250)
+        .describe('Cardano address that receives network fees'),
     })
     .describe('The wallet address of the network fee receiver wallet'),
   PurchasingWallets: z
     .array(
       z.object({
-        walletMnemonic: z.string().max(1500),
+        walletMnemonic: z
+          .string()
+          .max(1500)
+          .describe(
+            '24-word mnemonic phrase for the purchasing wallet. IMPORTANT: Backup this securely',
+          ),
         collectionAddress: z
           .string()
           .max(250)
           .nullable()
           .describe('The collection address of the purchasing wallet'),
-        note: z.string().max(250),
+        note: z.string().max(250).describe('Note about this purchasing wallet'),
       }),
     )
     .min(1)
@@ -185,13 +292,16 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
   SellingWallets: z
     .array(
       z.object({
-        walletMnemonic: z.string().max(1500),
+        walletMnemonic: z
+          .string()
+          .max(1500)
+          .describe('24-word mnemonic phrase for the selling wallet'),
         collectionAddress: z
           .string()
           .max(250)
           .nullable()
           .describe('The collection address of the selling wallet'),
-        note: z.string().max(250),
+        note: z.string().max(250).describe('Note about this selling wallet'),
       }),
     )
     .min(1)
@@ -200,48 +310,8 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
       'The mnemonic of the selling wallets to be added. Please backup the mnemonic of the wallets.',
     ),
 });
-export const paymentSourceExtendedCreateSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  network: z.nativeEnum(Network),
-  smartContractAddress: z.string(),
-  PaymentSourceConfig: z.object({
-    rpcProviderApiKey: z.string(),
-    rpcProvider: z.nativeEnum(RPCProvider),
-  }),
-  lastIdentifierChecked: z.string().nullable(),
-  syncInProgress: z.boolean(),
-  lastCheckedAt: z.date().nullable(),
-  AdminWallets: z.array(
-    z.object({
-      walletAddress: z.string(),
-      order: z.number(),
-    }),
-  ),
-  PurchasingWallets: z.array(
-    z.object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-      collectionAddress: z.string().nullable(),
-      note: z.string().nullable(),
-    }),
-  ),
-  SellingWallets: z.array(
-    z.object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-      collectionAddress: z.string().nullable(),
-      note: z.string().nullable(),
-    }),
-  ),
-  FeeReceiverNetworkWallet: z.object({
-    walletAddress: z.string(),
-  }),
-  feeRatePermille: z.number().min(0).max(1000),
-});
+export const paymentSourceExtendedCreateSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointPost =
   adminAuthenticatedEndpointFactory.build({
@@ -385,10 +455,34 @@ export const paymentSourceExtendedEndpointPost =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -422,8 +516,13 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
   AddPurchasingWallets: z
     .array(
       z.object({
-        walletMnemonic: z.string().max(1500),
-        note: z.string().max(250),
+        walletMnemonic: z
+          .string()
+          .max(1500)
+          .describe(
+            '24-word mnemonic phrase for the purchasing wallet. IMPORTANT: Backup this securely',
+          ),
+        note: z.string().max(250).describe('Note about this purchasing wallet'),
         collectionAddress: z
           .string()
           .max(250)
@@ -438,8 +537,11 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
   AddSellingWallets: z
     .array(
       z.object({
-        walletMnemonic: z.string().max(1500),
-        note: z.string().max(250),
+        walletMnemonic: z
+          .string()
+          .max(1500)
+          .describe('24-word mnemonic phrase for the selling wallet'),
+        note: z.string().max(250).describe('Note about this selling wallet'),
         collectionAddress: z
           .string()
           .max(250)
@@ -454,7 +556,7 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
   RemovePurchasingWallets: z
     .array(
       z.object({
-        id: z.string(),
+        id: z.string().describe('ID of the purchasing wallet to remove'),
       }),
     )
     .max(10)
@@ -465,7 +567,7 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
   RemoveSellingWallets: z
     .array(
       z.object({
-        id: z.string(),
+        id: z.string().describe('ID of the selling wallet to remove'),
       }),
     )
     .max(10)
@@ -482,48 +584,8 @@ export const paymentSourceExtendedUpdateSchemaInput = z.object({
       'The latest identifier of the payment source. Usually should not be changed',
     ),
 });
-export const paymentSourceExtendedUpdateSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  network: z.nativeEnum(Network),
-  smartContractAddress: z.string(),
-  PaymentSourceConfig: z.object({
-    rpcProviderApiKey: z.string(),
-    rpcProvider: z.nativeEnum(RPCProvider),
-  }),
-  lastIdentifierChecked: z.string().nullable(),
-  syncInProgress: z.boolean(),
-  lastCheckedAt: z.date().nullable(),
-  AdminWallets: z.array(
-    z.object({
-      walletAddress: z.string(),
-      order: z.number(),
-    }),
-  ),
-  PurchasingWallets: z.array(
-    z.object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-      collectionAddress: z.string().nullable(),
-      note: z.string().nullable(),
-    }),
-  ),
-  SellingWallets: z.array(
-    z.object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-      collectionAddress: z.string().nullable(),
-      note: z.string().nullable(),
-    }),
-  ),
-  FeeReceiverNetworkWallet: z.object({
-    walletAddress: z.string(),
-  }),
-  feeRatePermille: z.number().min(0).max(1000),
-});
+export const paymentSourceExtendedUpdateSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointPatch =
   adminAuthenticatedEndpointFactory.build({
@@ -547,12 +609,6 @@ export const paymentSourceExtendedEndpointPatch =
           id: input.id,
           network: { in: options.networkLimit },
           deletedAt: null,
-        },
-        include: {
-          HotWallets: { where: { deletedAt: null } },
-          PaymentSourceConfig: true,
-          AdminWallets: true,
-          FeeReceiverNetworkWallet: true,
         },
       });
       if (paymentSource == null) {
@@ -668,10 +724,34 @@ export const paymentSourceExtendedEndpointPatch =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -684,12 +764,12 @@ export const paymentSourceExtendedEndpointPatch =
       };
     },
   });
+
 export const paymentSourceExtendedDeleteSchemaInput = z.object({
   id: z.string().describe('The id of the payment source to be deleted'),
 });
-export const paymentSourceExtendedDeleteSchemaOutput = z.object({
-  id: z.string(),
-});
+export const paymentSourceExtendedDeleteSchemaOutput =
+  paymentSourceExtendedOutputSchema;
 
 export const paymentSourceExtendedEndpointDelete =
   adminAuthenticatedEndpointFactory.build({
@@ -708,9 +788,44 @@ export const paymentSourceExtendedEndpointDelete =
         usageLimited: boolean;
       };
     }) => {
-      return await prisma.paymentSource.update({
+      const paymentSource = await prisma.paymentSource.update({
         where: { id: input.id, network: { in: options.networkLimit } },
         data: { deletedAt: new Date() },
+        include: {
+          HotWallets: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              walletVkey: true,
+              walletAddress: true,
+              type: true,
+              collectionAddress: true,
+              note: true,
+            },
+          },
+          PaymentSourceConfig: {
+            select: {
+              rpcProviderApiKey: true,
+              rpcProvider: true,
+            },
+          },
+          AdminWallets: {
+            select: {
+              walletAddress: true,
+              order: true,
+            },
+          },
+          FeeReceiverNetworkWallet: {
+            select: {
+              walletAddress: true,
+            },
+          },
+        },
       });
+      const { HotWallets, ...rest } = paymentSource;
+      return {
+        ...rest,
+        ...splitWalletsByType(HotWallets),
+      };
     },
   });

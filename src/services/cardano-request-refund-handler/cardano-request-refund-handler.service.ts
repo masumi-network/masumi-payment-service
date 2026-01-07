@@ -158,7 +158,7 @@ async function processSinglePurchaseRequest(
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(BigInt(paymentContract.cooldownTime)),
     state:
-      decodedContract.resultHash == ''
+      decodedContract.resultHash == null || decodedContract.resultHash == ''
         ? SmartContractState.RefundRequested
         : SmartContractState.Disputed,
   });
@@ -204,13 +204,13 @@ async function processSinglePurchaseRequest(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PurchasingAction.SetRefundRequestedInitiated,
         },
       },
       CurrentTransaction: {
         create: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -316,7 +316,7 @@ export async function requestRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

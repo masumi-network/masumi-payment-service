@@ -1,27 +1,56 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import { checkRegistryData } from '@/utils/monitoring/diagnostic';
+
+export const monitoringStatusResponseSchema = z
+  .object({
+    monitoringStatus: z
+      .object({
+        isMonitoring: z
+          .boolean()
+          .describe(
+            'Whether the blockchain state monitoring service is currently running',
+          ),
+        stats: z
+          .object({
+            trackedEntities: z
+              .number()
+              .describe(
+                'Number of entities being tracked by the monitoring service',
+              ),
+            lastCheckTime: z
+              .string()
+              .describe('ISO timestamp of the last monitoring check'),
+            memoryUsage: z
+              .object({
+                heapUsed: z
+                  .string()
+                  .describe(
+                    'Heap memory currently used by the monitoring service ',
+                  ),
+                heapTotal: z
+                  .string()
+                  .describe(
+                    'Total heap memory allocated for the monitoring service ',
+                  ),
+                external: z
+                  .string()
+                  .describe('External memory used by the monitoring service '),
+              })
+              .describe('Memory usage statistics for the monitoring service'),
+          })
+          .nullable()
+          .describe('Monitoring statistics. Null if monitoring is not active'),
+      })
+      .describe('Current status of the blockchain state monitoring service'),
+  })
+  .openapi('MonitoringStatus');
 
 export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
-  output: z.object({
-    monitoringStatus: z.object({
-      isMonitoring: z.boolean(),
-      stats: z
-        .object({
-          trackedEntities: z.number(),
-          lastCheckTime: z.string(),
-          memoryUsage: z.object({
-            heapUsed: z.string(),
-            heapTotal: z.string(),
-            external: z.string(),
-          }),
-        })
-        .nullable(),
-    }),
-  }),
+  output: monitoringStatusResponseSchema,
   handler: async ({ options: _options }) => {
     const status = blockchainStateMonitorService.getStatus();
 
@@ -44,13 +73,21 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   },
 });
 
+export const triggerMonitoringCycleResponseSchema = z
+  .object({
+    message: z
+      .string()
+      .describe('Status message about the monitoring cycle trigger'),
+    triggered: z
+      .boolean()
+      .describe('Whether the monitoring cycle was successfully triggered'),
+  })
+  .openapi('TriggeredMonitoringCycle');
+
 export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
-  output: z.object({
-    message: z.string(),
-    triggered: z.boolean(),
-  }),
+  output: triggerMonitoringCycleResponseSchema,
   handler: async ({ options: _options }) => {
     try {
       await blockchainStateMonitorService.forceMonitoringCycle();
@@ -67,15 +104,30 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
   },
 });
 
+export const startMonitoringSchemaInput = z.object({
+  intervalMs: z
+    .number()
+    .min(5000)
+    .max(300000)
+    .default(30000)
+    .describe('Monitoring interval in milliseconds'),
+});
+
+export const startMonitoringResponseSchema = z
+  .object({
+    message: z
+      .string()
+      .describe('Status message about starting the monitoring service'),
+    started: z
+      .boolean()
+      .describe('Whether the monitoring service was successfully started'),
+  })
+  .openapi('StartedMonitoring');
+
 export const startMonitoring = adminAuthenticatedEndpointFactory.build({
   method: 'post',
-  input: z.object({
-    intervalMs: z.number().min(5000).max(300000).default(30000),
-  }),
-  output: z.object({
-    message: z.string(),
-    started: z.boolean(),
-  }),
+  input: startMonitoringSchemaInput,
+  output: startMonitoringResponseSchema,
   handler: async ({ input }) => {
     try {
       await blockchainStateMonitorService.startMonitoring(input.intervalMs);
@@ -92,13 +144,21 @@ export const startMonitoring = adminAuthenticatedEndpointFactory.build({
   },
 });
 
+export const stopMonitoringResponseSchema = z
+  .object({
+    message: z
+      .string()
+      .describe('Status message about stopping the monitoring service'),
+    stopped: z
+      .boolean()
+      .describe('Whether the monitoring service was successfully stopped'),
+  })
+  .openapi('StoppedMonitoring');
+
 export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
-  output: z.object({
-    message: z.string(),
-    stopped: z.boolean(),
-  }),
+  output: stopMonitoringResponseSchema,
   handler: async ({ options: _options }) => {
     try {
       blockchainStateMonitorService.stopMonitoring();
@@ -115,21 +175,19 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   },
 });
 
+export const getDiagnosticsResponseSchema = z
+  .object({
+    recentCount: z.number().describe('Number of recent registry requests'),
+    allStates: z
+      .array(z.object({ state: z.string(), count: z.number() }))
+      .describe('List of all possible registry request states'),
+  })
+  .openapi('DiagnosticsData');
+
 export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
-  output: z.object({
-    recentCount: z.number(),
-    recentRequests: z.array(
-      z.object({
-        id: z.string(),
-        state: z.string(),
-        updatedAt: z.string(),
-        network: z.string().optional(),
-      }),
-    ),
-    allStates: z.array(z.string()),
-  }),
+  output: getDiagnosticsResponseSchema,
   handler: async ({ options: _options }) => {
     const diagnostic = await checkRegistryData();
 
@@ -139,12 +197,6 @@ export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
 
     return {
       recentCount: diagnostic.recentCount,
-      recentRequests: diagnostic.recent.map((reg) => ({
-        id: reg.id,
-        state: reg.state,
-        updatedAt: reg.updatedAt.toISOString(),
-        network: reg.PaymentSource?.network,
-      })),
       allStates: diagnostic.allStates,
     };
   },

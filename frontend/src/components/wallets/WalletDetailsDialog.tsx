@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,10 @@ import {
   shortenAddress,
   getExplorerUrl,
   validateCardanoAddress,
+  hexToAscii,
 } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -28,7 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-interface TokenBalance {
+export interface TokenBalance {
   unit: string;
   policyId: string;
   assetName: string;
@@ -58,7 +59,7 @@ export function WalletDetailsDialog({
   onClose,
   wallet,
 }: WalletDetailsDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export function WalletDetailsDialog({
           },
           query: {
             address: wallet.walletAddress,
-            network: state.network,
+            network: network,
           },
         }),
       {
@@ -162,21 +163,11 @@ export function WalletDetailsDialog({
     }
   }, [isOpen, wallet?.walletAddress]);
 
-  const hexToAscii = (hex: string) => {
-    try {
-      const bytes =
-        hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || [];
-      return bytes.map((byte) => String.fromCharCode(byte)).join('');
-    } catch {
-      return hex;
-    }
-  };
-
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
       const ada = token.quantity / 1000000;
       const formattedAmount =
-        ada === 0 ? 'zero' : useFormatBalance(ada.toFixed(6));
+        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
@@ -184,14 +175,14 @@ export function WalletDetailsDialog({
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(state.network);
+    const usdmConfig = getUsdmConfig(network);
     const isUSDM =
       token.policyId === usdmConfig.policyId &&
       token.assetName === hexToAscii(usdmConfig.assetName);
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
       const formattedAmount =
-        usdm === 0 ? 'zero' : useFormatBalance(usdm.toFixed(6));
+        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: `≈ $${usdm.toFixed(2)}`,
@@ -201,7 +192,7 @@ export function WalletDetailsDialog({
     // For other tokens, divide by 10^6 as a default
     const amount = token.quantity / 1000000;
     const formattedAmount =
-      amount === 0 ? 'zero' : useFormatBalance(amount.toFixed(6));
+      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
     return {
       amount: formattedAmount,
       usdValue: undefined,
@@ -274,7 +265,7 @@ export function WalletDetailsDialog({
     if (newCollectionAddress.trim()) {
       const validation = validateCardanoAddress(
         newCollectionAddress.trim(),
-        state.network,
+        network,
       );
       if (!validation.isValid) {
         toast.error('Invalid collection address: ' + validation.error);
@@ -284,7 +275,7 @@ export function WalletDetailsDialog({
         client: apiClient,
         query: {
           address: newCollectionAddress.trim(),
-          network: state.network,
+          network: network,
         },
       });
       if (balance.error || balance.data?.data?.Utxos?.length === 0) {
@@ -349,7 +340,7 @@ export function WalletDetailsDialog({
               <div className="text-sm font-medium">Wallet Address</div>
               <div className="flex items-center gap-2 mt-1">
                 <a
-                  href={getExplorerUrl(wallet.walletAddress, state.network)}
+                  href={getExplorerUrl(wallet.walletAddress, network)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-sm break-all hover:underline text-primary"
@@ -478,7 +469,7 @@ export function WalletDetailsDialog({
                         <a
                           href={getExplorerUrl(
                             wallet.collectionAddress,
-                            state.network,
+                            network,
                           )}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -547,7 +538,7 @@ export function WalletDetailsDialog({
                     const adaToken = tokenBalances.find(
                       (t) => t.unit === 'lovelace',
                     );
-                    const usdmConfig = getUsdmConfig(state.network);
+                    const usdmConfig = getUsdmConfig(network);
                     const usdmToken = tokenBalances.find(
                       (t) =>
                         t.policyId === usdmConfig.policyId &&

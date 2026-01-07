@@ -180,14 +180,14 @@ async function processSingleRefundCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PurchasingAction.WithdrawRefundInitiated,
           submittedTxHash: null,
         },
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -245,7 +245,7 @@ export async function collectRefundV1() {
       onChainState: {
         in: [OnChainState.RefundRequested, OnChainState.FundsLocked],
       },
-      resultHash: '',
+      resultHash: null,
       submitResultTime: {
         lte: Date.now() - 1000 * 60 * 10, //add 10 minutes for block time
       },
@@ -301,7 +301,7 @@ export async function collectRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

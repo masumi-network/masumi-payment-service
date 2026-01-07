@@ -1,5 +1,5 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
   HotWalletType,
@@ -10,11 +10,12 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
+import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -34,57 +35,7 @@ export const unregisterAgentSchemaInput = z.object({
     ),
 });
 
-export const unregisterAgentSchemaOutput = z.object({
-  id: z.string(),
-  name: z.string(),
-  apiBaseUrl: z.string(),
-  Capability: z.object({
-    name: z.string().nullable(),
-    version: z.string().nullable(),
-  }),
-  Author: z.object({
-    name: z.string(),
-    contactEmail: z.string().nullable(),
-    contactOther: z.string().nullable(),
-    organization: z.string().nullable(),
-  }),
-  Legal: z.object({
-    privacyPolicy: z.string().nullable(),
-    terms: z.string().nullable(),
-    other: z.string().nullable(),
-  }),
-  description: z.string().nullable(),
-  Tags: z.array(z.string()),
-  SmartContractWallet: z.object({
-    walletVkey: z.string(),
-    walletAddress: z.string(),
-  }),
-  state: z.nativeEnum(RegistrationState),
-  ExampleOutputs: z
-    .array(
-      z.object({
-        name: z.string().max(60),
-        url: z.string().max(250),
-        mimeType: z.string().max(60),
-      }),
-    )
-    .max(25),
-  AgentPricing: z
-    .object({
-      pricingType: z.enum([PricingType.Fixed]),
-      Pricing: z.array(
-        z.object({
-          unit: z.string(),
-          amount: z.string(),
-        }),
-      ),
-    })
-    .or(
-      z.object({
-        pricingType: z.enum([PricingType.Free]),
-      }),
-    ),
-});
+export const unregisterAgentSchemaOutput = registryRequestOutputSchema;
 
 export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -121,8 +72,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        PaymentSourceConfig: true,
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
+        PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+        HotWallets: {
+          include: { Secret: { select: { encryptedMnemonic: true } } },
+          where: { deletedAt: null },
+        },
       },
     });
     if (paymentSource == null) {
@@ -132,9 +86,10 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    const blockfrost = new BlockFrostAPI({
-      projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const blockfrost = getBlockfrostInstance(
+      input.network,
+      paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
@@ -178,9 +133,27 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         state: RegistrationState.DeregistrationRequested,
       },
       include: {
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        SmartContractWallet: true,
-        ExampleOutputs: true,
+        Pricing: {
+          include: {
+            FixedPricing: {
+              include: { Amounts: { select: { unit: true, amount: true } } },
+            },
+          },
+        },
+        SmartContractWallet: {
+          select: { walletVkey: true, walletAddress: true },
+        },
+        ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+        CurrentTransaction: {
+          select: {
+            txHash: true,
+            status: true,
+            confirmations: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+          },
+        },
       },
     });
 
@@ -201,20 +174,26 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         terms: result.terms,
         other: result.other,
       },
-      Tags: result.tags,
       AgentPricing:
         result.Pricing.pricingType == PricingType.Fixed
           ? {
               pricingType: PricingType.Fixed,
               Pricing:
-                result.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                  unit: pricing.unit,
-                  amount: pricing.amount.toString(),
+                result.Pricing.FixedPricing?.Amounts.map((price) => ({
+                  unit: price.unit,
+                  amount: price.amount.toString(),
                 })) ?? [],
             }
           : {
               pricingType: PricingType.Free,
             },
+      Tags: result.tags,
+      CurrentTransaction: result.CurrentTransaction
+        ? {
+            ...result.CurrentTransaction,
+            fees: result.CurrentTransaction.fees?.toString() ?? null,
+          }
+        : null,
     };
   },
 });

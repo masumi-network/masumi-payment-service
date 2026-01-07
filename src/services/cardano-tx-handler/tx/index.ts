@@ -23,8 +23,10 @@ import {
   checkIfTxIsInHistory,
   checkPaymentAmountsMatch,
   ExtractOnChainTransactionDataOutput,
+  getCardanoFeesBuyer,
+  getCardanoFeesSeller,
   redeemerToOnChainState,
-} from '../util';
+} from '@/services/cardano-tx-handler/util';
 import { deserializeDatum } from '@meshsdk/core';
 import {
   DecodedV1ContractDatum,
@@ -32,7 +34,7 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
-import { TransactionMetadata } from '../blockchain';
+import { TransactionMetadata } from '@/services/cardano-tx-handler/blockchain';
 
 export type UpdateTransactionInput = {
   blockTime: number;
@@ -71,7 +73,7 @@ export async function handlePaymentTransactionCardanoV1(
   newState: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PaymentAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
@@ -79,6 +81,8 @@ export async function handlePaymentTransactionCardanoV1(
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   confirmations: number,
   metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -111,6 +115,8 @@ export async function handlePaymentTransactionCardanoV1(
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           NextAction: {
             create: {
               requestedAction: newAction.action,
@@ -224,7 +230,7 @@ export async function handlePurchasingTransactionCardanoV1(
   newStatus: OnChainState,
   paymentContractId: string,
   blockchainIdentifier: string,
-  resultHash: string,
+  resultHash: string | null,
   currentAction: PurchasingAction,
   buyerCooldownTime: number,
   sellerCooldownTime: number,
@@ -232,6 +238,8 @@ export async function handlePurchasingTransactionCardanoV1(
   buyerWithdrawn: Array<{ unit: string; quantity: bigint }>,
   confirmations: number,
   metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -262,10 +270,11 @@ export async function handlePurchasingTransactionCardanoV1(
       await prisma.purchaseRequest.update({
         where: { id: purchasingRequest.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           inputHash: purchasingRequest.inputHash,
           NextAction: {
             create: {
-              inputHash: purchasingRequest.inputHash,
               requestedAction: newAction.action,
               errorNote:
                 purchasingRequest.NextAction.errorNote != null
@@ -462,9 +471,6 @@ export async function updateRolledBackTransaction(
                   errorNote:
                     'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
                   errorType: PurchaseErrorType.Unknown,
-                  inputHash:
-                    transaction.PurchaseRequestCurrent?.inputHash ??
-                    transaction.PurchaseRequestHistory!.inputHash,
                 },
               },
             },
@@ -501,12 +507,17 @@ export async function updateInitialTransactions(
       continue;
     }
 
+    const buyerCardanoFees = tx.metadata.fees;
+    const sellerCardanoFees = BigInt(0);
+
     await updateInitialPurchaseTransaction(
       paymentContract,
       decodedNewContract,
       output,
       tx,
       tx.metadata,
+      buyerCardanoFees,
+      sellerCardanoFees,
     );
 
     await updateInitialPaymentTransaction(
@@ -515,6 +526,8 @@ export async function updateInitialTransactions(
       tx,
       output,
       tx.metadata,
+      buyerCardanoFees,
+      sellerCardanoFees,
     );
   }
 }
@@ -527,6 +540,8 @@ export async function updateInitialPurchaseTransaction(
   >['valueOutputs'][number],
   tx: UpdateTransactionInput,
   metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -578,7 +593,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No smart contract wallet set for purchase request in db. This is likely an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -600,7 +614,6 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No seller wallet set for purchase request in db. This seems like an internal error.',
                 errorType: PurchaseErrorType.Unknown,
-                inputHash: decodedNewContract.inputHash,
               },
             },
           },
@@ -612,6 +625,17 @@ export async function updateInitialPurchaseTransaction(
         logger.warn(
           'Reference script hash is not null, this should not be set',
           { tx: tx.tx.tx_hash },
+        );
+        return;
+      }
+      if (dbEntry.inputHash !== decodedNewContract.inputHash) {
+        logger.error(
+          'Purchase request input hash does not match input hash in contract. This is likely a spoofing attempt.',
+          {
+            purchaseRequest: dbEntry,
+            inputHash: dbEntry.inputHash,
+            inputHashContract: decodedNewContract.inputHash,
+          },
         );
         return;
       }
@@ -713,7 +737,7 @@ export async function updateInitialPurchaseTransaction(
         );
         return;
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         logger.warn('Result hash was set. This likely is a spoofing attempt.', {
           purchaseRequest: dbEntry,
           resultHash: decodedNewContract.resultHash,
@@ -781,10 +805,10 @@ export async function updateInitialPurchaseTransaction(
       await prisma.purchaseRequest.update({
         where: { id: dbEntry.id },
         data: {
-          inputHash: decodedNewContract.inputHash,
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           NextAction: {
             create: {
-              inputHash: decodedNewContract.inputHash,
               requestedAction: PurchasingAction.WaitingForExternalAction,
             },
           },
@@ -869,6 +893,8 @@ export async function updateInitialPaymentTransaction(
     { type: 'Initial' }
   >['valueOutputs'][number],
   metadata: TransactionMetadata,
+  buyerCardanoFees: bigint,
+  sellerCardanoFees: bigint,
 ) {
   await prisma.$transaction(
     async (prisma) => {
@@ -1016,7 +1042,7 @@ export async function updateInitialPaymentTransaction(
         newState = OnChainState.FundsOrDatumInvalid;
         errorNote.push(errorMessage);
       }
-      if (decodedNewContract.resultHash != '') {
+      if (decodedNewContract.resultHash != null) {
         const errorMessage =
           'Result hash was set. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
@@ -1126,6 +1152,8 @@ export async function updateInitialPaymentTransaction(
       await prisma.paymentRequest.update({
         where: { id: dbEntry.id },
         data: {
+          totalBuyerCardanoFees: { increment: buyerCardanoFees },
+          totalSellerCardanoFees: { increment: sellerCardanoFees },
           collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
           NextAction: {
             create: {
@@ -1324,6 +1352,15 @@ export async function updateTransaction(
     extractedData.decodedOldContract.collateralReturnLovelace,
   );
 
+  const buyerCardanoFees = getCardanoFeesBuyer(
+    extractedData.redeemerVersion,
+    tx.metadata,
+  );
+  const sellerCardanoFees = getCardanoFeesSeller(
+    extractedData.redeemerVersion,
+    tx.metadata,
+  );
+
   const newState: OnChainState | null = redeemerToOnChainState(
     extractedData.redeemerVersion,
     extractedData.decodedNewContract,
@@ -1368,6 +1405,8 @@ export async function updateTransaction(
         buyerWithdrawn,
         tx.block.confirmations,
         tx.metadata,
+        buyerCardanoFees,
+        sellerCardanoFees,
       );
     }
   } catch (error) {
@@ -1391,6 +1430,8 @@ export async function updateTransaction(
         buyerWithdrawn,
         tx.block.confirmations,
         tx.metadata,
+        buyerCardanoFees,
+        sellerCardanoFees,
       );
     }
   } catch (error) {

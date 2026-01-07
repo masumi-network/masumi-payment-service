@@ -269,13 +269,13 @@ async function processSinglePaymentCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PaymentAction.WithdrawInitiated,
         },
       },
       CurrentTransaction: {
         update: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -328,7 +328,7 @@ export async function collectOutstandingPaymentsV1() {
   try {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.WithdrawRequested,
-      resultHash: { not: '' },
+      resultHash: { not: null },
       unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
       onChainState: { in: [OnChainState.ResultSubmitted] },
     });
@@ -345,7 +345,6 @@ export async function collectOutstandingPaymentsV1() {
 
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const paymentRequests = paymentContract.PaymentRequests;
@@ -385,7 +384,7 @@ export async function collectOutstandingPaymentsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:

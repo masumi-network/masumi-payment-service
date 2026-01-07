@@ -91,7 +91,7 @@ export function AddPaymentSourceDialog({
   onClose,
   onSuccess,
 }: AddPaymentSourceDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network: currentNetwork } = useAppContext();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedAddresses, setCopiedAddresses] = useState<{
@@ -116,12 +116,12 @@ export function AddPaymentSourceDialog({
   } = useForm<FormSchema>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      network: state.network,
+      network: currentNetwork,
       blockfrostApiKey: '',
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
+      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
       purchasingWallets: [
         { walletMnemonic: '', note: '', collectionAddress: '' },
       ],
@@ -129,13 +129,13 @@ export function AddPaymentSourceDialog({
       useCustomAdminWallets: false,
       customAdminWallets: [
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][0].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
         },
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][1].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
         },
         {
-          walletAddress: DEFAULT_ADMIN_WALLETS[state.network][2].walletAddress,
+          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
         },
       ],
     },
@@ -162,12 +162,12 @@ export function AddPaymentSourceDialog({
   useEffect(() => {
     if (open) {
       reset({
-        network: state.network,
+        network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[state.network].feeWalletAddress,
+          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[state.network].feePermille,
+        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
         purchasingWallets: [
           { walletMnemonic: '', note: '', collectionAddress: '' },
         ],
@@ -178,21 +178,21 @@ export function AddPaymentSourceDialog({
         customAdminWallets: [
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][0].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
           },
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][1].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
           },
           {
             walletAddress:
-              DEFAULT_ADMIN_WALLETS[state.network][2].walletAddress,
+              DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
           },
         ],
       });
       setError('');
     }
-  }, [open, state.network, reset]);
+  }, [open, currentNetwork, reset]);
 
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
