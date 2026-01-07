@@ -70,7 +70,7 @@ export const paymentErrorStateRecoveryPost =
           NextAction: true,
           CurrentTransaction: true,
           TransactionHistory: {
-            orderBy: { createdAt: 'desc', id: 'asc' },
+            orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
           },
         },
       });
@@ -172,9 +172,6 @@ export const paymentErrorStateRecoveryPost =
           paymentRequest.onChainState &&
           (
             [
-              OnChainState.ResultSubmitted,
-              OnChainState.RefundRequested,
-              OnChainState.Disputed,
               OnChainState.Withdrawn,
               OnChainState.RefundWithdrawn,
               OnChainState.DisputedWithdrawn,
@@ -182,7 +179,7 @@ export const paymentErrorStateRecoveryPost =
           ).includes(paymentRequest.onChainState);
 
         await tx.paymentRequest.update({
-          where: { id: paymentRequest.NextAction.id },
+          where: { id: paymentRequest.id },
           data: {
             NextAction: {
               create: {
