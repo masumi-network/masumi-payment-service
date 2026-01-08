@@ -1,5 +1,5 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import {
   $Enums,
   HotWalletType,
@@ -14,7 +14,6 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { ez } from 'express-zod-api';
 import cuid2 from '@paralleldrive/cuid2';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
@@ -23,13 +22,17 @@ import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
-import { generateBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
-import { validateHexString } from '@/utils/generator/contract-generator';
+import {
+  decodeBlockchainIdentifier,
+  generateBlockchainIdentifier,
+} from '@/utils/generator/blockchain-identifier-generator';
+import { validateHexString } from '@/utils/validator/hex';
 import {
   transformPaymentGetTimestamps,
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -63,133 +66,307 @@ export const queryPaymentsSchemaInput = z.object({
     ),
 });
 
-export const queryPaymentsSchemaOutput = z.object({
-  Payments: z.array(
-    z.object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      blockchainIdentifier: z.string(),
-      lastCheckedAt: z.date().nullable(),
-      payByTime: z.string().nullable(),
-      submitResultTime: z.string(),
-      unlockTime: z.string(),
-      collateralReturnLovelace: z.string().nullable(),
-      externalDisputeUnlockTime: z.string(),
-      requestedById: z.string(),
-      resultHash: z.string(),
-      inputHash: z.string(),
-      cooldownTime: z.number(),
-      cooldownTimeOtherParty: z.number(),
-      onChainState: z.nativeEnum(OnChainState).nullable(),
-      NextAction: z.object({
-        requestedAction: z.nativeEnum(PaymentAction),
-        errorType: z.nativeEnum(PaymentErrorType).nullable(),
-        errorNote: z.string().nullable(),
-        resultHash: z.string().nullable(),
+export const paymentResponseSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the payment'),
+    createdAt: z.date().describe('Timestamp when the payment was created'),
+    updatedAt: z.date().describe('Timestamp when the payment was last updated'),
+    blockchainIdentifier: z
+      .string()
+      .describe('Unique blockchain identifier for the payment'),
+    agentIdentifier: z
+      .string()
+      .nullable()
+      .describe('Identifier of the agent that is being paid'),
+    lastCheckedAt: z
+      .date()
+      .nullable()
+      .describe(
+        'Timestamp when the payment was last checked on-chain. Null if never checked',
+      ),
+    payByTime: z
+      .string()
+      .nullable()
+      .describe(
+        'Unix timestamp (in milliseconds) by which the buyer must submit the payment transaction. Null if not set',
+      ),
+    submitResultTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) by which the seller must submit the result',
+      ),
+    unlockTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) after which funds can be unlocked if no disputes',
+      ),
+    collateralReturnLovelace: z
+      .string()
+      .nullable()
+      .describe(
+        'Amount of collateral to return in lovelace. Null if no collateral',
+      ),
+    externalDisputeUnlockTime: z
+      .string()
+      .describe(
+        'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
+      ),
+    requestedById: z
+      .string()
+      .describe('ID of the API key that created this payment'),
+    resultHash: z
+      .string()
+      .nullable()
+      .describe(
+        'SHA256 hash of the result submitted by the seller (hex string)',
+      ),
+    nextActionLastChangedAt: z
+      .date()
+      .describe('Timestamp when the next action was last changed'),
+    onChainStateOrResultLastChangedAt: z
+      .date()
+      .describe('Timestamp when the on-chain state or result was last changed'),
+    nextActionOrOnChainStateOrResultLastChangedAt: z
+      .date()
+      .describe(
+        'Timestamp when the next action or on-chain state or result was last changed',
+      ),
+    inputHash: z
+      .string()
+      .nullable()
+      .describe('SHA256 hash of the input data for the payment (hex string)'),
+    totalBuyerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)',
+      ),
+    totalSellerCardanoFees: z
+      .number()
+      .describe(
+        'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
+      ),
+    cooldownTime: z
+      .number()
+      .describe('Cooldown period in milliseconds for the seller to dispute'),
+    cooldownTimeOtherParty: z
+      .number()
+      .describe('Cooldown period in milliseconds for the buyer to dispute'),
+    onChainState: z
+      .nativeEnum(OnChainState)
+      .nullable()
+      .describe(
+        'Current state of the payment on the blockchain. Null if not yet on-chain',
+      ),
+    NextAction: z
+      .object({
+        requestedAction: z
+          .nativeEnum(PaymentAction)
+          .describe('Next action required for this payment'),
+        errorType: z
+          .nativeEnum(PaymentErrorType)
+          .nullable()
+          .describe('Type of error that occurred, if any'),
+        errorNote: z
+          .string()
+          .nullable()
+          .describe('Additional details about the error, if any'),
+        resultHash: z
+          .string()
+          .nullable()
+          .describe(
+            'SHA256 hash of the result to be submitted (hex string). Null if not applicable',
+          ),
+      })
+      .describe('Next action required for this payment'),
+    CurrentTransaction: z
+      .object({
+        id: z.string().describe('Unique identifier for the transaction'),
+        createdAt: z
+          .date()
+          .describe('Timestamp when the transaction was created'),
+        updatedAt: z
+          .date()
+          .describe('Timestamp when the transaction was last updated'),
+        fees: z.string().nullable(),
+        blockHeight: z
+          .number()
+          .nullable()
+          .describe('Block height of the transaction'),
+        blockTime: z
+          .number()
+          .nullable()
+          .describe('Block time of the transaction'),
+        txHash: z.string().nullable().describe('Cardano transaction hash'),
+        status: z
+          .nativeEnum(TransactionStatus)
+          .describe('Current status of the transaction'),
+        previousOnChainState: z
+          .nativeEnum(OnChainState)
+          .nullable()
+          .describe('Previous on-chain state before this transaction'),
+        newOnChainState: z
+          .nativeEnum(OnChainState)
+          .nullable()
+          .describe('New on-chain state of this transaction'),
+        confirmations: z
+          .number()
+          .nullable()
+          .describe('Number of block confirmations for this transaction'),
+      })
+      .nullable()
+      .describe(
+        'Current active transaction for this payment. Null if no transaction in progress',
+      ),
+    TransactionHistory: z
+      .array(
+        z.object({
+          id: z.string().describe('Unique identifier for the transaction'),
+          createdAt: z
+            .date()
+            .describe('Timestamp when the transaction was created'),
+          updatedAt: z
+            .date()
+            .describe('Timestamp when the transaction was last updated'),
+          txHash: z.string().nullable().describe('Cardano transaction hash'),
+          status: z
+            .nativeEnum(TransactionStatus)
+            .describe('Current status of the transaction'),
+          fees: z.string().nullable().describe('Fees of the transaction'),
+          blockHeight: z
+            .number()
+            .nullable()
+            .describe('Block height of the transaction'),
+          blockTime: z
+            .number()
+            .nullable()
+            .describe('Block time of the transaction'),
+          previousOnChainState: z
+            .nativeEnum(OnChainState)
+            .nullable()
+            .describe('Previous on-chain state before this transaction'),
+          newOnChainState: z
+            .nativeEnum(OnChainState)
+            .nullable()
+            .describe('New on-chain state of this transaction'),
+          confirmations: z
+            .number()
+            .nullable()
+            .describe('Number of block confirmations for this transaction'),
+        }),
+      )
+      .nullable()
+      .describe(
+        'Historical list of all transactions for this payment. Null or empty if includeHistory is false',
+      ),
+    RequestedFunds: z.array(
+      z.object({
+        amount: z
+          .string()
+          .describe(
+            'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+          ),
+        unit: z
+          .string()
+          .describe(
+            'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+          ),
       }),
-      CurrentTransaction: z
-        .object({
-          id: z.string(),
-          createdAt: z.date(),
-          updatedAt: z.date(),
-          fees: z.string().nullable(),
-          blockHeight: z.number().nullable(),
-          blockTime: z.number().nullable(),
-          utxoCount: z.number().nullable(),
-          withdrawalCount: z.number().nullable(),
-          assetMintOrBurnCount: z.number().nullable(),
-          redeemerCount: z.number().nullable(),
-          validContract: z.boolean().nullable(),
-          outputAmount: z.string().nullable(),
-          txHash: z.string().nullable(),
-          status: z.nativeEnum(TransactionStatus),
-          previousOnChainState: z.nativeEnum(OnChainState).nullable(),
-          newOnChainState: z.nativeEnum(OnChainState).nullable(),
-          confirmations: z.number().nullable(),
-        })
-        .nullable(),
-      TransactionHistory: z
-        .array(
-          z.object({
-            id: z.string(),
-            createdAt: z.date(),
-            updatedAt: z.date(),
-            txHash: z.string(),
-            status: z.nativeEnum(TransactionStatus),
-            fees: z.string().nullable(),
-            blockHeight: z.number().nullable(),
-            blockTime: z.number().nullable(),
-            utxoCount: z.number().nullable(),
-            withdrawalCount: z.number().nullable(),
-            assetMintOrBurnCount: z.number().nullable(),
-            redeemerCount: z.number().nullable(),
-            validContract: z.boolean().nullable(),
-            outputAmount: z.string().nullable(),
-            previousOnChainState: z.nativeEnum(OnChainState).nullable(),
-            newOnChainState: z.nativeEnum(OnChainState).nullable(),
-            confirmations: z.number().nullable(),
-          }),
-        )
-        .nullable(),
-      RequestedFunds: z.array(
+    ),
+    WithdrawnForSeller: z
+      .array(
         z.object({
           amount: z
             .string()
             .describe(
-              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+              'Amount of the asset withdrawn (as string to handle large numbers)',
             ),
           unit: z
             .string()
             .describe(
-              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+              'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
             ),
         }),
-      ),
-      WithdrawnForSeller: z.array(
+      )
+      .describe('List of assets and amounts withdrawn for the seller'),
+    WithdrawnForBuyer: z
+      .array(
         z.object({
-          amount: z.string(),
-          unit: z.string(),
+          amount: z
+            .string()
+            .describe(
+              'Amount of the asset withdrawn (as string to handle large numbers)',
+            ),
+          unit: z
+            .string()
+            .describe(
+              'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
+            ),
         }),
+      )
+      .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
+    PaymentSource: z
+      .object({
+        id: z.string().describe('Unique identifier for the payment source'),
+        network: z
+          .nativeEnum(Network)
+          .describe('The Cardano network (Mainnet, Preprod, or Preview)'),
+        smartContractAddress: z
+          .string()
+          .describe('Address of the smart contract managing this payment'),
+        policyId: z
+          .string()
+          .nullable()
+          .describe(
+            'Policy ID for the agent registry NFTs. Null if not applicable',
+          ),
+      })
+      .describe('Payment source configuration for this payment'),
+    BuyerWallet: z
+      .object({
+        id: z.string().describe('Unique identifier for the buyer wallet'),
+        walletVkey: z.string().describe('Payment key hash of the buyer wallet'),
+      })
+      .nullable()
+      .describe(
+        'Buyer wallet information. Null if buyer has not yet submitted payment',
       ),
-      WithdrawnForBuyer: z.array(
+    SmartContractWallet: z
+      .object({
+        id: z
+          .string()
+          .describe('Unique identifier for the smart contract wallet'),
+        walletVkey: z
+          .string()
+          .describe('Payment key hash of the smart contract wallet'),
+        walletAddress: z
+          .string()
+          .describe('Cardano address of the smart contract wallet'),
+      })
+      .nullable()
+      .describe(
+        'Smart contract wallet (seller wallet) managing this payment. Null if not set',
+      ),
+    metadata: z
+      .string()
+      .nullable()
+      .describe(
+        'Optional metadata stored with the payment for additional context. Null if not provided',
+      ),
+    ActionHistory: z
+      .array(
         z.object({
-          amount: z.string(),
-          unit: z.string(),
+          id: z.string(),
+          createdAt: z.date(),
+          requestedAction: z.nativeEnum(PaymentAction),
         }),
-      ),
-      PaymentSource: z.object({
-        id: z.string(),
-        network: z.nativeEnum(Network),
-        smartContractAddress: z.string(),
-        policyId: z.string().nullable(),
-      }),
-      BuyerWallet: z
-        .object({
-          id: z.string(),
-          walletVkey: z.string(),
-        })
-        .nullable(),
-      SmartContractWallet: z
-        .object({
-          id: z.string(),
-          walletVkey: z.string(),
-          walletAddress: z.string(),
-        })
-        .nullable(),
-      metadata: z.string().nullable(),
-      ActionHistory: z
-        .array(
-          z.object({
-            id: z.string(),
-            createdAt: z.date(),
-            requestedAction: z.nativeEnum(PaymentAction),
-          }),
-        )
-        .optional()
-        .describe('History of previous NextAction states'),
-    }),
-  ),
+      )
+      .optional()
+      .describe('History of previous NextAction states'),
+  })
+  .openapi('Payment');
+
+export const queryPaymentsSchemaOutput = z.object({
+  Payments: z.array(paymentResponseSchema),
 });
 
 export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
@@ -230,26 +407,69 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
         : undefined,
       take: input.limit,
       include: {
-        BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        RequestedFunds: { include: { AgentFixedPricing: true } },
-        NextAction: true,
-        CurrentTransaction: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
         },
-        ActionHistory: {
-          orderBy: { createdAt: 'desc' },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
           select: {
             id: true,
             createdAt: true,
-            requestedAction: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
           },
         },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
+        TransactionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  txHash: true,
+                  status: true,
+                  fees: true,
+                  blockHeight: true,
+                  blockTime: true,
+                  previousOnChainState: true,
+                  newOnChainState: true,
+                  confirmations: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -257,26 +477,32 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     }
 
     return {
-      Payments: result.map((payment) => ({
-        ...payment,
-        ...transformPaymentGetTimestamps(payment),
-        ...transformPaymentGetAmounts(payment),
-        CurrentTransaction: payment.CurrentTransaction
-          ? {
-              ...payment.CurrentTransaction,
-              fees:
-                payment.CurrentTransaction.fees !== null
-                  ? payment.CurrentTransaction.fees.toString()
-                  : null,
-            }
-          : null,
-        TransactionHistory: payment.TransactionHistory
-          ? payment.TransactionHistory.map((tx) => ({
-              ...tx,
-              fees: tx.fees !== null ? tx.fees.toString() : null,
-            }))
-          : null,
-      })),
+      Payments: result.map((payment) => {
+        return {
+          ...payment,
+          ...transformPaymentGetTimestamps(payment),
+          ...transformPaymentGetAmounts(payment),
+          totalBuyerCardanoFees:
+            Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+          agentIdentifier:
+            decodeBlockchainIdentifier(payment.blockchainIdentifier)
+              ?.agentIdentifier ?? null,
+          CurrentTransaction: payment.CurrentTransaction
+            ? {
+                ...payment.CurrentTransaction,
+                fees: payment.CurrentTransaction.fees?.toString() ?? null,
+              }
+            : null,
+          TransactionHistory: payment.TransactionHistory
+            ? payment.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : null,
+        };
+      }),
     };
   },
 });
@@ -297,7 +523,22 @@ export const createPaymentsSchemaInput = z.object({
     .max(250)
     .describe('The identifier of the agent that will be paid'),
   RequestedFunds: z
-    .array(z.object({ amount: z.string().max(25), unit: z.string().max(150) }))
+    .array(
+      z.object({
+        amount: z
+          .string()
+          .max(25)
+          .describe(
+            'Amount of the asset in smallest unit (e.g., lovelace for ADA)',
+          ),
+        unit: z
+          .string()
+          .max(150)
+          .describe(
+            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
+          ),
+      }),
+    )
     .max(7)
     .optional()
     .describe('The amounts of the payment, should be null for fixed amount'),
@@ -336,110 +577,8 @@ export const createPaymentsSchemaInput = z.object({
     ),
 });
 
-export const createPaymentSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  payByTime: z.string(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  externalDisputeUnlockTime: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  requestedById: z.string(),
-  inputHash: z.string(),
-  resultHash: z.string(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  NextAction: z.object({
-    requestedAction: z.nativeEnum(PaymentAction),
-    resultHash: z.string().nullable(),
-    errorType: z.nativeEnum(PaymentErrorType).nullable(),
-    errorNote: z.string().nullable(),
-  }),
-  RequestedFunds: z.array(
-    z.object({
-      amount: z
-        .string()
-        .describe(
-          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-        ),
-      unit: z
-        .string()
-        .describe(
-          'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-        ),
-    }),
-  ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    smartContractAddress: z.string(),
-    policyId: z.string().nullable(),
-  }),
-  BuyerWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-    })
-    .nullable(),
-  SmartContractWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-    })
-    .nullable(),
-  CurrentTransaction: z
-    .object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      txHash: z.string(),
-      status: z.nativeEnum(TransactionStatus),
-      fees: z.string().nullable(),
-      blockHeight: z.number().nullable(),
-      blockTime: z.number().nullable(),
-      utxoCount: z.number().nullable(),
-      withdrawalCount: z.number().nullable(),
-      assetMintOrBurnCount: z.number().nullable(),
-      redeemerCount: z.number().nullable(),
-      validContract: z.boolean().nullable(),
-      outputAmount: z.string().nullable(),
-    })
-    .nullable(),
-  TransactionHistory: z
-    .array(
-      z.object({
-        id: z.string(),
-        createdAt: z.date(),
-        updatedAt: z.date(),
-        txHash: z.string(),
-        status: z.nativeEnum(TransactionStatus),
-        fees: z.string().nullable(),
-        blockHeight: z.number().nullable(),
-        blockTime: z.number().nullable(),
-        utxoCount: z.number().nullable(),
-        withdrawalCount: z.number().nullable(),
-        assetMintOrBurnCount: z.number().nullable(),
-        redeemerCount: z.number().nullable(),
-        validContract: z.boolean().nullable(),
-        outputAmount: z.string().nullable(),
-      }),
-    )
-    .nullable(),
-  metadata: z.string().nullable(),
+export const createPaymentSchemaOutput = paymentResponseSchema.omit({
+  TransactionHistory: true,
 });
 
 export const paymentInitPost = readAuthenticatedEndpointFactory.build({
@@ -472,8 +611,9 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
-        PaymentSourceConfig: true,
+        PaymentSourceConfig: {
+          select: { rpcProviderApiKey: true, rpcProvider: true },
+        },
       },
     });
     if (specifiedPaymentContract == null) {
@@ -555,9 +695,10 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
 
-    const provider = new BlockFrostAPI({
-      projectId: specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const provider = getBlockfrostInstance(
+      input.network,
+      specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     if (input.agentIdentifier.startsWith(policyId) == false) {
       throw createHttpError(
@@ -615,15 +756,21 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const vKey = resolvePaymentKeyHash(assetInWallet[0].address);
 
-    const sellingWallet = specifiedPaymentContract.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == vKey && wallet.type == HotWalletType.Selling,
-    );
+    const sellingWallet = await prisma.hotWallet.findFirst({
+      where: {
+        deletedAt: null,
+        type: HotWalletType.Selling,
+        walletVkey: vKey,
+        paymentSourceId: specifiedPaymentContract.id,
+      },
+      include: {
+        Secret: {
+          select: { encryptedMnemonic: true },
+        },
+      },
+    });
     if (sellingWallet == null) {
-      throw createHttpError(
-        404,
-        'Agent identifier not found in selling wallets',
-      );
+      throw createHttpError(404, 'Selling wallet not found');
     }
     const sellerCUID = cuid2.createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
@@ -640,6 +787,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       externalDisputeUnlockTime: externalDisputeUnlockTime.toString(),
       sellerAddress: sellingWallet.walletAddress,
     };
+
     const meshWallet = new MeshWallet({
       networkId: convertNetworkToId(input.network),
       key: {
@@ -665,6 +813,8 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 
     const payment = await prisma.paymentRequest.create({
       data: {
+        totalBuyerCardanoFees: BigInt(0),
+        totalSellerCardanoFees: BigInt(0),
         blockchainIdentifier: compressedEncodedBlockchainIdentifier,
         PaymentSource: { connect: { id: specifiedPaymentContract.id } },
         RequestedFunds: {
@@ -694,79 +844,73 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         metadata: input.metadata,
       },
       include: {
-        RequestedFunds: true,
-        BuyerWallet: true,
-        SmartContractWallet: { where: { deletedAt: null } },
-        PaymentSource: true,
-        NextAction: true,
-        CurrentTransaction: true,
-        TransactionHistory: true,
-        WithdrawnForSeller: true,
-        WithdrawnForBuyer: true,
+        BuyerWallet: { select: { id: true, walletVkey: true } },
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+        RequestedFunds: { select: { id: true, amount: true, unit: true } },
+        NextAction: {
+          select: {
+            id: true,
+            requestedAction: true,
+            errorType: true,
+            errorNote: true,
+            resultHash: true,
+          },
+        },
+        PaymentSource: {
+          select: {
+            id: true,
+            network: true,
+            smartContractAddress: true,
+            policyId: true,
+          },
+        },
+        CurrentTransaction: {
+          select: {
+            id: true,
+            createdAt: true,
+            updatedAt: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+            txHash: true,
+            status: true,
+            previousOnChainState: true,
+            newOnChainState: true,
+            confirmations: true,
+          },
+        },
+        WithdrawnForSeller: {
+          select: { id: true, amount: true, unit: true },
+        },
+        WithdrawnForBuyer: {
+          select: { id: true, amount: true, unit: true },
+        },
       },
     });
     if (payment.SmartContractWallet == null) {
       throw createHttpError(500, 'Smart contract wallet not connected');
     }
+
     return {
       ...payment,
+      ...transformPaymentGetTimestamps(payment),
+      ...transformPaymentGetAmounts(payment),
+      totalBuyerCardanoFees:
+        Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+      totalSellerCardanoFees:
+        Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+      agentIdentifier:
+        decodeBlockchainIdentifier(payment.blockchainIdentifier)
+          ?.agentIdentifier ?? null,
       CurrentTransaction: payment.CurrentTransaction
         ? {
-            id: payment.CurrentTransaction.id,
-            createdAt: payment.CurrentTransaction.createdAt,
-            updatedAt: payment.CurrentTransaction.updatedAt,
-            txHash: payment.CurrentTransaction.txHash,
-            status: payment.CurrentTransaction.status,
+            ...payment.CurrentTransaction,
             fees: payment.CurrentTransaction.fees?.toString() ?? null,
-            blockHeight: payment.CurrentTransaction.blockHeight,
-            blockTime: payment.CurrentTransaction.blockTime,
-            utxoCount: payment.CurrentTransaction.utxoCount,
-            withdrawalCount: payment.CurrentTransaction.withdrawalCount,
-            assetMintOrBurnCount:
-              payment.CurrentTransaction.assetMintOrBurnCount,
-            redeemerCount: payment.CurrentTransaction.redeemerCount,
-            validContract: payment.CurrentTransaction.validContract,
-            outputAmount: payment.CurrentTransaction.outputAmount,
           }
         : null,
-      TransactionHistory: payment.TransactionHistory.map((tx) => ({
-        id: tx.id,
-        createdAt: tx.createdAt,
-        updatedAt: tx.updatedAt,
-        txHash: tx.txHash,
-        status: tx.status,
-        fees: tx.fees?.toString() ?? null,
-        blockHeight: tx.blockHeight,
-        blockTime: tx.blockTime,
-        utxoCount: tx.utxoCount,
-        withdrawalCount: tx.withdrawalCount,
-        assetMintOrBurnCount: tx.assetMintOrBurnCount,
-        redeemerCount: tx.redeemerCount,
-        validContract: tx.validContract,
-        outputAmount: tx.outputAmount,
-      })),
-      payByTime: payment.payByTime!.toString(),
-      submitResultTime: payment.submitResultTime.toString(),
-      unlockTime: payment.unlockTime.toString(),
-      externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-      RequestedFunds: (
-        payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        ...amount,
-        amount: amount.amount.toString(),
-      })),
-      WithdrawnForSeller: (
-        payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        unit: amount.unit,
-        amount: amount.amount.toString(),
-      })),
-      WithdrawnForBuyer: (
-        payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        unit: amount.unit,
-        amount: BigInt(amount.amount).toString(),
-      })),
     };
   },
 });

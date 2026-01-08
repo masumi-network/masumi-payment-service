@@ -701,6 +701,41 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Optional metadata stored with the payment for additional context. Null if not provided"
+                    },
+                    "ActionHistory": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string"
+                                },
+                                "createdAt": {
+                                    "type": "string"
+                                },
+                                "requestedAction": {
+                                    "type": "string",
+                                    "enum": [
+                                        "None",
+                                        "Ignore",
+                                        "WaitingForManualAction",
+                                        "WaitingForExternalAction",
+                                        "SubmitResultRequested",
+                                        "SubmitResultInitiated",
+                                        "WithdrawRequested",
+                                        "WithdrawInitiated",
+                                        "AuthorizeRefundRequested",
+                                        "AuthorizeRefundInitiated"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "createdAt",
+                                "requestedAction"
+                            ]
+                        },
+                        "description": "History of previous NextAction states"
                     }
                 },
                 "required": [
@@ -3940,6 +3975,41 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Optional metadata stored with the payment for additional context. Null if not provided"
+                                                },
+                                                "ActionHistory": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "requestedAction": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "None",
+                                                                    "Ignore",
+                                                                    "WaitingForManualAction",
+                                                                    "WaitingForExternalAction",
+                                                                    "SubmitResultRequested",
+                                                                    "SubmitResultInitiated",
+                                                                    "WithdrawRequested",
+                                                                    "WithdrawInitiated",
+                                                                    "AuthorizeRefundRequested",
+                                                                    "AuthorizeRefundInitiated"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "requestedAction"
+                                                        ]
+                                                    },
+                                                    "description": "History of previous NextAction states"
                                                 }
                                             },
                                             "required": [
@@ -5102,6 +5172,41 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Optional metadata stored with the payment for additional context. Null if not provided"
+                                                },
+                                                "ActionHistory": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "requestedAction": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "None",
+                                                                    "Ignore",
+                                                                    "WaitingForManualAction",
+                                                                    "WaitingForExternalAction",
+                                                                    "SubmitResultRequested",
+                                                                    "SubmitResultInitiated",
+                                                                    "WithdrawRequested",
+                                                                    "WithdrawInitiated",
+                                                                    "AuthorizeRefundRequested",
+                                                                    "AuthorizeRefundInitiated"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "requestedAction"
+                                                        ]
+                                                    },
+                                                    "description": "History of previous NextAction states"
                                                 }
                                             },
                                             "required": [
@@ -5660,6 +5765,41 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Optional metadata stored with the payment for additional context. Null if not provided"
+                                                },
+                                                "ActionHistory": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "requestedAction": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "None",
+                                                                    "Ignore",
+                                                                    "WaitingForManualAction",
+                                                                    "WaitingForExternalAction",
+                                                                    "SubmitResultRequested",
+                                                                    "SubmitResultInitiated",
+                                                                    "WithdrawRequested",
+                                                                    "WithdrawInitiated",
+                                                                    "AuthorizeRefundRequested",
+                                                                    "AuthorizeRefundInitiated"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "requestedAction"
+                                                        ]
+                                                    },
+                                                    "description": "History of previous NextAction states"
                                                 }
                                             },
                                             "required": [
