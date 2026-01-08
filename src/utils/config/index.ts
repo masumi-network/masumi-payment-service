@@ -82,7 +82,11 @@ const autoDecisionInterval = Number(process.env.AUTO_DECISION_INTERVAL ?? '30');
 if (autoDecisionInterval < 5)
   throw new Error('AUTO_DECISION_INTERVAL must be at least 5 seconds');
 
-const webhookDeliveryInterval = 10; // 10 seconds
+const webhookDeliveryInterval = Number(
+  process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10',
+);
+if (webhookDeliveryInterval < 5)
+  throw new Error('WEBHOOK_DELIVERY_INTERVAL must be at least 5 seconds');
 
 const blockConfirmationsThreshold = Number(
   process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1',
