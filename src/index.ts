@@ -14,10 +14,12 @@ import { DEFAULTS } from '@/utils/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
 import fs from 'fs';
+import { setupTracing } from '@/tracing';
 
 const __dirname = path.resolve();
 
 async function initialize() {
+  await setupTracing();
   await initDB();
   const defaultKey = await prisma.apiKey.findUnique({
     where: {

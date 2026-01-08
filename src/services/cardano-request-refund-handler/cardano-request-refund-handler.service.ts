@@ -159,7 +159,7 @@ async function processSinglePurchaseRequest(
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(BigInt(paymentContract.cooldownTime)),
     state:
-      decodedContract.resultHash == ''
+      decodedContract.resultHash == null || decodedContract.resultHash == ''
         ? SmartContractState.RefundRequested
         : SmartContractState.Disputed,
   });
@@ -216,7 +216,7 @@ async function processSinglePurchaseRequest(
       data: {
         CurrentTransaction: {
           create: {
-            txHash: '',
+            txHash: null,
             status: TransactionStatus.Pending,
             BlocksWallet: {
               connect: {

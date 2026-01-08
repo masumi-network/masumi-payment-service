@@ -1,5 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { ApiKeyStatus, Network, Permission } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
@@ -22,15 +22,19 @@ export const getAPIKeySchemaInput = z.object({
     .describe('Used to paginate through the API keys'),
 });
 
-export const getAPIKeySchemaOutput = z.object({
-  ApiKeys: z.array(
-    z.object({
-      id: z.string(),
-      token: z.string(),
-      permission: z.nativeEnum(Permission),
-      usageLimited: z.boolean(),
-      networkLimit: z.array(z.nativeEnum(Network)),
-      RemainingUsageCredits: z.array(
+export const apiKeyOutputSchema = z
+  .object({
+    id: z.string().describe('Unique identifier for the API key'),
+    token: z.string().describe('The API key token'),
+    permission: z
+      .nativeEnum(Permission)
+      .describe('Permission level of the API key'),
+    usageLimited: z.boolean().describe('Whether the API key has usage limits'),
+    networkLimit: z
+      .array(z.nativeEnum(Network))
+      .describe('List of Cardano networks this API key is allowed to access'),
+    RemainingUsageCredits: z
+      .array(
         z.object({
           unit: z
             .string()
@@ -43,10 +47,16 @@ export const getAPIKeySchemaOutput = z.object({
               'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
             ),
         }),
-      ),
-      status: z.nativeEnum(ApiKeyStatus),
-    }),
-  ),
+      )
+      .describe('Remaining usage credits for this API key'),
+    status: z
+      .nativeEnum(ApiKeyStatus)
+      .describe('Current status of the API key'),
+  })
+  .openapi('APIKey');
+
+export const getAPIKeySchemaOutput = z.object({
+  ApiKeys: z.array(apiKeyOutputSchema).describe('List of API keys'),
 });
 
 export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
@@ -61,7 +71,9 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
     return {
       ApiKeys: result.map((data) => ({
@@ -112,14 +124,7 @@ export const addAPIKeySchemaInput = z.object({
     .describe('The permission of the API key'),
 });
 
-export const addAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  status: z.nativeEnum(ApiKeyStatus),
-});
+export const addAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -154,8 +159,16 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
           },
         },
       },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
-    return result;
+    return {
+      ...result,
+      RemainingUsageCredits: transformBigIntAmounts(
+        result.RemainingUsageCredits,
+      ),
+    };
   },
 });
 
@@ -209,14 +222,7 @@ export const updateAPIKeySchemaInput = z.object({
     .describe('The networks the API key is allowed to use'),
 });
 
-export const updateAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  usageLimited: z.boolean(),
-  status: z.nativeEnum(ApiKeyStatus),
-});
+export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const updateAPIKeyEndpointPatch =
   adminAuthenticatedEndpointFactory.build({
@@ -229,10 +235,14 @@ export const updateAPIKeyEndpointPatch =
       input: z.infer<typeof updateAPIKeySchemaInput>;
     }) => {
       const apiKey = await prisma.$transaction(
-        async (tx) => {
-          const apiKey = await tx.apiKey.findUnique({
+        async (prisma) => {
+          const apiKey = await prisma.apiKey.findUnique({
             where: { id: input.id },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: {
+                select: { id: true, amount: true, unit: true },
+              },
+            },
           });
           if (!apiKey) {
             throw createHttpError(404, 'API key not found');
@@ -246,13 +256,13 @@ export const updateAPIKeyEndpointPatch =
               if (existingCredit) {
                 existingCredit.amount += parsedAmount;
                 if (existingCredit.amount == 0n) {
-                  await tx.unitValue.delete({
+                  await prisma.unitValue.delete({
                     where: { id: existingCredit.id },
                   });
                 } else if (existingCredit.amount < 0) {
                   throw createHttpError(400, 'Invalid amount');
                 } else {
-                  await tx.unitValue.update({
+                  await prisma.unitValue.update({
                     where: { id: existingCredit.id },
                     data: { amount: existingCredit.amount },
                   });
@@ -261,7 +271,7 @@ export const updateAPIKeyEndpointPatch =
                 if (parsedAmount <= 0) {
                   throw createHttpError(400, 'Invalid amount');
                 }
-                await tx.unitValue.create({
+                await prisma.unitValue.create({
                   data: {
                     unit: usageCredit.unit,
                     amount: parsedAmount,
@@ -274,13 +284,16 @@ export const updateAPIKeyEndpointPatch =
               }
             }
           }
-          const result = await tx.apiKey.update({
+          const result = await prisma.apiKey.update({
             where: { id: input.id },
             data: {
               token: input.token,
               usageLimited: input.usageLimited,
               status: input.status,
               networkLimit: input.networkLimit,
+            },
+            include: {
+              RemainingUsageCredits: { select: { amount: true, unit: true } },
             },
           });
           return result;
@@ -291,7 +304,12 @@ export const updateAPIKeyEndpointPatch =
           isolationLevel: 'Serializable',
         },
       );
-      return apiKey;
+      return {
+        ...apiKey,
+        RemainingUsageCredits: transformBigIntAmounts(
+          apiKey.RemainingUsageCredits,
+        ),
+      };
     },
   });
 
@@ -302,15 +320,7 @@ export const deleteAPIKeySchemaInput = z.object({
     .describe('The id of the API key to be (soft) deleted.'),
 });
 
-export const deleteAPIKeySchemaOutput = z.object({
-  id: z.string(),
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  status: z.nativeEnum(ApiKeyStatus),
-  deletedAt: z.date().nullable(),
-});
+export const deleteAPIKeySchemaOutput = apiKeyOutputSchema;
 
 export const deleteAPIKeyEndpointDelete =
   adminAuthenticatedEndpointFactory.build({
@@ -322,9 +332,18 @@ export const deleteAPIKeyEndpointDelete =
     }: {
       input: z.infer<typeof deleteAPIKeySchemaInput>;
     }) => {
-      return await prisma.apiKey.update({
+      const apiKey = await prisma.apiKey.update({
         where: { id: input.id },
         data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
+        include: {
+          RemainingUsageCredits: { select: { amount: true, unit: true } },
+        },
       });
+      return {
+        ...apiKey,
+        RemainingUsageCredits: transformBigIntAmounts(
+          apiKey.RemainingUsageCredits,
+        ),
+      };
     },
   });

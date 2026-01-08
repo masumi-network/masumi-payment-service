@@ -3,8 +3,8 @@ import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { convertNetwork } from '@/utils/converter/network-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 const mutex = new Mutex();
 
@@ -30,10 +30,10 @@ export async function checkRegistryTransactions() {
     try {
       const results = await Promise.allSettled(
         paymentContracts.map(async (paymentContract) => {
-          const blockfrost = new BlockFrostAPI({
-            projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-            network: convertNetwork(paymentContract.network),
-          });
+          const blockfrost = getBlockfrostInstance(
+            paymentContract.network,
+            paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+          );
 
           const registryRequests = await getRegistrationRequestsToSync(
             paymentContract.id,
@@ -65,7 +65,7 @@ async function syncRegistryRequests(
     state: RegistrationState;
     CurrentTransaction: {
       BlocksWallet: { id: string } | null;
-      txHash: string;
+      txHash: string | null;
     } | null;
     agentIdentifier: string | null;
   }>,
@@ -80,8 +80,14 @@ async function syncRegistryRequests(
 
       if (registryRequest.state == RegistrationState.RegistrationInitiated) {
         if (owner.length >= 1 && owner[0].quantity == '1') {
+          if (
+            registryRequest.CurrentTransaction == undefined ||
+            registryRequest.CurrentTransaction.txHash == null
+          ) {
+            throw new Error('Registry request has no tx hash');
+          }
           const tx = await blockfrost.txs(
-            registryRequest.CurrentTransaction!.txHash,
+            registryRequest.CurrentTransaction.txHash,
           );
           const block = await blockfrost.blocks(tx.block);
           const confirmations = block.confirmations;
@@ -133,8 +139,14 @@ async function syncRegistryRequests(
         registryRequest.state == RegistrationState.DeregistrationInitiated
       ) {
         if (owner.length == 0 || owner[0].quantity == '0') {
+          if (
+            registryRequest.CurrentTransaction == undefined ||
+            registryRequest.CurrentTransaction.txHash == null
+          ) {
+            throw new Error('Deregistration request has no tx hash');
+          }
           const tx = await blockfrost.txs(
-            registryRequest.CurrentTransaction!.txHash,
+            registryRequest.CurrentTransaction.txHash,
           );
           const block = await blockfrost.blocks(tx.block);
           const confirmations = block.confirmations;

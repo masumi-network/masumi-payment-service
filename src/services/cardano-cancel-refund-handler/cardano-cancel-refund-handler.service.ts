@@ -37,7 +37,7 @@ const mutex = new Mutex();
 function validatePurchaseRequestFields(request: {
   payByTime: bigint | null;
   collateralReturnLovelace: bigint | null;
-  CurrentTransaction: { txHash: string } | null;
+  CurrentTransaction: { txHash: string | null } | null;
   SmartContractWallet: object | null;
 }): void {
   if (request.payByTime == null) {
@@ -110,6 +110,7 @@ function createCancelRefundDatum(params: {
     newCooldownTimeSeller: BigInt(0),
     newCooldownTimeBuyer: newCooldownTime(params.cooldownTime),
     state:
+      params.decodedContract.resultHash == null ||
       params.decodedContract.resultHash == ''
         ? SmartContractState.FundsLocked
         : SmartContractState.ResultSubmitted,
@@ -144,7 +145,6 @@ export async function cancelRefundsV1() {
         );
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const purchaseRequests = paymentContract.PurchaseRequests;
@@ -226,8 +226,9 @@ export async function cancelRefundsV1() {
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
-                  BigInt(request.collateralReturnLovelace!) &&
-                BigInt(decodedContract.payByTime) == BigInt(request.payByTime!)
+                  BigInt(request.collateralReturnLovelace ?? 0) &&
+                BigInt(decodedContract.payByTime) ==
+                  BigInt(request.payByTime ?? 0)
               );
             });
 
@@ -274,14 +275,14 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction:
                       PurchasingAction.UnSetRefundRequestedInitiated,
                   },
                 },
                 CurrentTransaction: {
                   create: {
-                    txHash: '',
+                    txHash: null,
                     status: TransactionStatus.Pending,
                     BlocksWallet: {
                       connect: {
@@ -332,7 +333,7 @@ export async function cancelRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

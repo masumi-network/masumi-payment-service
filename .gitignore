@@ -28,3 +28,5 @@ smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
 
 otelcol-contrib
+tests/e2e/.e2e-global-state.json
+tests/e2e/.e2e-global-state.json

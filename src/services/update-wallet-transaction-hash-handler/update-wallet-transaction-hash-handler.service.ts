@@ -112,7 +112,7 @@ export async function updateWalletTransactionHash() {
                       },
                     },
               NextAction: {
-                update: {
+                create: {
                   requestedAction: PaymentAction.WaitingForExternalAction,
                   errorNote: 'Timeout when locking',
                   errorType: PaymentErrorType.Unknown,
@@ -180,7 +180,7 @@ export async function updateWalletTransactionHash() {
                 },
               },
               NextAction: {
-                update: {
+                create: {
                   requestedAction: PaymentAction.WaitingForExternalAction,
                   errorNote: 'Timeout when waiting for transaction',
                   errorType: PaymentErrorType.Unknown,
@@ -271,7 +271,7 @@ export async function updateWalletTransactionHash() {
                       },
                     },
               NextAction: {
-                update: {
+                create: {
                   requestedAction: PurchasingAction.WaitingForExternalAction,
                   errorNote: 'Timeout when locking',
                   errorType: PurchaseErrorType.Unknown,
@@ -340,7 +340,7 @@ export async function updateWalletTransactionHash() {
                 },
               },
               NextAction: {
-                update: {
+                create: {
                   requestedAction: PurchasingAction.WaitingForExternalAction,
                   errorNote: 'Timeout when waiting for transaction',
                   errorType: PurchaseErrorType.Unknown,
@@ -548,6 +548,21 @@ export async function updateWalletTransactionHash() {
             return;
           }
           const txHash = wallet.PendingTransaction.txHash;
+          if (txHash == null) {
+            await prisma.hotWallet.update({
+              where: { id: wallet.id, deletedAt: null },
+              data: {
+                PendingTransaction: { disconnect: true },
+                lockedAt: null,
+              },
+            });
+            if (wallet.type == HotWalletType.Selling) {
+              unlockedSellingWalletIds.push(wallet.id);
+            } else if (wallet.type == HotWalletType.Purchasing) {
+              unlockedPurchasingWalletIds.push(wallet.id);
+            }
+            return;
+          }
 
           const blockfrostKey =
             wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;

@@ -1,12 +1,5 @@
-import { z } from 'zod';
-import {
-  Network,
-  PurchasingAction,
-  TransactionStatus,
-  PurchaseErrorType,
-  OnChainState,
-  $Enums,
-} from '@prisma/client';
+import { z } from '@/utils/zod-openapi';
+import { Network, $Enums } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -15,6 +8,8 @@ import {
   transformPurchaseGetTimestamps,
   transformPurchaseGetAmounts,
 } from '@/utils/shared/transformers';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { purchaseResponseSchema } from '@/routes/api/purchases';
 
 export const postPurchaseRequestSchemaInput = z.object({
   blockchainIdentifier: z
@@ -28,7 +23,6 @@ export const postPurchaseRequestSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('The smart contract address of the payment source'),
-
   includeHistory: z
     .string()
     .optional()
@@ -39,94 +33,7 @@ export const postPurchaseRequestSchemaInput = z.object({
     ),
 });
 
-export const postPurchaseRequestSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  payByTime: z.string().nullable(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  externalDisputeUnlockTime: z.string(),
-  requestedById: z.string(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  collateralReturnLovelace: z.string().nullable(),
-  cooldownTime: z.number(),
-  cooldownTimeOtherParty: z.number(),
-  inputHash: z.string(),
-  resultHash: z.string(),
-  NextAction: z.object({
-    inputHash: z.string(),
-    requestedAction: z.nativeEnum(PurchasingAction),
-    errorType: z.nativeEnum(PurchaseErrorType).nullable(),
-    errorNote: z.string().nullable(),
-  }),
-  CurrentTransaction: z
-    .object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      txHash: z.string(),
-      status: z.nativeEnum(TransactionStatus),
-    })
-    .nullable(),
-  TransactionHistory: z.array(
-    z.object({
-      id: z.string(),
-      createdAt: z.date(),
-      updatedAt: z.date(),
-      txHash: z.string(),
-      status: z.nativeEnum(TransactionStatus),
-    }),
-  ),
-  PaidFunds: z.array(
-    z.object({
-      amount: z
-        .string()
-        .describe(
-          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-        ),
-      unit: z
-        .string()
-        .describe(
-          'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-        ),
-    }),
-  ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    smartContractAddress: z.string(),
-    policyId: z.string().nullable(),
-  }),
-  SellerWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-    })
-    .nullable(),
-  SmartContractWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-    })
-    .nullable(),
-  metadata: z.string().nullable(),
-});
+export const postPurchaseRequestSchemaOutput = purchaseResponseSchema;
 
 export const resolvePurchaseRequestPost =
   readAuthenticatedEndpointFactory.build({
@@ -151,7 +58,7 @@ export const resolvePurchaseRequestPost =
         options.permission,
       );
 
-      const result = await prisma.purchaseRequest.findUnique({
+      const purchase = await prisma.purchaseRequest.findUnique({
         where: {
           PaymentSource: {
             deletedAt: null,
@@ -161,27 +68,97 @@ export const resolvePurchaseRequestPost =
           blockchainIdentifier: input.blockchainIdentifier,
         },
         include: {
-          SellerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaidFunds: true,
-          NextAction: true,
-          PaymentSource: true,
-          CurrentTransaction: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-          TransactionHistory: {
-            orderBy: { createdAt: 'desc' },
-            take: input.includeHistory == true ? undefined : 0,
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+            },
           },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              status: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+            },
+          },
+          PaidFunds: { select: { id: true, amount: true, unit: true } },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              policyId: true,
+              smartContractAddress: true,
+            },
+          },
+          SellerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
+
+          TransactionHistory:
+            input.includeHistory == true
+              ? {
+                  orderBy: { createdAt: 'desc' },
+                  select: {
+                    id: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    txHash: true,
+                    status: true,
+                    fees: true,
+                    blockHeight: true,
+                    blockTime: true,
+                    previousOnChainState: true,
+                    newOnChainState: true,
+                    confirmations: true,
+                  },
+                }
+              : undefined,
         },
       });
-      if (result == null) {
+      if (purchase == null) {
         throw createHttpError(404, 'Purchase not found');
       }
+
       return {
-        ...result,
-        ...transformPurchaseGetTimestamps(result),
-        ...transformPurchaseGetAmounts(result),
+        ...purchase,
+        ...transformPurchaseGetTimestamps(purchase),
+        ...transformPurchaseGetAmounts(purchase),
+        totalBuyerCardanoFees:
+          Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+        agentIdentifier:
+          decodeBlockchainIdentifier(purchase.blockchainIdentifier)
+            ?.agentIdentifier ?? null,
+        CurrentTransaction: purchase.CurrentTransaction
+          ? {
+              ...purchase.CurrentTransaction,
+              fees: purchase.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
+        TransactionHistory:
+          input.includeHistory == true
+            ? purchase.TransactionHistory.map((tx) => ({
+                ...tx,
+                fees: tx.fees?.toString() ?? null,
+              }))
+            : [],
       };
     },
   });

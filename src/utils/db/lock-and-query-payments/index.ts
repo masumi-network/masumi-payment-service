@@ -12,7 +12,7 @@ export async function lockAndQueryPayments({
   paymentStatus: PaymentAction | { in: PaymentAction[] };
   submitResultTime?: { lte: number } | undefined | { gte: number };
   onChainState?: OnChainState | { in: OnChainState[] } | undefined;
-  resultHash?: string | { not: string } | undefined;
+  resultHash?: string | { not: string | null } | undefined;
   requestedResultHash?: string | { not: null } | undefined;
   unlockTime?: { lte: number } | undefined | { gte: number };
 }) {

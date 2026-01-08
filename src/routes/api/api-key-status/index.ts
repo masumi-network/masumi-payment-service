@@ -1,33 +1,13 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from 'zod';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { apiKeyOutputSchema } from '@/routes/api/api-key';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 
-export const getAPIKeyStatusSchemaOutput = z.object({
-  token: z.string(),
-  permission: z.nativeEnum(Permission),
-  usageLimited: z.boolean(),
-  networkLimit: z.array(z.nativeEnum(Network)),
-  RemainingUsageCredits: z.array(
-    z.object({
-      unit: z
-        .string()
-        .describe(
-          'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-        ),
-      amount: z
-        .string()
-        .describe(
-          'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-        ),
-    }),
-  ),
-  status: z.nativeEnum(ApiKeyStatus),
-});
+export const getAPIKeyStatusSchemaOutput = apiKeyOutputSchema;
 
 export const queryAPIKeyStatusEndpointGet =
   readAuthenticatedEndpointFactory.build({
@@ -37,7 +17,9 @@ export const queryAPIKeyStatusEndpointGet =
     handler: async ({ options }) => {
       const result = await prisma.apiKey.findFirst({
         where: { id: options.id },
-        include: { RemainingUsageCredits: true },
+        include: {
+          RemainingUsageCredits: { select: { amount: true, unit: true } },
+        },
       });
       if (!result) {
         throw createHttpError(404, 'API key not found');

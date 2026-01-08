@@ -24,7 +24,7 @@ export function PaymentSourceDialog({
   onClose,
   paymentSource,
 }: PaymentSourceDialogProps) {
-  const { state } = useAppContext();
+  const { network } = useAppContext();
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
@@ -89,7 +89,7 @@ export function PaymentSourceDialog({
               <a
                 href={getExplorerUrl(
                   paymentSource.smartContractAddress,
-                  state.network,
+                  network,
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -138,10 +138,7 @@ export function PaymentSourceDialog({
                         <span className="text-sm font-mono flex-1">
                           Address:{' '}
                           <a
-                            href={getExplorerUrl(
-                              wallet.walletAddress,
-                              state.network,
-                            )}
+                            href={getExplorerUrl(wallet.walletAddress, network)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:underline text-primary"
@@ -204,10 +201,7 @@ export function PaymentSourceDialog({
                             Address:
                           </span>
                           <a
-                            href={getExplorerUrl(
-                              wallet.walletAddress,
-                              state.network,
-                            )}
+                            href={getExplorerUrl(wallet.walletAddress, network)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-mono flex-1 hover:underline text-primary"
@@ -224,7 +218,7 @@ export function PaymentSourceDialog({
                             <a
                               href={getExplorerUrl(
                                 wallet.collectionAddress,
-                                state.network,
+                                network,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -297,10 +291,7 @@ export function PaymentSourceDialog({
                             Address:
                           </span>
                           <a
-                            href={getExplorerUrl(
-                              wallet.walletAddress,
-                              state.network,
-                            )}
+                            href={getExplorerUrl(wallet.walletAddress, network)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-mono flex-1 hover:underline text-primary"
@@ -317,7 +308,7 @@ export function PaymentSourceDialog({
                             <a
                               href={getExplorerUrl(
                                 wallet.collectionAddress,
-                                state.network,
+                                network,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -372,7 +363,7 @@ export function PaymentSourceDialog({
                       <a
                         href={getExplorerUrl(
                           paymentSource.FeeReceiverNetworkWallet.walletAddress,
-                          state.network,
+                          network,
                         )}
                         target="_blank"
                         rel="noopener noreferrer"

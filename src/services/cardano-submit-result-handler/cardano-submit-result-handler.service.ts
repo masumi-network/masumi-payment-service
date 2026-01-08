@@ -101,7 +101,7 @@ async function handlePaymentRequestResults(
         where: { id: request.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PaymentAction.WaitingForManualAction,
               errorType: PaymentErrorType.Unknown,
               errorNote:
@@ -255,7 +255,7 @@ async function processSinglePaymentRequest(
     payByTime: decodedContract.payByTime,
     collateralReturnLovelace: decodedContract.collateralReturnLovelace,
     inputHash: decodedContract.inputHash,
-    resultHash: request.NextAction.resultHash ?? '',
+    resultHash: request.NextAction.resultHash,
     resultTime: decodedContract.resultTime,
     unlockTime: decodedContract.unlockTime,
     externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
@@ -303,13 +303,13 @@ async function processSinglePaymentRequest(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PaymentAction.SubmitResultInitiated,
         },
       },
       CurrentTransaction: {
         create: {
-          txHash: '',
+          txHash: null,
           status: TransactionStatus.Pending,
           BlocksWallet: {
             connect: {
@@ -353,10 +353,11 @@ async function processSinglePaymentRequest(
       where: { id: request.id },
       data: {
         NextAction: {
-          update: {
+          create: {
             requestedAction: PaymentAction.SubmitResultRequested,
             errorType: null,
             errorNote: null,
+            resultHash: request.NextAction.resultHash,
           },
         },
         SmartContractWallet: {

@@ -43,7 +43,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
   }> = [{}];
 
   beforeAll(async () => {
-    if (!(global as any).testConfig) {
+    if (!global.testConfig) {
       throw new Error('Global test configuration not available.');
     }
 
@@ -53,7 +53,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       throw new Error('Test wallets not properly configured.');
     }
 
-    if (!(global as any).testApiClient) {
+    if (!global.testApiClient) {
       throw new Error('Test API client not initialized.');
     }
 
@@ -85,18 +85,23 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       // ============================
       // STEP 1: REGISTER AGENT (Using Helper Function)
       // ============================
-      console.log('📝 Step 1: Agent registration and confirmation...');
-      const agent = await registerAndConfirmAgent(testNetwork);
+      console.log('📝 Step 1: Check if test agent is available...');
+      const agent = global.testAgent;
+
+      if (!agent) {
+        throw new Error('Test agent not available.');
+      }
+
+      testCleanupData.push({
+        agentId: agent.id,
+        agentIdentifier: agent.agentIdentifier,
+      });
 
       console.log(`✅ Agent registered and confirmed:
         - Agent Name: ${agent.name}
         - Agent ID: ${agent.id}
         - Agent Identifier: ${agent.agentIdentifier}
       `);
-
-      // Track for cleanup
-      testCleanupData[0].agentId = agent.id;
-      testCleanupData[0].agentIdentifier = agent.agentIdentifier;
 
       // ============================
       // STEP 2: CREATE PAYMENT (Using Helper Function)
@@ -211,29 +216,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
         7. Waited for Disputed state
         8. Admin authorized refund → COMPLETE
       `);
-
-      // ============================
-      // CLEANUP: DEREGISTER AGENT (Fire and forget)
-      // ============================
-      console.log('Initiating agent deregistration ');
-      deregisterAgent(testNetwork, agent.agentIdentifier).catch((error) => {
-        console.log(`Deregistration failed (non-critical): ${error.message}`);
-      });
     },
-    // Dynamic timeout based on config: infinite if 0, otherwise timeout + buffer
-    (() => {
-      const { getTestEnvironment } = require('../fixtures/testData');
-      const configTimeout = getTestEnvironment().timeout.registration;
-      if (configTimeout === 0) {
-        console.log('🔧 Jest timeout set to 24 hours (effectively infinite)');
-        return 24 * 60 * 60 * 1000; // 24 hours - effectively infinite for Jest
-      } else {
-        const bufferTime = 10 * 60 * 1000; // 10 minute buffer
-        console.log(
-          `🔧 Jest timeout set to ${Math.floor((configTimeout + bufferTime) / 60000)} minutes`,
-        );
-        return configTimeout + bufferTime;
-      }
-    })(),
+    20 * 60 * 1000, // 20 minutes timeout
   );
 });

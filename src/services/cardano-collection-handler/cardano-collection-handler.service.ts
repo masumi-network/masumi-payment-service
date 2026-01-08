@@ -280,11 +280,11 @@ async function processSinglePaymentCollection(
       data: {
         CurrentTransaction: {
           update: {
-            txHash: '',
+            txHash: null,
             status: TransactionStatus.Pending,
             BlocksWallet: {
               connect: {
-                id: request.SmartContractWallet!.id,
+                id: request.SmartContractWallet.id,
               },
             },
           },
@@ -334,7 +334,7 @@ export async function collectOutstandingPaymentsV1() {
   try {
     const paymentContractsWithWalletLocked = await lockAndQueryPayments({
       paymentStatus: PaymentAction.WithdrawRequested,
-      resultHash: { not: '' },
+      resultHash: { not: null },
       unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
       onChainState: { in: [OnChainState.ResultSubmitted] },
     });
@@ -351,7 +351,6 @@ export async function collectOutstandingPaymentsV1() {
 
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const paymentRequests = paymentContract.PaymentRequests;
