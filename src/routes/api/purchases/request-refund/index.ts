@@ -157,9 +157,7 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
       throw createHttpError(500, 'Failed to fetch updated purchase');
     }
 
-    const decoded = decodeBlockchainIdentifier(
-      result.blockchainIdentifier,
-    );
+    const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 
     return {
       ...result,
