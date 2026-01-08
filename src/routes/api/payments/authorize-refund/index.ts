@@ -148,6 +148,11 @@ export const authorizePaymentRefundEndpointPost =
           },
         },
       });
+
+      if (!result) {
+        throw createHttpError(500, 'Failed to fetch updated payment');
+      }
+
       if (result.inputHash == null) {
         throw createHttpError(
           500,
@@ -156,10 +161,6 @@ export const authorizePaymentRefundEndpointPost =
       }
 
       const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
-
-      if (!result) {
-        throw createHttpError(500, 'Failed to fetch updated payment');
-      }
 
       return {
         ...result,

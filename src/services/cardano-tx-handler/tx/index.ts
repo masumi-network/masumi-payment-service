@@ -276,6 +276,7 @@ export async function handlePurchasingTransactionCardanoV1(
           NextAction: {
             create: {
               requestedAction: newAction.action,
+              inputHash: purchasingRequest.inputHash,
               errorNote:
                 purchasingRequest.NextAction.errorNote != null
                   ? purchasingRequest.NextAction.errorNote +
@@ -471,6 +472,9 @@ export async function updateRolledBackTransaction(
                   errorNote:
                     'Rolled back transaction detected. Please check the transaction and manually resolve the issue.',
                   errorType: PurchaseErrorType.Unknown,
+                  inputHash:
+                    transaction.PurchaseRequestCurrent?.inputHash ??
+                    transaction.PurchaseRequestHistory!.inputHash,
                 },
               },
             },
@@ -593,6 +597,7 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No smart contract wallet set for purchase request in db. This is likely an internal error.',
                 errorType: PurchaseErrorType.Unknown,
+                inputHash: dbEntry.inputHash,
               },
             },
           },
@@ -614,6 +619,7 @@ export async function updateInitialPurchaseTransaction(
                 errorNote:
                   'No seller wallet set for purchase request in db. This seems like an internal error.',
                 errorType: PurchaseErrorType.Unknown,
+                inputHash: dbEntry.inputHash,
               },
             },
           },
@@ -810,6 +816,7 @@ export async function updateInitialPurchaseTransaction(
           NextAction: {
             create: {
               requestedAction: PurchasingAction.WaitingForExternalAction,
+              inputHash: dbEntry.inputHash,
             },
           },
           CurrentTransaction: dbEntry.currentTransactionId

@@ -183,6 +183,7 @@ async function processSingleRefundCollection(
         create: {
           requestedAction: PurchasingAction.WithdrawRefundInitiated,
           submittedTxHash: null,
+          inputHash: request.inputHash,
         },
       },
       CurrentTransaction: {
@@ -306,6 +307,7 @@ export async function collectRefundV1() {
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:
                       'Collecting refund failed: ' + errorToString(error),
+                    inputHash: request.inputHash,
                   },
                 },
                 SmartContractWallet: {

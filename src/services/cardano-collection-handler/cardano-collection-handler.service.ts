@@ -284,7 +284,7 @@ async function processSinglePaymentCollection(
             status: TransactionStatus.Pending,
             BlocksWallet: {
               connect: {
-                id: request.SmartContractWallet.id,
+                id: request.SmartContractWallet!.id,
               },
             },
           },

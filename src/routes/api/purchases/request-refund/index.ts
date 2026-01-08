@@ -76,6 +76,12 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
           isNot: null,
         },
       },
+      include: {
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+      },
     });
 
     if (purchase == null) {

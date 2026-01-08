@@ -524,18 +524,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
   input: createPurchaseInitSchemaInput,
   output: createPurchaseInitSchemaOutput,
-  handler: async ({
-    input,
-    options,
-  }: {
-    input: z.infer<typeof createPurchaseInitSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
-  }) => {
+  handler: async ({ input, options }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(

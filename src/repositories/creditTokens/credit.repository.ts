@@ -181,6 +181,7 @@ async function handlePurchaseCreditInit({
           NextAction: {
             create: {
               requestedAction: PurchasingAction.FundsLockingRequested,
+              inputHash: inputHash,
             },
           },
           externalDisputeUnlockTime: externalDisputeUnlockTime,
