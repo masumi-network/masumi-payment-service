@@ -408,6 +408,14 @@ export type Payment = {
      * Optional metadata stored with the payment for additional context. Null if not provided
      */
     metadata: string | null;
+    /**
+     * History of previous NextAction states
+     */
+    ActionHistory?: Array<{
+        id: string;
+        createdAt: string;
+        requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+    }>;
 };
 
 export type Purchase = {
@@ -2058,6 +2066,14 @@ export type PostPaymentResponses = {
              * Optional metadata stored with the payment for additional context. Null if not provided
              */
             metadata: string | null;
+            /**
+             * History of previous NextAction states
+             */
+            ActionHistory?: Array<{
+                id: string;
+                createdAt: string;
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+            }>;
         };
         status: string;
     };
@@ -2535,6 +2551,14 @@ export type PostPaymentSubmitResultResponses = {
              * Optional metadata stored with the payment for additional context. Null if not provided
              */
             metadata: string | null;
+            /**
+             * History of previous NextAction states
+             */
+            ActionHistory?: Array<{
+                id: string;
+                createdAt: string;
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+            }>;
         };
         status: string;
     };
@@ -2825,6 +2849,14 @@ export type PostPaymentAuthorizeRefundResponses = {
              * Optional metadata stored with the payment for additional context. Null if not provided
              */
             metadata: string | null;
+            /**
+             * History of previous NextAction states
+             */
+            ActionHistory?: Array<{
+                id: string;
+                createdAt: string;
+                requestedAction: 'None' | 'Ignore' | 'WaitingForManualAction' | 'WaitingForExternalAction' | 'SubmitResultRequested' | 'SubmitResultInitiated' | 'WithdrawRequested' | 'WithdrawInitiated' | 'AuthorizeRefundRequested' | 'AuthorizeRefundInitiated';
+            }>;
         };
         status: string;
     };

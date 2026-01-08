@@ -140,6 +140,7 @@ async function executeSpecificBatchPayment(
         NextAction: {
           create: {
             requestedAction: PurchasingAction.FundsLockingInitiated,
+            inputHash: request.paymentRequest.inputHash,
           },
         },
         collateralReturnLovelace: request.overpaidLovelace,
@@ -297,6 +298,7 @@ export async function batchLatestPaymentEntriesV1() {
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote: 'Purchase request has no input hash',
+                      inputHash: purchaseRequest.inputHash || '',
                     },
                   },
                 },
@@ -315,6 +317,7 @@ export async function batchLatestPaymentEntriesV1() {
                       requestedAction: PurchasingAction.FundsLockingRequested,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote: 'Transaction timeout before sending',
+                      inputHash: purchaseRequest.inputHash,
                     },
                   },
                 },
@@ -642,6 +645,7 @@ export async function batchLatestPaymentEntriesV1() {
                           paymentRequest.inputHash == null
                             ? 'Purchase request has no input hash and not enough funds in wallets'
                             : 'Not enough funds in wallets',
+                        inputHash: paymentRequest.inputHash || '',
                       },
                     },
                   },
@@ -695,6 +699,7 @@ export async function batchLatestPaymentEntriesV1() {
                           errorType: PurchaseErrorType.Unknown,
                           errorNote:
                             'Batching payments failed: ' + errorToString(error),
+                          inputHash: batchedRequest.paymentRequest.inputHash,
                         },
                       },
                     },
@@ -754,6 +759,7 @@ export async function batchLatestPaymentEntriesV1() {
                       errorNote:
                         'Outer error: Batching payments failed: ' +
                         errorToString(error),
+                      inputHash: x.inputHash,
                     },
                   },
                 },

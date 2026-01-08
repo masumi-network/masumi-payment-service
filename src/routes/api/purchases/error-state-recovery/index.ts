@@ -187,6 +187,7 @@ export const purchaseErrorStateRecoveryPost =
                 requestedAction: isCompletedState
                   ? PurchasingAction.None
                   : PurchasingAction.WaitingForExternalAction,
+                inputHash: purchaseRequest.inputHash,
               },
             },
           },

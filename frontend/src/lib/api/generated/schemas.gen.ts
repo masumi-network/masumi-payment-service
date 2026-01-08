@@ -520,6 +520,26 @@ export const PaymentSchema = {
             type: 'string',
             nullable: true,
             description: 'Optional metadata stored with the payment for additional context. Null if not provided'
+        },
+        ActionHistory: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string'
+                    },
+                    createdAt: {
+                        type: 'string'
+                    },
+                    requestedAction: {
+                        type: 'string',
+                        enum: ['None', 'Ignore', 'WaitingForManualAction', 'WaitingForExternalAction', 'SubmitResultRequested', 'SubmitResultInitiated', 'WithdrawRequested', 'WithdrawInitiated', 'AuthorizeRefundRequested', 'AuthorizeRefundInitiated']
+                    }
+                },
+                required: ['id', 'createdAt', 'requestedAction']
+            },
+            description: 'History of previous NextAction states'
         }
     },
     required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'nextActionLastChangedAt', 'onChainStateOrResultLastChangedAt', 'nextActionOrOnChainStateOrResultLastChangedAt', 'inputHash', 'totalBuyerCardanoFees', 'totalSellerCardanoFees', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
