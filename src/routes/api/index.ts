@@ -41,6 +41,11 @@ import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
 import {
+  registerWebhookPost,
+  listWebhooksGet,
+  deleteWebhookDelete,
+} from './webhooks';
+import {
   queryPaymentDiffCombinedGet,
   queryPaymentDiffNextActionGet,
   queryPaymentDiffOnChainStateOrResultGet,
@@ -154,6 +159,11 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    webhooks: new DependsOnMethod({
+      get: listWebhooksGet,
+      post: registerWebhookPost,
+      delete: deleteWebhookDelete,
     }),
   },
 };
