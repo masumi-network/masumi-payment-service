@@ -402,6 +402,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -486,6 +487,7 @@
                                         "Pending",
                                         "Confirmed",
                                         "FailedViaTimeout",
+                                        "FailedViaManualReset",
                                         "RolledBack"
                                     ],
                                     "description": "Current status of the transaction"
@@ -914,6 +916,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -1012,6 +1015,7 @@
                                         "Pending",
                                         "Confirmed",
                                         "FailedViaTimeout",
+                                        "FailedViaManualReset",
                                         "RolledBack"
                                     ],
                                     "description": "Current status of the transaction"
@@ -1753,6 +1757,7 @@
                                     "Pending",
                                     "Confirmed",
                                     "FailedViaTimeout",
+                                    "FailedViaManualReset",
                                     "RolledBack"
                                 ],
                                 "description": "Current status of the transaction"
@@ -3737,6 +3742,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -4898,6 +4904,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -5455,6 +5462,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -7271,6 +7279,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
@@ -7812,6 +7821,7 @@
                                                                 "Pending",
                                                                 "Confirmed",
                                                                 "FailedViaTimeout",
+                                                                "FailedViaManualReset",
                                                                 "RolledBack"
                                                             ],
                                                             "description": "Current status of the transaction"
