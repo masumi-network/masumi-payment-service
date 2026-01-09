@@ -92,10 +92,10 @@ import type {
   GetUtxosResponse,
   GetRpcApiKeysData,
   GetRpcApiKeysResponse,
-  GetPurchaseEarningsData,
-  GetPurchaseEarningsResponse,
-  GetPaymentEarningsData,
-  GetPaymentEarningsResponse,
+  GetPurchaseSpendingsData,
+  GetPurchaseSpendingsResponse,
+  GetPaymentIncomeData,
+  GetPaymentIncomeResponse,
 } from './types.gen';
 import { client as _heyApiClient } from './client.gen';
 
@@ -1202,14 +1202,14 @@ export const getRpcApiKeys = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Get agent purchase earnings analytics. (READ access required)
- * Get agent earnings and fee analytics for Purchase Request transactions only, over specified time periods.
+ * Get agent purchase spendings analytics. (READ access required)
+ * Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.
  */
-export const getPurchaseEarnings = <ThrowOnError extends boolean = false>(
-  options: Options<GetPurchaseEarningsData, ThrowOnError>,
+export const getPurchaseSpendings = <ThrowOnError extends boolean = false>(
+  options: Options<GetPurchaseSpendingsData, ThrowOnError>,
 ) => {
   return (options.client ?? _heyApiClient).get<
-    GetPurchaseEarningsResponse,
+    GetPurchaseSpendingsResponse,
     unknown,
     ThrowOnError
   >({
@@ -1220,20 +1220,20 @@ export const getPurchaseEarnings = <ThrowOnError extends boolean = false>(
         type: 'apiKey',
       },
     ],
-    url: '/purchase/earnings',
+    url: '/purchase/spendings',
     ...options,
   });
 };
 
 /**
- * Get agent payment earnings analytics. (READ access required)
- * Get agent earnings and fee analytics for Payment Request transactions only, over specified time periods.
+ * Get payment income analytics. (READ access required)
+ * Get payment income analytics for Payment Request transactions, over specified time periods.
  */
-export const getPaymentEarnings = <ThrowOnError extends boolean = false>(
-  options: Options<GetPaymentEarningsData, ThrowOnError>,
+export const getPaymentIncome = <ThrowOnError extends boolean = false>(
+  options: Options<GetPaymentIncomeData, ThrowOnError>,
 ) => {
   return (options.client ?? _heyApiClient).get<
-    GetPaymentEarningsResponse,
+    GetPaymentIncomeResponse,
     unknown,
     ThrowOnError
   >({
@@ -1244,7 +1244,7 @@ export const getPaymentEarnings = <ThrowOnError extends boolean = false>(
         type: 'apiKey',
       },
     ],
-    url: '/payment/earnings',
+    url: '/payment/income',
     ...options,
   });
 };

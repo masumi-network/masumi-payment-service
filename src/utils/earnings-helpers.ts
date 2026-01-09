@@ -13,12 +13,12 @@ export function mapUnitAmountToResponse(
 }
 
 export function parseDateRange(
-  startDate: string | null | undefined,
-  endDate: string | null | undefined,
+  startDate: Date | null | undefined,
+  endDate: Date | null | undefined,
 ): { periodStart: Date; periodEnd: Date } {
   const now = new Date();
-  const periodStart = startDate ? new Date(startDate) : new Date('2020-01-01');
-  const periodEnd = endDate ? new Date(endDate) : now;
+  const periodStart = startDate ? startDate : new Date('2020-01-01');
+  const periodEnd = endDate ? endDate : now;
 
   if (isNaN(periodStart.getTime()) || isNaN(periodEnd.getTime())) {
     throw createHttpError(400, 'Invalid date format. Use YYYY-MM-DD format.');
@@ -28,28 +28,17 @@ export function parseDateRange(
     throw createHttpError(400, 'Start date must be before end date.');
   }
 
-  const oneYearInMs = 365 * 24 * 60 * 60 * 1000;
-  if (periodEnd.getTime() - periodStart.getTime() > oneYearInMs) {
-    throw createHttpError(
-      400,
-      'Date range exceeds maximum allowed period of 1 year. Please narrow your date range.',
-    );
-  }
-
   return { periodStart, periodEnd };
 }
 
 export function filterByAgentIdentifier<
   T extends { blockchainIdentifier: string },
->(transactions: T[], agentIdentifier: string): T[] {
+>(transactions: T[], agentIdentifier: string | null): T[] {
+  if (!agentIdentifier) {
+    return transactions;
+  }
   const filtered: T[] = [];
-
   for (const transaction of transactions) {
-    if (transaction.blockchainIdentifier === agentIdentifier) {
-      filtered.push(transaction);
-      continue;
-    }
-
     try {
       const decoded = decodeBlockchainIdentifier(
         transaction.blockchainIdentifier,

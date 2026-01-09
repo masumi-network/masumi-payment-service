@@ -23,9 +23,9 @@ import {
 } from '@/routes/api/payments';
 import { queryPaymentDiffSchemaInput } from '@/routes/api/payments/diff';
 import {
-  getPaymentEarningsSchemaInput,
-  getPaymentEarningsSchemaOutput,
-} from '@/routes/api/payments/earnings';
+  getPaymentIncomeSchemaInput,
+  getPaymentIncomeSchemaOutput,
+} from '@/routes/api/payments/income';
 import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
@@ -33,9 +33,9 @@ import {
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
 import {
-  getPurchaseEarningsSchemaInput,
-  getPurchaseEarningsSchemaOutput,
-} from '@/routes/api/purchases/earnings';
+  getPurchaseSpendingSchemaInput,
+  getPurchaseSpendingSchemaOutput,
+} from '@/routes/api/purchases/spending';
 import {
   queryRegistryRequestSchemaInput,
   queryRegistryRequestSchemaOutput,
@@ -2930,17 +2930,17 @@ export function generateOpenAPI() {
     },
   });
 
-  /********************* EARNINGS *****************************/
+  /********************* PURCHASE SPENDINGS *****************************/
   registry.registerPath({
     method: 'get',
-    path: '/purchase/earnings',
+    path: '/purchase/spendings',
     description:
-      'Get agent earnings and fee analytics for Purchase Request transactions only, over specified time periods.',
-    summary: 'Get agent purchase earnings analytics. (READ access required)',
+      'Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.',
+    summary: 'Get agent purchase spendings analytics. (READ access required)',
     tags: ['purchase'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: getPurchaseEarningsSchemaInput.openapi({
+      query: getPurchaseSpendingSchemaInput.openapi({
         example: {
           agentIdentifier: 'example_agent_identifier_asset_id',
           startDate: '2024-01-01',
@@ -2951,77 +2951,104 @@ export function generateOpenAPI() {
     },
     responses: {
       200: {
-        description: 'Agent purchase earnings analytics',
+        description: 'Agent purchase spending analytics',
         content: {
           'application/json': {
             schema: z
               .object({
                 status: z.string(),
-                data: getPurchaseEarningsSchemaOutput,
+                data: getPurchaseSpendingSchemaOutput,
               })
               .openapi({
                 example: {
                   status: 'success',
                   data: {
                     agentIdentifier: 'example_agent_identifier_asset_id',
-                    dateRange: '2024-01-01 to 2024-01-31',
                     periodStart: new Date('2024-01-01T00:00:00.000Z'),
                     periodEnd: new Date('2024-01-31T23:59:59.000Z'),
                     totalTransactions: 25,
-                    totalEarnings: [
-                      {
-                        unit: 'lovelace',
-                        amount: '45000000',
-                      },
-                    ],
-                    totalFeesPaid: [
-                      {
-                        unit: 'lovelace',
-                        amount: '2500000',
-                      },
-                    ],
-                    totalRevenue: [
-                      {
-                        unit: 'lovelace',
-                        amount: '47500000',
-                      },
-                    ],
-                    monthlyBreakdown: [
-                      {
-                        month: 'January',
-                        monthNumber: 1,
-                        year: 2024,
-                        earnings: [
-                          {
-                            unit: 'lovelace',
-                            amount: '45000000',
-                          },
-                        ],
-                        transactions: 25,
-                      },
-                    ],
-                    dailyEarnings: [
+                    totalSpend: {
+                      units: [
+                        {
+                          unit: 'lovelace',
+                          amount: 47500000,
+                        },
+                      ],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [
+                        {
+                          unit: 'lovelace',
+                          amount: 2500000,
+                        },
+                      ],
+                      blockchainFees: 100000,
+                    },
+                    totalPending: {
+                      units: [],
+                      blockchainFees: 0,
+                    },
+                    dailySpend: [
                       {
                         date: '2024-09-15',
-                        earnings: [
+                        units: [
                           {
                             unit: 'lovelace',
-                            amount: '2000000',
+                            amount: 2100000,
                           },
                         ],
-                        revenue: [
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    dailyRefunded: [
+                      {
+                        date: '2024-09-15',
+                        units: [
                           {
                             unit: 'lovelace',
-                            amount: '2100000',
+                            amount: 0,
                           },
                         ],
-                        fees: [
+                        blockchainFees: 0,
+                      },
+                    ],
+                    dailyPending: [
+                      {
+                        date: '2024-09-15',
+                        units: [
                           {
                             unit: 'lovelace',
-                            amount: '100000',
+                            amount: 0,
                           },
                         ],
-                        transactions: 3,
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlySpend: [
+                      {
+                        date: '2024-09',
+                        units: [
+                          {
+                            unit: 'lovelace',
+                            amount: 2100000,
+                          },
+                        ],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    monthlyRefunded: [
+                      {
+                        date: '2024-09',
+                        units: [],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        date: '2024-09',
+                        units: [],
+                        blockchainFees: 0,
                       },
                     ],
                   },
@@ -3037,7 +3064,7 @@ export function generateOpenAPI() {
         description: 'Unauthorized',
       },
       404: {
-        description: 'Agent not found or no earnings data available',
+        description: 'Agent not found or no spendings data available',
       },
       500: {
         description: 'Internal Server Error',
@@ -3047,14 +3074,14 @@ export function generateOpenAPI() {
 
   registry.registerPath({
     method: 'get',
-    path: '/payment/earnings',
+    path: '/payment/income',
     description:
-      'Get agent earnings and fee analytics for Payment Request transactions only, over specified time periods.',
-    summary: 'Get agent payment earnings analytics. (READ access required)',
+      'Get payment income analytics for Payment Request transactions, over specified time periods.',
+    summary: 'Get payment income analytics. (READ access required)',
     tags: ['payment'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: getPaymentEarningsSchemaInput.openapi({
+      query: getPaymentIncomeSchemaInput.openapi({
         example: {
           agentIdentifier: 'example_agent_identifier_asset_id',
           startDate: '2024-01-01',
@@ -3065,77 +3092,74 @@ export function generateOpenAPI() {
     },
     responses: {
       200: {
-        description: 'Agent payment earnings analytics',
+        description: 'Agent payment income analytics',
         content: {
           'application/json': {
             schema: z
               .object({
                 status: z.string(),
-                data: getPaymentEarningsSchemaOutput,
+                data: getPaymentIncomeSchemaOutput,
               })
               .openapi({
                 example: {
                   status: 'success',
                   data: {
                     agentIdentifier: 'example_agent_identifier_asset_id',
-                    dateRange: '2024-01-01 to 2024-01-31',
                     periodStart: new Date('2024-01-01T00:00:00.000Z'),
                     periodEnd: new Date('2024-01-31T23:59:59.000Z'),
                     totalTransactions: 25,
-                    totalEarnings: [
+                    totalIncome: {
+                      units: [{ unit: 'lovelace', amount: 45000000 }],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [{ unit: 'lovelace', amount: 5000000 }],
+                      blockchainFees: 400000,
+                    },
+                    totalPending: {
+                      units: [{ unit: 'lovelace', amount: 2000000 }],
+                      blockchainFees: 100000,
+                    },
+                    dailyIncome: [
                       {
-                        unit: 'lovelace',
-                        amount: '45000000',
+                        date: '2024-01-10',
+                        units: [{ unit: 'lovelace', amount: 2000000 }],
+                        blockchainFees: 100000,
                       },
                     ],
-                    totalFeesPaid: [
+                    dailyRefunded: [
                       {
-                        unit: 'lovelace',
-                        amount: '2500000',
+                        date: '2024-01-12',
+                        units: [{ unit: 'lovelace', amount: 500000 }],
+                        blockchainFees: 20000,
                       },
                     ],
-                    totalRevenue: [
+                    dailyPending: [
                       {
-                        unit: 'lovelace',
-                        amount: '47500000',
+                        date: '2024-01-15',
+                        units: [{ unit: 'lovelace', amount: 500000 }],
+                        blockchainFees: 0,
                       },
                     ],
-                    monthlyBreakdown: [
+                    monthlyIncome: [
                       {
-                        month: 'January',
-                        monthNumber: 1,
-                        year: 2024,
-                        earnings: [
-                          {
-                            unit: 'lovelace',
-                            amount: '45000000',
-                          },
-                        ],
-                        transactions: 25,
+                        date: '2024-01',
+                        units: [{ unit: 'lovelace', amount: 45000000 }],
+                        blockchainFees: 2500000,
                       },
                     ],
-                    dailyEarnings: [
+                    monthlyRefunded: [
                       {
-                        date: '2024-09-15',
-                        earnings: [
-                          {
-                            unit: 'lovelace',
-                            amount: '2000000',
-                          },
-                        ],
-                        revenue: [
-                          {
-                            unit: 'lovelace',
-                            amount: '2100000',
-                          },
-                        ],
-                        fees: [
-                          {
-                            unit: 'lovelace',
-                            amount: '100000',
-                          },
-                        ],
-                        transactions: 3,
+                        date: '2024-01',
+                        units: [{ unit: 'lovelace', amount: 5000000 }],
+                        blockchainFees: 400000,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        date: '2024-01',
+                        units: [{ unit: 'lovelace', amount: 2000000 }],
+                        blockchainFees: 100000,
                       },
                     ],
                   },
@@ -3151,7 +3175,7 @@ export function generateOpenAPI() {
         description: 'Unauthorized',
       },
       404: {
-        description: 'Agent not found or no earnings data available',
+        description: 'Agent not found or no income data available',
       },
       500: {
         description: 'Internal Server Error',

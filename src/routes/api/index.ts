@@ -7,9 +7,9 @@ import {
   deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
-import { getPurchaseEarnings } from './purchases/earnings';
+import { getPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
-import { getPaymentEarnings } from './payments/earnings';
+import { getPaymentIncome } from './payments/income';
 import {
   deleteAgentRegistration,
   queryRegistryRequestGet,
@@ -85,8 +85,8 @@ export const apiRouter: Routing = {
       'error-state-recovery': new DependsOnMethod({
         post: purchaseErrorStateRecoveryPost,
       }),
-      earnings: new DependsOnMethod({
-        get: getPurchaseEarnings,
+      spendings: new DependsOnMethod({
+        get: getPurchaseSpending,
       }),
     }),
     payment: new DependsOnMethod({
@@ -115,8 +115,8 @@ export const apiRouter: Routing = {
       'error-state-recovery': new DependsOnMethod({
         post: paymentErrorStateRecoveryPost,
       }),
-      earnings: new DependsOnMethod({
-        get: getPaymentEarnings,
+      income: new DependsOnMethod({
+        get: getPaymentIncome,
       }),
     }),
     registry: new DependsOnMethod({
