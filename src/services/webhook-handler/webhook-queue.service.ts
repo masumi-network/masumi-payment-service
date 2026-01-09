@@ -10,34 +10,6 @@ export class WebhookQueueService {
     entityId?: string,
     paymentSourceId?: string,
   ): Promise<void> {
-    const webhookEndpoints = await prisma.webhookEndpoint.findMany({
-      where: {
-        isActive: true,
-        disabledAt: null,
-        events: {
-          has: eventType,
-        },
-        ...(paymentSourceId
-          ? {
-              OR: [
-                { paymentSourceId: paymentSourceId },
-                { paymentSourceId: null },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ lastSuccessAt: 'asc' }, { updatedAt: 'asc' }],
-    });
-
-    if (webhookEndpoints.length === 0) {
-      logger.debug('No active webhook endpoints found for event', {
-        event_type: eventType,
-        payment_source_id: paymentSourceId,
-        entity_id: entityId,
-      });
-      return;
-    }
-
     const webhookPayload = {
       event_type: eventType,
       timestamp: new Date().toISOString(),
@@ -45,40 +17,92 @@ export class WebhookQueueService {
       data: payload,
     };
 
-    const deliveries = webhookEndpoints.map(async (endpoint) => {
-      const endpointPayload = {
-        ...webhookPayload,
-        webhook_id: endpoint.id,
-      };
+    const batchSize = 50;
+    let hasMore = true;
+    let totalQueued = 0;
 
-      try {
-        await prisma.webhookDelivery.create({
-          data: {
-            webhookEndpointId: endpoint.id,
-            eventType,
-            payload: endpointPayload as Record<string, any>,
-            entityId,
-            status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
-            nextRetryAt: new Date(),
+    while (hasMore) {
+      const webhookEndpoints = await prisma.webhookEndpoint.findMany({
+        where: {
+          isActive: true,
+          disabledAt: null,
+          events: {
+            has: eventType,
           },
-        });
+          ...(paymentSourceId
+            ? {
+                OR: [
+                  { paymentSourceId: paymentSourceId },
+                  { paymentSourceId: null },
+                ],
+              }
+            : {}),
+        },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+        skip: totalQueued,
+      });
 
-        logger.info('Webhook queued for delivery', {
-          webhook_id: endpoint.id,
-          event_type: eventType,
-          entity_id: entityId,
-        });
-      } catch (error) {
-        logger.error('Failed to queue webhook delivery', {
-          webhook_id: endpoint.id,
-          event_type: eventType,
-          entity_id: entityId,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
+      if (webhookEndpoints.length === 0) {
+        hasMore = false;
+        break;
       }
-    });
 
-    await Promise.allSettled(deliveries);
+      const deliveries = webhookEndpoints.map(async (endpoint) => {
+        const endpointPayload = {
+          ...webhookPayload,
+          webhook_id: endpoint.id,
+        };
+
+        try {
+          await prisma.webhookDelivery.create({
+            data: {
+              webhookEndpointId: endpoint.id,
+              eventType,
+              payload: endpointPayload as Record<string, any>,
+              entityId,
+              status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
+              nextRetryAt: new Date(),
+            },
+          });
+
+          logger.info('Webhook queued for delivery', {
+            webhook_id: endpoint.id,
+            event_type: eventType,
+            entity_id: entityId,
+          });
+        } catch (error) {
+          logger.error('Failed to queue webhook delivery', {
+            webhook_id: endpoint.id,
+            event_type: eventType,
+            entity_id: entityId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      });
+
+      await Promise.allSettled(deliveries);
+
+      totalQueued += webhookEndpoints.length;
+
+      if (webhookEndpoints.length < batchSize) {
+        hasMore = false;
+      }
+    }
+
+    if (totalQueued === 0) {
+      logger.debug('No active webhook endpoints found for event', {
+        event_type: eventType,
+        payment_source_id: paymentSourceId,
+        entity_id: entityId,
+      });
+    } else {
+      logger.info('Finished queuing webhooks', {
+        event_type: eventType,
+        total_queued: totalQueued,
+        entity_id: entityId,
+      });
+    }
   }
 
   /**
@@ -169,41 +193,6 @@ export class WebhookQueueService {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }
-
-  /**
-   * Get delivery statistics for monitoring
-   */
-  async getDeliveryStats(): Promise<{
-    pending: number;
-    success: number;
-    failed: number;
-    retrying: number;
-  }> {
-    const [pending, success, failed, retrying] = await Promise.all([
-      prisma.webhookDelivery.count({
-        where: {
-          status: WebhookDeliveryStatus.Pending as WebhookDeliveryStatus,
-        },
-      }),
-      prisma.webhookDelivery.count({
-        where: {
-          status: WebhookDeliveryStatus.Success as WebhookDeliveryStatus,
-        },
-      }),
-      prisma.webhookDelivery.count({
-        where: {
-          status: WebhookDeliveryStatus.Failed as WebhookDeliveryStatus,
-        },
-      }),
-      prisma.webhookDelivery.count({
-        where: {
-          status: WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus,
-        },
-      }),
-    ]);
-
-    return { pending, success, failed, retrying };
   }
 }
 
