@@ -92,8 +92,8 @@ import type {
   GetUtxosResponse,
   GetRpcApiKeysData,
   GetRpcApiKeysResponse,
-  GetPurchaseSpendingsData,
-  GetPurchaseSpendingsResponse,
+  GetPurchaseSpendingData,
+  GetPurchaseSpendingResponse,
   GetPaymentIncomeData,
   GetPaymentIncomeResponse,
 } from './types.gen';
@@ -1202,14 +1202,14 @@ export const getRpcApiKeys = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Get agent purchase spendings analytics. (READ access required)
- * Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.
+ * Get agent purchase spending analytics. (READ access required)
+ * Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.
  */
-export const getPurchaseSpendings = <ThrowOnError extends boolean = false>(
-  options: Options<GetPurchaseSpendingsData, ThrowOnError>,
+export const getPurchaseSpending = <ThrowOnError extends boolean = false>(
+  options: Options<GetPurchaseSpendingData, ThrowOnError>,
 ) => {
   return (options.client ?? _heyApiClient).get<
-    GetPurchaseSpendingsResponse,
+    GetPurchaseSpendingResponse,
     unknown,
     ThrowOnError
   >({
@@ -1220,7 +1220,7 @@ export const getPurchaseSpendings = <ThrowOnError extends boolean = false>(
         type: 'apiKey',
       },
     ],
-    url: '/purchase/spendings',
+    url: '/purchase/spending',
     ...options,
   });
 };

@@ -54,7 +54,7 @@ function addToPaymentFundsMapArrayMap(
   addToPaymentFundsMapArray(map.get(key)!, units, blockchainFees);
 }
 
-export const getPaymentIncomeSchemaInput = z.object({
+export const postPaymentIncomeSchemaInput = z.object({
   agentIdentifier: z
     .string()
     .min(57)
@@ -89,12 +89,16 @@ export const getPaymentIncomeSchemaInput = z.object({
     .describe('The Cardano network to query income from'),
 });
 
-const unitAmountSchema = z.object({
-  unit: z.string(),
-  amount: z.number(),
-});
+const unitAmountSchema = z
+  .object({
+    unit: z.string(),
+    amount: z.number(),
+  })
+  .describe(
+    'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is ""',
+  );
 
-export const getPaymentIncomeSchemaOutput = z.object({
+export const postPaymentIncomeSchemaOutput = z.object({
   agentIdentifier: z.string().nullable(),
   periodStart: z.date(),
   periodEnd: z.date(),
@@ -166,14 +170,14 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
 }
 
 export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: getPaymentIncomeSchemaInput,
-  output: getPaymentIncomeSchemaOutput,
+  method: 'post',
+  input: postPaymentIncomeSchemaInput,
+  output: postPaymentIncomeSchemaOutput,
   handler: async ({
     input,
     options,
   }: {
-    input: z.infer<typeof getPaymentIncomeSchemaInput>;
+    input: z.infer<typeof postPaymentIncomeSchemaInput>;
     options: {
       id: string;
       permission: $Enums.Permission;
@@ -457,7 +461,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 
       recordBusinessEndpointError(
         '/api/v1/payment/income',
-        'GET',
+        'POST',
         statusCode,
         errorInstance,
         {

@@ -5017,7 +5017,7 @@ export type GetRpcApiKeysResponses = {
 export type GetRpcApiKeysResponse =
   GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
 
-export type GetPurchaseSpendingsData = {
+export type GetPurchaseSpendingData = {
   body?: never;
   path?: never;
   query: {
@@ -5042,10 +5042,10 @@ export type GetPurchaseSpendingsData = {
      */
     network: 'Preprod' | 'Mainnet';
   };
-  url: '/purchase/spendings';
+  url: '/purchase/spending';
 };
 
-export type GetPurchaseSpendingsErrors = {
+export type GetPurchaseSpendingErrors = {
   /**
    * Bad Request (possible parameters missing or invalid)
    */
@@ -5064,7 +5064,7 @@ export type GetPurchaseSpendingsErrors = {
   500: unknown;
 };
 
-export type GetPurchaseSpendingsResponses = {
+export type GetPurchaseSpendingResponses = {
   /**
    * Agent purchase spending analytics
    */
@@ -5166,8 +5166,8 @@ export type GetPurchaseSpendingsResponses = {
   };
 };
 
-export type GetPurchaseSpendingsResponse =
-  GetPurchaseSpendingsResponses[keyof GetPurchaseSpendingsResponses];
+export type GetPurchaseSpendingResponse =
+  GetPurchaseSpendingResponses[keyof GetPurchaseSpendingResponses];
 
 export type GetPaymentIncomeData = {
   body?: never;

@@ -10723,12 +10723,12 @@
                 }
             }
         },
-        "/purchase/spendings": {
+        "/purchase/spending": {
             "get": {
-                "description": "Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.",
-                "summary": "Get agent purchase spendings analytics. (READ access required)",
+                "description": "Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.",
+                "summary": "Get agent purchase spending analytics. (READ access required)",
                 "tags": [
-                    "purchase"
+                    "purchase-spending"
                 ],
                 "security": [
                     {
@@ -11311,7 +11311,7 @@
                 "description": "Get payment income analytics for Payment Request transactions, over specified time periods.",
                 "summary": "Get payment income analytics. (READ access required)",
                 "tags": [
-                    "payment"
+                    "payment-income"
                 ],
                 "security": [
                     {

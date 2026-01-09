@@ -23,8 +23,8 @@ import {
 } from '@/routes/api/payments';
 import { queryPaymentDiffSchemaInput } from '@/routes/api/payments/diff';
 import {
-  getPaymentIncomeSchemaInput,
-  getPaymentIncomeSchemaOutput,
+  postPaymentIncomeSchemaInput,
+  postPaymentIncomeSchemaOutput,
 } from '@/routes/api/payments/income';
 import {
   createPurchaseInitSchemaInput,
@@ -33,8 +33,8 @@ import {
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
 import {
-  getPurchaseSpendingSchemaInput,
-  getPurchaseSpendingSchemaOutput,
+  postPurchaseSpendingSchemaInput,
+  postPurchaseSpendingSchemaOutput,
 } from '@/routes/api/purchases/spending';
 import {
   queryRegistryRequestSchemaInput,
@@ -2932,22 +2932,29 @@ export function generateOpenAPI() {
 
   /********************* PURCHASE SPENDINGS *****************************/
   registry.registerPath({
-    method: 'get',
-    path: '/purchase/spendings',
+    method: 'post',
+    path: '/purchase/spending',
     description:
-      'Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.',
-    summary: 'Get agent purchase spendings analytics. (READ access required)',
-    tags: ['purchase'],
+      'Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.',
+    summary: 'Get agent purchase spending analytics. (READ access required)',
+    tags: ['purchase-spending'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: getPurchaseSpendingSchemaInput.openapi({
-        example: {
-          agentIdentifier: 'example_agent_identifier_asset_id',
-          startDate: '2024-01-01',
-          endDate: '2024-01-31',
-          network: Network.Preprod,
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPurchaseSpendingSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
         },
-      }),
+      },
     },
     responses: {
       200: {
@@ -2957,7 +2964,7 @@ export function generateOpenAPI() {
             schema: z
               .object({
                 status: z.string(),
-                data: getPurchaseSpendingSchemaOutput,
+                data: postPurchaseSpendingSchemaOutput,
               })
               .openapi({
                 example: {
@@ -2970,7 +2977,7 @@ export function generateOpenAPI() {
                     totalSpend: {
                       units: [
                         {
-                          unit: 'lovelace',
+                          unit: '',
                           amount: 47500000,
                         },
                       ],
@@ -2979,7 +2986,7 @@ export function generateOpenAPI() {
                     totalRefunded: {
                       units: [
                         {
-                          unit: 'lovelace',
+                          unit: '',
                           amount: 2500000,
                         },
                       ],
@@ -2994,7 +3001,7 @@ export function generateOpenAPI() {
                         date: '2024-09-15',
                         units: [
                           {
-                            unit: 'lovelace',
+                            unit: '',
                             amount: 2100000,
                           },
                         ],
@@ -3006,7 +3013,7 @@ export function generateOpenAPI() {
                         date: '2024-09-15',
                         units: [
                           {
-                            unit: 'lovelace',
+                            unit: '',
                             amount: 0,
                           },
                         ],
@@ -3018,7 +3025,7 @@ export function generateOpenAPI() {
                         date: '2024-09-15',
                         units: [
                           {
-                            unit: 'lovelace',
+                            unit: '',
                             amount: 0,
                           },
                         ],
@@ -3030,7 +3037,7 @@ export function generateOpenAPI() {
                         date: '2024-09',
                         units: [
                           {
-                            unit: 'lovelace',
+                            unit: '',
                             amount: 2100000,
                           },
                         ],
@@ -3073,22 +3080,29 @@ export function generateOpenAPI() {
   });
 
   registry.registerPath({
-    method: 'get',
+    method: 'post',
     path: '/payment/income',
     description:
       'Get payment income analytics for Payment Request transactions, over specified time periods.',
     summary: 'Get payment income analytics. (READ access required)',
-    tags: ['payment'],
+    tags: ['payment-income'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
-      query: getPaymentIncomeSchemaInput.openapi({
-        example: {
-          agentIdentifier: 'example_agent_identifier_asset_id',
-          startDate: '2024-01-01',
-          endDate: '2024-01-31',
-          network: Network.Preprod,
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPaymentIncomeSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
         },
-      }),
+      },
     },
     responses: {
       200: {
@@ -3098,7 +3112,7 @@ export function generateOpenAPI() {
             schema: z
               .object({
                 status: z.string(),
-                data: getPaymentIncomeSchemaOutput,
+                data: postPaymentIncomeSchemaOutput,
               })
               .openapi({
                 example: {
@@ -3109,56 +3123,56 @@ export function generateOpenAPI() {
                     periodEnd: new Date('2024-01-31T23:59:59.000Z'),
                     totalTransactions: 25,
                     totalIncome: {
-                      units: [{ unit: 'lovelace', amount: 45000000 }],
+                      units: [{ unit: '', amount: 45000000 }],
                       blockchainFees: 2500000,
                     },
                     totalRefunded: {
-                      units: [{ unit: 'lovelace', amount: 5000000 }],
+                      units: [{ unit: '', amount: 5000000 }],
                       blockchainFees: 400000,
                     },
                     totalPending: {
-                      units: [{ unit: 'lovelace', amount: 2000000 }],
+                      units: [{ unit: '', amount: 2000000 }],
                       blockchainFees: 100000,
                     },
                     dailyIncome: [
                       {
                         date: '2024-01-10',
-                        units: [{ unit: 'lovelace', amount: 2000000 }],
+                        units: [{ unit: '', amount: 2000000 }],
                         blockchainFees: 100000,
                       },
                     ],
                     dailyRefunded: [
                       {
                         date: '2024-01-12',
-                        units: [{ unit: 'lovelace', amount: 500000 }],
+                        units: [{ unit: '', amount: 500000 }],
                         blockchainFees: 20000,
                       },
                     ],
                     dailyPending: [
                       {
                         date: '2024-01-15',
-                        units: [{ unit: 'lovelace', amount: 500000 }],
+                        units: [{ unit: '', amount: 500000 }],
                         blockchainFees: 0,
                       },
                     ],
                     monthlyIncome: [
                       {
                         date: '2024-01',
-                        units: [{ unit: 'lovelace', amount: 45000000 }],
+                        units: [{ unit: '', amount: 45000000 }],
                         blockchainFees: 2500000,
                       },
                     ],
                     monthlyRefunded: [
                       {
                         date: '2024-01',
-                        units: [{ unit: 'lovelace', amount: 5000000 }],
+                        units: [{ unit: '', amount: 5000000 }],
                         blockchainFees: 400000,
                       },
                     ],
                     monthlyPending: [
                       {
                         date: '2024-01',
-                        units: [{ unit: 'lovelace', amount: 2000000 }],
+                        units: [{ unit: '', amount: 2000000 }],
                         blockchainFees: 100000,
                       },
                     ],

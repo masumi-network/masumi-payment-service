@@ -10723,12 +10723,12 @@
                 }
             }
         },
-        "/purchase/spendings": {
-            "get": {
-                "description": "Get agent spendings, fees, and volume analytics for Purchase Request transactions only, over specified time periods.",
-                "summary": "Get agent purchase spendings analytics. (READ access required)",
+        "/purchase/spending": {
+            "post": {
+                "description": "Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.",
+                "summary": "Get agent purchase spending analytics. (READ access required)",
                 "tags": [
-                    "purchase"
+                    "purchase-spending"
                 ],
                 "security": [
                     {
@@ -11307,109 +11307,99 @@
             }
         },
         "/payment/income": {
-            "get": {
+            "post": {
                 "description": "Get payment income analytics for Payment Request transactions, over specified time periods.",
                 "summary": "Get payment income analytics. (READ access required)",
                 "tags": [
-                    "payment"
+                    "payment-income"
                 ],
                 "security": [
                     {
                         "API-Key": []
                     }
                 ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "nullable": true,
-                            "minLength": 57,
-                            "maxLength": 250,
-                            "description": "The unique identifier of the agent to get payment income for, if not provided, will return income for all agents"
-                        },
-                        "required": false,
-                        "description": "The unique identifier of the agent to get payment income for, if not provided, will return income for all agents",
-                        "name": "agentIdentifier",
-                        "in": "query"
-                    },
-                    {
-                        "schema": {
-                            "anyOf": [
-                                {
-                                    "type": "string",
-                                    "format": "date"
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "The unique identifier of the agent to get payment income for, if not provided, will return income for all agents"
+                                    },
+                                    "startDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "endDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "timeZone": {
+                                        "type": "string",
+                                        "default": "Etc/UTC",
+                                        "description": "The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network to query income from"
+                                    }
                                 },
-                                {
-                                    "type": "string",
-                                    "format": "date-time"
-                                },
-                                {
-                                    "type": "string",
-                                    "format": "date-time"
-                                },
-                                {
-                                    "nullable": true
+                                "required": [
+                                    "agentIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "agentIdentifier": "example_agent_identifier_asset_id",
+                                    "startDate": "2024-01-01",
+                                    "endDate": "2024-01-31",
+                                    "network": "Preprod"
                                 }
-                            ],
-                            "description": "Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
-                        },
-                        "required": false,
-                        "description": "Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user",
-                        "name": "startDate",
-                        "in": "query"
-                    },
-                    {
-                        "schema": {
-                            "anyOf": [
-                                {
-                                    "type": "string",
-                                    "format": "date"
-                                },
-                                {
-                                    "type": "string",
-                                    "format": "date-time"
-                                },
-                                {
-                                    "type": "string",
-                                    "format": "date-time"
-                                },
-                                {
-                                    "nullable": true
-                                }
-                            ],
-                            "description": "End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
-                        },
-                        "required": false,
-                        "description": "End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user",
-                        "name": "endDate",
-                        "in": "query"
-                    },
-                    {
-                        "schema": {
-                            "type": "string",
-                            "default": "Etc/UTC",
-                            "description": "The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
-                        },
-                        "required": false,
-                        "description": "The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
-                        "name": "timeZone",
-                        "in": "query"
-                    },
-                    {
-                        "schema": {
-                            "type": "string",
-                            "enum": [
-                                "Preprod",
-                                "Mainnet"
-                            ],
-                            "description": "The Cardano network to query income from"
-                        },
-                        "required": true,
-                        "description": "The Cardano network to query income from",
-                        "name": "network",
-                        "in": "query"
+                            }
+                        }
                     }
-                ],
+                },
                 "responses": {
                     "200": {
                         "description": "Agent payment income analytics",

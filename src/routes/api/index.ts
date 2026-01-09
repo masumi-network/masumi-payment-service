@@ -7,7 +7,7 @@ import {
   deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
-import { getPurchaseSpending } from './purchases/spending';
+import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
 import { getPaymentIncome } from './payments/income';
 import {
@@ -85,8 +85,8 @@ export const apiRouter: Routing = {
       'error-state-recovery': new DependsOnMethod({
         post: purchaseErrorStateRecoveryPost,
       }),
-      spendings: new DependsOnMethod({
-        get: getPurchaseSpending,
+      spending: new DependsOnMethod({
+        post: postPurchaseSpending,
       }),
     }),
     payment: new DependsOnMethod({
@@ -116,7 +116,7 @@ export const apiRouter: Routing = {
         post: paymentErrorStateRecoveryPost,
       }),
       income: new DependsOnMethod({
-        get: getPaymentIncome,
+        post: getPaymentIncome,
       }),
     }),
     registry: new DependsOnMethod({

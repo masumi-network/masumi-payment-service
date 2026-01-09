@@ -54,7 +54,7 @@ function addToPurchaseFundsMapArrayMap(
   addToPurchaseFundsMapArray(map.get(key)!, units, blockchainFees);
 }
 
-export const getPurchaseSpendingSchemaInput = z.object({
+export const postPurchaseSpendingSchemaInput = z.object({
   agentIdentifier: z
     .string()
     .min(57)
@@ -89,12 +89,16 @@ export const getPurchaseSpendingSchemaInput = z.object({
     .describe('The Cardano network to query spending from'),
 });
 
-const unitAmountSchema = z.object({
-  unit: z.string(),
-  amount: z.number(),
-});
+const unitAmountSchema = z
+  .object({
+    unit: z.string(),
+    amount: z.number(),
+  })
+  .describe(
+    'The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is ""',
+  );
 
-export const getPurchaseSpendingSchemaOutput = z.object({
+export const postPurchaseSpendingSchemaOutput = z.object({
   agentIdentifier: z.string().nullable(),
   periodStart: z.date(),
   periodEnd: z.date(),
@@ -165,15 +169,15 @@ function getMonthNumberLocal(date: Date, timeZone: string): string {
   return sp.format('{YYYY}-{MM}');
 }
 
-export const getPurchaseSpending = readAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: getPurchaseSpendingSchemaInput,
-  output: getPurchaseSpendingSchemaOutput,
+export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
+  method: 'post',
+  input: postPurchaseSpendingSchemaInput,
+  output: postPurchaseSpendingSchemaOutput,
   handler: async ({
     input,
     options,
   }: {
-    input: z.infer<typeof getPurchaseSpendingSchemaInput>;
+    input: z.infer<typeof postPurchaseSpendingSchemaInput>;
     options: {
       id: string;
       permission: $Enums.Permission;
@@ -456,8 +460,8 @@ export const getPurchaseSpending = readAuthenticatedEndpointFactory.build({
         500;
 
       recordBusinessEndpointError(
-        '/api/v1/purchase/spendings',
-        'GET',
+        '/api/v1/purchase/spending',
+        'POST',
         statusCode,
         errorInstance,
         {
