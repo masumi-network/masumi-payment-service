@@ -8,19 +8,18 @@ import {
 } from '@prisma/client';
 import dotenv from 'dotenv';
 import {
-  MeshWallet,
   resolvePaymentKeyHash,
   resolvePlutusScriptAddress,
   resolveStakeKeyHash,
-  PlutusScript,
   applyParamsToScript,
-} from '@meshsdk/core';
+} from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
 import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import paymentPlutus from '../smart-contracts/payment/plutus.json';
 import { generateSHA256Hash } from '../src/utils/crypto';
+import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -136,7 +135,7 @@ export const seed = async (prisma: PrismaClient) => {
       throw Error('Fee permille is not valid');
     }
 
-    const script: PlutusScript = {
+    const script = {
       code: applyParamsToScript(paymentPlutus.validators[0].compiledCode, [
         2,
         [
@@ -172,7 +171,10 @@ export const seed = async (prisma: PrismaClient) => {
       ]),
       version: 'V3',
     };
-    const smartContractAddress = resolvePlutusScriptAddress(script, 0);
+    const smartContractAddress = resolvePlutusScriptAddress(
+      script as PlutusScript,
+      0,
+    );
     if (
       smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD
     ) {

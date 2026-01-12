@@ -35,7 +35,7 @@
         "@blockfrost/blockfrost-js": "^6.0.0",
         "@emurgo/cardano-serialization-lib-nodejs": "^14.1.1",
         "@harmoniclabs/cbor": "1.6.6",
-        "@meshsdk/core": "1.9.0-beta.90",
+        "@meshsdk/core": "1.9.0-beta.94",
         "@meshsdk/core-cst": "1.9.0-beta.90",
         "@opentelemetry/auto-instrumentations-node": "^0.67.3",
         "@opentelemetry/exporter-metrics-otlp-http": "^0.209.0",

@@ -3,12 +3,12 @@ import {
   deserializePlutusScript,
   resolvePlutusScriptAddress,
   resolveStakeKeyHash,
+  resolvePaymentKeyHash,
+  applyParamsToScript,
 } from '@meshsdk/core-cst';
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import paymentPlutus from '@smart-contracts/payment/plutus.json';
 import registryPlutus from '@smart-contracts/registry/plutus.json';
 import { Network, OnChainState, PaymentSource } from '@prisma/client';
-import { applyParamsToScript } from '@meshsdk/core';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/validator/hex';
