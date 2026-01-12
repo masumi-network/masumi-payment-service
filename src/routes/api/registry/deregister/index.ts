@@ -105,7 +105,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
     if (holderWallet.length == 0) {
       throw createHttpError(404, 'Asset not found');
     }
-    const vkey = resolvePaymentKeyHash(holderWallet[0].address) as string;
+    const vkey = resolvePaymentKeyHash(holderWallet[0].address);
 
     const sellingWallet = paymentSource.HotWallets.find(
       (wallet) =>

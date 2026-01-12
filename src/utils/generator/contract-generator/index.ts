@@ -73,7 +73,7 @@ export async function getPaymentScriptV1(
         fields: [
           {
             alternative: 0,
-            fields: [resolvePaymentKeyHash(feeWalletAddress) as string],
+            fields: [resolvePaymentKeyHash(feeWalletAddress)],
           },
           {
             alternative: 0,
@@ -83,7 +83,7 @@ export async function getPaymentScriptV1(
                 fields: [
                   {
                     alternative: 0,
-                    fields: [resolveStakeKeyHash(feeWalletAddress) as string],
+                    fields: [resolveStakeKeyHash(feeWalletAddress)],
                   },
                 ],
               },
@@ -300,12 +300,12 @@ export function getDatum({
   state: SmartContractState;
 }) {
   const buyerPubKeyAddress = mPubKeyAddress(
-    resolvePaymentKeyHash(buyerAddress) as string,
-    resolveStakeKeyHash(buyerAddress) as string,
+    resolvePaymentKeyHash(buyerAddress),
+    resolveStakeKeyHash(buyerAddress),
   );
   const sellerPubKeyAddress = mPubKeyAddress(
-    resolvePaymentKeyHash(sellerAddress) as string,
-    resolveStakeKeyHash(sellerAddress) as string,
+    resolvePaymentKeyHash(sellerAddress),
+    resolveStakeKeyHash(sellerAddress),
   );
   //verify that reference_key, reference_signature, seller_nonce, buyer_nonce, input_hash and result hash are valid hex strings
   if (!validateHexString(referenceKey)) {
