@@ -8,19 +8,18 @@ import {
 } from '@prisma/client';
 import dotenv from 'dotenv';
 import {
-  MeshWallet,
   resolvePaymentKeyHash,
   resolvePlutusScriptAddress,
   resolveStakeKeyHash,
-  PlutusScript,
   applyParamsToScript,
-} from '@meshsdk/core';
+} from '@meshsdk/core-cst';
 import { encrypt } from './../src/utils/security/encryption';
 import { DEFAULTS } from './../src/utils/config';
 import { getRegistryScriptV1 } from './../src/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import paymentPlutus from '../smart-contracts/payment/plutus.json';
 import { generateSHA256Hash } from '../src/utils/crypto';
+import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -136,7 +135,7 @@ export const seed = async (prisma: PrismaClient) => {
       throw Error('Fee permille is not valid');
     }
 
-    const script: PlutusScript = {
+    const script = {
       code: applyParamsToScript(paymentPlutus.validators[0].compiledCode, [
         2,
         [
@@ -172,8 +171,20 @@ export const seed = async (prisma: PrismaClient) => {
       ]),
       version: 'V3',
     };
-    const smartContractAddress = resolvePlutusScriptAddress(script, 0);
-
+    const smartContractAddress = resolvePlutusScriptAddress(
+      script as PlutusScript,
+      0,
+    );
+    if (
+      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD
+    ) {
+      throw new Error(
+        'Smart contract address is changed expected: ' +
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
+          ' got: ' +
+          smartContractAddress,
+      );
+    }
     const blockfrostApi = new BlockFrostAPI({
       projectId: blockfrostApiKeyPreprod,
     });
@@ -225,6 +236,14 @@ export const seed = async (prisma: PrismaClient) => {
         smartContractAddress,
         Network.Preprod,
       );
+      if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
+        throw new Error(
+          'Registry policyId is changed expected: ' +
+            DEFAULTS.REGISTRY_POLICY_ID_PREPROD +
+            ' got: ' +
+            policyId,
+        );
+      }
       await prisma.paymentSource.create({
         data: {
           smartContractAddress: smartContractAddress,
@@ -361,6 +380,16 @@ export const seed = async (prisma: PrismaClient) => {
     };
 
     const smartContractAddress = resolvePlutusScriptAddress(script, 1);
+    if (
+      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
+    ) {
+      throw new Error(
+        'Smart contract address is changed expected: ' +
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
+          ' got: ' +
+          smartContractAddress,
+      );
+    }
     const blockfrostApi = new BlockFrostAPI({
       projectId: blockfrostApiKeyMainnet,
     });
@@ -409,6 +438,14 @@ export const seed = async (prisma: PrismaClient) => {
         smartContractAddress,
         Network.Mainnet,
       );
+      if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
+        throw new Error(
+          'Registry policyId is changed expected: ' +
+            DEFAULTS.REGISTRY_POLICY_ID_MAINNET +
+            ' got: ' +
+            policyId,
+        );
+      }
       await prisma.paymentSource.create({
         data: {
           smartContractAddress: smartContractAddress,
