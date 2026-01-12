@@ -127,16 +127,21 @@ export async function getRegistryScriptV1(
 
   const policyAny: unknown = plutusScriptRegistry.hash();
   if (
-    typeof policyAny !== 'object' ||
-    policyAny === null ||
-    !('toString' in policyAny) ||
-    typeof (policyAny as { toString: unknown }).toString !== 'function'
+    (typeof policyAny !== 'object' ||
+      policyAny === null ||
+      !('toString' in policyAny) ||
+      typeof (policyAny as { toString: unknown }).toString !== 'function') &&
+    typeof policyAny !== 'string'
   ) {
     throw new TypeError(
-      'Expected PlutusScript.hash() to return an object with toString()',
+      'Expected PlutusScript.hash() to return an object with toString() got: ' +
+        typeof policyAny,
     );
   }
-  const policyId = (policyAny as { toString: () => string }).toString();
+  const policyId =
+    typeof policyAny === 'string'
+      ? policyAny
+      : (policyAny as { toString: () => string }).toString();
 
   const networkId = convertNetworkToId(network);
 
