@@ -385,7 +385,7 @@ export const paymentSourceExtendedEndpointPost =
               walletAddress: (await sw.wallet.getUnusedAddresses())[0],
               walletVkey: resolvePaymentKeyHash(
                 (await sw.wallet.getUnusedAddresses())[0],
-              ),
+              ) as string,
               secretId: (
                 await prisma.walletSecret.create({
                   data: { encryptedMnemonic: sw.mnemonicEncrypted },
@@ -403,7 +403,7 @@ export const paymentSourceExtendedEndpointPost =
             return {
               walletVkey: resolvePaymentKeyHash(
                 (await pw.wallet.getUnusedAddresses())[0],
-              ),
+              ) as string,
               walletAddress: (await pw.wallet.getUnusedAddresses())[0],
               secretId: (
                 await prisma.walletSecret.create({
@@ -649,7 +649,7 @@ export const paymentSourceExtendedEndpointPatch =
                     walletAddress: (await sw.wallet.getUnusedAddresses())[0],
                     walletVkey: resolvePaymentKeyHash(
                       (await sw.wallet.getUnusedAddresses())[0],
-                    ),
+                    ) as string,
                     secretId: (
                       await prisma.walletSecret.create({
                         data: { encryptedMnemonic: sw.mnemonicEncrypted },
@@ -671,7 +671,7 @@ export const paymentSourceExtendedEndpointPatch =
                     walletAddress: (await pw.wallet.getUnusedAddresses())[0],
                     walletVkey: resolvePaymentKeyHash(
                       (await pw.wallet.getUnusedAddresses())[0],
-                    ),
+                    ) as string,
                     secretId: (
                       await prisma.walletSecret.create({
                         data: { encryptedMnemonic: pw.mnemonicEncrypted },

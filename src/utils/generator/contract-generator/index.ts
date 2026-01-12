@@ -73,7 +73,7 @@ export async function getPaymentScriptV1(
         fields: [
           {
             alternative: 0,
-            fields: [resolvePaymentKeyHash(feeWalletAddress)],
+            fields: [resolvePaymentKeyHash(feeWalletAddress) as string],
           },
           {
             alternative: 0,
@@ -83,7 +83,7 @@ export async function getPaymentScriptV1(
                 fields: [
                   {
                     alternative: 0,
-                    fields: [resolveStakeKeyHash(feeWalletAddress)],
+                    fields: [resolveStakeKeyHash(feeWalletAddress) as string],
                   },
                 ],
               },
@@ -97,7 +97,15 @@ export async function getPaymentScriptV1(
     version: 'V3',
   };
   const networkId = convertNetworkToId(network);
-  const smartContractAddress = resolvePlutusScriptAddress(script, networkId);
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(
+    script,
+    networkId,
+  );
+  if (typeof smartContractAddress !== 'string') {
+    throw new TypeError(
+      `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
+    );
+  }
   return { script, smartContractAddress };
 }
 
@@ -117,11 +125,30 @@ export async function getRegistryScriptV1(
     script.version,
   );
 
-  const policyId = plutusScriptRegistry.hash().toString();
+  const policyAny: unknown = plutusScriptRegistry.hash();
+  if (
+    typeof policyAny !== 'object' ||
+    policyAny === null ||
+    !('toString' in policyAny) ||
+    typeof (policyAny as { toString: unknown }).toString !== 'function'
+  ) {
+    throw new TypeError(
+      'Expected PlutusScript.hash() to return an object with toString()',
+    );
+  }
+  const policyId = (policyAny as { toString: () => string }).toString();
 
   const networkId = convertNetworkToId(network);
 
-  const smartContractAddress = resolvePlutusScriptAddress(script, networkId);
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(
+    script,
+    networkId,
+  );
+  if (typeof smartContractAddress !== 'string') {
+    throw new TypeError(
+      `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
+    );
+  }
   return { script, policyId, smartContractAddress };
 }
 
@@ -268,12 +295,12 @@ export function getDatum({
   state: SmartContractState;
 }) {
   const buyerPubKeyAddress = mPubKeyAddress(
-    resolvePaymentKeyHash(buyerAddress),
-    resolveStakeKeyHash(buyerAddress),
+    resolvePaymentKeyHash(buyerAddress) as string,
+    resolveStakeKeyHash(buyerAddress) as string,
   );
   const sellerPubKeyAddress = mPubKeyAddress(
-    resolvePaymentKeyHash(sellerAddress),
-    resolveStakeKeyHash(sellerAddress),
+    resolvePaymentKeyHash(sellerAddress) as string,
+    resolveStakeKeyHash(sellerAddress) as string,
   );
   //verify that reference_key, reference_signature, seller_nonce, buyer_nonce, input_hash and result hash are valid hex strings
   if (!validateHexString(referenceKey)) {
