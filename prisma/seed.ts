@@ -173,7 +173,16 @@ export const seed = async (prisma: PrismaClient) => {
       version: 'V3',
     };
     const smartContractAddress = resolvePlutusScriptAddress(script, 0);
-
+    if (
+      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD
+    ) {
+      throw new Error(
+        'Smart contract address is changed expected: ' +
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
+          ' got: ' +
+          smartContractAddress,
+      );
+    }
     const blockfrostApi = new BlockFrostAPI({
       projectId: blockfrostApiKeyPreprod,
     });
@@ -225,6 +234,14 @@ export const seed = async (prisma: PrismaClient) => {
         smartContractAddress,
         Network.Preprod,
       );
+      if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
+        throw new Error(
+          'Registry policyId is changed expected: ' +
+            DEFAULTS.REGISTRY_POLICY_ID_PREPROD +
+            ' got: ' +
+            policyId,
+        );
+      }
       await prisma.paymentSource.create({
         data: {
           smartContractAddress: smartContractAddress,
@@ -361,6 +378,16 @@ export const seed = async (prisma: PrismaClient) => {
     };
 
     const smartContractAddress = resolvePlutusScriptAddress(script, 1);
+    if (
+      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
+    ) {
+      throw new Error(
+        'Smart contract address is changed expected: ' +
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
+          ' got: ' +
+          smartContractAddress,
+      );
+    }
     const blockfrostApi = new BlockFrostAPI({
       projectId: blockfrostApiKeyMainnet,
     });
@@ -409,6 +436,14 @@ export const seed = async (prisma: PrismaClient) => {
         smartContractAddress,
         Network.Mainnet,
       );
+      if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
+        throw new Error(
+          'Registry policyId is changed expected: ' +
+            DEFAULTS.REGISTRY_POLICY_ID_MAINNET +
+            ' got: ' +
+            policyId,
+        );
+      }
       await prisma.paymentSource.create({
         data: {
           smartContractAddress: smartContractAddress,
