@@ -172,7 +172,7 @@ export function RegisterAIAgentDialog({
     formState: { errors },
     watch,
   } = useForm<AgentFormValues>({
-    resolver: zodResolver(createAgentSchema(state.network)),
+    resolver: zodResolver(createAgentSchema(network)),
     defaultValues: {
       apiUrl: '',
       name: '',
@@ -292,9 +292,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-                name: data.capabilityName,
-                version: data.capabilityVersion,
-              }
+              name: data.capabilityName,
+              version: data.capabilityVersion,
+            }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -322,7 +322,7 @@ export function RegisterAIAgentDialog({
                 Pricing: data.prices.map((price) => {
                   const unit =
                     price.unit === 'USDM' || price.unit === 'tUSDM'
-                      ? getUsdmConfig(state.network).fullAssetId
+                      ? getUsdmConfig(network).fullAssetId
                       : price.unit;
                   return {
                     unit,
@@ -552,17 +552,14 @@ export function RegisterAIAgentDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="lovelace">
-                            {formatFundUnit('lovelace', state.network)}
+                            {formatFundUnit('lovelace', network)}
                           </SelectItem>
                           <SelectItem
                             value={
-                              state.network === 'Mainnet' ? 'USDM' : 'tUSDM'
+                              network === 'Mainnet' ? 'USDM' : 'tUSDM'
                             }
                           >
-                            {formatFundUnit(
-                              state.network === 'Mainnet' ? 'USDM' : 'tUSDM',
-                              state.network,
-                            )}
+                            {formatFundUnit('USDM', network)}
                           </SelectItem>
                         </SelectContent>
                       </Select>
