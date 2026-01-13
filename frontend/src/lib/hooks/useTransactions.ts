@@ -8,27 +8,27 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getPayment,
   getPurchase,
-  GetPaymentResponses,
-  GetPurchaseResponses,
+  Payment,
+  Purchase,
 } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
-type PaymentTx = GetPaymentResponses['200']['data']['Payments'][0] & {
+type PaymentTx = Payment & {
   type: 'payment';
   RequestedFunds?: { amount: string; unit: string }[];
   Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
-  PaymentSource: GetPaymentResponses['200']['data']['Payments'][0]['PaymentSource'] & {
+  PaymentSource: Payment['PaymentSource'] & {
     id?: string;
   };
 };
 
-type PurchaseTx = GetPurchaseResponses['200']['data']['Purchases'][0] & {
+type PurchaseTx = Purchase & {
   type: 'purchase';
   PaidFunds?: { amount: string; unit: string }[];
   Amounts?: { amount: string; unit: string }[];
   unlockTime?: string | null;
-  PaymentSource: GetPurchaseResponses['200']['data']['Purchases'][0]['PaymentSource'] & {
+  PaymentSource: Purchase['PaymentSource'] & {
     id?: string;
   };
 };

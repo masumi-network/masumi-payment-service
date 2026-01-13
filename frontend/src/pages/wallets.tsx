@@ -12,7 +12,7 @@ import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { GetUtxosResponses } from '@/lib/api/generated';
+import { Utxo } from '@/lib/api/generated';
 import { Checkbox } from '@/components/ui/checkbox';
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -32,7 +32,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
+type UTXO = Utxo;
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
