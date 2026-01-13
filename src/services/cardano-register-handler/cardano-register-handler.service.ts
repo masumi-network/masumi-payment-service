@@ -23,7 +23,7 @@ import { stringToMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
@@ -191,7 +191,7 @@ export async function registerAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 
             const firstUtxo = limitedFilteredUtxos[0];
             const collateralUtxo = limitedFilteredUtxos[0];
