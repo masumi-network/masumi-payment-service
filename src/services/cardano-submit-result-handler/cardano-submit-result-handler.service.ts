@@ -279,10 +279,7 @@ async function processSinglePaymentRequest(
     ) + 3,
   );
 
-  const limitedUtxos = sortAndLimitUtxos(utxos, 2);
-  if (limitedUtxos.length === 0) {
-    throw new Error('No UTXOs found');
-  }
+  const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
 
   const unsignedTx =
     await generateMasumiSmartContractInteractionTransactionAutomaticFees(
