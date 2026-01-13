@@ -4721,9 +4721,17 @@ export type PostPurchaseSpendingResponses = {
             };
             dailySpend: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4732,9 +4740,17 @@ export type PostPurchaseSpendingResponses = {
             }>;
             dailyRefunded: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4743,9 +4759,17 @@ export type PostPurchaseSpendingResponses = {
             }>;
             dailyPending: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4754,9 +4778,13 @@ export type PostPurchaseSpendingResponses = {
             }>;
             monthlySpend: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4765,9 +4793,13 @@ export type PostPurchaseSpendingResponses = {
             }>;
             monthlyRefunded: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4776,9 +4808,13 @@ export type PostPurchaseSpendingResponses = {
             }>;
             monthlyPending: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4872,9 +4908,17 @@ export type PostPaymentIncomeResponses = {
             };
             dailyIncome: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4883,9 +4927,17 @@ export type PostPaymentIncomeResponses = {
             }>;
             dailyRefunded: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4894,9 +4946,17 @@ export type PostPaymentIncomeResponses = {
             }>;
             dailyPending: Array<{
                 /**
-                 * The date in the format YYYY-MM-DD
+                 * The day of the month
                  */
-                date: string;
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4905,9 +4965,13 @@ export type PostPaymentIncomeResponses = {
             }>;
             monthlyIncome: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4916,9 +4980,13 @@ export type PostPaymentIncomeResponses = {
             }>;
             monthlyRefunded: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;
@@ -4927,9 +4995,13 @@ export type PostPaymentIncomeResponses = {
             }>;
             monthlyPending: Array<{
                 /**
-                 * The date in the format YYYY-MM
+                 * The month
                  */
-                date: string;
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
                 units: Array<{
                     unit: string;
                     amount: number;

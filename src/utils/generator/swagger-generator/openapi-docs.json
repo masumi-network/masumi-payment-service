@@ -10942,9 +10942,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -10970,7 +10978,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -10981,9 +10991,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11009,7 +11027,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11020,9 +11040,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11048,7 +11076,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11059,9 +11089,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11087,7 +11121,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11098,9 +11133,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11126,7 +11165,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11137,9 +11177,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11165,7 +11209,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11224,7 +11269,9 @@
                                             },
                                             "dailySpend": [
                                                 {
-                                                    "date": "2024-09-15",
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11236,7 +11283,9 @@
                                             ],
                                             "dailyRefunded": [
                                                 {
-                                                    "date": "2024-09-15",
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11248,7 +11297,9 @@
                                             ],
                                             "dailyPending": [
                                                 {
-                                                    "date": "2024-09-15",
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11260,7 +11311,8 @@
                                             ],
                                             "monthlySpend": [
                                                 {
-                                                    "date": "2024-09",
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11272,14 +11324,16 @@
                                             ],
                                             "monthlyRefunded": [
                                                 {
-                                                    "date": "2024-09",
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [],
                                                     "blockchainFees": 0
                                                 }
                                             ],
                                             "monthlyPending": [
                                                 {
-                                                    "date": "2024-09",
+                                                    "month": 9,
+                                                    "year": 2024,
                                                     "units": [],
                                                     "blockchainFees": 0
                                                 }
@@ -11524,9 +11578,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11552,7 +11614,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11563,9 +11627,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11591,7 +11663,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11602,9 +11676,17 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM-DD"
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11630,7 +11712,9 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "day",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11641,9 +11725,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11669,7 +11757,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11680,9 +11769,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11708,7 +11801,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11719,9 +11813,13 @@
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
-                                                            "date": {
-                                                                "type": "string",
-                                                                "description": "The date in the format YYYY-MM"
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
                                                             },
                                                             "units": {
                                                                 "type": "array",
@@ -11747,7 +11845,8 @@
                                                             }
                                                         },
                                                         "required": [
-                                                            "date",
+                                                            "month",
+                                                            "year",
                                                             "units",
                                                             "blockchainFees"
                                                         ]
@@ -11811,7 +11910,9 @@
                                             },
                                             "dailyIncome": [
                                                 {
-                                                    "date": "2024-01-10",
+                                                    "day": 10,
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11823,7 +11924,9 @@
                                             ],
                                             "dailyRefunded": [
                                                 {
-                                                    "date": "2024-01-12",
+                                                    "day": 12,
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11835,7 +11938,9 @@
                                             ],
                                             "dailyPending": [
                                                 {
-                                                    "date": "2024-01-15",
+                                                    "day": 15,
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11847,7 +11952,8 @@
                                             ],
                                             "monthlyIncome": [
                                                 {
-                                                    "date": "2024-01",
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11859,7 +11965,8 @@
                                             ],
                                             "monthlyRefunded": [
                                                 {
-                                                    "date": "2024-01",
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
@@ -11871,7 +11978,8 @@
                                             ],
                                             "monthlyPending": [
                                                 {
-                                                    "date": "2024-01",
+                                                    "month": 1,
+                                                    "year": 2024,
                                                     "units": [
                                                         {
                                                             "unit": "",
