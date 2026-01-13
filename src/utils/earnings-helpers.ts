@@ -57,118 +57,102 @@ export function filterByAgentIdentifier<
   return filtered;
 }
 
-export type TransactionWithFunds = {
-  onChainState: string;
-  PaidFunds?: Array<{ unit: string; amount: bigint }>;
-  RequestedFunds?: Array<{ unit: string; amount: bigint }>;
-  WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;
-  PaymentSource: { feeRatePermille: number };
+export type Fund = {
+  units: Map<string, number>;
+  blockchainFees: number;
 };
 
-function _aggregateEarningsInternal(
-  transactions: TransactionWithFunds[],
-  getFundsArray: (
-    tx: TransactionWithFunds,
-  ) => Array<{ unit: string; amount: bigint }>,
-): {
-  earningsMap: Map<string, bigint>;
-  revenueMap: Map<string, bigint>;
-  feesMap: Map<string, bigint>;
-} {
-  const earningsMap = new Map<string, bigint>();
-  const revenueMap = new Map<string, bigint>();
-  const feesMap = new Map<string, bigint>();
-
-  transactions.forEach((transaction) => {
-    const funds = getFundsArray(transaction);
-
-    funds.forEach((fund) => {
-      if (fund.unit === undefined || fund.unit === null) {
-        throw createHttpError(
-          500,
-          `Invalid fund data: unit is ${fund.unit === undefined ? 'undefined' : 'null'}. All funds must have a unit specified (empty string '' for lovelace).`,
-        );
-      }
-      const unit = fund.unit;
-      revenueMap.set(unit, (revenueMap.get(unit) || BigInt(0)) + fund.amount);
-    });
-
-    if (transaction.WithdrawnForSeller.length > 0) {
-      transaction.WithdrawnForSeller.forEach((withdrawn) => {
-        if (withdrawn.unit === undefined || withdrawn.unit === null) {
-          throw createHttpError(
-            500,
-            `Invalid withdrawal data: unit is ${withdrawn.unit === undefined ? 'undefined' : 'null'}. All withdrawals must have a unit specified (empty string '' for lovelace).`,
-          );
-        }
-        const unit = withdrawn.unit;
-        earningsMap.set(
-          unit,
-          (earningsMap.get(unit) || BigInt(0)) + withdrawn.amount,
-        );
-      });
-    } else if (transaction.onChainState === 'Withdrawn') {
-      funds.forEach((fund) => {
-        if (fund.unit === undefined || fund.unit === null) {
-          throw createHttpError(
-            500,
-            `Invalid fund data: unit is ${fund.unit === undefined ? 'undefined' : 'null'}. All funds must have a unit specified (empty string '' for lovelace).`,
-          );
-        }
-        const unit = fund.unit;
-        const feeRate = BigInt(transaction.PaymentSource.feeRatePermille);
-        const estimatedEarnings = (fund.amount * (1000n - feeRate)) / 1000n;
-        earningsMap.set(
-          unit,
-          (earningsMap.get(unit) || BigInt(0)) + estimatedEarnings,
-        );
-      });
-    }
-  });
-
-  revenueMap.forEach((revenue, unit) => {
-    const earnings = earningsMap.get(unit) || BigInt(0);
-    const fee = revenue - earnings;
-    if (fee > 0) {
-      feesMap.set(unit, fee);
-    }
-  });
-
-  return { earningsMap, revenueMap, feesMap };
+export function addToFundsMap(
+  paymentFunds: Fund,
+  unit: string,
+  amount: bigint,
+): void {
+  if (paymentFunds.units.has(unit)) {
+    paymentFunds.units.set(
+      unit,
+      paymentFunds.units.get(unit)! + Number(amount),
+    );
+  } else {
+    paymentFunds.units.set(unit, Number(amount));
+  }
 }
 
-export function aggregatePaymentEarnings(
-  transactions: TransactionWithFunds[],
-): {
-  earningsMap: Map<string, bigint>;
-  revenueMap: Map<string, bigint>;
-  feesMap: Map<string, bigint>;
-} {
-  return _aggregateEarningsInternal(
-    transactions,
-    (tx) => tx.RequestedFunds || [],
-  );
+export function addToFundsMapArray(
+  paymentFunds: Fund,
+  units: Array<{ unit: string; amount: bigint }>,
+  blockchainFees: bigint,
+): void {
+  for (const unit of units) {
+    addToFundsMap(paymentFunds, unit.unit, unit.amount);
+  }
+  paymentFunds.blockchainFees += Number(blockchainFees);
 }
 
-export function aggregatePurchaseEarnings(
-  transactions: TransactionWithFunds[],
-): {
-  earningsMap: Map<string, bigint>;
-  revenueMap: Map<string, bigint>;
-  feesMap: Map<string, bigint>;
-} {
-  return _aggregateEarningsInternal(transactions, (tx) => tx.PaidFunds || []);
+export function addToFundsMapArrayMap(
+  map: Map<string, Fund>,
+  key: string,
+  units: Array<{ unit: string; amount: bigint }>,
+  blockchainFees: bigint,
+): void {
+  if (!map.has(key)) {
+    map.set(key, { units: new Map<string, number>(), blockchainFees: 0 });
+  }
+  addToFundsMapArray(map.get(key)!, units, blockchainFees);
 }
 
-export function aggregateEarnings(
-  transactions: TransactionWithFunds[],
-  usePaidFunds: boolean,
-): {
-  earningsMap: Map<string, bigint>;
-  revenueMap: Map<string, bigint>;
-  feesMap: Map<string, bigint>;
+export function addToAllFundsMaps(
+  totalFunds: Fund,
+  dayMap: Map<string, Fund>,
+  monthMap: Map<string, Fund>,
+  dayKey: string,
+  monthKey: string,
+  units: Array<{ unit: string; amount: bigint }>,
+  blockchainFees: bigint,
+): void {
+  addToFundsMapArray(totalFunds, units, blockchainFees);
+  addToFundsMapArrayMap(dayMap, dayKey, units, blockchainFees);
+  addToFundsMapArrayMap(monthMap, monthKey, units, blockchainFees);
+}
+
+export function mapTotalFundsOutput(funds: Fund): {
+  units: Array<{ unit: string; amount: number }>;
+  blockchainFees: number;
 } {
-  return usePaidFunds
-    ? aggregatePurchaseEarnings(transactions)
-    : aggregatePaymentEarnings(transactions);
+  return {
+    units: Array.from(funds.units.entries()).map(([unit, amount]) => ({
+      unit,
+      amount,
+    })),
+    blockchainFees: funds.blockchainFees,
+  };
+}
+
+export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
+  date: string;
+  units: Array<{ unit: string; amount: number }>;
+  blockchainFees: number;
+}> {
+  return Array.from(fundsByDay.entries()).map(([date, fund]) => ({
+    date,
+    units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+      unit,
+      amount,
+    })),
+    blockchainFees: fund.blockchainFees,
+  }));
+}
+
+export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
+  date: string;
+  units: Array<{ unit: string; amount: number }>;
+  blockchainFees: number;
+}> {
+  return Array.from(fundsByMonth.entries()).map(([date, fund]) => ({
+    date,
+    units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
+      unit,
+      amount,
+    })),
+    blockchainFees: fund.blockchainFees,
+  }));
 }

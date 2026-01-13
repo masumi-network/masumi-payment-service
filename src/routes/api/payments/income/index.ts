@@ -6,53 +6,15 @@ import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-aut
 import {
   parseDateRange,
   filterByAgentIdentifier,
+  Fund,
+  addToAllFundsMaps,
+  mapDailyFundsOutput,
+  mapMonthlyFundsOutput,
+  mapTotalFundsOutput,
 } from '@/utils/earnings-helpers';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { ez } from 'express-zod-api';
 import spacetime from 'spacetime';
-
-type PaymentFunds = {
-  units: Map<string, number>;
-  blockchainFees: number;
-};
-
-function addToPaymentFundsMap(
-  paymentFunds: PaymentFunds,
-  unit: string,
-  amount: bigint,
-): void {
-  if (paymentFunds.units.has(unit)) {
-    paymentFunds.units.set(
-      unit,
-      paymentFunds.units.get(unit)! + Number(amount),
-    );
-  } else {
-    paymentFunds.units.set(unit, Number(amount));
-  }
-}
-
-function addToPaymentFundsMapArray(
-  paymentFunds: PaymentFunds,
-  units: Array<{ unit: string; amount: bigint }>,
-  blockchainFees: bigint,
-): void {
-  for (const unit of units) {
-    addToPaymentFundsMap(paymentFunds, unit.unit, unit.amount);
-  }
-  paymentFunds.blockchainFees += Number(blockchainFees);
-}
-
-function addToPaymentFundsMapArrayMap(
-  map: Map<string, PaymentFunds>,
-  key: string,
-  units: Array<{ unit: string; amount: bigint }>,
-  blockchainFees: bigint,
-): void {
-  if (!map.has(key)) {
-    map.set(key, { units: new Map<string, number>(), blockchainFees: 0 });
-  }
-  addToPaymentFundsMapArray(map.get(key)!, units, blockchainFees);
-}
 
 export const postPaymentIncomeSchemaInput = z.object({
   agentIdentifier: z
@@ -235,7 +197,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         units: new Map<string, number>(),
         blockchainFees: 0,
       };
-      const totalIncomeMap: PaymentFunds = {
+      const totalIncomeMap: Fund = {
         units: new Map<string, number>(),
         blockchainFees: 0,
       };
@@ -244,13 +206,13 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         blockchainFees: 0,
       };
 
-      const dayRefundedMap = new Map<string, PaymentFunds>();
-      const dayIncomeMap = new Map<string, PaymentFunds>();
-      const dayPendingMap = new Map<string, PaymentFunds>();
+      const dayRefundedMap = new Map<string, Fund>();
+      const dayIncomeMap = new Map<string, Fund>();
+      const dayPendingMap = new Map<string, Fund>();
 
-      const monthlyRefundedMap = new Map<string, PaymentFunds>();
-      const monthlyIncomeMap = new Map<string, PaymentFunds>();
-      const monthlyPendingMap = new Map<string, PaymentFunds>();
+      const monthlyRefundedMap = new Map<string, Fund>();
+      const monthlyIncomeMap = new Map<string, Fund>();
+      const monthlyPendingMap = new Map<string, Fund>();
 
       for (const payment of allPaymentsFiltered) {
         //get the day number in the local time zone of the user
@@ -264,94 +226,56 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         );
 
         if (payment.onChainState === OnChainState.Withdrawn) {
-          addToPaymentFundsMapArray(
+          addToAllFundsMaps(
             totalIncomeMap,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             dayIncomeMap,
-            dayDateLocal,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             monthlyIncomeMap,
+            dayDateLocal,
             monthDateLocal,
             payment.RequestedFunds,
             payment.totalSellerCardanoFees,
           );
         } else if (payment.onChainState === OnChainState.RefundWithdrawn) {
-          addToPaymentFundsMapArray(
+          addToAllFundsMaps(
             totalRefundedMap,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             dayRefundedMap,
-            dayDateLocal,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             monthlyRefundedMap,
+            dayDateLocal,
             monthDateLocal,
             payment.RequestedFunds,
             payment.totalSellerCardanoFees,
           );
         } else if (payment.onChainState === OnChainState.DisputedWithdrawn) {
-          if (payment.WithdrawnForBuyer.length > 0) {
-            addToPaymentFundsMapArray(
-              totalRefundedMap,
-              payment.WithdrawnForBuyer,
-              payment.totalSellerCardanoFees,
-            );
-            addToPaymentFundsMapArrayMap(
-              dayRefundedMap,
-              dayDateLocal,
-              payment.WithdrawnForBuyer,
-              payment.totalSellerCardanoFees,
-            );
-            addToPaymentFundsMapArrayMap(
-              monthlyRefundedMap,
-              monthDateLocal,
-              payment.WithdrawnForBuyer,
-              payment.totalSellerCardanoFees,
-            );
-          }
           if (payment.WithdrawnForSeller.length > 0) {
-            addToPaymentFundsMapArray(
+            addToAllFundsMaps(
               totalIncomeMap,
+              dayIncomeMap,
+              monthlyIncomeMap,
+              dayDateLocal,
+              monthDateLocal,
               payment.WithdrawnForSeller,
               payment.totalSellerCardanoFees,
             );
           }
-          addToPaymentFundsMapArrayMap(
-            dayIncomeMap,
-            dayDateLocal,
-            payment.WithdrawnForSeller,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
-            monthlyIncomeMap,
-            monthDateLocal,
-            payment.WithdrawnForSeller,
-            payment.totalSellerCardanoFees,
-          );
+          if (payment.WithdrawnForBuyer.length > 0) {
+            addToAllFundsMaps(
+              totalRefundedMap,
+              dayRefundedMap,
+              monthlyRefundedMap,
+              dayDateLocal,
+              monthDateLocal,
+              payment.WithdrawnForBuyer,
+              payment.WithdrawnForSeller.length === 0
+                ? payment.totalSellerCardanoFees
+                : 0n,
+            );
+          }
         } else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
-          addToPaymentFundsMapArray(
+          addToAllFundsMaps(
             totalPendingMap,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             dayPendingMap,
-            dayDateLocal,
-            payment.RequestedFunds,
-            payment.totalSellerCardanoFees,
-          );
-          addToPaymentFundsMapArrayMap(
             monthlyPendingMap,
+            dayDateLocal,
             monthDateLocal,
             payment.RequestedFunds,
             payment.totalSellerCardanoFees,
@@ -364,91 +288,15 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         periodStart,
         periodEnd,
         totalTransactions: allPaymentsFiltered.length,
-        totalIncome: {
-          units: Array.from(totalIncomeMap.units.entries()).map(
-            ([key, value]) => ({
-              unit: key,
-              amount: value,
-            }),
-          ),
-          blockchainFees: totalIncomeMap.blockchainFees,
-        },
-        totalRefunded: {
-          units: Array.from(totalRefundedMap.units.entries()).map(
-            ([key, value]) => ({
-              unit: key,
-              amount: value,
-            }),
-          ),
-          blockchainFees: totalRefundedMap.blockchainFees,
-        },
-        totalPending: {
-          units: Array.from(totalPendingMap.units.entries()).map(
-            ([key, value]) => ({
-              unit: key,
-              amount: value,
-            }),
-          ),
-          blockchainFees: totalPendingMap.blockchainFees,
-        },
-        dailyIncome: Array.from(dayIncomeMap.entries()).map(([key, value]) => ({
-          date: key,
-          units: Array.from(value.units.entries()).map(([key, value]) => ({
-            unit: key,
-            amount: value,
-          })),
-          blockchainFees: value.blockchainFees,
-        })),
-        dailyRefunded: Array.from(dayRefundedMap.entries()).map(
-          ([key, value]) => ({
-            date: key,
-            units: Array.from(value.units.entries()).map(([key, value]) => ({
-              unit: key,
-              amount: value,
-            })),
-            blockchainFees: value.blockchainFees,
-          }),
-        ),
-        dailyPending: Array.from(dayPendingMap.entries()).map(
-          ([key, value]) => ({
-            date: key,
-            units: Array.from(value.units.entries()).map(([key, value]) => ({
-              unit: key,
-              amount: value,
-            })),
-            blockchainFees: value.blockchainFees,
-          }),
-        ),
-        monthlyIncome: Array.from(monthlyIncomeMap.entries()).map(
-          ([key, value]) => ({
-            date: key,
-            units: Array.from(value.units.entries()).map(([key, value]) => ({
-              unit: key,
-              amount: value,
-            })),
-            blockchainFees: value.blockchainFees,
-          }),
-        ),
-        monthlyRefunded: Array.from(monthlyRefundedMap.entries()).map(
-          ([key, value]) => ({
-            date: key,
-            units: Array.from(value.units.entries()).map(([key, value]) => ({
-              unit: key,
-              amount: value,
-            })),
-            blockchainFees: value.blockchainFees,
-          }),
-        ),
-        monthlyPending: Array.from(monthlyPendingMap.entries()).map(
-          ([key, value]) => ({
-            date: key,
-            units: Array.from(value.units.entries()).map(([key, value]) => ({
-              unit: key,
-              amount: value,
-            })),
-            blockchainFees: value.blockchainFees,
-          }),
-        ),
+        totalIncome: mapTotalFundsOutput(totalIncomeMap),
+        totalRefunded: mapTotalFundsOutput(totalRefundedMap),
+        totalPending: mapTotalFundsOutput(totalPendingMap),
+        dailyIncome: mapDailyFundsOutput(dayIncomeMap),
+        dailyRefunded: mapDailyFundsOutput(dayRefundedMap),
+        dailyPending: mapDailyFundsOutput(dayPendingMap),
+        monthlyIncome: mapMonthlyFundsOutput(monthlyIncomeMap),
+        monthlyRefunded: mapMonthlyFundsOutput(monthlyRefundedMap),
+        monthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
       };
     } catch (error: unknown) {
       const errorInstance =
