@@ -29,7 +29,7 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
-import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -279,8 +279,7 @@ async function processSinglePaymentRequest(
     ) + 3,
   );
 
-  const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-  const limitedUtxos = sortedUtxos.slice(0, Math.min(4, sortedUtxos.length));
+  const limitedUtxos = sortAndLimitUtxos(utxos, 5000000);
 
   const unsignedTx =
     await generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -290,7 +289,7 @@ async function processSinglePaymentRequest(
       script,
       address,
       utxo,
-      sortedUtxos[0],
+      limitedUtxos[0],
       limitedUtxos,
       datum.value,
       invalidBefore,

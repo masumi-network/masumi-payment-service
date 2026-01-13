@@ -4,7 +4,7 @@ import { SERVICE_CONSTANTS } from '@/utils/config';
 /**
  * Sorts UTXOs by lovelace amount in descending order (O(n log n))
  */
-export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
+function sortUtxosBySizeAndRequiredLovelaceDesc(utxos: UTxO[]): UTxO[] {
   // Extract lovelace amounts once for better performance
   const utxosWithLovelace = utxos.map((utxo) => ({
     utxo,
@@ -21,6 +21,23 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
     .map((item) => item.utxo);
 }
 
+function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
+  return utxos.sort((a, b) => b.output.amount.length - a.output.amount.length);
+}
+
+function filterUtxosByRequiredLovelace(
+  utxos: UTxO[],
+  requiredLovelace: number,
+): UTxO[] {
+  return utxos.filter((utxo) => {
+    const lovelace = parseInt(
+      utxo.output.amount.find(
+        (asset) => asset.unit === 'lovelace' || asset.unit === '',
+      )?.quantity ?? '0',
+    );
+    return lovelace >= requiredLovelace;
+  });
+}
 /**
  * Limits UTXOs to maximum count for transaction size optimization
  */
@@ -32,9 +49,20 @@ export function limitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
 /**
  * Combined function: sort and limit UTXOs in one operation
  */
-export function sortAndLimitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
-  const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-  return limitUtxos(sortedUtxos, maxCount);
+export function sortAndLimitUtxos(
+  utxos: UTxO[],
+  requiredLovelace: number,
+  maxCount?: number,
+): UTxO[] {
+  const sortedUtxos = sortUtxosByBloatAsc(utxos);
+  const filteredUtxos = filterUtxosByRequiredLovelace(
+    sortedUtxos,
+    requiredLovelace,
+  );
+  if (filteredUtxos.length === 0) {
+    throw new Error('No suitable UTXOs found');
+  }
+  return limitUtxos(filteredUtxos, maxCount);
 }
 
 /**
@@ -42,5 +70,5 @@ export function sortAndLimitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
  * Returns the first UTXO after sorting by lovelace descending
  */
 export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
-  return sortUtxosByLovelaceDesc(utxos)[0];
+  return sortUtxosBySizeAndRequiredLovelaceDesc(utxos)[0];
 }

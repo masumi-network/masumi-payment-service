@@ -191,7 +191,7 @@ export async function registerAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 5000000);
 
             const firstUtxo = limitedFilteredUtxos[0];
             const collateralUtxo = limitedFilteredUtxos[0];

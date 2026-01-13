@@ -127,7 +127,7 @@ export async function deRegisterAgentV1() {
 
             const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
 
-            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 5000000);
             const collateralUtxo = limitedFilteredUtxos[0];
             if (collateralUtxo == null) {
               throw new Error('Collateral UTXO not found');
