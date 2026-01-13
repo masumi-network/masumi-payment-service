@@ -1,5 +1,4 @@
 import { UTxO } from '@meshsdk/core';
-import { SERVICE_CONSTANTS } from '@/utils/config';
 
 /**
  * Sorts UTXOs by lovelace amount in descending order (O(n log n))
