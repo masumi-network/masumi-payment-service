@@ -170,7 +170,7 @@ export const SERVICE_CONSTANTS = {
     blockTimeBufferMs: 60000, // 1 minute block time buffer
     validitySlotBuffer: 5,
     resultTimeSlotBuffer: 3,
-    maxUtxos: 4, // Max UTXOs per transaction
+    maxUtxos: 2, // Max UTXOs per transaction
   },
 
   // Smart contract constants
