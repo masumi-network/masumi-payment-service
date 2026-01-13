@@ -1,0 +1,1045 @@
+{
+	"info": {
+		"_postman_id": "masumi-payment-service",
+		"name": "Masumi Payment Service API",
+		"description": "Complete API collection for the Masumi Payment Service - A Cardano blockchain payment service for AI agent interactions.\n\n## Quick Start\n1. Import this collection into Postman\n2. Edit collection variables: set `baseUrl` and `apiKey`\n3. Test with Health endpoint\n\n## Authentication\nAll endpoints (except health) require authentication via the `token` header with your API key.\n\n## Base URL\nDefault: http://localhost:3001/api/v1",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "{{apiKey}}",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "token",
+				"type": "string"
+			},
+			{
+				"key": "in",
+				"value": "header",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3001/api/v1",
+			"type": "string"
+		},
+		{
+			"key": "apiKey",
+			"value": "your-api-key-here",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the service is running"
+					}
+				}
+			]
+		},
+		{
+			"name": "Payments",
+			"item": [
+				{
+					"name": "Query Payments",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod",
+									"description": "Network: Mainnet or Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of results (1-100)"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"description": "Pagination cursor",
+									"disabled": true
+								},
+								{
+									"key": "filterSmartContractAddress",
+									"value": "",
+									"description": "Filter by contract address",
+									"disabled": true
+								},
+								{
+									"key": "includeHistory",
+									"value": "false",
+									"description": "Include transaction history"
+								}
+							]
+						},
+						"description": "Get list of payment requests"
+					}
+				},
+				{
+					"name": "Create Payment",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"inputHash\": \"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2\",\n  \"network\": \"Preprod\",\n  \"agentIdentifier\": \"your-agent-identifier-policy-id-plus-asset-name-here\",\n  \"payByTime\": \"2026-01-14T12:00:00.000Z\",\n  \"submitResultTime\": \"2026-01-14T18:00:00.000Z\",\n  \"unlockTime\": \"2026-01-15T00:00:00.000Z\",\n  \"externalDisputeUnlockTime\": \"2026-01-15T12:00:00.000Z\",\n  \"metadata\": \"Optional metadata\",\n  \"identifierFromPurchaser\": \"1234567890abcdef\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment"]
+						},
+						"description": "Create a new payment request"
+					}
+				},
+				{
+					"name": "Get Payment Diff (Combined)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment/diff?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "diff"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get combined diff of payment changes"
+					}
+				},
+				{
+					"name": "Get Payment Diff (Next Action)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment/diff/next-action?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "diff", "next-action"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get payments with next action changes"
+					}
+				},
+				{
+					"name": "Get Payment Diff (Onchain State)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment/diff/onchain-state-or-result?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "diff", "onchain-state-or-result"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get payments with onchain state changes"
+					}
+				},
+				{
+					"name": "Authorize Payment Refund",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentId\": \"payment-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment/authorize-refund",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "authorize-refund"]
+						},
+						"description": "Authorize a refund for a payment"
+					}
+				},
+				{
+					"name": "Submit Payment Result",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentId\": \"payment-request-id-here\",\n  \"resultHash\": \"sha256-hash-of-result-in-hex\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment/submit-result",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "submit-result"]
+						},
+						"description": "Submit the result hash for a payment"
+					}
+				},
+				{
+					"name": "Resolve Payment Blockchain Identifier",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"blockchainIdentifier\": \"compressed-blockchain-identifier-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment/resolve-blockchain-identifier",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "resolve-blockchain-identifier"]
+						},
+						"description": "Resolve and decode a blockchain identifier"
+					}
+				},
+				{
+					"name": "Payment Error State Recovery",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"paymentId\": \"payment-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment/error-state-recovery",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment", "error-state-recovery"]
+						},
+						"description": "Recover a payment from error state"
+					}
+				}
+			]
+		},
+		{
+			"name": "Purchases",
+			"item": [
+				{
+					"name": "Query Purchases",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/purchase?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "filterSmartContractAddress",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "includeHistory",
+									"value": "false"
+								}
+							]
+						},
+						"description": "Get list of purchase requests"
+					}
+				},
+				{
+					"name": "Create Purchase",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"blockchainIdentifier\": \"compressed-blockchain-identifier-from-seller\",\n  \"network\": \"Preprod\",\n  \"inputHash\": \"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2\",\n  \"sellerVkey\": \"seller-payment-key-hash\",\n  \"agentIdentifier\": \"policy-id-plus-asset-name\",\n  \"unlockTime\": \"1737129600000\",\n  \"externalDisputeUnlockTime\": \"1737172800000\",\n  \"submitResultTime\": \"1737108000000\",\n  \"payByTime\": \"1737086400000\",\n  \"metadata\": \"Optional metadata\",\n  \"identifierFromPurchaser\": \"1234567890abcdef\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/purchase",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase"]
+						},
+						"description": "Create a new purchase request"
+					}
+				},
+				{
+					"name": "Get Purchase Diff (Combined)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/purchase/diff?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "diff"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get combined diff of purchase changes"
+					}
+				},
+				{
+					"name": "Get Purchase Diff (Next Action)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/purchase/diff/next-action?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "diff", "next-action"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get purchases with next action changes"
+					}
+				},
+				{
+					"name": "Get Purchase Diff (Onchain State)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/purchase/diff/onchain-state-or-result?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "diff", "onchain-state-or-result"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get purchases with onchain state changes"
+					}
+				},
+				{
+					"name": "Request Purchase Refund",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"purchaseId\": \"purchase-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/purchase/request-refund",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "request-refund"]
+						},
+						"description": "Request a refund for a purchase"
+					}
+				},
+				{
+					"name": "Cancel Purchase Refund Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"purchaseId\": \"purchase-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/purchase/cancel-refund-request",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "cancel-refund-request"]
+						},
+						"description": "Cancel a refund request"
+					}
+				},
+				{
+					"name": "Resolve Purchase Blockchain Identifier",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"blockchainIdentifier\": \"compressed-blockchain-identifier-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/purchase/resolve-blockchain-identifier",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "resolve-blockchain-identifier"]
+						},
+						"description": "Resolve and decode a blockchain identifier"
+					}
+				},
+				{
+					"name": "Purchase Error State Recovery",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"purchaseId\": \"purchase-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/purchase/error-state-recovery",
+							"host": ["{{baseUrl}}"],
+							"path": ["purchase", "error-state-recovery"]
+						},
+						"description": "Recover a purchase from error state"
+					}
+				}
+			]
+		},
+		{
+			"name": "Registry",
+			"item": [
+				{
+					"name": "Query Registry",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/registry?network=Preprod",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "filterSmartContractAddress",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get list of registered agents"
+					}
+				},
+				{
+					"name": "Register Agent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"network\": \"Preprod\",\n  \"sellingWalletVkey\": \"your-wallet-payment-key-hash\",\n  \"name\": \"My AI Agent\",\n  \"apiBaseUrl\": \"https://api.example.com\",\n  \"description\": \"AI agent for text generation\",\n  \"Tags\": [\"ai\", \"text-generation\", \"nlp\"],\n  \"Capability\": {\n    \"name\": \"GPT-4\",\n    \"version\": \"1.0.0\"\n  },\n  \"Author\": {\n    \"name\": \"Your Name\",\n    \"contactEmail\": \"email@example.com\",\n    \"organization\": \"Your Organization\"\n  },\n  \"Legal\": {\n    \"privacyPolicy\": \"https://example.com/privacy\",\n    \"terms\": \"https://example.com/terms\"\n  },\n  \"AgentPricing\": {\n    \"pricingType\": \"Fixed\",\n    \"Pricing\": [\n      {\n        \"unit\": \"\",\n        \"amount\": \"5000000\"\n      }\n    ]\n  },\n  \"ExampleOutputs\": [\n    {\n      \"name\": \"Sample Output\",\n      \"url\": \"https://example.com/sample.json\",\n      \"mimeType\": \"application/json\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/registry",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry"]
+						},
+						"description": "Register a new AI agent"
+					}
+				},
+				{
+					"name": "Delete Agent Registration",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/registry?id=registry-request-id",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry"],
+							"query": [
+								{
+									"key": "id",
+									"value": "registry-request-id"
+								}
+							]
+						},
+						"description": "Delete an agent registration (admin only)"
+					}
+				},
+				{
+					"name": "Get Registry Diff",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/registry/diff?network=Preprod&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry", "diff"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get registry changes"
+					}
+				},
+				{
+					"name": "Query Agent by Wallet",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/registry/wallet?network=Preprod&walletAddress=addr_test1...",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry", "wallet"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "walletAddress",
+									"value": "addr_test1..."
+								}
+							]
+						},
+						"description": "Find agent by wallet address"
+					}
+				},
+				{
+					"name": "Deregister Agent",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"registryId\": \"registry-request-id-here\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/registry/deregister",
+							"host": ["{{baseUrl}}"],
+							"path": ["registry", "deregister"]
+						},
+						"description": "Deregister an agent"
+					}
+				}
+			]
+		},
+		{
+			"name": "API Keys",
+			"item": [
+				{
+					"name": "Query API Keys",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api-key?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api-key"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "cursorToken",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get list of API keys (admin only)"
+					}
+				},
+				{
+					"name": "Create API Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission\": \"Read\",\n  \"usageLimited\": \"true\",\n  \"networkLimit\": [\"Preprod\"],\n  \"UsageCredits\": [\n    {\n      \"unit\": \"\",\n      \"amount\": \"100000000\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api-key",
+							"host": ["{{baseUrl}}"],
+							"path": ["api-key"]
+						},
+						"description": "Create a new API key (admin only)"
+					}
+				},
+				{
+					"name": "Update API Key",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"api-key-id-here\",\n  \"status\": \"Active\",\n  \"usageLimited\": true,\n  \"UsageCreditsToAddOrRemove\": [\n    {\n      \"unit\": \"\",\n      \"amount\": \"50000000\"\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api-key",
+							"host": ["{{baseUrl}}"],
+							"path": ["api-key"]
+						},
+						"description": "Update an API key (admin only)"
+					}
+				},
+				{
+					"name": "Delete API Key",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api-key?id=api-key-id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api-key"],
+							"query": [
+								{
+									"key": "id",
+									"value": "api-key-id"
+								}
+							]
+						},
+						"description": "Delete an API key (admin only)"
+					}
+				},
+				{
+					"name": "Check API Key Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api-key-status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api-key-status"]
+						},
+						"description": "Check the status of your current API key"
+					}
+				}
+			]
+		},
+		{
+			"name": "Wallets",
+			"item": [
+				{
+					"name": "Query Wallet",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/wallet?walletType=Selling&id=wallet-id&includeSecret=false",
+							"host": ["{{baseUrl}}"],
+							"path": ["wallet"],
+							"query": [
+								{
+									"key": "walletType",
+									"value": "Selling",
+									"description": "Selling or Purchasing"
+								},
+								{
+									"key": "id",
+									"value": "wallet-id"
+								},
+								{
+									"key": "includeSecret",
+									"value": "false",
+									"description": "Include decrypted mnemonic"
+								}
+							]
+						},
+						"description": "Get wallet details (admin only)"
+					}
+				},
+				{
+					"name": "Create Wallet",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"walletType\": \"Selling\",\n  \"network\": \"Preprod\",\n  \"note\": \"My selling wallet\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/wallet",
+							"host": ["{{baseUrl}}"],
+							"path": ["wallet"]
+						},
+						"description": "Create a new wallet (admin only)"
+					}
+				},
+				{
+					"name": "Update Wallet",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"walletType\": \"Selling\",\n  \"id\": \"wallet-id-here\",\n  \"note\": \"Updated wallet note\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/wallet",
+							"host": ["{{baseUrl}}"],
+							"path": ["wallet"]
+						},
+						"description": "Update wallet details (admin only)"
+					}
+				}
+			]
+		},
+		{
+			"name": "Payment Sources",
+			"item": [
+				{
+					"name": "Get Payment Source",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment-source?network=Preprod",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment-source"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "policyId",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get payment source information"
+					}
+				},
+				{
+					"name": "Get Payment Source Extended",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment-source-extended?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment-source-extended"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get extended payment source details (admin only)"
+					}
+				},
+				{
+					"name": "Create Payment Source Extended",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"network\": \"Preprod\",\n  \"smartContractAddress\": \"addr_test1...\",\n  \"policyId\": \"policy-id-hex\",\n  \"rpcProvider\": \"Blockfrost\",\n  \"rpcProviderApiKey\": \"your-blockfrost-api-key\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment-source-extended",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment-source-extended"]
+						},
+						"description": "Create a new payment source (admin only)"
+					}
+				},
+				{
+					"name": "Update Payment Source Extended",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"payment-source-id\",\n  \"rpcProviderApiKey\": \"updated-api-key\",\n  \"disabled\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/payment-source-extended",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment-source-extended"]
+						},
+						"description": "Update payment source (admin only)"
+					}
+				},
+				{
+					"name": "Delete Payment Source Extended",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/payment-source-extended?id=payment-source-id",
+							"host": ["{{baseUrl}}"],
+							"path": ["payment-source-extended"],
+							"query": [
+								{
+									"key": "id",
+									"value": "payment-source-id"
+								}
+							]
+						},
+						"description": "Delete payment source (admin only)"
+					}
+				}
+			]
+		},
+		{
+			"name": "Reveal Data",
+			"item": [
+				{
+					"name": "Reveal Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"encryptedData\": \"encrypted-data-string\",\n  \"signature\": \"signature-string\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/reveal-data",
+							"host": ["{{baseUrl}}"],
+							"path": ["reveal-data"]
+						},
+						"description": "Decrypt and reveal encrypted data"
+					}
+				}
+			]
+		},
+		{
+			"name": "RPC API Keys",
+			"item": [
+				{
+					"name": "Get RPC API Keys",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/rpc-api-keys?limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["rpc-api-keys"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "cursorId",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get RPC provider API keys (admin only)"
+					}
+				}
+			]
+		},
+		{
+			"name": "UTXOs",
+			"item": [
+				{
+					"name": "Get UTXOs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/utxos?network=Preprod&walletAddress=addr_test1...&limit=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["utxos"],
+							"query": [
+								{
+									"key": "network",
+									"value": "Preprod"
+								},
+								{
+									"key": "walletAddress",
+									"value": "addr_test1..."
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Get UTXOs for a wallet address"
+					}
+				}
+			]
+		}
+	]
+}
