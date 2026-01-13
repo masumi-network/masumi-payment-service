@@ -4640,6 +4640,380 @@ export type GetRpcApiKeysResponses = {
 
 export type GetRpcApiKeysResponse = GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
 
+export type PostPurchaseSpendingData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get purchase spending for, if not provided, will return spending for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query spending from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/spending';
+};
+
+export type PostPurchaseSpendingErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no spendings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseSpendingResponses = {
+    /**
+     * Agent purchase spending analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalSpend: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailySpend: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlySpend: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPurchaseSpendingResponse = PostPurchaseSpendingResponses[keyof PostPurchaseSpendingResponses];
+
+export type PostPaymentIncomeData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get payment income for, if not provided, will return income for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query income from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/income';
+};
+
+export type PostPaymentIncomeErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no income data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentIncomeResponses = {
+    /**
+     * Agent payment income analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalIncome: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailyIncome: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyIncome: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPaymentIncomeResponse = PostPaymentIncomeResponses[keyof PostPaymentIncomeResponses];
+
 export type ClientOptions = {
     baseURL: `${string}://${string}` | (string & {});
 };
