@@ -79,42 +79,51 @@ export const postPurchaseSpendingSchemaOutput = z.object({
   }),
   dailySpend: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM-DD'),
+      day: z.number().describe('The day of the month'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),
   ),
   dailyRefunded: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM-DD'),
+      day: z.number().describe('The day of the month'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),
   ),
   dailyPending: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM-DD'),
+      day: z.number().describe('The day of the month'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),
   ),
   monthlySpend: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),
   ),
   monthlyRefunded: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),
   ),
   monthlyPending: z.array(
     z.object({
-      date: z.string().describe('The date in the format YYYY-MM'),
+      month: z.number().describe('The month'),
+      year: z.number().describe('The year'),
       units: z.array(unitAmountSchema),
       blockchainFees: z.number(),
     }),

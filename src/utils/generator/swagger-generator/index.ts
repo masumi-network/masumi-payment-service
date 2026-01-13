@@ -2998,7 +2998,9 @@ export function generateOpenAPI() {
                     },
                     dailySpend: [
                       {
-                        date: '2024-09-15',
+                        day: 15,
+                        month: 9,
+                        year: 2024,
                         units: [
                           {
                             unit: '',
@@ -3010,7 +3012,9 @@ export function generateOpenAPI() {
                     ],
                     dailyRefunded: [
                       {
-                        date: '2024-09-15',
+                        day: 15,
+                        month: 9,
+                        year: 2024,
                         units: [
                           {
                             unit: '',
@@ -3022,7 +3026,9 @@ export function generateOpenAPI() {
                     ],
                     dailyPending: [
                       {
-                        date: '2024-09-15',
+                        day: 15,
+                        month: 9,
+                        year: 2024,
                         units: [
                           {
                             unit: '',
@@ -3034,7 +3040,8 @@ export function generateOpenAPI() {
                     ],
                     monthlySpend: [
                       {
-                        date: '2024-09',
+                        month: 9,
+                        year: 2024,
                         units: [
                           {
                             unit: '',
@@ -3046,14 +3053,16 @@ export function generateOpenAPI() {
                     ],
                     monthlyRefunded: [
                       {
-                        date: '2024-09',
+                        month: 9,
+                        year: 2024,
                         units: [],
                         blockchainFees: 0,
                       },
                     ],
                     monthlyPending: [
                       {
-                        date: '2024-09',
+                        month: 9,
+                        year: 2024,
                         units: [],
                         blockchainFees: 0,
                       },
@@ -3136,42 +3145,51 @@ export function generateOpenAPI() {
                     },
                     dailyIncome: [
                       {
-                        date: '2024-01-10',
+                        day: 10,
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 2000000 }],
                         blockchainFees: 100000,
                       },
                     ],
                     dailyRefunded: [
                       {
-                        date: '2024-01-12',
+                        day: 12,
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 500000 }],
                         blockchainFees: 20000,
                       },
                     ],
                     dailyPending: [
                       {
-                        date: '2024-01-15',
+                        day: 15,
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 500000 }],
                         blockchainFees: 0,
                       },
                     ],
                     monthlyIncome: [
                       {
-                        date: '2024-01',
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 45000000 }],
                         blockchainFees: 2500000,
                       },
                     ],
                     monthlyRefunded: [
                       {
-                        date: '2024-01',
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 5000000 }],
                         blockchainFees: 400000,
                       },
                     ],
                     monthlyPending: [
                       {
-                        date: '2024-01',
+                        month: 1,
+                        year: 2024,
                         units: [{ unit: '', amount: 2000000 }],
                         blockchainFees: 100000,
                       },

@@ -126,14 +126,23 @@ export function mapTotalFundsOutput(funds: Fund): {
     blockchainFees: funds.blockchainFees,
   };
 }
-
+function getDayMonthAndYearFromDate(date: string): {
+  day: number;
+  month: number;
+  year: number;
+} {
+  const [year, month, day] = date.split('-').map(Number);
+  return { day: Number(day), month: Number(month), year: Number(year) };
+}
 export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
-  date: string;
+  day: number;
+  month: number;
+  year: number;
   units: Array<{ unit: string; amount: number }>;
   blockchainFees: number;
 }> {
   return Array.from(fundsByDay.entries()).map(([date, fund]) => ({
-    date,
+    ...getDayMonthAndYearFromDate(date),
     units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
       unit,
       amount,
@@ -142,13 +151,22 @@ export function mapDailyFundsOutput(fundsByDay: Map<string, Fund>): Array<{
   }));
 }
 
+function getMonthAndYearFromDate(date: string): {
+  month: number;
+  year: number;
+} {
+  const [year, month] = date.split('-').map(Number);
+  return { month, year };
+}
+
 export function mapMonthlyFundsOutput(fundsByMonth: Map<string, Fund>): Array<{
-  date: string;
+  month: number;
+  year: number;
   units: Array<{ unit: string; amount: number }>;
   blockchainFees: number;
 }> {
   return Array.from(fundsByMonth.entries()).map(([date, fund]) => ({
-    date,
+    ...getMonthAndYearFromDate(date),
     units: Array.from(fund.units.entries()).map(([unit, amount]) => ({
       unit,
       amount,
