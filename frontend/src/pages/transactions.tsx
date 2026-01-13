@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
+import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -13,7 +13,6 @@ import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
@@ -55,40 +54,6 @@ export default function Transactions() {
     }).format(numericAmount);
   };
 
-  // Format fund unit display helper function
-  const formatFundUnit = (
-    unit: string | undefined,
-    network: string | undefined,
-  ): string => {
-    if (!network) {
-      // If no network, fallback to basic unit formatting
-      if (unit === 'lovelace' || !unit) {
-        return 'ADA';
-      }
-      return unit;
-    }
-
-    if (!unit) {
-      return 'ADA';
-    }
-
-    const usdmConfig = getUsdmConfig(network);
-    const isUsdm =
-      unit === usdmConfig.fullAssetId ||
-      unit === usdmConfig.policyId ||
-      unit === 'USDM' ||
-      unit === 'tUSDM';
-
-    if (isUsdm) {
-      return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
-    }
-
-    const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
-    if (isTestUsdm) {
-      return 'tUSDM';
-    }
-    return unit ?? '—';
-  };
   const [activeTab, setActiveTab] = useState('All');
   const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
     [],
