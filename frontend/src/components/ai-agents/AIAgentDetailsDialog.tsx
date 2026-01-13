@@ -16,18 +16,23 @@ import {
 } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import { postRegistryDeregister } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistryDeregister,
+} from '@/lib/api/generated';
+import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
 
@@ -81,11 +86,19 @@ export function AIAgentDetailsDialog({
   onSuccess,
   initialTab = 'Details',
 }: AIAgentDetailsDialogProps) {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network } = useAppContext();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPurchaseDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
   useEffect(() => {
@@ -103,7 +116,7 @@ export function AIAgentDetailsDialog({
     return new Date(dateString).toLocaleDateString();
   };
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (
       agent?.state === 'RegistrationFailed' ||
       agent?.state === 'DeregistrationConfirmed'
@@ -136,15 +149,21 @@ export function AIAgentDetailsDialog({
       }
 
       setIsDeleting(true);
+      const selectedPaymentSource = currentNetworkPaymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
+      if (!selectedPaymentSource) {
+        toast.error('Cannot delete agent: Missing payment source');
+        return;
+      }
       await handleApiCall(
         () =>
           postRegistryDeregister({
             client: apiClient,
             body: {
               agentIdentifier: agent.agentIdentifier!,
-              network: state.network,
-              smartContractAddress:
-                state.paymentSources?.[0]?.smartContractAddress,
+              network: network,
+              smartContractAddress: selectedPaymentSource.smartContractAddress,
             },
           }),
         {
@@ -165,7 +184,17 @@ export function AIAgentDetailsDialog({
         'Cannot delete agent: Agent is not in a deletable state, please wait until pending states have been resolved',
       );
     }
-  };
+  }, [
+    agent?.state,
+    agent?.id,
+    agent?.agentIdentifier,
+    apiClient,
+    onClose,
+    onSuccess,
+    currentNetworkPaymentSources,
+    selectedPaymentSourceId,
+    network,
+  ]);
 
   return (
     <>
@@ -516,7 +545,7 @@ export function AIAgentDetailsDialog({
                             <a
                               href={getExplorerUrl(
                                 agent.SmartContractWallet.walletAddress,
-                                state.network,
+                                network,
                               )}
                               target="_blank"
                               rel="noopener noreferrer"

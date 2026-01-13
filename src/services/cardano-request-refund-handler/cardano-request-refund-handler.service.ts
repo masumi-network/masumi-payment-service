@@ -204,7 +204,7 @@ async function processSinglePurchaseRequest(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PurchasingAction.SetRefundRequestedInitiated,
         },
       },
@@ -316,7 +316,7 @@ export async function requestRefundsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:

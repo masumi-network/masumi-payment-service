@@ -19,14 +19,16 @@ interface ApiError {
 
 export function ApiKeyDialog() {
   const router = useRouter();
-  const [apiKey, setApiKey] = useState('');
+  const [apiKeyTMP, setApiKeyTMP] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { dispatch, apiClient } = useAppContext();
+  const { updateApiKey, apiClient } = useAppContext();
 
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
+    console.log('key', key);
+    console.log('apiClient', apiClient);
 
     try {
       apiClient.setConfig({ headers: { token: key } });
@@ -64,7 +66,7 @@ export function ApiKeyDialog() {
         router.push('/');
       }
 
-      dispatch({ type: 'SET_API_KEY', payload: key });
+      updateApiKey(apiKeyTMP);
     } catch (error: unknown) {
       const apiError = error as ApiError;
       const errorMessage =
@@ -106,15 +108,15 @@ export function ApiKeyDialog() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleApiKeySubmit(apiKey);
+            handleApiKeySubmit(apiKeyTMP);
           }}
           className="flex flex-col items-center gap-2 w-full max-w-[500px]"
         >
           <div className="flex gap-4 items-center w-full">
             <Input
               type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              value={apiKeyTMP}
+              onChange={(e) => setApiKeyTMP(e.target.value)}
               placeholder="Admin Key"
               required
               className={cn(

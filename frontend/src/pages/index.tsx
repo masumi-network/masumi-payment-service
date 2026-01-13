@@ -17,6 +17,9 @@ import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDia
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
+import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
+import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
+import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
@@ -36,16 +39,18 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { state, selectedPaymentSourceId } = useAppContext();
+  const { network, selectedPaymentSource } = useAppContext();
 
   const queryClient = useQueryClient();
+  const { newTransactionsCount, isLoading: isLoadingTransactions } =
+    useTransactions();
 
   // Use React Query hooks for cached data
   const {
-    data: agentsData,
+    agents,
     isLoading: isLoadingAgents,
-    hasNextPage: hasMoreAgents,
-    fetchNextPage: fetchMoreAgents,
+    hasMore: hasMoreAgents,
+    loadMore: loadMoreAgents,
   } = useAgents();
   const {
     wallets: walletsList,
@@ -54,11 +59,6 @@ export default function Overview() {
     isLoading: isLoadingWallets,
   } = useWallets();
 
-  // Memoize derived values to ensure they update when query data changes
-  const agents = useMemo(
-    () => agentsData?.pages.flatMap((page) => page.agents) || [],
-    [agentsData],
-  );
   const totalBalance = useMemo(
     () => totalBalanceValue || '0',
     [totalBalanceValue],
@@ -87,8 +87,6 @@ export default function Overview() {
   const [selectedWalletForTopup, setSelectedWalletForTopup] =
     useState<WalletWithBalance | null>(null);
   const { rate, isLoading: isLoadingRate } = useRate();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
 
   const [selectedAgentForDetails, setSelectedAgentForDetails] =
     useState<AIAgent | null>(null);
@@ -116,12 +114,8 @@ export default function Overview() {
           </p>
           <p className="text-xs text-muted-foreground mt-5">
             Showing data for{' '}
-            {selectedPaymentSourceId
-              ? shortenAddress(
-                  state.paymentSources.find(
-                    (source) => source.id === selectedPaymentSourceId,
-                  )?.smartContractAddress ?? 'invalid',
-                )
+            {selectedPaymentSource?.smartContractAddress
+              ? shortenAddress(selectedPaymentSource?.smartContractAddress)
               : 'all payment sources'}
             . This can be changed in the{' '}
             <Link
@@ -136,26 +130,26 @@ export default function Overview() {
 
         <div className="mb-8">
           <div className="grid grid-cols-4 gap-4">
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total AI agents
-              </div>
-              {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            {isLoadingAgents ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total AI agents
+                </div>
                 <div className="text-2xl font-semibold">
                   {agents.length}
                   {hasMoreAgents ? '+' : ''}
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total USDM
               </div>
-              {isLoadingWallets || isLoadingBalances ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingWallets || isLoadingBalances ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total USDM
+                </div>
                 <div className="text-2xl font-semibold flex items-center gap-1">
                   <span className="text-xs font-normal text-muted-foreground">
                     $
@@ -166,15 +160,15 @@ export default function Overview() {
                       ?.toString(),
                   ) ?? ''}
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total ada balance
               </div>
-              {isLoadingWallets || isLoadingBalances ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingWallets || isLoadingBalances ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  Total ada balance
+                </div>
                 <div className="flex flex-col gap-2">
                   <div className="text-2xl font-semibold flex items-center gap-1">
                     {formatBalance(
@@ -190,15 +184,15 @@ export default function Overview() {
                       : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                   </div>
                 </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                New Transactions
               </div>
-              {isLoadingTransactions ? (
-                <Spinner size={20} addContainer />
-              ) : (
+            )}
+            {isLoadingTransactions ? (
+              <StatCardSkeleton />
+            ) : (
+              <div className="border rounded-lg p-6">
+                <div className="text-sm text-muted-foreground mb-2">
+                  New Transactions
+                </div>
                 <>
                   <div className="text-2xl font-semibold">
                     {newTransactionsCount}
@@ -210,8 +204,8 @@ export default function Overview() {
                     View all transactions <ChevronRight size={14} />
                   </Link>
                 </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -234,7 +228,7 @@ export default function Overview() {
               </p>
 
               {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
+                <AgentListSkeleton items={3} />
               ) : agents.length > 0 ? (
                 <div className="mb-4 max-h-[500px] overflow-y-auto">
                   {agents.map((agent) => (
@@ -272,10 +266,7 @@ export default function Overview() {
                                 ).toFixed(2);
                                 if (unit === 'lovelace' || !unit)
                                   return `${formatted} ADA`;
-                                if (
-                                  unit ===
-                                  getUsdmConfig(state.network).fullAssetId
-                                )
+                                if (unit === getUsdmConfig(network).fullAssetId)
                                   return `${formatted} USDM`;
                                 if (unit === TESTUSDM_CONFIG.unit)
                                   return `${formatted} tUSDM`;
@@ -291,13 +282,12 @@ export default function Overview() {
                       </div>
                     </div>
                   ))}
-                  {agentsData?.pages?.[agentsData.pages.length - 1]
-                    ?.nextCursor && (
+                  {hasMoreAgents && (
                     <div className="flex justify-center pt-4">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => fetchMoreAgents()}
+                        onClick={() => loadMoreAgents()}
                         disabled={!hasMoreAgents || isLoadingAgents}
                       >
                         Load more
@@ -339,7 +329,7 @@ export default function Overview() {
 
               <div className="mb-4">
                 {isLoadingWallets ? (
-                  <Spinner size={20} addContainer />
+                  <WalletListSkeleton rows={2} />
                 ) : (
                   <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
                     <table className="w-full">

@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import {
@@ -20,7 +19,7 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
+import { PaymentSourceExtended, postRegistry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
@@ -29,6 +28,8 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
+import { useWallets } from '@/lib/queries/useWallets';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -158,8 +159,9 @@ export function RegisterAIAgentDialog({
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: SellingWallet; balance: number }[]
   >([]);
-  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
-  const { apiClient, state } = useAppContext();
+
+  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { apiClient, network } = useAppContext();
 
   const {
     register,
@@ -210,85 +212,38 @@ export function RegisterAIAgentDialog({
     name: 'exampleOutputs',
   });
 
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
+
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
+  useEffect(() => {
+    setSellingWallets(
+      wallets
+        .filter((w) => w.type === 'Selling')
+        .map((w) => ({
+          wallet: {
+            id: w.id,
+            walletVkey: w.walletVkey,
+            walletAddress: w.walletAddress,
+            note: w.note,
+          },
+          balance: parseInt(w.balance, 10),
+        })),
+    );
+  }, [wallets]);
 
   useEffect(() => {
     if (open) {
-      fetchSellingWallets();
       reset();
     }
   }, [open, reset]);
-
-  const fetchSellingWallets = async () => {
-    try {
-      setIsCheckingBalance(true);
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
-
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (s) => s.network == state.network,
-        );
-        if (paymentSources.length > 0) {
-          const aggregatedWallets: {
-            wallet: SellingWallet;
-            balance: number;
-          }[] = [];
-          await Promise.allSettled(
-            paymentSources.map(async (ps) => {
-              for (const sellingWallet of ps.SellingWallets) {
-                const balance = await getUtxos({
-                  client: apiClient,
-                  query: {
-                    address: sellingWallet.walletAddress,
-                    network: state.network,
-                  },
-                });
-
-                if (
-                  balance.error ||
-                  balance.data?.data?.Utxos == undefined ||
-                  balance.data?.data?.Utxos?.length === 0
-                ) {
-                  aggregatedWallets.push({ wallet: sellingWallet, balance: 0 });
-                } else {
-                  const lovelaceBalance = balance.data.data.Utxos.reduce(
-                    (acc, utxo) => {
-                      return (
-                        acc +
-                        utxo.Amounts.reduce((acc, amount) => {
-                          if (
-                            amount.unit.toLowerCase() === 'lovelace' ||
-                            amount.unit === ''
-                          ) {
-                            return acc + (amount.quantity ?? 0);
-                          }
-                          return acc;
-                        }, 0)
-                      );
-                    },
-                    0,
-                  );
-                  aggregatedWallets.push({
-                    wallet: sellingWallet,
-                    balance: lovelaceBalance,
-                  });
-                }
-              }
-            }),
-          );
-          setSellingWallets(aggregatedWallets);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching selling wallets:', error);
-      toast.error('Failed to load selling wallets');
-    } finally {
-      setIsCheckingBalance(false);
-    }
-  };
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -305,7 +260,7 @@ export function RegisterAIAgentDialog({
           toast.error('Insufficient balance in selected wallet');
           return;
         }
-        const paymentSource = state.paymentSources?.find((ps) =>
+        const paymentSource = currentNetworkPaymentSources.find((ps) =>
           ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
         );
         if (!paymentSource) {
@@ -345,7 +300,7 @@ export function RegisterAIAgentDialog({
         const response = await postRegistry({
           client: apiClient,
           body: {
-            network: state.network,
+            network: network,
             sellingWalletVkey: selectedWalletVkey,
             name: data.name,
             description: data.description,
@@ -405,13 +360,13 @@ export function RegisterAIAgentDialog({
       }
     },
     [
+      sellingWallets,
+      currentNetworkPaymentSources,
       apiClient,
-      state.network,
-      state.paymentSources,
+      network,
       onSuccess,
       onClose,
       reset,
-      sellingWallets,
     ],
   );
 
@@ -503,12 +458,12 @@ export function RegisterAIAgentDialog({
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
-                    disabled={isCheckingBalance}
-                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isCheckingBalance ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isLoadingWallets}
+                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <SelectValue
                       placeholder={
-                        isCheckingBalance
+                        isLoadingWallets
                           ? 'Loading wallets...'
                           : 'Select a wallet'
                       }
@@ -883,7 +838,7 @@ export function RegisterAIAgentDialog({
               Cancel
             </Button>
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={isLoading || isCheckingBalance}>
+              <Button type="submit" disabled={isLoading || isLoadingWallets}>
                 {isLoading ? 'Registering...' : 'Register'}
               </Button>
             </div>

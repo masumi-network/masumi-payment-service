@@ -26,7 +26,7 @@ export function ApiKeyGenerateModal({
   const [usageCredits, setUsageCredits] = useState<UsageCredit[]>([
     { unit: 'lovelace', amount: 1000000 },
   ]);
-  const { state } = useAppContext();
+  const { apiKey } = useAppContext();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +37,7 @@ export function ApiKeyGenerateModal({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${state.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           usageLimited: usageLimited.toString(),

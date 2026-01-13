@@ -1,47 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+type RateResponse = {
+  cardano?: {
+    usd?: number;
+  };
+};
+
+const fetchRate = async (): Promise<number> => {
+  const response = await fetch(
+    'https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=usd',
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch rate');
+  }
+
+  const data: RateResponse = await response.json();
+  const usdRate = data.cardano?.usd;
+
+  if (typeof usdRate !== 'number') {
+    throw new Error('Invalid rate data');
+  }
+
+  return usdRate;
+};
 
 export function useRate() {
-  const [rate, setRate] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchRate = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=usd',
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch rate');
-      }
-
-      const data = await response.json();
-      if (data.cardano?.usd) {
-        setRate(data.cardano.usd);
-      } else {
-        throw new Error('Invalid rate data');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch rate');
-      setRate(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRate();
-    const interval = setInterval(fetchRate, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data, error, isPending, isFetching, refetch } = useQuery<number>({
+    queryKey: ['ada-usd-rate'],
+    queryFn: fetchRate,
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: true,
+    staleTime: 5 * 60 * 1000,
+  });
 
   return {
-    rate,
-    isLoading,
-    error,
-    refetch: fetchRate,
+    rate: data ?? null,
+    isLoading: isPending || (!data && isFetching),
+    error: error
+      ? error instanceof Error
+        ? error.message
+        : 'Failed to fetch rate'
+      : null,
+    refetch,
   };
 }

@@ -39,7 +39,7 @@ const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
 export function useTransactions() {
-  const { apiClient, state } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
   const seenTransactionIdsRef = useRef<Set<string>>(new Set());
@@ -72,11 +72,10 @@ export function useTransactions() {
   };
 
   const query = useInfiniteQuery({
-    queryKey: ['transactions', state.network],
+    queryKey: ['transactions', network],
     queryFn: async ({ pageParam }) => {
       const combined: Transaction[] = [];
       const cursor = pageParam ?? undefined;
-      const network = state.network ?? 'Preprod';
 
       const purchases = await handleApiCall(
         () =>

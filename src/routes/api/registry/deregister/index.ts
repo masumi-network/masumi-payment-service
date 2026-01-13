@@ -10,12 +10,12 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const unregisterAgentSchemaInput = z.object({
   agentIdentifier: z
@@ -72,8 +72,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         deletedAt: null,
       },
       include: {
-        PaymentSourceConfig: true,
-        HotWallets: { include: { Secret: true }, where: { deletedAt: null } },
+        PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+        HotWallets: {
+          include: { Secret: { select: { encryptedMnemonic: true } } },
+          where: { deletedAt: null },
+        },
       },
     });
     if (paymentSource == null) {
@@ -83,9 +86,10 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    const blockfrost = new BlockFrostAPI({
-      projectId: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-    });
+    const blockfrost = getBlockfrostInstance(
+      input.network,
+      paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+    );
 
     const { policyId } =
       await getRegistryScriptFromNetworkHandlerV1(paymentSource);
@@ -129,10 +133,27 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
         state: RegistrationState.DeregistrationRequested,
       },
       include: {
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        SmartContractWallet: true,
-        ExampleOutputs: true,
-        CurrentTransaction: true,
+        Pricing: {
+          include: {
+            FixedPricing: {
+              include: { Amounts: { select: { unit: true, amount: true } } },
+            },
+          },
+        },
+        SmartContractWallet: {
+          select: { walletVkey: true, walletAddress: true },
+        },
+        ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
+        CurrentTransaction: {
+          select: {
+            txHash: true,
+            status: true,
+            confirmations: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+          },
+        },
       },
     });
 

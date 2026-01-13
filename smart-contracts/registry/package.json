@@ -10,10 +10,10 @@
     "defrag": "node cleanup-utxo.mjs"
   },
   "dependencies": {
-    "@meshsdk/core": "1.9.0-beta.55",
-    "@meshsdk/core-cst": "1.9.0-beta.55",
-    "cbor": "^9.0.2",
-    "dotenv": "^16.4.5",
-    "ethereum-cryptography": "^3.0.0"
+    "@meshsdk/core": "1.9.0-beta.94",
+    "@meshsdk/core-cst": "1.9.0-beta.94",
+    "cbor": "^10.0.11",
+    "dotenv": "^17.2.3",
+    "ethereum-cryptography": "^3.2.0"
   }
 }

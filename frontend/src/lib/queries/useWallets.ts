@@ -1,28 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import {
-  getPaymentSource,
   getUtxos,
   GetPaymentSourceResponses,
   GetUtxosResponses,
 } from '@/lib/api/generated';
 import { Client } from '@hey-api/client-axios';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { handleApiCall } from '@/lib/utils';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';
 
-type PaymentSource =
-  GetPaymentSourceResponses['200']['data']['PaymentSources'][0];
 type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
 type UTXOAmount = UTXO['Amounts'][0];
 
 type Wallet =
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
       type: 'Purchasing';
+      network: 'Preprod' | 'Mainnet';
     })
   | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
       type: 'Selling';
+      network: 'Preprod' | 'Mainnet';
     });
 
 export type WalletWithBalance = Wallet & {
@@ -94,19 +92,13 @@ type WalletsResponse = {
 };
 
 export function useWallets() {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, selectedPaymentSource } =
+    useAppContext();
 
   const query = useQuery<WalletsResponse>({
-    queryKey: ['wallets', state.network, selectedPaymentSourceId],
+    queryKey: ['wallets', selectedPaymentSource, selectedPaymentSourceId],
     queryFn: async () => {
-      const response = await handleApiCall(
-        () => getPaymentSource({ client: apiClient }),
-        {
-          errorMessage: 'Failed to load wallets',
-        },
-      );
-
-      if (!response?.data?.data?.PaymentSources) {
+      if (!selectedPaymentSource) {
         return {
           wallets: [],
           totalBalance: '0',
@@ -114,22 +106,11 @@ export function useWallets() {
           nextCursor: undefined,
         };
       }
+      const network = selectedPaymentSource.network;
+      const purchasingWallets = selectedPaymentSource?.PurchasingWallets ?? [];
+      const sellingWallets = selectedPaymentSource?.SellingWallets ?? [];
 
-      const paymentSources = response.data.data.PaymentSources.filter(
-        (source: PaymentSource) =>
-          selectedPaymentSourceId
-            ? source.id === selectedPaymentSourceId
-            : true,
-      );
-
-      const purchasingWallets = paymentSources
-        .map((source: PaymentSource) => source.PurchasingWallets)
-        .flat();
-      const sellingWallets = paymentSources
-        .map((source: PaymentSource) => source.SellingWallets)
-        .flat();
-
-      if (paymentSources.length === 0) {
+      if (purchasingWallets.length === 0 && sellingWallets.length === 0) {
         return {
           wallets: [],
           totalBalance: '0',
@@ -142,15 +123,17 @@ export function useWallets() {
         ...purchasingWallets.map((wallet) => ({
           ...wallet,
           type: 'Purchasing' as const,
+          network: network,
         })),
         ...sellingWallets.map((wallet) => ({
           ...wallet,
           type: 'Selling' as const,
+          network: network,
         })),
       ];
 
       const balancePromises = allWallets.map((wallet) =>
-        fetchWalletBalance(apiClient, state.network, wallet.walletAddress),
+        fetchWalletBalance(apiClient, wallet.network, wallet.walletAddress),
       );
 
       const balanceResults = await Promise.all(balancePromises);
@@ -183,11 +166,8 @@ export function useWallets() {
         nextCursor: undefined,
       };
     },
-    enabled:
-      !!state.paymentSources &&
-      state.paymentSources.length > 0 &&
-      !!selectedPaymentSourceId,
-    staleTime: 15000,
+    enabled: !!selectedPaymentSource && !!selectedPaymentSourceId,
+    staleTime: 25000,
   });
 
   const wallets = useMemo(() => query.data?.wallets ?? [], [query.data]);

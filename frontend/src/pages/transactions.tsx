@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Search } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
@@ -31,7 +32,8 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 };
 
 export default function Transactions() {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } =
+    useAppContext();
   const {
     transactions,
     isLoading,
@@ -181,7 +183,7 @@ export default function Transactions() {
       );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
-  }, [state.network, apiClient, selectedPaymentSourceId]);
+  }, [network, apiClient, selectedPaymentSourceId]);
 
   useEffect(() => {
     filterTransactions();
@@ -239,61 +241,61 @@ export default function Transactions() {
   };
 
   // Generate CSV data for transactions
-  const generateCSVData = (transactions: Transaction[]): string => {
-    const headers = [
-      'Transaction Type',
-      'Transaction Hash',
-      'Payment Amounts',
-      'Network',
-      'Status',
-      'Date',
-      'Fee Rate Permille',
-    ];
-    const rows = transactions.map((transaction) => {
-      const selectedPaymentSource = state.paymentSources.find(
-        (ps) => ps.id === transaction.PaymentSource.id,
-      );
-      const feeRatePermille =
-        selectedPaymentSource?.feeRatePermille ?? 'Unknown';
-      const paymentAmounts = [];
-      if (transaction.type === 'payment' && transaction.RequestedFunds) {
-        paymentAmounts.push(
-          ...transaction.RequestedFunds.map((fund) => ({
-            amount: formatPrice(fund.amount),
-            unit: formatFundUnit(fund.unit, state.network),
-          })),
-        );
-      } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
-        paymentAmounts.push(
-          ...transaction.PaidFunds.map((fund) => ({
-            amount: formatPrice(fund.amount),
-            unit: formatFundUnit(fund.unit, state.network),
-          })),
-        );
-      }
-      const amount = paymentAmounts
-        .map((amount) => `${amount.amount} ${amount.unit}`)
-        .join(', ');
-
-      const hash = transaction.CurrentTransaction?.txHash || '—';
-      const status = formatStatus(transaction.onChainState);
-      const date = new Date(transaction.createdAt).toLocaleString();
-
-      return [
-        transaction.type,
-        hash,
-        amount,
-        transaction.PaymentSource.network,
-        status,
-        date,
-        feeRatePermille,
+  const generateCSVData = useCallback(
+    (transactions: Transaction[]): string => {
+      const headers = [
+        'Transaction Type',
+        'Transaction Hash',
+        'Payment Amounts',
+        'Network',
+        'Status',
+        'Date',
+        'Fee Rate Permille',
       ];
-    });
+      const rows = transactions.map((transaction) => {
+        const feeRatePermille =
+          selectedPaymentSource?.feeRatePermille ?? 'Unknown';
+        const paymentAmounts = [];
+        if (transaction.type === 'payment' && transaction.RequestedFunds) {
+          paymentAmounts.push(
+            ...transaction.RequestedFunds.map((fund) => ({
+              amount: formatPrice(fund.amount),
+              unit: formatFundUnit(fund.unit, network),
+            })),
+          );
+        } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
+          paymentAmounts.push(
+            ...transaction.PaidFunds.map((fund) => ({
+              amount: formatPrice(fund.amount),
+              unit: formatFundUnit(fund.unit, network),
+            })),
+          );
+        }
+        const amount = paymentAmounts
+          .map((amount) => `${amount.amount} ${amount.unit}`)
+          .join(', ');
 
-    return [headers, ...rows]
-      .map((row) => row.map((field) => `"${field}"`).join(','))
-      .join('\n');
-  };
+        const hash = transaction.CurrentTransaction?.txHash || '—';
+        const status = formatStatus(transaction.onChainState);
+        const date = new Date(transaction.createdAt).toLocaleString();
+
+        return [
+          transaction.type,
+          hash,
+          amount,
+          transaction.PaymentSource.network,
+          status,
+          date,
+          feeRatePermille,
+        ];
+      });
+
+      return [headers, ...rows]
+        .map((row) => row.map((field) => `"${field}"`).join(','))
+        .join('\n');
+    },
+    [selectedPaymentSource?.feeRatePermille, network],
+  );
 
   // Download CSV file
   const downloadCSV = (
@@ -333,9 +335,6 @@ export default function Transactions() {
                 </a>
               </p>
               {(() => {
-                const selectedPaymentSource = state.paymentSources.find(
-                  (ps) => ps.id === selectedPaymentSourceId,
-                );
                 const feeRate = selectedPaymentSource?.feeRatePermille;
 
                 if (!feeRate) {
@@ -426,7 +425,9 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isInitialLoading ? (
+                {isLoading ? (
+                  <TransactionTableSkeleton rows={5} />
+                ) : isInitialLoading ? (
                   <tr>
                     <td colSpan={9}>
                       <Spinner size={20} addContainer />
@@ -483,10 +484,7 @@ export default function Transactions() {
                         transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(
-                                fund.unit,
-                                state.network,
-                              );
+                              const unit = formatFundUnit(fund.unit, network);
                               return (
                                 <div key={index} className="text-sm">
                                   {amount} {unit}
@@ -497,10 +495,7 @@ export default function Transactions() {
                               transaction.PaidFunds?.length
                             ? transaction.PaidFunds.map((fund, index) => {
                                 const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(
-                                  fund.unit,
-                                  state.network,
-                                );
+                                const unit = formatFundUnit(fund.unit, network);
                                 return (
                                   <div key={index} className="text-sm">
                                     {amount} {unit}
@@ -565,8 +560,6 @@ export default function Transactions() {
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
         onRefresh={refreshTransactions}
-        apiClient={apiClient}
-        state={state}
       />
 
       <DownloadDetailsDialog
