@@ -41,9 +41,26 @@ function filterUtxosByRequiredLovelace(
 /**
  * Limits UTXOs to maximum count for transaction size optimization
  */
-export function limitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
-  const limit = maxCount ?? SERVICE_CONSTANTS.TRANSACTION.maxUtxos;
-  return utxos.slice(0, Math.min(limit, utxos.length));
+export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
+  const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 3000000);
+  if (filteredUtxos.length === 0) {
+    throw new Error('No suitable UTXOs found');
+  }
+  const selectedUtxos = [];
+  let accumulatedLovelace = 0;
+  for (const utxo of filteredUtxos) {
+    if (accumulatedLovelace > requiredLovelace) {
+      break;
+    }
+    const utxoLovelace = parseInt(
+      utxo.output.amount.find(
+        (asset) => asset.unit === 'lovelace' || asset.unit === '',
+      )?.quantity ?? '0',
+    );
+    accumulatedLovelace += utxoLovelace;
+    selectedUtxos.push(utxo);
+  }
+  return selectedUtxos;
 }
 
 /**
@@ -52,17 +69,14 @@ export function limitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
 export function sortAndLimitUtxos(
   utxos: UTxO[],
   requiredLovelace: number,
-  maxCount?: number,
 ): UTxO[] {
   const sortedUtxos = sortUtxosByBloatAsc(utxos);
-  const filteredUtxos = filterUtxosByRequiredLovelace(
-    sortedUtxos,
-    requiredLovelace,
-  );
-  if (filteredUtxos.length === 0) {
+
+  const limitedUtxos = limitUtxos(sortedUtxos, requiredLovelace);
+  if (limitedUtxos.length === 0) {
     throw new Error('No suitable UTXOs found');
   }
-  return limitUtxos(filteredUtxos, maxCount);
+  return limitedUtxos;
 }
 
 /**

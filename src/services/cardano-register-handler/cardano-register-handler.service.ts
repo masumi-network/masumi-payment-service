@@ -23,7 +23,7 @@ import { stringToMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
-import { sortAndLimitUtxos, sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { sortUtxosByLovelaceDesc } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
