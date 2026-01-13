@@ -292,9 +292,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-              name: data.capabilityName,
-              version: data.capabilityVersion,
-            }
+                name: data.capabilityName,
+                version: data.capabilityVersion,
+              }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -555,9 +555,7 @@ export function RegisterAIAgentDialog({
                             {formatFundUnit('lovelace', network)}
                           </SelectItem>
                           <SelectItem
-                            value={
-                              network === 'Mainnet' ? 'USDM' : 'tUSDM'
-                            }
+                            value={network === 'Mainnet' ? 'USDM' : 'tUSDM'}
                           >
                             {formatFundUnit('USDM', network)}
                           </SelectItem>

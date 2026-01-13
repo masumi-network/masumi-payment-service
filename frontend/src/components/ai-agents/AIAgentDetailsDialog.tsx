@@ -232,7 +232,7 @@ export function AIAgentDetailsDialog({
                         variant={getStatusBadgeVariant(agent.state)}
                         className={cn(
                           agent.state === 'RegistrationConfirmed' &&
-                          'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            'bg-green-50 text-green-700 hover:bg-green-50/80',
                           'w-fit min-w-fit truncate',
                         )}
                       >
@@ -337,8 +337,8 @@ export function AIAgentDetailsDialog({
                                   )}
                                 >
                                   <span className="text-sm text-muted-foreground">
-                                    Price (
-                                    {formatFundUnit(price.unit, network)})
+                                    Price ({formatFundUnit(price.unit, network)}
+                                    )
                                   </span>
                                   <span className="font-medium">
                                     {`${useFormatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
@@ -349,10 +349,10 @@ export function AIAgentDetailsDialog({
                           {(!agent.AgentPricing ||
                             (agent.AgentPricing.pricingType == 'Fixed' &&
                               agent.AgentPricing.Pricing.length === 0)) && (
-                              <div className="text-sm text-muted-foreground">
-                                No pricing information available
-                              </div>
-                            )}
+                            <div className="text-sm text-muted-foreground">
+                              No pricing information available
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -463,10 +463,10 @@ export function AIAgentDetailsDialog({
                           )}
                           {(!agent.Legal ||
                             Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
+                            <span className="text-muted-foreground">
+                              No legal information provided.
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
