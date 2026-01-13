@@ -4,7 +4,7 @@ import { SERVICE_CONSTANTS } from '@/utils/config';
 /**
  * Sorts UTXOs by lovelace amount in descending order (O(n log n))
  */
-function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
+export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
   // Extract lovelace amounts once for better performance
   const utxosWithLovelace = utxos.map((utxo) => ({
     utxo,

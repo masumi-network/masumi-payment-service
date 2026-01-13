@@ -279,7 +279,7 @@ async function processSinglePaymentRequest(
     ) + 3,
   );
 
-  const limitedUtxos = sortAndLimitUtxos(utxos, 5000000);
+  const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
 
   const unsignedTx =
     await generateMasumiSmartContractInteractionTransactionAutomaticFees(

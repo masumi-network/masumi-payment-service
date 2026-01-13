@@ -177,7 +177,7 @@ async function processSinglePurchaseRequest(
     ) + 3;
   const invalidAfter = Math.min(initialInvalid, secondaryInvalid);
 
-  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 5000000);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
   if (collateralUtxo == null) {
     throw new Error('Collateral UTXO not found');

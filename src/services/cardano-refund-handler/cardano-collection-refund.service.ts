@@ -149,7 +149,7 @@ async function processSingleRefundCollection(
     unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
     5;
 
-  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 5000000);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
   if (collateralUtxo == null) {
     throw new Error('Collateral UTXO not found');

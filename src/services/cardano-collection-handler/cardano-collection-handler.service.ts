@@ -228,7 +228,7 @@ async function processSinglePaymentCollection(
     collectionAddress = request.SmartContractWallet.walletAddress;
   }
 
-  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 5000000);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
   if (collateralUtxo == null) {
     throw new Error('Collateral UTXO not found');
