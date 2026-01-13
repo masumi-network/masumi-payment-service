@@ -4,7 +4,7 @@ import { SERVICE_CONSTANTS } from '@/utils/config';
 /**
  * Sorts UTXOs by lovelace amount in descending order (O(n log n))
  */
-function sortUtxosBySizeAndRequiredLovelaceDesc(utxos: UTxO[]): UTxO[] {
+function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
   // Extract lovelace amounts once for better performance
   const utxosWithLovelace = utxos.map((utxo) => ({
     utxo,
@@ -22,7 +22,7 @@ function sortUtxosBySizeAndRequiredLovelaceDesc(utxos: UTxO[]): UTxO[] {
 }
 
 function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
-  return utxos.sort((a, b) => b.output.amount.length - a.output.amount.length);
+  return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
 }
 
 function filterUtxosByRequiredLovelace(
@@ -70,5 +70,5 @@ export function sortAndLimitUtxos(
  * Returns the first UTXO after sorting by lovelace descending
  */
 export function getHighestLovelaceUtxo(utxos: UTxO[]): UTxO | undefined {
-  return sortUtxosBySizeAndRequiredLovelaceDesc(utxos)[0];
+  return sortUtxosByLovelaceDesc(utxos)[0];
 }
