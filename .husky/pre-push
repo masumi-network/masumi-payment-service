@@ -80,7 +80,7 @@ if ! npm run swagger-postman; then
 fi
 
 # Generate types
-echo "${BLUE}🔍 Generating types...${NC}"
+echo "${BLUE}🔍 Generating frontend types...${NC}"
 cd frontend && npm run openapi-ts-latest && cd ..
 if [ $? -ne 0 ]; then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
