@@ -201,7 +201,7 @@ export class WebhookSenderService {
         data: {
           status: isFinalAttempt
             ? (WebhookDeliveryStatus.Failed as WebhookDeliveryStatus)
-            : (WebhookDeliveryStatus.Pending as WebhookDeliveryStatus),
+            : (WebhookDeliveryStatus.Retrying as WebhookDeliveryStatus),
           responseCode: result.responseCode,
           errorMessage: result.errorMessage,
           durationMs: result.durationMs,

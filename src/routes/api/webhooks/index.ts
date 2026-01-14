@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { WebhookEventType, Permission } from '@prisma/client';
+import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 
 // Schema for registering a new webhook
 export const registerWebhookSchemaInput = z.object({
@@ -48,6 +49,12 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
   input: registerWebhookSchemaInput,
   output: registerWebhookSchemaOutput,
   handler: async ({ input, options }) => {
+    await checkIsAllowedNetworkOrThrowUnauthorized(
+      options.networkLimit,
+      input.network,
+      options.permission,
+    );
+
     if (input.paymentSourceId) {
       const paymentSource = await prisma.paymentSource.findUnique({
         where: { id: input.paymentSourceId, deletedAt: null },
@@ -104,6 +111,10 @@ export const listWebhooksSchemaInput = z.object({
     .optional()
     .nullable()
     .describe('Filter by payment source ID'),
+  cursorId: z
+    .string()
+    .optional()
+    .describe('Cursor ID to paginate through the results'),
   limit: z
     .number({ coerce: true })
     .min(1)
@@ -154,7 +165,14 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
   }) => {
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
-        paymentSourceId: input.paymentSourceId || undefined,
+        PaymentSource: {
+          network:
+            options.permission === Permission.Admin
+              ? undefined
+              : { in: options.networkLimit },
+          deletedAt: null,
+          ...(input.paymentSourceId ? { id: input.paymentSourceId } : {}),
+        },
         // Only show webhooks created by this API key, unless user is admin
         ...(options.permission === Permission.Admin
           ? {}
@@ -170,6 +188,7 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit,
+      cursor: input.cursorId ? { id: input.cursorId } : undefined,
     });
 
     return {
