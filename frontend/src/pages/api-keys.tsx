@@ -8,7 +8,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteApiKey, GetApiKeyResponses } from '@/lib/api/generated';
+import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
@@ -28,7 +28,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
-type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
+import { ApiKey } from '@/lib/api/generated';
 
 export default function ApiKeys() {
   const router = useRouter();

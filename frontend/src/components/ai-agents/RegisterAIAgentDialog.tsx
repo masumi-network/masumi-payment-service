@@ -19,7 +19,11 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { PaymentSourceExtended, postRegistry } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistry,
+  SellingWallet,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
@@ -35,13 +39,6 @@ interface RegisterAIAgentDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-}
-
-interface SellingWallet {
-  id: string;
-  walletVkey: string;
-  walletAddress: string;
-  note: string | null;
 }
 
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
@@ -232,6 +229,7 @@ export function RegisterAIAgentDialog({
             id: w.id,
             walletVkey: w.walletVkey,
             walletAddress: w.walletAddress,
+            collectionAddress: w.collectionAddress,
             note: w.note,
           },
           balance: parseInt(w.balance, 10),

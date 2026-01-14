@@ -1,20 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getUtxos, PaymentSource, Utxo } from '@/lib/api/generated';
+import {
+  getUtxos,
+  Utxo,
+  UtxoAmount,
+  PurchasingWallet,
+  SellingWallet,
+} from '@/lib/api/generated';
 import { Client } from '@hey-api/client-axios';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';
 
 type UTXO = Utxo;
-type UTXOAmount = UTXO['Amounts'][0];
+type UTXOAmount = UtxoAmount;
 
 type Wallet =
-  | (PaymentSource['PurchasingWallets'][0] & {
+  | (PurchasingWallet & {
       type: 'Purchasing';
       network: 'Preprod' | 'Mainnet';
     })
-  | (PaymentSource['SellingWallets'][0] & {
+  | (SellingWallet & {
       type: 'Selling';
       network: 'Preprod' | 'Mainnet';
     });

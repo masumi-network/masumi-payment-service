@@ -4,12 +4,9 @@ import { Client } from '@hey-api/client-axios';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getPaymentSourceExtended,
-  GetPaymentSourceExtendedResponses,
+  PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
-
-type PaymentSource =
-  GetPaymentSourceExtendedResponses['200']['data']['ExtendedPaymentSources'][0];
 
 type UsePaymentSourceExtendedAllParams = {
   apiClient: Client;
@@ -20,14 +17,14 @@ function usePaymentSourceExtendedAllInternal({
   apiClient,
   apiKey,
 }: UsePaymentSourceExtendedAllParams) {
-  const query = useQuery<PaymentSource[]>({
+  const query = useQuery<PaymentSourceExtended[]>({
     queryKey: ['payment-sources-all', apiKey],
     queryFn: async () => {
       if (!apiKey) {
         return [];
       }
       const take = 10;
-      const aggregated: PaymentSource[] = [];
+      const aggregated: PaymentSourceExtended[] = [];
       let cursor: string | undefined;
 
       while (true) {
