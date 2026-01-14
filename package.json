@@ -94,6 +94,9 @@
         "wait-for-expect": "^4.0.0",
         "wait-on": "^9.0.3"
     },
+    "prisma": {
+        "seed": "tsx ./prisma/seed.ts"
+    },
     "overrides": {
         "libsodium-wrappers-sumo": "0.7.15",
         "libsodium-sumo": "0.7.15"
