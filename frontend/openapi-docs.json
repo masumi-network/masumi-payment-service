@@ -10722,6 +10722,1756 @@
                     }
                 }
             }
+        },
+        "/purchase/spending": {
+            "post": {
+                "description": "Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.",
+                "summary": "Get agent purchase spending analytics. (READ access required)",
+                "tags": [
+                    "purchase-spending"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "The unique identifier of the agent to get purchase spending for, if not provided, will return spending for all agents"
+                                    },
+                                    "startDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "endDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "timeZone": {
+                                        "type": "string",
+                                        "default": "Etc/UTC",
+                                        "description": "The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network to query spending from"
+                                    }
+                                },
+                                "required": [
+                                    "agentIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "agentIdentifier": "example_agent_identifier_asset_id",
+                                    "startDate": "2024-01-01",
+                                    "endDate": "2024-01-31",
+                                    "network": "Preprod"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent purchase spending analytics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "agentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "periodStart": {
+                                                    "type": "string"
+                                                },
+                                                "periodEnd": {
+                                                    "type": "string"
+                                                },
+                                                "totalTransactions": {
+                                                    "type": "number"
+                                                },
+                                                "totalSpend": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "totalRefunded": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "totalPending": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "dailySpend": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "dailyRefunded": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "dailyPending": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlySpend": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlyRefunded": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlyPending": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "agentIdentifier",
+                                                "periodStart",
+                                                "periodEnd",
+                                                "totalTransactions",
+                                                "totalSpend",
+                                                "totalRefunded",
+                                                "totalPending",
+                                                "dailySpend",
+                                                "dailyRefunded",
+                                                "dailyPending",
+                                                "monthlySpend",
+                                                "monthlyRefunded",
+                                                "monthlyPending"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "agentIdentifier": "example_agent_identifier_asset_id",
+                                            "periodStart": "2024-01-01T00:00:00.000Z",
+                                            "periodEnd": "2024-01-31T23:59:59.000Z",
+                                            "totalTransactions": 25,
+                                            "totalSpend": {
+                                                "units": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": 47500000
+                                                    }
+                                                ],
+                                                "blockchainFees": 2500000
+                                            },
+                                            "totalRefunded": {
+                                                "units": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": 2500000
+                                                    }
+                                                ],
+                                                "blockchainFees": 100000
+                                            },
+                                            "totalPending": {
+                                                "units": [],
+                                                "blockchainFees": 0
+                                            },
+                                            "dailySpend": [
+                                                {
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 2100000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 100000
+                                                }
+                                            ],
+                                            "dailyRefunded": [
+                                                {
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 0
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 0
+                                                }
+                                            ],
+                                            "dailyPending": [
+                                                {
+                                                    "day": 15,
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 0
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 0
+                                                }
+                                            ],
+                                            "monthlySpend": [
+                                                {
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 2100000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 100000
+                                                }
+                                            ],
+                                            "monthlyRefunded": [
+                                                {
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [],
+                                                    "blockchainFees": 0
+                                                }
+                                            ],
+                                            "monthlyPending": [
+                                                {
+                                                    "month": 9,
+                                                    "year": 2024,
+                                                    "units": [],
+                                                    "blockchainFees": 0
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Agent not found or no spendings data available"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/payment/income": {
+            "post": {
+                "description": "Get payment income analytics for Payment Request transactions, over specified time periods.",
+                "summary": "Get payment income analytics. (READ access required)",
+                "tags": [
+                    "payment-income"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "agentIdentifier": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 57,
+                                        "maxLength": 250,
+                                        "description": "The unique identifier of the agent to get payment income for, if not provided, will return income for all agents"
+                                    },
+                                    "startDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "endDate": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "format": "date"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            },
+                                            {
+                                                "nullable": true
+                                            }
+                                        ],
+                                        "description": "End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user"
+                                    },
+                                    "timeZone": {
+                                        "type": "string",
+                                        "default": "Etc/UTC",
+                                        "description": "The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network to query income from"
+                                    }
+                                },
+                                "required": [
+                                    "agentIdentifier",
+                                    "network"
+                                ],
+                                "example": {
+                                    "agentIdentifier": "example_agent_identifier_asset_id",
+                                    "startDate": "2024-01-01",
+                                    "endDate": "2024-01-31",
+                                    "network": "Preprod"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent payment income analytics",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "agentIdentifier": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "periodStart": {
+                                                    "type": "string"
+                                                },
+                                                "periodEnd": {
+                                                    "type": "string"
+                                                },
+                                                "totalTransactions": {
+                                                    "type": "number"
+                                                },
+                                                "totalIncome": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "totalRefunded": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "totalPending": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "units": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "amount": {
+                                                                        "type": "number"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "amount"
+                                                                ],
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                            }
+                                                        },
+                                                        "blockchainFees": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "units",
+                                                        "blockchainFees"
+                                                    ]
+                                                },
+                                                "dailyIncome": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "dailyRefunded": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "dailyPending": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "day": {
+                                                                "type": "number",
+                                                                "description": "The day of the month"
+                                                            },
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "day",
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlyIncome": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlyRefunded": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                },
+                                                "monthlyPending": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "month": {
+                                                                "type": "number",
+                                                                "description": "The month"
+                                                            },
+                                                            "year": {
+                                                                "type": "number",
+                                                                "description": "The year"
+                                                            },
+                                                            "units": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "number"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ],
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                }
+                                                            },
+                                                            "blockchainFees": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "month",
+                                                            "year",
+                                                            "units",
+                                                            "blockchainFees"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "agentIdentifier",
+                                                "periodStart",
+                                                "periodEnd",
+                                                "totalTransactions",
+                                                "totalIncome",
+                                                "totalRefunded",
+                                                "totalPending",
+                                                "dailyIncome",
+                                                "dailyRefunded",
+                                                "dailyPending",
+                                                "monthlyIncome",
+                                                "monthlyRefunded",
+                                                "monthlyPending"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "agentIdentifier": "example_agent_identifier_asset_id",
+                                            "periodStart": "2024-01-01T00:00:00.000Z",
+                                            "periodEnd": "2024-01-31T23:59:59.000Z",
+                                            "totalTransactions": 25,
+                                            "totalIncome": {
+                                                "units": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": 45000000
+                                                    }
+                                                ],
+                                                "blockchainFees": 2500000
+                                            },
+                                            "totalRefunded": {
+                                                "units": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": 5000000
+                                                    }
+                                                ],
+                                                "blockchainFees": 400000
+                                            },
+                                            "totalPending": {
+                                                "units": [
+                                                    {
+                                                        "unit": "",
+                                                        "amount": 2000000
+                                                    }
+                                                ],
+                                                "blockchainFees": 100000
+                                            },
+                                            "dailyIncome": [
+                                                {
+                                                    "day": 10,
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 2000000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 100000
+                                                }
+                                            ],
+                                            "dailyRefunded": [
+                                                {
+                                                    "day": 12,
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 500000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 20000
+                                                }
+                                            ],
+                                            "dailyPending": [
+                                                {
+                                                    "day": 15,
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 500000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 0
+                                                }
+                                            ],
+                                            "monthlyIncome": [
+                                                {
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 45000000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 2500000
+                                                }
+                                            ],
+                                            "monthlyRefunded": [
+                                                {
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 5000000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 400000
+                                                }
+                                            ],
+                                            "monthlyPending": [
+                                                {
+                                                    "month": 1,
+                                                    "year": 2024,
+                                                    "units": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": 2000000
+                                                        }
+                                                    ],
+                                                    "blockchainFees": 100000
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Agent not found or no income data available"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/webhooks/": {
+            "get": {
+                "description": "List webhook endpoints",
+                "summary": "List all webhook endpoints registered by your API key. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Filter by payment source ID"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source ID",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor ID to paginate through the results"
+                        },
+                        "required": false,
+                        "description": "Cursor ID to paginate through the results",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                            "description": "Number of webhooks to return"
+                        },
+                        "required": false,
+                        "description": "Number of webhooks to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of webhook endpoints",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "webhooks": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "url": {
+                                                                "type": "string"
+                                                            },
+                                                            "events": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                                        "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                                        "PURCHASE_ON_ERROR",
+                                                                        "PAYMENT_ON_ERROR"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "name": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "isActive": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "paymentSourceId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "failureCount": {
+                                                                "type": "number"
+                                                            },
+                                                            "lastSuccessAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "disabledAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "createdBy": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "properties": {
+                                                                    "apiKeyId": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "apiKeyToken": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "apiKeyId",
+                                                                    "apiKeyToken"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "url",
+                                                            "events",
+                                                            "name",
+                                                            "isActive",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "paymentSourceId",
+                                                            "failureCount",
+                                                            "lastSuccessAt",
+                                                            "disabledAt",
+                                                            "createdBy"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "webhooks"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "webhooks": [
+                                                {
+                                                    "id": "webhook_endpoint_id",
+                                                    "url": "https://your-server.com/webhook",
+                                                    "name": "My Webhook",
+                                                    "events": [
+                                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                        "PAYMENT_ON_ERROR"
+                                                    ],
+                                                    "isActive": true,
+                                                    "createdAt": "1970-01-20T20:00:36.260Z",
+                                                    "updatedAt": "1970-01-20T20:00:36.260Z",
+                                                    "paymentSourceId": null,
+                                                    "failureCount": 0,
+                                                    "lastSuccessAt": "1970-01-20T20:00:36.260Z",
+                                                    "disabledAt": null,
+                                                    "createdBy": {
+                                                        "apiKeyId": "api_key_id",
+                                                        "apiKeyToken": "masked_token"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a new webhook endpoint",
+                "summary": "Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook registration details",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "url": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "The webhook URL to receive notifications"
+                                    },
+                                    "authToken": {
+                                        "type": "string",
+                                        "minLength": 10,
+                                        "maxLength": 200,
+                                        "description": "Authentication token for webhook requests"
+                                    },
+                                    "events": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "enum": [
+                                                "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                "PURCHASE_ON_ERROR",
+                                                "PAYMENT_ON_ERROR"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "Array of event types to subscribe to"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 100,
+                                        "description": "Human-readable name for the webhook"
+                                    },
+                                    "paymentSourceId": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Optional: link webhook to specific payment source"
+                                    }
+                                },
+                                "required": [
+                                    "url",
+                                    "authToken",
+                                    "events"
+                                ],
+                                "example": {
+                                    "url": "https://your-server.com/webhook",
+                                    "authToken": "your-webhook-secret-token",
+                                    "events": [
+                                        "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                        "PAYMENT_ON_ERROR"
+                                    ],
+                                    "name": "My Payment Webhook",
+                                    "paymentSourceId": "payment_source_id_optional"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Webhook endpoint registered successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "url": {
+                                                    "type": "string"
+                                                },
+                                                "events": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                            "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+                                                            "PURCHASE_ON_ERROR",
+                                                            "PAYMENT_ON_ERROR"
+                                                        ]
+                                                    }
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "isActive": {
+                                                    "type": "boolean"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string"
+                                                },
+                                                "paymentSourceId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "url",
+                                                "events",
+                                                "name",
+                                                "isActive",
+                                                "createdAt",
+                                                "paymentSourceId"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "webhook_endpoint_id",
+                                            "url": "https://your-server.com/webhook",
+                                            "name": "My Payment Webhook",
+                                            "events": [
+                                                "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+                                                "PAYMENT_ON_ERROR"
+                                            ],
+                                            "isActive": true,
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "paymentSourceId": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid webhook URL or configuration)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a webhook endpoint",
+                "summary": "Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)",
+                "tags": [
+                    "webhooks"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Webhook deletion request",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "webhookId": {
+                                        "type": "string",
+                                        "description": "The ID of the webhook to delete"
+                                    }
+                                },
+                                "required": [
+                                    "webhookId"
+                                ],
+                                "example": {
+                                    "webhookId": "webhook_endpoint_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Webhook endpoint deleted successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "url": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "deletedAt": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "url",
+                                                "name",
+                                                "deletedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "webhook_endpoint_id",
+                                            "url": "https://your-server.com/webhook",
+                                            "name": "My Payment Webhook",
+                                            "deletedAt": "1970-01-20T20:00:36.260Z"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (only creator or admin can delete)"
+                    },
+                    "404": {
+                        "description": "Webhook endpoint not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
         }
     }
 }

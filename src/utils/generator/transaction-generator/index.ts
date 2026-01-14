@@ -132,7 +132,7 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000')
+    .setTotalCollateral('3000000')
     .txOut(smartContractAddress, smartContractUtxo.output.amount)
     .txOutInlineDatumValue(newInlineDatum);
 
@@ -328,7 +328,7 @@ export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000')
+    .setTotalCollateral('3000000')
     .txOut(collection.collectionAddress, collection.collectAssets);
 
   for (const utxo of walletUtxos) {

@@ -5,7 +5,7 @@ import { batchLatestPaymentEntriesV1 } from '@/services/cardano-payment-batcher/
 import { collectOutstandingPaymentsV1 } from '@/services/cardano-collection-handler/';
 import { collectRefundV1 } from '@/services/cardano-refund-handler/';
 import { updateWalletTransactionHash } from '@/services/update-wallet-transaction-hash-handler/';
-import { requestRefundsV1 } from '../cardano-request-refund-handler/';
+import { requestRefundsV1 } from '@/services/cardano-request-refund-handler/';
 import { AsyncInterval } from '@/utils/async-interval';
 import { cancelRefundsV1 } from '@/services/cardano-cancel-refund-handler/';
 import { registerAgentV1 } from '@/services/cardano-register-handler/';
@@ -14,6 +14,7 @@ import { submitResultV1 } from '@/services/cardano-submit-result-handler/';
 import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/';
 import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
 import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
+import { webhookQueueService } from '@/services/webhook-handler/webhook-queue.service';
 
 export async function initJobs() {
   const start = new Date();
@@ -201,6 +202,36 @@ export async function initJobs() {
           's',
       );
     }, CONFIG.AUTO_DECISION_INTERVAL * 1000); // Convert seconds to milliseconds
+  });
+
+  void new Promise((resolve) => setTimeout(resolve, 2000)).then(() => {
+    AsyncInterval.start(async () => {
+      logger.info('Starting webhook delivery processor');
+      const start = new Date();
+      await webhookQueueService.processPendingDeliveries();
+      logger.info(
+        'Finished webhook delivery processor in ' +
+          (new Date().getTime() - start.getTime()) / 1000 +
+          's',
+      );
+    }, CONFIG.WEBHOOK_DELIVERY_INTERVAL * 1000); // Convert seconds to milliseconds
+  });
+
+  void new Promise((resolve) => setTimeout(resolve, 50000)).then(() => {
+    // Webhook cleanup job
+    AsyncInterval.start(
+      async () => {
+        logger.info('Starting webhook cleanup');
+        const start = new Date();
+        await webhookQueueService.cleanupOldDeliveries();
+        logger.info(
+          'Finished webhook cleanup in ' +
+            (new Date().getTime() - start.getTime()) / 1000 +
+            's',
+        );
+      },
+      24 * 60 * 60 * 1000,
+    );
   });
 
   await new Promise((resolve) => setTimeout(resolve, 200));

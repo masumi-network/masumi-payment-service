@@ -252,7 +252,7 @@ export async function cancelRefundsV1() {
             const { invalidBefore, invalidAfter } =
               calculateTransactionTimeWindow(network);
 
-            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 
             const unsignedTx =
               await generateMasumiSmartContractInteractionTransactionAutomaticFees(

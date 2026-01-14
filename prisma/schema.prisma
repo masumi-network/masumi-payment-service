@@ -23,6 +23,7 @@ model ApiKey {
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
+  CreatedWebhooks       WebhookEndpoint[]
 }
 
 model UnitValue {
@@ -336,6 +337,7 @@ model PaymentSource {
   PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
+  WebhookEndpoints         WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -468,4 +470,68 @@ enum Network {
 
 enum RPCProvider {
   Blockfrost
+}
+
+// Webhook models
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  url       String
+  authToken String 
+  events    WebhookEventType[] 
+  name      String? 
+  
+  PaymentSource   PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  paymentSourceId String?
+
+  CreatedByApiKey   ApiKey? @relation(fields: [createdByApiKeyId], references: [id], onDelete: SetNull)
+  createdByApiKeyId String?
+
+  isActive             Boolean   @default(true)
+  failureCount         Int       @default(0)
+  consecutiveFailures  Int       @default(0)
+  lastSuccessAt        DateTime?
+  disabledAt           DateTime?
+
+  WebhookDeliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  WebhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  webhookEndpointId String
+
+  eventType WebhookEventType 
+  payload   Json   
+  entityId  String? 
+
+  status       WebhookDeliveryStatus @default(Pending)
+  attempts     Int                   @default(0)
+  maxAttempts  Int                   @default(3)
+  nextRetryAt  DateTime?
+
+  responseCode  Int?
+  errorMessage  String?
+  deliveredAt   DateTime?
+  durationMs    Int? 
+}
+
+enum WebhookEventType {
+  PURCHASE_ON_CHAIN_STATUS_CHANGED
+  PAYMENT_ON_CHAIN_STATUS_CHANGED
+  PURCHASE_ON_ERROR
+  PAYMENT_ON_ERROR
+}
+
+enum WebhookDeliveryStatus {
+  Pending
+  Success
+  Failed
+  Retrying
+  Cancelled
 }

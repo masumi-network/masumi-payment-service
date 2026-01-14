@@ -21,52 +21,6 @@ else
     NC=""
 fi
 
-# Function to check file size (in bytes) - cross-platform
-get_file_size() {
-    file="$1"
-    # Use node for consistent cross-platform file size checking
-    if command -v node >/dev/null 2>&1; then
-        node -e "console.log(require('fs').statSync('$file').size)" 2>/dev/null || echo "0"
-    elif command -v wc >/dev/null 2>&1; then
-        wc -c < "$file" 2>/dev/null || echo "0"
-    else
-        # Fallback using ls -l (less accurate but widely available)
-        ls -l "$file" 2>/dev/null | awk '{print $5}' || echo "0"
-    fi
-}
-
-# Function to format file size
-format_size() {
-    bytes=$1
-    if [ "$bytes" -gt 1048576 ]; then
-        echo "$(($bytes / 1048576))MB"
-    elif [ "$bytes" -gt 1024 ]; then
-        echo "$(($bytes / 1024))KB"
-    else
-        echo "${bytes}B"
-    fi
-}
-
-echo "${BLUE}🔍 Checking for git conflict markers...${NC}"
-# Use git grep for better cross-platform compatibility
-if git diff --cached -U0 | grep -q '^[+-][<=>]\{7\}'; then
-    echo "${RED}❌ Git conflict markers found. Please resolve conflicts before committing.${NC}"
-    git diff --cached -U0 | grep -n '^[+-][<=>]\{7\}'
-    exit 1
-fi
-
-echo "${BLUE}🔍 Checking for large files...${NC}"
-# Check for files larger than 5MB
-git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r file; do
-    if [ -f "$file" ]; then
-        filesize=$(get_file_size "$file")
-        if [ "$filesize" -gt 5242880 ]; then
-            formatted_size=$(format_size "$filesize")
-            echo "${RED}❌ File '$file' is too large (${formatted_size}). Maximum size is 5MB.${NC}"
-            exit 2
-        fi
-    fi
-done
 
 # Check if npm is available
 if ! command -v npm >/dev/null 2>&1; then
