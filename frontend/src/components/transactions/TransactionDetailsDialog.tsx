@@ -13,8 +13,8 @@ import { parseError } from '@/lib/utils';
 import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  GetPaymentResponses,
-  GetPurchaseResponses,
+  Payment,
+  Purchase,
   postPurchaseRequestRefund,
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
@@ -24,8 +24,8 @@ import {
 import { useAppContext } from '@/lib/contexts/AppContext';
 
 type Transaction =
-  | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
-  | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
+  | (Payment & { type: 'payment' })
+  | (Purchase & {
       type: 'purchase';
     });
 

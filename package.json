@@ -28,6 +28,7 @@
         "build": "npx prisma generate && tsc --noEmit && pkgroll",
         "start": "cross-env NODE_ENV=production node ./dist/index.js",
         "swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation tsx ./src/utils/generator/swagger-generator/cli.ts",
+        "swagger-postman": "openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p",
         "knip": "knip"
     },
     "dependencies": {
@@ -87,6 +88,7 @@
         "jest": "^29.7.0",
         "knip": "^5.80.2",
         "lint-staged": "^15.5.0",
+        "openapi-to-postmanv2": "^5.8.0",
         "pkgroll": "^2.21.5",
         "prettier": "^3.5.3",
         "prisma": "^6.19.1",

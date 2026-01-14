@@ -72,19 +72,19 @@ npm run lint -- || \
     exit 4
 )
 
-# Generate Swagger documentation
-echo "${BLUE}🔍 Generating Swagger documentation...${NC}"
-if ! npm run swagger-json; then
-    echo "${RED}❌ Swagger documentation generation failed. Please fix any API documentation issues and try again.${NC}"
-    exit 6
+# Generate Postman collection
+echo "${BLUE}🔍 Generating Swagger and Postman collection...${NC}"
+if ! npm run swagger-postman; then
+    echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
+    exit 7
 fi
 
 # Generate types
-echo "${BLUE}🔍 Generating types...${NC}"
+echo "${BLUE}🔍 Generating frontend types...${NC}"
 cd frontend && npm run openapi-ts-latest && cd ..
 if [ $? -ne 0 ]; then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
-    exit 7
+    exit 8
 fi
 
 # Check for changes in generated files
