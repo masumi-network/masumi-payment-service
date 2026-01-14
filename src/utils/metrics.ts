@@ -1,77 +1,134 @@
 import { metrics, trace } from '@opentelemetry/api';
+import type { Counter, Histogram, UpDownCounter } from '@opentelemetry/api';
+import { logger } from './logger';
 
-const meter = metrics.getMeter('masumi-payment-metrics', '1.0.0');
+const meterName = 'masumi-payment-metrics';
+const meterVersion = '1.0.0';
+let meter: ReturnType<typeof metrics.getMeter> | null = null;
 
-// Business Endpoint Error Tracking - New Streamlined System
-export const businessEndpointErrorCounter = meter.createCounter(
-  'business_endpoint_errors_total',
-  {
-    description:
-      'Total number of errors for business endpoints with detailed error information',
-  },
-);
+const getMeter = () => {
+  if (!meter) {
+    meter = metrics.getMeter(meterName, meterVersion);
+  }
+  return meter;
+};
 
-// Request tracking (keeping the working ones)
-export const apiRequestDuration = meter.createHistogram(
-  'api_request_duration_ms',
-  {
-    description:
-      'Time taken for API requests from start to finish in milliseconds',
-    unit: 'ms',
-  },
-);
+let businessEndpointErrorCounter: Counter | null = null;
+let apiRequestDuration: Histogram | null = null;
+let apiErrorCounter: Counter | null = null;
+let businessEndpointDuration: Histogram | null = null;
+let businessEndpointSuccessCounter: Counter | null = null;
+let blockchainStateTransitionDuration: Histogram | null = null;
+let blockchainJourneyDuration: Histogram | null = null;
+let blockchainStateTransitionCounter: Counter | null = null;
+let activePaymentGauge: UpDownCounter | null = null;
 
-export const apiErrorCounter = meter.createCounter('api_errors_total', {
-  description: 'Total number of API errors by endpoint and error type',
-});
+const getBusinessEndpointErrorCounter = (): Counter => {
+  if (!businessEndpointErrorCounter) {
+    businessEndpointErrorCounter = getMeter().createCounter(
+      'business_endpoint_errors_total',
+      {
+        description:
+          'Total number of errors for business endpoints with detailed error information',
+      },
+    );
+  }
+  return businessEndpointErrorCounter;
+};
 
-// Business Endpoint Processing Duration
-export const businessEndpointDuration = meter.createHistogram(
-  'business_endpoint_duration_ms',
-  {
-    description:
-      'Time taken to process business endpoint requests from start to completion',
-    unit: 'ms',
-  },
-);
+const getApiRequestDuration = (): Histogram => {
+  if (!apiRequestDuration) {
+    apiRequestDuration = getMeter().createHistogram('api_request_duration_ms', {
+      description:
+        'Time taken for API requests from start to finish in milliseconds',
+      unit: 'ms',
+    });
+  }
+  return apiRequestDuration;
+};
 
-// Success counters for business endpoints
-export const businessEndpointSuccessCounter = meter.createCounter(
-  'business_endpoint_success_total',
-  {
-    description: 'Total number of successful business endpoint requests',
-  },
-);
+const getApiErrorCounter = (): Counter => {
+  if (!apiErrorCounter) {
+    apiErrorCounter = getMeter().createCounter('api_errors_total', {
+      description: 'Total number of API errors by endpoint and error type',
+    });
+  }
+  return apiErrorCounter;
+};
 
-// Blockchain State Transition Metrics
-export const blockchainStateTransitionDuration = meter.createHistogram(
-  'blockchain_state_transition_duration_ms',
-  {
-    description: 'Time between blockchain state transitions',
-    unit: 'ms',
-  },
-);
+const getBusinessEndpointDuration = (): Histogram => {
+  if (!businessEndpointDuration) {
+    businessEndpointDuration = getMeter().createHistogram(
+      'business_endpoint_duration_ms',
+      {
+        description:
+          'Time taken to process business endpoint requests from start to completion',
+        unit: 'ms',
+      },
+    );
+  }
+  return businessEndpointDuration;
+};
 
-export const blockchainJourneyDuration = meter.createHistogram(
-  'blockchain_journey_duration_ms',
-  {
-    description:
-      'Complete blockchain operation duration from request to confirmation',
-    unit: 'ms',
-  },
-);
+const getBusinessEndpointSuccessCounter = (): Counter => {
+  if (!businessEndpointSuccessCounter) {
+    businessEndpointSuccessCounter = getMeter().createCounter(
+      'business_endpoint_success_total',
+      {
+        description: 'Total number of successful business endpoint requests',
+      },
+    );
+  }
+  return businessEndpointSuccessCounter;
+};
 
-export const blockchainStateTransitionCounter = meter.createCounter(
-  'blockchain_state_transitions_total',
-  {
-    description: 'Total count of blockchain state transitions',
-  },
-);
+const getBlockchainStateTransitionDuration = (): Histogram => {
+  if (!blockchainStateTransitionDuration) {
+    blockchainStateTransitionDuration = getMeter().createHistogram(
+      'blockchain_state_transition_duration_ms',
+      {
+        description: 'Time between blockchain state transitions',
+        unit: 'ms',
+      },
+    );
+  }
+  return blockchainStateTransitionDuration;
+};
 
-// Gauges for current state (keeping useful ones)
-export const activePaymentGauge = meter.createUpDownCounter('active_payments', {
-  description: 'Number of currently active payments',
-});
+const getBlockchainJourneyDuration = (): Histogram => {
+  if (!blockchainJourneyDuration) {
+    blockchainJourneyDuration = getMeter().createHistogram(
+      'blockchain_journey_duration_ms',
+      {
+        description:
+          'Complete blockchain operation duration from request to confirmation',
+        unit: 'ms',
+      },
+    );
+  }
+  return blockchainJourneyDuration;
+};
+
+const getBlockchainStateTransitionCounter = (): Counter => {
+  if (!blockchainStateTransitionCounter) {
+    blockchainStateTransitionCounter = getMeter().createCounter(
+      'blockchain_state_transitions_total',
+      {
+        description: 'Total count of blockchain state transitions',
+      },
+    );
+  }
+  return blockchainStateTransitionCounter;
+};
+
+export const getActivePaymentGauge = (): UpDownCounter => {
+  if (!activePaymentGauge) {
+    activePaymentGauge = getMeter().createUpDownCounter('active_payments', {
+      description: 'Number of currently active payments',
+    });
+  }
+  return activePaymentGauge;
+};
 
 // Business Endpoint Types
 type BusinessEndpoint = 'purchase' | 'registry' | 'wallet' | 'unknown';
@@ -188,7 +245,7 @@ export const recordBusinessEndpointError = (
   const businessEndpoint = getBusinessEndpoint(endpoint);
   const errorDetails = extractBusinessErrorDetails(error, businessEndpoint);
 
-  businessEndpointErrorCounter.add(1, {
+  getBusinessEndpointErrorCounter().add(1, {
     ...attributes,
     endpoint: businessEndpoint,
     full_endpoint: endpoint,
@@ -208,7 +265,7 @@ export const recordBusinessEndpointSuccess = (
 ) => {
   const businessEndpoint = getBusinessEndpoint(endpoint);
 
-  businessEndpointSuccessCounter.add(1, {
+  getBusinessEndpointSuccessCounter().add(1, {
     ...attributes,
     endpoint: businessEndpoint,
     full_endpoint: endpoint,
@@ -226,7 +283,7 @@ export const recordBusinessEndpointDuration = (
 ) => {
   const businessEndpoint = getBusinessEndpoint(endpoint);
 
-  businessEndpointDuration.record(duration, {
+  getBusinessEndpointDuration().record(duration, {
     ...attributes,
     endpoint: businessEndpoint,
     full_endpoint: endpoint,
@@ -244,7 +301,7 @@ export const recordApiError = (
   errorType: string,
   attributes: Record<string, string | number> = {},
 ) => {
-  apiErrorCounter.add(1, {
+  getApiErrorCounter().add(1, {
     ...attributes,
     endpoint,
     method,
@@ -313,7 +370,7 @@ export const recordBusinessProcessingDuration = (
 ) => {
   const businessEndpoint = getBusinessEndpoint(endpoint);
 
-  businessEndpointDuration.record(duration, {
+  getBusinessEndpointDuration().record(duration, {
     ...attributes,
     endpoint: businessEndpoint,
     full_endpoint: endpoint,
@@ -331,7 +388,7 @@ export const recordApiRequestDuration = (
   statusCode: number,
   attributes: Record<string, string | number> = {},
 ) => {
-  apiRequestDuration.record(duration, {
+  getApiRequestDuration().record(duration, {
     ...attributes,
     endpoint,
     method,
@@ -369,7 +426,7 @@ export const recordStateTransition = (
   entityId: string,
   attributes: Record<string, string | number> = {},
 ) => {
-  blockchainStateTransitionDuration.record(duration, {
+  getBlockchainStateTransitionDuration().record(duration, {
     ...attributes,
     entity_type: entityType,
     entity_id: entityId,
@@ -378,7 +435,7 @@ export const recordStateTransition = (
     transition: `${fromState}_to_${toState}`,
   });
 
-  blockchainStateTransitionCounter.add(1, {
+  getBlockchainStateTransitionCounter().add(1, {
     ...attributes,
     entity_type: entityType,
     from_state: fromState,
@@ -394,7 +451,7 @@ export const recordBlockchainJourney = (
   entityId: string,
   attributes: Record<string, string | number> = {},
 ) => {
-  blockchainJourneyDuration.record(totalDuration, {
+  getBlockchainJourneyDuration().record(totalDuration, {
     ...attributes,
     entity_type: entityType,
     entity_id: entityId,
@@ -406,18 +463,35 @@ export const recordBlockchainJourney = (
   });
 };
 
-// Prisma Data Transfer Metrics
-export const prismaDataTransferSize = meter.createHistogram(
-  'prisma_data_transfer_size_bytes',
-  {
-    description: 'Size of data transferred from Prisma queries in bytes',
-    unit: 'bytes',
-  },
-);
+let prismaDataTransferSize: Histogram | null = null;
+let prismaQueryCounter: Counter | null = null;
 
-export const prismaQueryCounter = meter.createCounter('prisma_queries_total', {
-  description: 'Total number of Prisma queries executed',
-});
+// Create Prisma metrics lazily to avoid NoopHistogramMetric
+const getPrismaMetrics = (): {
+  prismaDataTransferSize: Histogram;
+  prismaQueryCounter: Counter;
+} => {
+  if (!prismaDataTransferSize || !prismaQueryCounter) {
+    const prismaMeter = metrics.getMeter('masumi-payment-metrics', '1.0.0');
+    prismaDataTransferSize = prismaMeter.createHistogram(
+      'prisma_data_transfer_size_bytes',
+      {
+        description: 'Size of data transferred from Prisma queries in bytes',
+        unit: 'bytes',
+      },
+    );
+
+    prismaQueryCounter = prismaMeter.createCounter('prisma_queries_total', {
+      description: 'Total number of Prisma queries executed',
+    });
+  }
+
+  if (!prismaDataTransferSize || !prismaQueryCounter) {
+    throw new Error('Failed to initialize Prisma metrics');
+  }
+
+  return { prismaDataTransferSize, prismaQueryCounter };
+};
 
 // Record Prisma data transfer size
 export const recordPrismaDataTransfer = (
@@ -427,18 +501,28 @@ export const recordPrismaDataTransfer = (
   rowCount?: number,
   attributes: Record<string, string | number> = {},
 ) => {
-  prismaDataTransferSize.record(sizeBytes, {
+  // Match the pattern used by apiRequestDuration (which works)
+  const histogramAttributes: Record<string, string | number> = {
     ...attributes,
     model,
     action,
     ...(rowCount !== undefined && { row_count: rowCount }),
-  });
+  };
 
-  prismaQueryCounter.add(1, {
+  const counterAttributes: Record<string, string | number> = {
     ...attributes,
     model,
     action,
-  });
+  };
+
+  try {
+    const { prismaDataTransferSize, prismaQueryCounter } = getPrismaMetrics();
+    prismaDataTransferSize.record(sizeBytes, histogramAttributes);
+    prismaQueryCounter.add(1, counterAttributes);
+  } catch (error) {
+    // Log error but don't throw - metrics should not break the application
+    logger.warn('Error recording Prisma metrics:', error);
+  }
 };
 
 // Custom span creation for detailed tracing (keeping for advanced usage)

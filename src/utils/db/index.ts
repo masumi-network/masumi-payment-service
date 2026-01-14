@@ -113,35 +113,29 @@ export const prisma = basePrisma.$extends({
         const dataSize = calculateDataSize(result);
         const rowCount = countRows(result);
 
-        // Record metrics
-        recordPrismaDataTransfer(
-          model || 'unknown',
-          operation,
-          dataSize,
-          rowCount,
-          {
+        // Record metrics - using direct recording like apiRequestDuration
+        const modelName = model || 'unknown';
+
+        try {
+          recordPrismaDataTransfer(modelName, operation, dataSize, rowCount, {
             duration_ms: duration,
-          },
-        );
+          });
+        } catch (error) {
+          // Log but don't fail the query if metrics fail
+          logger.error('Failed to record Prisma metrics', {
+            component: 'prisma',
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            model: modelName,
+            operation,
+          });
+        }
 
         // Optional: Log large transfers (configurable threshold, e.g., > 1MB)
         const sizeKB = dataSize / 1024;
         const sizeMB = sizeKB / 1024;
-        logger.info(
-          `Prisma query: ${model || 'unknown'}.${operation} transferred ${sizeMB.toFixed(2)} MB (${rowCount} rows) in ${duration}ms`,
-          {
-            component: 'prisma',
-            model: model || 'unknown',
-            operation,
-            size_bytes: dataSize,
-            size_kb: sizeKB,
-            size_mb: sizeMB,
-            row_count: rowCount,
-            duration_ms: duration,
-          },
-        );
         if (sizeMB > 1) {
-          logger.info(
+          logger.warn(
             `Large Prisma query: ${model || 'unknown'}.${operation} transferred ${sizeMB.toFixed(2)} MB (${rowCount} rows) in ${duration}ms`,
             {
               component: 'prisma',
@@ -168,6 +162,7 @@ export async function cleanupDB() {
 
 export async function initDB() {
   await prisma.$connect();
+
   const paymentSources = await prisma.paymentSource.aggregate({
     _count: true,
     where: {
