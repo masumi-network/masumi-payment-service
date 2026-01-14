@@ -354,6 +354,14 @@ import {
   purchaseErrorStateRecoverySchemaInput,
   purchaseErrorStateRecoverySchemaOutput,
 } from '@/routes/api/purchases/error-state-recovery';
+import {
+  registerWebhookSchemaInput,
+  registerWebhookSchemaOutput,
+  listWebhooksSchemaInput,
+  listWebhooksSchemaOutput,
+  deleteWebhookSchemaInput,
+  deleteWebhookSchemaOutput,
+} from '@/routes/api/webhooks';
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -3088,6 +3096,7 @@ export function generateOpenAPI() {
     },
   });
 
+  /********************* PAYMENT INCOME *****************************/
   registry.registerPath({
     method: 'post',
     path: '/payment/income',
@@ -3208,6 +3217,196 @@ export function generateOpenAPI() {
       },
       404: {
         description: 'Agent not found or no income data available',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* WEBHOOKS *****************************/
+  registry.registerPath({
+    method: 'get',
+    path: '/webhooks/',
+    description: 'List webhook endpoints',
+    summary:
+      'List all webhook endpoints registered by your API key. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: listWebhooksSchemaInput.openapi({
+        example: {
+          paymentSourceId: 'payment_source_id_optional',
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'List of webhook endpoints',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: listWebhooksSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    webhooks: [
+                      {
+                        id: 'webhook_endpoint_id',
+                        url: 'https://your-server.com/webhook',
+                        name: 'My Webhook',
+                        events: [
+                          'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                          'PAYMENT_ON_ERROR',
+                        ],
+                        isActive: true,
+                        createdAt: new Date(1713636260),
+                        updatedAt: new Date(1713636260),
+                        paymentSourceId: null,
+                        failureCount: 0,
+                        lastSuccessAt: new Date(1713636260),
+                        disabledAt: null,
+                        createdBy: {
+                          apiKeyId: 'api_key_id',
+                          apiKeyToken: 'masked_token',
+                        },
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/webhooks/',
+    description: 'Register a new webhook endpoint',
+    summary:
+      'Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Webhook registration details',
+        content: {
+          'application/json': {
+            schema: registerWebhookSchemaInput.openapi({
+              example: {
+                url: 'https://your-server.com/webhook',
+                authToken: 'your-webhook-secret-token',
+                events: [
+                  'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                  'PAYMENT_ON_ERROR',
+                ],
+                name: 'My Payment Webhook',
+                paymentSourceId: 'payment_source_id_optional',
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: 'Webhook endpoint registered successfully',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: registerWebhookSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'webhook_endpoint_id',
+                    url: 'https://your-server.com/webhook',
+                    name: 'My Payment Webhook',
+                    events: [
+                      'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                      'PAYMENT_ON_ERROR',
+                    ],
+                    isActive: true,
+                    createdAt: new Date(1713636260),
+                    paymentSourceId: null,
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (invalid webhook URL or configuration)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/webhooks/',
+    description: 'Delete a webhook endpoint',
+    summary:
+      'Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Webhook deletion request',
+        content: {
+          'application/json': {
+            schema: deleteWebhookSchemaInput.openapi({
+              example: {
+                webhookId: 'webhook_endpoint_id',
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Webhook endpoint deleted successfully',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: deleteWebhookSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'webhook_endpoint_id',
+                    url: 'https://your-server.com/webhook',
+                    name: 'My Payment Webhook',
+                    deletedAt: new Date(1713636260),
+                  },
+                },
+              }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (only creator or admin can delete)',
+      },
+      404: {
+        description: 'Webhook endpoint not found',
       },
       500: {
         description: 'Internal Server Error',
