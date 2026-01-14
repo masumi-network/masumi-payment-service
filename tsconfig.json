@@ -18,6 +18,6 @@
       "@smart-contracts/*": ["smart-contracts/*"]
     }
   },
-  "include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts", "prisma.config.ts"],
+  "include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts"],
   "exclude": ["node_modules"]
 }
