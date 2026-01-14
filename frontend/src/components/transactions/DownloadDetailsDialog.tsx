@@ -21,14 +21,14 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getPayment,
   getPurchase,
-  GetPaymentResponses,
-  GetPurchaseResponses,
+  Payment,
+  Purchase,
 } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
 type Transaction =
-  | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
-  | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
+  | (Payment & { type: 'payment' })
+  | (Purchase & {
       type: 'purchase';
     });
 

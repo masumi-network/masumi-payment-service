@@ -988,6 +988,63 @@ export type RegistryEntry = {
     } | null;
 };
 
+export type AdminWallet = {
+    /**
+     * Cardano address of the admin wallet
+     */
+    walletAddress: string;
+    /**
+     * Order/index of this admin wallet
+     */
+    order: number;
+};
+
+export type PurchasingWallet = {
+    /**
+     * Unique identifier for the purchasing wallet
+     */
+    id: string;
+    /**
+     * Payment key hash of the purchasing wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the purchasing wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+};
+
+export type SellingWallet = {
+    /**
+     * Unique identifier for the selling wallet
+     */
+    id: string;
+    /**
+     * Payment key hash of the selling wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the selling wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+};
+
 export type PaymentSource = {
     /**
      * Unique identifier for the payment source
@@ -1024,66 +1081,15 @@ export type PaymentSource = {
     /**
      * List of admin wallets for dispute resolution
      */
-    AdminWallets: Array<{
-        /**
-         * Cardano address of the admin wallet
-         */
-        walletAddress: string;
-        /**
-         * Order/index of this admin wallet
-         */
-        order: number;
-    }>;
+    AdminWallets: Array<AdminWallet>;
     /**
      * List of wallets used for purchasing (buyer side)
      */
-    PurchasingWallets: Array<{
-        /**
-         * Unique identifier for the purchasing wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the purchasing wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the purchasing wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-    }>;
+    PurchasingWallets: Array<PurchasingWallet>;
     /**
      * List of wallets used for selling (seller side)
      */
-    SellingWallets: Array<{
-        /**
-         * Unique identifier for the selling wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the selling wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the selling wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-    }>;
+    SellingWallets: Array<SellingWallet>;
     /**
      * Wallet that receives network fees from transactions
      */
@@ -1227,6 +1233,17 @@ export type PaymentSourceExtended = {
     feeRatePermille: number;
 };
 
+export type UtxoAmount = {
+    /**
+     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+     */
+    unit: string;
+    /**
+     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     */
+    quantity: number | null;
+};
+
 export type Utxo = {
     /**
      * Transaction hash containing this UTXO
@@ -1239,16 +1256,7 @@ export type Utxo = {
     /**
      * List of assets and amounts in this UTXO
      */
-    Amounts: Array<{
-        /**
-         * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
-         */
-        unit: string;
-        /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
-         */
-        quantity: number | null;
-    }>;
+    Amounts: Array<UtxoAmount>;
     /**
      * Hash of the datum attached to this UTXO. Null if no datum
      */

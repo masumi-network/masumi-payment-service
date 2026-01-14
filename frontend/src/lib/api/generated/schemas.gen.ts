@@ -1341,6 +1341,79 @@ export const RegistryEntrySchema = {
     required: ['error', 'id', 'name', 'description', 'apiBaseUrl', 'Capability', 'Author', 'Legal', 'state', 'Tags', 'createdAt', 'updatedAt', 'lastCheckedAt', 'ExampleOutputs', 'agentIdentifier', 'AgentPricing', 'SmartContractWallet', 'CurrentTransaction']
 } as const;
 
+export const AdminWalletSchema = {
+    type: 'object',
+    properties: {
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the admin wallet'
+        },
+        order: {
+            type: 'number',
+            description: 'Order/index of this admin wallet '
+        }
+    },
+    required: ['walletAddress', 'order']
+} as const;
+
+export const PurchasingWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the purchasing wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash of the purchasing wallet'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the purchasing wallet'
+        },
+        collectionAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional collection address for this wallet. Null if not set'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note about this wallet. Null if not set'
+        }
+    },
+    required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+} as const;
+
+export const SellingWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the selling wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash of the selling wallet'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the selling wallet'
+        },
+        collectionAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional collection address for this wallet. Null if not set'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note about this wallet. Null if not set'
+        }
+    },
+    required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+} as const;
+
 export const PaymentSourceSchema = {
     type: 'object',
     properties: {
@@ -1383,82 +1456,21 @@ export const PaymentSourceSchema = {
         AdminWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the admin wallet'
-                    },
-                    order: {
-                        type: 'number',
-                        description: 'Order/index of this admin wallet '
-                    }
-                },
-                required: ['walletAddress', 'order']
+                '$ref': '#/components/schemas/AdminWallet'
             },
             description: 'List of admin wallets for dispute resolution'
         },
         PurchasingWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the purchasing wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the purchasing wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the purchasing wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    }
-                },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                '$ref': '#/components/schemas/PurchasingWallet'
             },
             description: 'List of wallets used for purchasing (buyer side)'
         },
         SellingWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the selling wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the selling wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the selling wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    }
-                },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                '$ref': '#/components/schemas/SellingWallet'
             },
             description: 'List of wallets used for selling (seller side)'
         },
@@ -1645,6 +1657,24 @@ export const PaymentSourceExtendedSchema = {
     required: ['id', 'createdAt', 'updatedAt', 'network', 'policyId', 'smartContractAddress', 'PaymentSourceConfig', 'lastIdentifierChecked', 'syncInProgress', 'lastCheckedAt', 'AdminWallets', 'PurchasingWallets', 'SellingWallets', 'FeeReceiverNetworkWallet', 'feeRatePermille']
 } as const;
 
+export const UtxoAmountSchema = {
+    type: 'object',
+    properties: {
+        unit: {
+            type: 'string',
+            description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+        },
+        quantity: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+        }
+    },
+    required: ['unit', 'quantity']
+} as const;
+
 export const UtxoSchema = {
     type: 'object',
     properties: {
@@ -1659,21 +1689,7 @@ export const UtxoSchema = {
         Amounts: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    unit: {
-                        type: 'string',
-                        description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
-                    },
-                    quantity: {
-                        type: 'integer',
-                        nullable: true,
-                        minimum: 0,
-                        maximum: 100000000000000,
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
-                    }
-                },
-                required: ['unit', 'quantity']
+                '$ref': '#/components/schemas/UtxoAmount'
             },
             description: 'List of assets and amounts in this UTXO'
         },
