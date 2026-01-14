@@ -251,6 +251,16 @@ export function RegisterAIAgentDialog({
         const selectedWalletBalance = sellingWallets.find(
           (w) => w.wallet.walletVkey == selectedWalletVkey,
         )?.balance;
+        data.prices.map((price) => {
+          const unit =
+            price.unit === 'USDM' || price.unit === 'tUSDM'
+              ? getUsdmConfig(network).fullAssetId
+              : price.unit;
+          return {
+            unit,
+            amount: (parseFloat(price.amount) * 1_000_000).toString(),
+          };
+        });
         if (
           selectedWalletBalance == undefined ||
           selectedWalletBalance <= 3000000
