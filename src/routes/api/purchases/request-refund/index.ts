@@ -10,6 +10,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { updatePurchaseNextAction } from '@/utils/action-history';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -75,6 +76,12 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
           isNot: null,
         },
       },
+      include: {
+        SmartContractWallet: {
+          where: { deletedAt: null },
+          select: { id: true, walletVkey: true, walletAddress: true },
+        },
+      },
     });
 
     if (purchase == null) {
@@ -91,15 +98,22 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
       );
     }
 
-    const newPurchase = await prisma.purchaseRequest.update({
-      where: { id: purchase.id },
-      data: {
-        NextAction: {
-          create: {
-            requestedAction: PurchasingAction.SetRefundRequestedRequested,
-          },
-        },
+    if (purchase.SmartContractWallet == null) {
+      throw createHttpError(404, 'Smart contract wallet not set on purchase');
+    }
+
+    // Update NextAction with history tracking
+    await updatePurchaseNextAction(
+      purchase.id,
+      PurchasingAction.SetRefundRequestedRequested,
+      {
+        inputHash: purchase.inputHash,
       },
+    );
+
+    // Fetch the updated purchase
+    const result = await prisma.purchaseRequest.findUnique({
+      where: { id: purchase.id },
       include: {
         NextAction: {
           select: {
@@ -145,23 +159,25 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
       },
     });
 
-    const decoded = decodeBlockchainIdentifier(
-      newPurchase.blockchainIdentifier,
-    );
+    if (!result) {
+      throw createHttpError(500, 'Failed to fetch updated purchase');
+    }
+
+    const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 
     return {
-      ...newPurchase,
-      ...transformPurchaseGetTimestamps(newPurchase),
-      ...transformPurchaseGetAmounts(newPurchase),
+      ...result,
+      ...transformPurchaseGetTimestamps(result),
+      ...transformPurchaseGetAmounts(result),
       totalBuyerCardanoFees:
-        Number(newPurchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
       totalSellerCardanoFees:
-        Number(newPurchase.totalSellerCardanoFees.toString()) / 1_000_000,
+        Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
       agentIdentifier: decoded?.agentIdentifier ?? null,
-      CurrentTransaction: newPurchase.CurrentTransaction
+      CurrentTransaction: result.CurrentTransaction
         ? {
-            ...newPurchase.CurrentTransaction,
-            fees: newPurchase.CurrentTransaction.fees?.toString() ?? null,
+            ...result.CurrentTransaction,
+            fees: result.CurrentTransaction.fees?.toString() ?? null,
           }
         : null,
     };

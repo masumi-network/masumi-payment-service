@@ -278,6 +278,7 @@ export async function cancelRefundsV1() {
                   create: {
                     requestedAction:
                       PurchasingAction.UnSetRefundRequestedInitiated,
+                    inputHash: request.inputHash,
                   },
                 },
                 CurrentTransaction: {
@@ -338,6 +339,7 @@ export async function cancelRefundsV1() {
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:
                       'Cancelling refund failed: ' + errorToString(error),
+                    inputHash: request.inputHash,
                   },
                 },
                 SmartContractWallet: {

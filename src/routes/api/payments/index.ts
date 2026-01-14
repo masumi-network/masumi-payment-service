@@ -352,6 +352,16 @@ export const paymentResponseSchema = z
       .describe(
         'Optional metadata stored with the payment for additional context. Null if not provided',
       ),
+    ActionHistory: z
+      .array(
+        z.object({
+          id: z.string(),
+          createdAt: z.date(),
+          requestedAction: z.nativeEnum(PaymentAction),
+        }),
+      )
+      .optional()
+      .describe('History of previous NextAction states'),
   })
   .openapi('Payment');
 

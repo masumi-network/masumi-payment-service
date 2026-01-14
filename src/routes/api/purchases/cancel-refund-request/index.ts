@@ -10,6 +10,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { modifyPurchaseNextAction } from '@/utils/action-history';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -92,15 +93,18 @@ export const cancelPurchaseRefundRequestPost =
         );
       }
 
-      const result = await prisma.purchaseRequest.update({
-        where: { id: purchase.id },
-        data: {
-          NextAction: {
-            create: {
-              requestedAction: PurchasingAction.UnSetRefundRequestedRequested,
-            },
-          },
+      // Update NextAction with history tracking
+      await modifyPurchaseNextAction(
+        purchase.id,
+        PurchasingAction.UnSetRefundRequestedRequested,
+        {
+          inputHash: purchase.inputHash,
         },
+      );
+
+      // Fetch the updated purchase
+      const result = await prisma.purchaseRequest.findUnique({
+        where: { id: purchase.id },
         include: {
           NextAction: {
             select: {
@@ -145,6 +149,10 @@ export const cancelPurchaseRefundRequestPost =
           WithdrawnForBuyer: { select: { id: true, amount: true, unit: true } },
         },
       });
+
+      if (!result) {
+        throw createHttpError(500, 'Failed to fetch updated purchase');
+      }
 
       const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 
