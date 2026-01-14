@@ -2,7 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { logger } from '../logger';
 
 // Add timeout parameters to DATABASE_URL if not already present
-const getDatabaseUrlWithTimeouts = () => {
+// In Prisma 7, DATABASE_URL must be set via environment variable
+const setupDatabaseUrlWithTimeouts = () => {
   const baseUrl = process.env.DATABASE_URL!;
   const url = new URL(baseUrl);
   //override the db timeout parameters if they are not already set
@@ -18,16 +19,15 @@ const getDatabaseUrlWithTimeouts = () => {
   if (!url.searchParams.has('connect_timeout')) {
     url.searchParams.set('connect_timeout', '10');
   }
-  return url.toString();
+  // Update environment variable with timeout parameters
+  process.env.DATABASE_URL = url.toString();
 };
+
+// Setup database URL with timeouts before creating Prisma Client
+setupDatabaseUrlWithTimeouts();
 
 export const prisma = new PrismaClient({
   //log: ["query", "info", "warn", "error"]
-  datasources: {
-    db: {
-      url: getDatabaseUrlWithTimeouts(),
-    },
-  },
 });
 
 export async function cleanupDB() {
