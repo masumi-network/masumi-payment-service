@@ -406,6 +406,41 @@ export const recordBlockchainJourney = (
   });
 };
 
+// Prisma Data Transfer Metrics
+export const prismaDataTransferSize = meter.createHistogram(
+  'prisma_data_transfer_size_bytes',
+  {
+    description: 'Size of data transferred from Prisma queries in bytes',
+    unit: 'bytes',
+  },
+);
+
+export const prismaQueryCounter = meter.createCounter('prisma_queries_total', {
+  description: 'Total number of Prisma queries executed',
+});
+
+// Record Prisma data transfer size
+export const recordPrismaDataTransfer = (
+  model: string,
+  action: string,
+  sizeBytes: number,
+  rowCount?: number,
+  attributes: Record<string, string | number> = {},
+) => {
+  prismaDataTransferSize.record(sizeBytes, {
+    ...attributes,
+    model,
+    action,
+    ...(rowCount !== undefined && { row_count: rowCount }),
+  });
+
+  prismaQueryCounter.add(1, {
+    ...attributes,
+    model,
+    action,
+  });
+};
+
 // Custom span creation for detailed tracing (keeping for advanced usage)
 export const createCustomSpan = (
   name: string,

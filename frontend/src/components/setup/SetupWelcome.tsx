@@ -459,10 +459,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -814,18 +814,18 @@ function AddAiAgentScreen({
               : { name: 'Custom Agent', version: '1.0.0' },
           AgentPricing: data.isFree
             ? {
-                pricingType: 'Free',
-              }
+              pricingType: 'Free',
+            }
             : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getUsdmConfig(network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+              pricingType: 'Fixed',
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getUsdmConfig(network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            },
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
@@ -1334,8 +1334,8 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   return (
     <div className="min-h-screen flex flex-col w-full">
       <Header />
-      <main className="flex-1 container w-full max-w-[1200px] mx-auto py-32 px-4">
-        <div className="flex items-center justify-center min-h-[calc(100vh-200px)] overflow-y-auto">
+      <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
+        <div className="flex items-center justify-center ">
           {steps[currentStep]}
         </div>
       </main>
