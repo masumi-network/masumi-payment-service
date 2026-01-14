@@ -17,8 +17,9 @@ export class WebhookQueueService {
       data: payload,
     };
 
-    const batchSize = 50;
+    const batchSize = 20;
     let hasMore = true;
+    let cursorId: string | undefined = undefined;
     let totalQueued = 0;
 
     while (hasMore) {
@@ -40,12 +41,14 @@ export class WebhookQueueService {
         },
         orderBy: { id: 'asc' },
         take: batchSize,
-        skip: totalQueued,
+        cursor: cursorId ? { id: cursorId } : undefined,
       });
 
-      if (webhookEndpoints.length === 0) {
-        hasMore = false;
-        break;
+      if (webhookEndpoints.length != 0) {
+        const lastEndpoint: { id: string } =
+          webhookEndpoints[webhookEndpoints.length - 1];
+        cursorId = lastEndpoint.id;
+        totalQueued += webhookEndpoints.length;
       }
 
       const deliveries = webhookEndpoints.map(async (endpoint) => {
@@ -82,8 +85,6 @@ export class WebhookQueueService {
       });
 
       await Promise.allSettled(deliveries);
-
-      totalQueued += webhookEndpoints.length;
 
       if (webhookEndpoints.length < batchSize) {
         hasMore = false;
