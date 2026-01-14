@@ -209,6 +209,18 @@ export const PaymentSchema = {
             nullable: true,
             description: 'SHA256 hash of the result submitted by the seller (hex string)'
         },
+        nextActionLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the next action was last changed'
+        },
+        onChainStateOrResultLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the on-chain state or result was last changed'
+        },
+        nextActionOrOnChainStateOrResultLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the next action or on-chain state or result was last changed'
+        },
         inputHash: {
             type: 'string',
             nullable: true,
@@ -301,7 +313,7 @@ export const PaymentSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 previousOnChainState: {
@@ -350,7 +362,7 @@ export const PaymentSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -510,7 +522,7 @@ export const PaymentSchema = {
             description: 'Optional metadata stored with the payment for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'inputHash', 'totalBuyerCardanoFees', 'totalSellerCardanoFees', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
+    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'nextActionLastChangedAt', 'onChainStateOrResultLastChangedAt', 'nextActionOrOnChainStateOrResultLastChangedAt', 'inputHash', 'totalBuyerCardanoFees', 'totalSellerCardanoFees', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
 } as const;
 
 export const PurchaseSchema = {
@@ -566,6 +578,18 @@ export const PurchaseSchema = {
         totalSellerCardanoFees: {
             type: 'number',
             description: 'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)'
+        },
+        nextActionOrOnChainStateOrResultLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the next action or on-chain state or result was last changed'
+        },
+        nextActionLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the next action was last changed'
+        },
+        onChainStateOrResultLastChangedAt: {
+            type: 'string',
+            description: 'Timestamp when the on-chain state or result was last changed'
         },
         requestedById: {
             type: 'string',
@@ -645,7 +669,7 @@ export const PurchaseSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 fees: {
@@ -708,7 +732,7 @@ export const PurchaseSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -855,7 +879,7 @@ export const PurchaseSchema = {
             description: 'Optional metadata stored with the purchase for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'externalDisputeUnlockTime', 'totalBuyerCardanoFees', 'totalSellerCardanoFees', 'requestedById', 'onChainState', 'collateralReturnLovelace', 'cooldownTime', 'cooldownTimeOtherParty', 'inputHash', 'resultHash', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'PaidFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'SellerWallet', 'SmartContractWallet', 'metadata']
+    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'externalDisputeUnlockTime', 'totalBuyerCardanoFees', 'totalSellerCardanoFees', 'nextActionOrOnChainStateOrResultLastChangedAt', 'nextActionLastChangedAt', 'onChainStateOrResultLastChangedAt', 'requestedById', 'onChainState', 'collateralReturnLovelace', 'cooldownTime', 'cooldownTimeOtherParty', 'inputHash', 'resultHash', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'PaidFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'SellerWallet', 'SmartContractWallet', 'metadata']
 } as const;
 
 export const AgentMetadataSchema = {
@@ -1287,7 +1311,7 @@ export const RegistryEntrySchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'FailedViaManualReset', 'RolledBack'],
                     description: 'Current status of the transaction'
                 },
                 confirmations: {

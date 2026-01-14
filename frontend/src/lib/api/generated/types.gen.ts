@@ -166,6 +166,18 @@ export type Payment = {
      */
     resultHash: string | null;
     /**
+     * Timestamp when the next action was last changed
+     */
+    nextActionLastChangedAt: string;
+    /**
+     * Timestamp when the on-chain state or result was last changed
+     */
+    onChainStateOrResultLastChangedAt: string;
+    /**
+     * Timestamp when the next action or on-chain state or result was last changed
+     */
+    nextActionOrOnChainStateOrResultLastChangedAt: string;
+    /**
      * SHA256 hash of the input data for the payment (hex string)
      */
     inputHash: string | null;
@@ -242,7 +254,7 @@ export type Payment = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Previous on-chain state before this transaction
          */
@@ -279,7 +291,7 @@ export type Payment = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -448,6 +460,18 @@ export type Purchase = {
      */
     totalSellerCardanoFees: number;
     /**
+     * Timestamp when the next action or on-chain state or result was last changed
+     */
+    nextActionOrOnChainStateOrResultLastChangedAt: string;
+    /**
+     * Timestamp when the next action was last changed
+     */
+    nextActionLastChangedAt: string;
+    /**
+     * Timestamp when the on-chain state or result was last changed
+     */
+    onChainStateOrResultLastChangedAt: string;
+    /**
      * ID of the API key that created this purchase
      */
     requestedById: string;
@@ -515,7 +539,7 @@ export type Purchase = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -564,7 +588,7 @@ export type Purchase = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Fees of the transaction
          */
@@ -944,7 +968,7 @@ export type RegistryEntry = {
         /**
          * Current status of the transaction
          */
-        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+        status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
         /**
          * Number of block confirmations for this transaction. Null if not yet confirmed
          */
@@ -1841,6 +1865,18 @@ export type PostPaymentResponses = {
              */
             resultHash: string | null;
             /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
              * SHA256 hash of the input data for the payment (hex string)
              */
             inputHash: string | null;
@@ -1917,7 +1953,7 @@ export type PostPaymentResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2029,6 +2065,189 @@ export type PostPaymentResponses = {
 
 export type PostPaymentResponse = PostPaymentResponses[keyof PostPaymentResponses];
 
+export type GetPaymentDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff';
+};
+
+export type GetPaymentDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffResponse = GetPaymentDiffResponses[keyof GetPaymentDiffResponses];
+
+export type GetPaymentDiffNextActionData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff/next-action';
+};
+
+export type GetPaymentDiffNextActionErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffNextActionResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffNextActionResponse = GetPaymentDiffNextActionResponses[keyof GetPaymentDiffNextActionResponses];
+
+export type GetPaymentDiffOnchainStateOrResultData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of payments to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return payments whose selected status timestamp changed after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the payments
+         */
+        includeHistory?: string;
+    };
+    url: '/payment/diff/onchain-state-or-result';
+};
+
+export type GetPaymentDiffOnchainStateOrResultErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPaymentDiffOnchainStateOrResultResponses = {
+    /**
+     * Payment diff
+     */
+    200: {
+        status: string;
+        data: {
+            Payments: Array<Payment>;
+        };
+    };
+};
+
+export type GetPaymentDiffOnchainStateOrResultResponse = GetPaymentDiffOnchainStateOrResultResponses[keyof GetPaymentDiffOnchainStateOrResultResponses];
+
 export type PostPaymentSubmitResultData = {
     body?: {
         /**
@@ -2123,6 +2342,18 @@ export type PostPaymentSubmitResultResponses = {
              */
             resultHash: string | null;
             /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
              * SHA256 hash of the input data for the payment (hex string)
              */
             inputHash: string | null;
@@ -2199,7 +2430,7 @@ export type PostPaymentSubmitResultResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2401,6 +2632,18 @@ export type PostPaymentAuthorizeRefundResponses = {
              */
             resultHash: string | null;
             /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
              * SHA256 hash of the input data for the payment (hex string)
              */
             inputHash: string | null;
@@ -2477,7 +2720,7 @@ export type PostPaymentAuthorizeRefundResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Previous on-chain state before this transaction
                  */
@@ -2588,6 +2831,142 @@ export type PostPaymentAuthorizeRefundResponses = {
 };
 
 export type PostPaymentAuthorizeRefundResponse = PostPaymentAuthorizeRefundResponses[keyof PostPaymentAuthorizeRefundResponses];
+
+export type PostPaymentErrorStateRecoveryData = {
+    /**
+     * Payment error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the payment request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The time of the last update, to ensure you clear the correct error state
+         */
+        updatedAt: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/error-state-recovery/';
+};
+
+export type PostPaymentErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentErrorStateRecoveryError = PostPaymentErrorStateRecoveryErrors[keyof PostPaymentErrorStateRecoveryErrors];
+
+export type PostPaymentErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for payment request
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostPaymentErrorStateRecoveryResponse = PostPaymentErrorStateRecoveryResponses[keyof PostPaymentErrorStateRecoveryResponses];
+
+export type PostPurchaseErrorStateRecoveryData = {
+    /**
+     * Purchase error recovery request details
+     */
+    body?: {
+        /**
+         * The blockchain identifier of the purchase request
+         */
+        blockchainIdentifier: string;
+        /**
+         * The network the transaction was made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The time of the last update, to ensure you clear the correct error state
+         */
+        updatedAt: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/error-state-recovery/';
+};
+
+export type PostPurchaseErrorStateRecoveryErrors = {
+    /**
+     * Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)
+     */
+    400: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Purchase request not found
+     */
+    404: {
+        status: string;
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseErrorStateRecoveryError = PostPurchaseErrorStateRecoveryErrors[keyof PostPurchaseErrorStateRecoveryErrors];
+
+export type PostPurchaseErrorStateRecoveryResponses = {
+    /**
+     * Error state cleared successfully for purchase request
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type PostPurchaseErrorStateRecoveryResponse = PostPurchaseErrorStateRecoveryResponses[keyof PostPurchaseErrorStateRecoveryResponses];
 
 export type GetPurchaseData = {
     body?: never;
@@ -2751,6 +3130,189 @@ export type PostPurchaseResponses = {
 
 export type PostPurchaseResponse = PostPurchaseResponses[keyof PostPurchaseResponses];
 
+export type GetPurchaseDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff';
+};
+
+export type GetPurchaseDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffResponse = GetPurchaseDiffResponses[keyof GetPurchaseDiffResponses];
+
+export type GetPurchaseDiffNextActionData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff/next-action';
+};
+
+export type GetPurchaseDiffNextActionErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffNextActionResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffNextActionResponse = GetPurchaseDiffNextActionResponses[keyof GetPurchaseDiffNextActionResponses];
+
+export type GetPurchaseDiffOnchainStateOrResultData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of purchases to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return purchases whose selected status timestamp changed at/after this ISO timestamp
+         */
+        lastUpdate?: string;
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+        /**
+         * Whether to include the full transaction and status history of the purchases
+         */
+        includeHistory?: string;
+    };
+    url: '/purchase/diff/onchain-state-or-result';
+};
+
+export type GetPurchaseDiffOnchainStateOrResultErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetPurchaseDiffOnchainStateOrResultResponses = {
+    /**
+     * Purchase diff
+     */
+    200: {
+        status: string;
+        data: {
+            Purchases: Array<Purchase>;
+        };
+    };
+};
+
+export type GetPurchaseDiffOnchainStateOrResultResponse = GetPurchaseDiffOnchainStateOrResultResponses[keyof GetPurchaseDiffOnchainStateOrResultResponses];
+
 export type PostPurchaseRequestRefundData = {
     body?: {
         /**
@@ -2837,6 +3399,18 @@ export type PostPurchaseRequestRefundResponses = {
              */
             totalSellerCardanoFees: number;
             /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
              * ID of the API key that created this purchase
              */
             requestedById: string;
@@ -2904,7 +3478,7 @@ export type PostPurchaseRequestRefundResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Fees of the transaction
                  */
@@ -3075,6 +3649,18 @@ export type PostPurchaseCancelRefundRequestResponses = {
              */
             totalSellerCardanoFees: number;
             /**
+             * Timestamp when the next action or on-chain state or result was last changed
+             */
+            nextActionOrOnChainStateOrResultLastChangedAt: string;
+            /**
+             * Timestamp when the next action was last changed
+             */
+            nextActionLastChangedAt: string;
+            /**
+             * Timestamp when the on-chain state or result was last changed
+             */
+            onChainStateOrResultLastChangedAt: string;
+            /**
              * ID of the API key that created this purchase
              */
             requestedById: string;
@@ -3142,7 +3728,7 @@ export type PostPurchaseCancelRefundRequestResponses = {
                 /**
                  * Current status of the transaction
                  */
-                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'RolledBack';
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
                 /**
                  * Fees of the transaction
                  */
@@ -3602,6 +4188,63 @@ export type PostRegistryResponses = {
 
 export type PostRegistryResponse = PostRegistryResponses[keyof PostRegistryResponses];
 
+export type GetRegistryDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number of registry entries to return
+         */
+        limit?: number;
+        /**
+         * Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp
+         */
+        cursorId?: string;
+        /**
+         * Return registry entries whose registration state changed at/after this ISO timestamp
+         */
+        lastUpdate?: Date;
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/registry/diff';
+};
+
+export type GetRegistryDiffErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetRegistryDiffResponses = {
+    /**
+     * Agent metadata diff
+     */
+    200: {
+        status: string;
+        data: {
+            Assets: Array<RegistryEntry>;
+        };
+    };
+};
+
+export type GetRegistryDiffResponse = GetRegistryDiffResponses[keyof GetRegistryDiffResponses];
+
 export type PostRegistryDeregisterData = {
     body?: {
         /**
@@ -3996,6 +4639,558 @@ export type GetRpcApiKeysResponses = {
 };
 
 export type GetRpcApiKeysResponse = GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
+
+export type PostPurchaseSpendingData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get purchase spending for, if not provided, will return spending for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query spending from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/spending';
+};
+
+export type PostPurchaseSpendingErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no spendings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseSpendingResponses = {
+    /**
+     * Agent purchase spending analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalSpend: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailySpend: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlySpend: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPurchaseSpendingResponse = PostPurchaseSpendingResponses[keyof PostPurchaseSpendingResponses];
+
+export type PostPaymentIncomeData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get payment income for, if not provided, will return income for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query income from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/income';
+};
+
+export type PostPaymentIncomeErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no income data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentIncomeResponses = {
+    /**
+     * Agent payment income analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalIncome: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailyIncome: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyIncome: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPaymentIncomeResponse = PostPaymentIncomeResponses[keyof PostPaymentIncomeResponses];
+
+export type DeleteWebhooksData = {
+    /**
+     * Webhook deletion request
+     */
+    body?: {
+        /**
+         * The ID of the webhook to delete
+         */
+        webhookId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type DeleteWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden (only creator or admin can delete)
+     */
+    403: unknown;
+    /**
+     * Webhook endpoint not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type DeleteWebhooksResponses = {
+    /**
+     * Webhook endpoint deleted successfully
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            name: string | null;
+            deletedAt: string;
+        };
+    };
+};
+
+export type DeleteWebhooksResponse = DeleteWebhooksResponses[keyof DeleteWebhooksResponses];
+
+export type GetWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by payment source ID
+         */
+        paymentSourceId?: string | null;
+        /**
+         * Cursor ID to paginate through the results
+         */
+        cursorId?: string;
+        /**
+         * Number of webhooks to return
+         */
+        limit?: number;
+    };
+    url: '/webhooks/';
+};
+
+export type GetWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetWebhooksResponses = {
+    /**
+     * List of webhook endpoints
+     */
+    200: {
+        status: string;
+        data: {
+            webhooks: Array<{
+                id: string;
+                url: string;
+                events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                name: string | null;
+                isActive: boolean;
+                createdAt: string;
+                updatedAt: string;
+                paymentSourceId: string | null;
+                failureCount: number;
+                lastSuccessAt: string | null;
+                disabledAt: string | null;
+                createdBy: {
+                    apiKeyId: string;
+                    apiKeyToken: string;
+                } | null;
+            }>;
+        };
+    };
+};
+
+export type GetWebhooksResponse = GetWebhooksResponses[keyof GetWebhooksResponses];
+
+export type PostWebhooksData = {
+    /**
+     * Webhook registration details
+     */
+    body?: {
+        /**
+         * The webhook URL to receive notifications
+         */
+        url: string;
+        /**
+         * Authentication token for webhook requests
+         */
+        authToken: string;
+        /**
+         * Array of event types to subscribe to
+         */
+        events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        /**
+         * Human-readable name for the webhook
+         */
+        name?: string;
+        /**
+         * Optional: link webhook to specific payment source
+         */
+        paymentSourceId?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type PostWebhooksErrors = {
+    /**
+     * Bad Request (invalid webhook URL or configuration)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWebhooksResponses = {
+    /**
+     * Webhook endpoint registered successfully
+     */
+    201: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            name: string | null;
+            isActive: boolean;
+            createdAt: string;
+            paymentSourceId: string | null;
+        };
+    };
+};
+
+export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
 
 export type ClientOptions = {
     baseURL: `${string}://${string}` | (string & {});

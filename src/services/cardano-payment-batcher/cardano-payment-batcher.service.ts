@@ -88,7 +88,7 @@ async function executeSpecificBatchPayment(
   });
   logger.info('Batching payments, adding metadata');
   for (const data of batchedRequests) {
-    const buyerAddress = wallet.getUsedAddress().toBech32();
+    const buyerAddress = wallet.getUsedAddress().toBech32() as string;
     const sellerAddress = data.paymentRequest.SellerWallet.walletAddress;
     const submitResultTime = data.paymentRequest.submitResultTime;
     const unlockTime = data.paymentRequest.unlockTime;
@@ -138,7 +138,7 @@ async function executeSpecificBatchPayment(
       where: { id: request.paymentRequest.id },
       data: {
         NextAction: {
-          update: {
+          create: {
             requestedAction: PurchasingAction.FundsLockingInitiated,
           },
         },
@@ -488,7 +488,13 @@ export async function batchLatestPaymentEntriesV1() {
               dummyOutput.setDatum(
                 Datum.newInlineData(toPlutusData(tmpDatum.value)),
               );
-              const dummyCbor = dummyOutput.toCbor();
+              const dummyCbor: unknown = dummyOutput.toCbor();
+              if (typeof dummyCbor !== 'string') {
+                throw new TypeError(
+                  'Expected dummyOutput.toCbor() to return a string, got: ' +
+                    typeof dummyCbor,
+                );
+              }
               overestimatedMinUtxoCost =
                 BigInt(
                   defaultOverheadSize +
@@ -689,7 +695,7 @@ export async function batchLatestPaymentEntriesV1() {
                     where: { id: batchedRequest.paymentRequest.id },
                     data: {
                       NextAction: {
-                        update: {
+                        create: {
                           requestedAction:
                             PurchasingAction.WaitingForManualAction,
                           errorType: PurchaseErrorType.Unknown,
@@ -748,7 +754,7 @@ export async function batchLatestPaymentEntriesV1() {
                 where: { id: x.id },
                 data: {
                   NextAction: {
-                    update: {
+                    create: {
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.Unknown,
                       errorNote:

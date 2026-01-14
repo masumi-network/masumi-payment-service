@@ -7,7 +7,9 @@ import {
   deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
+import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
+import { getPaymentIncome } from './payments/income';
 import {
   deleteAgentRegistration,
   queryRegistryRequestGet,
@@ -37,6 +39,24 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './reveal-data';
+import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
+import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
+import { queryRegistryDiffGet } from './registry/diff';
+import {
+  registerWebhookPost,
+  listWebhooksGet,
+  deleteWebhookDelete,
+} from './webhooks';
+import {
+  queryPaymentDiffCombinedGet,
+  queryPaymentDiffNextActionGet,
+  queryPaymentDiffOnChainStateOrResultGet,
+} from './payments/diff';
+import {
+  queryPurchaseDiffCombinedGet,
+  queryPurchaseDiffNextActionGet,
+  queryPurchaseDiffOnChainStateOrResultGet,
+} from './purchases/diff';
 
 export const apiRouter: Routing = {
   v1: {
@@ -48,6 +68,16 @@ export const apiRouter: Routing = {
       get: queryPurchaseRequestGet,
       post: createPurchaseInitPost,
     }).nest({
+      diff: new DependsOnMethod({
+        get: queryPurchaseDiffCombinedGet,
+      }).nest({
+        'next-action': new DependsOnMethod({
+          get: queryPurchaseDiffNextActionGet,
+        }),
+        'onchain-state-or-result': new DependsOnMethod({
+          get: queryPurchaseDiffOnChainStateOrResultGet,
+        }),
+      }),
       'request-refund': new DependsOnMethod({
         post: requestPurchaseRefundPost,
       }),
@@ -57,11 +87,27 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePurchaseRequestPost,
       }),
+      'error-state-recovery': new DependsOnMethod({
+        post: purchaseErrorStateRecoveryPost,
+      }),
+      spending: new DependsOnMethod({
+        post: postPurchaseSpending,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
       post: paymentInitPost,
     }).nest({
+      diff: new DependsOnMethod({
+        get: queryPaymentDiffCombinedGet,
+      }).nest({
+        'next-action': new DependsOnMethod({
+          get: queryPaymentDiffNextActionGet,
+        }),
+        'onchain-state-or-result': new DependsOnMethod({
+          get: queryPaymentDiffOnChainStateOrResultGet,
+        }),
+      }),
       'authorize-refund': new DependsOnMethod({
         post: authorizePaymentRefundEndpointPost,
       }),
@@ -71,12 +117,21 @@ export const apiRouter: Routing = {
       'resolve-blockchain-identifier': new DependsOnMethod({
         post: resolvePaymentRequestPost,
       }),
+      'error-state-recovery': new DependsOnMethod({
+        post: paymentErrorStateRecoveryPost,
+      }),
+      income: new DependsOnMethod({
+        post: getPaymentIncome,
+      }),
     }),
     registry: new DependsOnMethod({
       get: queryRegistryRequestGet,
       post: registerAgentPost,
       delete: deleteAgentRegistration,
     }).nest({
+      diff: new DependsOnMethod({
+        get: queryRegistryDiffGet,
+      }),
       wallet: new DependsOnMethod({
         get: queryAgentFromWalletGet,
       }),
@@ -112,6 +167,11 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    webhooks: new DependsOnMethod({
+      get: listWebhooksGet,
+      post: registerWebhookPost,
+      delete: deleteWebhookDelete,
     }),
   },
 };

@@ -102,6 +102,15 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
     fetcher: blockchainProvider,
   });
   const redeemerData = generateRedeemerData(type);
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(
+    script,
+    convertNetworkToId(convertMeshNetworkToPrismaNetwork(network)),
+  );
+  if (typeof smartContractAddress !== 'string') {
+    throw new TypeError(
+      `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
+    );
+  }
 
   const deserializedAddress =
     txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
@@ -123,14 +132,8 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000')
-    .txOut(
-      resolvePlutusScriptAddress(
-        script,
-        convertNetworkToId(convertMeshNetworkToPrismaNetwork(network)),
-      ),
-      smartContractUtxo.output.amount,
-    )
+    .setTotalCollateral('3000000')
+    .txOut(smartContractAddress, smartContractUtxo.output.amount)
     .txOutInlineDatumValue(newInlineDatum);
 
   for (const utxo of walletUtxos) {
@@ -325,7 +328,7 @@ export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000')
+    .setTotalCollateral('3000000')
     .txOut(collection.collectionAddress, collection.collectAssets);
 
   for (const utxo of walletUtxos) {

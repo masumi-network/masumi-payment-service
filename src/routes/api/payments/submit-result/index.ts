@@ -105,7 +105,7 @@ export const submitPaymentResultEndpointPost =
         where: { id: payment.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PaymentAction.SubmitResultRequested,
               resultHash: input.submitResultHash,
             },

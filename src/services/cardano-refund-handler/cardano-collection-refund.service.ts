@@ -149,7 +149,7 @@ async function processSingleRefundCollection(
     unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
     5;
 
-  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
   if (collateralUtxo == null) {
     throw new Error('Collateral UTXO not found');
@@ -180,7 +180,7 @@ async function processSingleRefundCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PurchasingAction.WithdrawRefundInitiated,
           submittedTxHash: null,
         },
@@ -301,7 +301,7 @@ export async function collectRefundV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
                     errorNote:
