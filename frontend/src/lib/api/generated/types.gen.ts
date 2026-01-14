@@ -5074,6 +5074,10 @@ export type GetWebhooksData = {
          */
         paymentSourceId?: string | null;
         /**
+         * Cursor ID to paginate through the results
+         */
+        cursorId?: string;
+        /**
          * Number of webhooks to return
          */
         limit?: number;

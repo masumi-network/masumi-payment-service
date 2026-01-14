@@ -12036,6 +12036,16 @@
                     },
                     {
                         "schema": {
+                            "type": "string",
+                            "description": "Cursor ID to paginate through the results"
+                        },
+                        "required": false,
+                        "description": "Cursor ID to paginate through the results",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
                             "type": "number",
                             "minimum": 1,
                             "maximum": 50,
