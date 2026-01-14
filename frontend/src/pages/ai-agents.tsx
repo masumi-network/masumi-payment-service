@@ -516,7 +516,7 @@ export default function AIAgentsPage() {
                             <div key={index} className="whitespace-nowrap">
                               {price.unit === 'lovelace' || !price.unit
                                 ? `${useFormatPrice(price.amount)} ADA`
-                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                             </div>
                           ))}
                       </td>

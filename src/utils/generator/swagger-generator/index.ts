@@ -23,11 +23,19 @@ import {
 } from '@/routes/api/payments';
 import { queryPaymentDiffSchemaInput } from '@/routes/api/payments/diff';
 import {
+  postPaymentIncomeSchemaInput,
+  postPaymentIncomeSchemaOutput,
+} from '@/routes/api/payments/income';
+import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
   queryPurchaseRequestSchemaInput,
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
+import {
+  postPurchaseSpendingSchemaInput,
+  postPurchaseSpendingSchemaOutput,
+} from '@/routes/api/purchases/spending';
 import {
   queryRegistryRequestSchemaInput,
   queryRegistryRequestSchemaOutput,
@@ -2470,7 +2478,6 @@ export function generateOpenAPI() {
     },
   });
 
-  /********************* PAYMENT CONTRACT *****************************/
   registry.registerPath({
     method: 'get',
     path: '/payment-source/',
@@ -2927,6 +2934,292 @@ export function generateOpenAPI() {
             }),
           },
         },
+      },
+    },
+  });
+
+  /********************* PURCHASE SPENDINGS *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/purchase/spending',
+    description:
+      'Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.',
+    summary: 'Get agent purchase spending analytics. (READ access required)',
+    tags: ['purchase-spending'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPurchaseSpendingSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Agent purchase spending analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postPurchaseSpendingSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalSpend: {
+                      units: [
+                        {
+                          unit: '',
+                          amount: 47500000,
+                        },
+                      ],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [
+                        {
+                          unit: '',
+                          amount: 2500000,
+                        },
+                      ],
+                      blockchainFees: 100000,
+                    },
+                    totalPending: {
+                      units: [],
+                      blockchainFees: 0,
+                    },
+                    dailySpend: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 2100000,
+                          },
+                        ],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    dailyRefunded: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 0,
+                          },
+                        ],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    dailyPending: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 0,
+                          },
+                        ],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlySpend: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 2100000,
+                          },
+                        ],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    monthlyRefunded: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [],
+                        blockchainFees: 0,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no spendings data available',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* PAYMENT INCOME *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/payment/income',
+    description:
+      'Get payment income analytics for Payment Request transactions, over specified time periods.',
+    summary: 'Get payment income analytics. (READ access required)',
+    tags: ['payment-income'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPaymentIncomeSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Agent payment income analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postPaymentIncomeSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalIncome: {
+                      units: [{ unit: '', amount: 45000000 }],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [{ unit: '', amount: 5000000 }],
+                      blockchainFees: 400000,
+                    },
+                    totalPending: {
+                      units: [{ unit: '', amount: 2000000 }],
+                      blockchainFees: 100000,
+                    },
+                    dailyIncome: [
+                      {
+                        day: 10,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 2000000 }],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    dailyRefunded: [
+                      {
+                        day: 12,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 500000 }],
+                        blockchainFees: 20000,
+                      },
+                    ],
+                    dailyPending: [
+                      {
+                        day: 15,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 500000 }],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlyIncome: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 45000000 }],
+                        blockchainFees: 2500000,
+                      },
+                    ],
+                    monthlyRefunded: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 5000000 }],
+                        blockchainFees: 400000,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 2000000 }],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no income data available',
+      },
+      500: {
+        description: 'Internal Server Error',
       },
     },
   });
