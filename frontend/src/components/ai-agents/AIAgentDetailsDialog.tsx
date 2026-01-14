@@ -7,15 +7,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
+import {
+  cn,
+  shortenAddress,
+  handleApiCall,
+  getExplorerUrl,
+  formatFundUnit,
+} from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
   PaymentSourceExtended,
   postRegistryDeregister,
 } from '@/lib/api/generated';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
-import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
+import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
@@ -28,7 +33,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -332,21 +337,11 @@ export function AIAgentDetailsDialog({
                                   )}
                                 >
                                   <span className="text-sm text-muted-foreground">
-                                    Price (
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? 'ADA'
-                                      : price.unit ===
-                                          getUsdmConfig(network).fullAssetId
-                                        ? 'USDM'
-                                        : price.unit === TESTUSDM_CONFIG.unit
-                                          ? 'tUSDM'
-                                          : price.unit}
+                                    Price ({formatFundUnit(price.unit, network)}
                                     )
                                   </span>
                                   <span className="font-medium">
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? `${useFormatPrice(price.amount)} ADA`
-                                      : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                    {`${useFormatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
                                   </span>
                                 </div>
                               ),

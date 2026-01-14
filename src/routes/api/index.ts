@@ -7,7 +7,9 @@ import {
   deleteAPIKeyEndpointDelete,
 } from './api-key';
 import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
+import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
+import { getPaymentIncome } from './payments/income';
 import {
   deleteAgentRegistration,
   queryRegistryRequestGet,
@@ -40,6 +42,11 @@ import { revealDataEndpointPost } from './reveal-data';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
+import {
+  registerWebhookPost,
+  listWebhooksGet,
+  deleteWebhookDelete,
+} from './webhooks';
 import {
   queryPaymentDiffCombinedGet,
   queryPaymentDiffNextActionGet,
@@ -83,6 +90,9 @@ export const apiRouter: Routing = {
       'error-state-recovery': new DependsOnMethod({
         post: purchaseErrorStateRecoveryPost,
       }),
+      spending: new DependsOnMethod({
+        post: postPurchaseSpending,
+      }),
     }),
     payment: new DependsOnMethod({
       get: queryPaymentEntryGet,
@@ -109,6 +119,9 @@ export const apiRouter: Routing = {
       }),
       'error-state-recovery': new DependsOnMethod({
         post: paymentErrorStateRecoveryPost,
+      }),
+      income: new DependsOnMethod({
+        post: getPaymentIncome,
       }),
     }),
     registry: new DependsOnMethod({
@@ -154,6 +167,11 @@ export const apiRouter: Routing = {
     }),
     'payment-source': new DependsOnMethod({
       get: paymentSourceEndpointGet,
+    }),
+    webhooks: new DependsOnMethod({
+      get: listWebhooksGet,
+      post: registerWebhookPost,
+      delete: deleteWebhookDelete,
     }),
   },
 };

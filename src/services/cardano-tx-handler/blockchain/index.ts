@@ -110,6 +110,10 @@ export async function getExtendedTxInformation(
       i * maxTransactionToProcessInParallel,
       Math.min((i + 1) * maxTransactionToProcessInParallel, latestTxs.length),
     );
+    logger.info(
+      'Processing tx batch ' + i.toString() + ' of ' + batchCount.toString(),
+      {},
+    );
 
     const txDataBatch = await advancedRetryAll({
       operations: txBatch.map((tx) => async () => {
@@ -165,7 +169,7 @@ export async function getExtendedTxInformation(
     //log warning for failed operations
     const failedTxData = txDataBatch.filter((x) => x.success == false);
     if (failedTxData.length > 0) {
-      logger.warn('Failed to get data for transactions: ignoring ', {
+      logger.error('Failed to get data for transactions: ignoring ', {
         tx: failedTxData,
       });
     }
@@ -226,7 +230,7 @@ export async function getTxsFromCardanoAfterSpecificTx(
         foundTx = rollbackInfo.foundIndex;
         latestTx = latestTx.slice(0, rollbackInfo.foundIndex);
       }
-    } else {
+    } else if (index % 10 == 0) {
       logger.info(
         'Full sync in progress, processing tx page ' + index.toString(),
         {

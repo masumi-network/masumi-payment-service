@@ -988,6 +988,63 @@ export type RegistryEntry = {
     } | null;
 };
 
+export type AdminWallet = {
+    /**
+     * Cardano address of the admin wallet
+     */
+    walletAddress: string;
+    /**
+     * Order/index of this admin wallet
+     */
+    order: number;
+};
+
+export type PurchasingWallet = {
+    /**
+     * Unique identifier for the purchasing wallet
+     */
+    id: string;
+    /**
+     * Payment key hash of the purchasing wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the purchasing wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+};
+
+export type SellingWallet = {
+    /**
+     * Unique identifier for the selling wallet
+     */
+    id: string;
+    /**
+     * Payment key hash of the selling wallet
+     */
+    walletVkey: string;
+    /**
+     * Cardano address of the selling wallet
+     */
+    walletAddress: string;
+    /**
+     * Optional collection address for this wallet. Null if not set
+     */
+    collectionAddress: string | null;
+    /**
+     * Optional note about this wallet. Null if not set
+     */
+    note: string | null;
+};
+
 export type PaymentSource = {
     /**
      * Unique identifier for the payment source
@@ -1024,66 +1081,15 @@ export type PaymentSource = {
     /**
      * List of admin wallets for dispute resolution
      */
-    AdminWallets: Array<{
-        /**
-         * Cardano address of the admin wallet
-         */
-        walletAddress: string;
-        /**
-         * Order/index of this admin wallet
-         */
-        order: number;
-    }>;
+    AdminWallets: Array<AdminWallet>;
     /**
      * List of wallets used for purchasing (buyer side)
      */
-    PurchasingWallets: Array<{
-        /**
-         * Unique identifier for the purchasing wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the purchasing wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the purchasing wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-    }>;
+    PurchasingWallets: Array<PurchasingWallet>;
     /**
      * List of wallets used for selling (seller side)
      */
-    SellingWallets: Array<{
-        /**
-         * Unique identifier for the selling wallet
-         */
-        id: string;
-        /**
-         * Payment key hash of the selling wallet
-         */
-        walletVkey: string;
-        /**
-         * Cardano address of the selling wallet
-         */
-        walletAddress: string;
-        /**
-         * Optional collection address for this wallet. Null if not set
-         */
-        collectionAddress: string | null;
-        /**
-         * Optional note about this wallet. Null if not set
-         */
-        note: string | null;
-    }>;
+    SellingWallets: Array<SellingWallet>;
     /**
      * Wallet that receives network fees from transactions
      */
@@ -1227,6 +1233,17 @@ export type PaymentSourceExtended = {
     feeRatePermille: number;
 };
 
+export type UtxoAmount = {
+    /**
+     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+     */
+    unit: string;
+    /**
+     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     */
+    quantity: number | null;
+};
+
 export type Utxo = {
     /**
      * Transaction hash containing this UTXO
@@ -1239,16 +1256,7 @@ export type Utxo = {
     /**
      * List of assets and amounts in this UTXO
      */
-    Amounts: Array<{
-        /**
-         * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
-         */
-        unit: string;
-        /**
-         * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
-         */
-        quantity: number | null;
-    }>;
+    Amounts: Array<UtxoAmount>;
     /**
      * Hash of the datum attached to this UTXO. Null if no datum
      */
@@ -4639,6 +4647,558 @@ export type GetRpcApiKeysResponses = {
 };
 
 export type GetRpcApiKeysResponse = GetRpcApiKeysResponses[keyof GetRpcApiKeysResponses];
+
+export type PostPurchaseSpendingData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get purchase spending for, if not provided, will return spending for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for spendings calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for spendings calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query spending from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/purchase/spending';
+};
+
+export type PostPurchaseSpendingErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no spendings data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPurchaseSpendingResponses = {
+    /**
+     * Agent purchase spending analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalSpend: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailySpend: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlySpend: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPurchaseSpendingResponse = PostPurchaseSpendingResponses[keyof PostPurchaseSpendingResponses];
+
+export type PostPaymentIncomeData = {
+    body?: {
+        /**
+         * The unique identifier of the agent to get payment income for, if not provided, will return income for all agents
+         */
+        agentIdentifier: string | null;
+        /**
+         * Start date for income calculation (date format: 2024-01-01). If null, uses earliest available data. If provided, will be converted to the local time zone of the user
+         */
+        startDate?: Date | unknown;
+        /**
+         * End date for income calculation (date format: 2024-01-31). If null, uses current date. If provided, will be converted to the local time zone of the user
+         */
+        endDate?: Date | unknown;
+        /**
+         * The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+         */
+        timeZone?: string;
+        /**
+         * The Cardano network to query income from
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    path?: never;
+    query?: never;
+    url: '/payment/income';
+};
+
+export type PostPaymentIncomeErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent not found or no income data available
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostPaymentIncomeResponses = {
+    /**
+     * Agent payment income analytics
+     */
+    200: {
+        status: string;
+        data: {
+            agentIdentifier: string | null;
+            periodStart: string;
+            periodEnd: string;
+            totalTransactions: number;
+            totalIncome: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalRefunded: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            totalPending: {
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            };
+            dailyIncome: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyRefunded: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            dailyPending: Array<{
+                /**
+                 * The day of the month
+                 */
+                day: number;
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyIncome: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyRefunded: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+            monthlyPending: Array<{
+                /**
+                 * The month
+                 */
+                month: number;
+                /**
+                 * The year
+                 */
+                year: number;
+                units: Array<{
+                    unit: string;
+                    amount: number;
+                }>;
+                blockchainFees: number;
+            }>;
+        };
+    };
+};
+
+export type PostPaymentIncomeResponse = PostPaymentIncomeResponses[keyof PostPaymentIncomeResponses];
+
+export type DeleteWebhooksData = {
+    /**
+     * Webhook deletion request
+     */
+    body?: {
+        /**
+         * The ID of the webhook to delete
+         */
+        webhookId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type DeleteWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden (only creator or admin can delete)
+     */
+    403: unknown;
+    /**
+     * Webhook endpoint not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type DeleteWebhooksResponses = {
+    /**
+     * Webhook endpoint deleted successfully
+     */
+    200: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            name: string | null;
+            deletedAt: string;
+        };
+    };
+};
+
+export type DeleteWebhooksResponse = DeleteWebhooksResponses[keyof DeleteWebhooksResponses];
+
+export type GetWebhooksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by payment source ID
+         */
+        paymentSourceId?: string | null;
+        /**
+         * Cursor ID to paginate through the results
+         */
+        cursorId?: string;
+        /**
+         * Number of webhooks to return
+         */
+        limit?: number;
+    };
+    url: '/webhooks/';
+};
+
+export type GetWebhooksErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetWebhooksResponses = {
+    /**
+     * List of webhook endpoints
+     */
+    200: {
+        status: string;
+        data: {
+            webhooks: Array<{
+                id: string;
+                url: string;
+                events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+                name: string | null;
+                isActive: boolean;
+                createdAt: string;
+                updatedAt: string;
+                paymentSourceId: string | null;
+                failureCount: number;
+                lastSuccessAt: string | null;
+                disabledAt: string | null;
+                createdBy: {
+                    apiKeyId: string;
+                    apiKeyToken: string;
+                } | null;
+            }>;
+        };
+    };
+};
+
+export type GetWebhooksResponse = GetWebhooksResponses[keyof GetWebhooksResponses];
+
+export type PostWebhooksData = {
+    /**
+     * Webhook registration details
+     */
+    body?: {
+        /**
+         * The webhook URL to receive notifications
+         */
+        url: string;
+        /**
+         * Authentication token for webhook requests
+         */
+        authToken: string;
+        /**
+         * Array of event types to subscribe to
+         */
+        events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+        /**
+         * Human-readable name for the webhook
+         */
+        name?: string;
+        /**
+         * Optional: link webhook to specific payment source
+         */
+        paymentSourceId?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/webhooks/';
+};
+
+export type PostWebhooksErrors = {
+    /**
+     * Bad Request (invalid webhook URL or configuration)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWebhooksResponses = {
+    /**
+     * Webhook endpoint registered successfully
+     */
+    201: {
+        status: string;
+        data: {
+            id: string;
+            url: string;
+            events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR'>;
+            name: string | null;
+            isActive: boolean;
+            createdAt: string;
+            paymentSourceId: string | null;
+        };
+    };
+};
+
+export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
 
 export type ClientOptions = {
     baseURL: `${string}://${string}` | (string & {});

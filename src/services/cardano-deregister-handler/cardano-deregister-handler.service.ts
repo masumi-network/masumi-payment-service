@@ -127,7 +127,7 @@ export async function deRegisterAgentV1() {
 
             const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
 
-            const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+            const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
             const collateralUtxo = limitedFilteredUtxos[0];
             if (collateralUtxo == null) {
               throw new Error('Collateral UTXO not found');
@@ -282,7 +282,7 @@ async function generateDeregisterAgentTransaction(
       collateralUtxo.input.txHash,
       collateralUtxo.input.outputIndex,
     )
-    .setTotalCollateral('5000000');
+    .setTotalCollateral('3000000');
   for (const utxo of utxos) {
     txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
   }

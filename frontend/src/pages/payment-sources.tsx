@@ -13,7 +13,6 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
   patchPaymentSourceExtended,
-  GetPaymentSourceResponses,
   PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -132,25 +131,15 @@ function UpdatePaymentSourceDialog({
   );
 }
 
-type PaymentSource =
-  GetPaymentSourceResponses['200']['data']['PaymentSources'][0] & {
-    PaymentSourceConfig?: {
-      rpcProviderApiKey: string;
-      rpcProvider: 'Blockfrost';
-    };
-  };
-
 export default function PaymentSourcesPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [sourceToDelete, setSourceToDelete] = useState<PaymentSource | null>(
-    null,
-  );
-  const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSource | null>(
-    null,
-  );
+  const [sourceToDelete, setSourceToDelete] =
+    useState<PaymentSourceExtended | null>(null);
+  const [sourceToUpdate, setSourceToUpdate] =
+    useState<PaymentSourceExtended | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const {
     apiClient,
@@ -159,7 +148,7 @@ export default function PaymentSourcesPage() {
     setSelectedPaymentSourceId,
   } = useAppContext();
   const [filteredPaymentSources, setFilteredPaymentSources] = useState<
-    PaymentSource[]
+    PaymentSourceExtended[]
   >([]);
 
   const {
@@ -176,10 +165,10 @@ export default function PaymentSourcesPage() {
   }, [ps, network]);
 
   const [sourceToSelect, setSourceToSelect] = useState<
-    PaymentSource | undefined
+    PaymentSourceExtended | undefined
   >(undefined);
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
-    useState<PaymentSource | null>(null);
+    useState<PaymentSourceExtended | null>(null);
 
   const filterPaymentSources = useCallback(() => {
     let filtered = [...paymentSources];

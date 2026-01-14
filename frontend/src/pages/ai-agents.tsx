@@ -14,7 +14,7 @@ import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteRegistry,
-  GetRegistryResponses,
+  RegistryEntry,
   PaymentSourceExtended,
   postRegistryDeregister,
 } from '@/lib/api/generated';
@@ -37,7 +37,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
   switch (status) {
@@ -516,7 +516,7 @@ export default function AIAgentsPage() {
                             <div key={index} className="whitespace-nowrap">
                               {price.unit === 'lovelace' || !price.unit
                                 ? `${useFormatPrice(price.amount)} ADA`
-                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
+                                : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? (network === 'Mainnet' ? 'USDM' : 'tUSDM') : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
                             </div>
                           ))}
                       </td>

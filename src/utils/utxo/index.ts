@@ -1,5 +1,4 @@
 import { UTxO } from '@meshsdk/core';
-import { SERVICE_CONSTANTS } from '@/utils/config';
 
 /**
  * Sorts UTXOs by lovelace amount in descending order (O(n log n))
@@ -21,20 +20,62 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
     .map((item) => item.utxo);
 }
 
+function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
+  return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
+}
+
+function filterUtxosByRequiredLovelace(
+  utxos: UTxO[],
+  requiredLovelace: number,
+): UTxO[] {
+  return utxos.filter((utxo) => {
+    const lovelace = parseInt(
+      utxo.output.amount.find(
+        (asset) => asset.unit === 'lovelace' || asset.unit === '',
+      )?.quantity ?? '0',
+    );
+    return lovelace >= requiredLovelace;
+  });
+}
 /**
  * Limits UTXOs to maximum count for transaction size optimization
  */
-export function limitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
-  const limit = maxCount ?? SERVICE_CONSTANTS.TRANSACTION.maxUtxos;
-  return utxos.slice(0, Math.min(limit, utxos.length));
+export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
+  const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 3000000);
+  if (filteredUtxos.length === 0) {
+    throw new Error('No suitable UTXOs found');
+  }
+  const selectedUtxos = [];
+  let accumulatedLovelace = 0;
+  for (const utxo of filteredUtxos) {
+    if (accumulatedLovelace > requiredLovelace) {
+      break;
+    }
+    const utxoLovelace = parseInt(
+      utxo.output.amount.find(
+        (asset) => asset.unit === 'lovelace' || asset.unit === '',
+      )?.quantity ?? '0',
+    );
+    accumulatedLovelace += utxoLovelace;
+    selectedUtxos.push(utxo);
+  }
+  return selectedUtxos;
 }
 
 /**
  * Combined function: sort and limit UTXOs in one operation
  */
-export function sortAndLimitUtxos(utxos: UTxO[], maxCount?: number): UTxO[] {
-  const sortedUtxos = sortUtxosByLovelaceDesc(utxos);
-  return limitUtxos(sortedUtxos, maxCount);
+export function sortAndLimitUtxos(
+  utxos: UTxO[],
+  requiredLovelace: number,
+): UTxO[] {
+  const sortedUtxos = sortUtxosByBloatAsc(utxos);
+
+  const limitedUtxos = limitUtxos(sortedUtxos, requiredLovelace);
+  if (limitedUtxos.length === 0) {
+    throw new Error('No suitable UTXOs found');
+  }
+  return limitedUtxos;
 }
 
 /**

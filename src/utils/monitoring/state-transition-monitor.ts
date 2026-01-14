@@ -5,6 +5,7 @@ import {
   recordBlockchainJourney,
 } from '@/utils/metrics';
 import { PurchasingAction, PaymentAction } from '@prisma/client';
+import { webhookEventsService } from '@/services/webhook-handler/webhook-events.service';
 
 interface StateTransitionHistory {
   entityType: 'registration' | 'purchase' | 'payment';
@@ -166,6 +167,18 @@ export class StateTransitionMonitor {
           toState: currentState.state,
           duration: `${duration}ms`,
         });
+
+        // Trigger webhook for purchase state change
+        try {
+          await webhookEventsService.triggerPurchaseOnChainStatusChanged(
+            purchase.id,
+          );
+        } catch (error) {
+          logger.error('Failed to trigger purchase webhook', {
+            purchaseId: purchase.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
       }
 
       if (
@@ -236,6 +249,18 @@ export class StateTransitionMonitor {
           toState: currentState.state,
           duration: `${duration}ms`,
         });
+
+        // Trigger webhook for payment state change
+        try {
+          await webhookEventsService.triggerPaymentOnChainStatusChanged(
+            payment.id,
+          );
+        } catch (error) {
+          logger.error('Failed to trigger payment webhook', {
+            paymentId: payment.id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
       }
     }
   }
