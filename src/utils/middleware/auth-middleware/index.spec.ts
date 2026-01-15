@@ -20,7 +20,6 @@ describe('authMiddleware', () => {
       testMiddleware({
         middleware: authMiddleware(Permission.Read),
         requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, no authentication token provided');
   });
@@ -29,7 +28,6 @@ describe('authMiddleware', () => {
       testMiddleware({
         middleware: authMiddleware(Permission.ReadAndPay),
         requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, no authentication token provided');
   });
@@ -38,7 +36,6 @@ describe('authMiddleware', () => {
       testMiddleware({
         middleware: authMiddleware(Permission.Admin),
         requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, no authentication token provided');
   });
@@ -54,7 +51,6 @@ describe('authMiddleware', () => {
           body: {},
           headers: { token: 'invalid' },
         },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, invalid authentication token provided');
   });
@@ -70,7 +66,6 @@ describe('authMiddleware', () => {
           body: {},
           headers: { token: 'invalid' },
         },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, invalid authentication token provided');
   });
@@ -86,7 +81,6 @@ describe('authMiddleware', () => {
           body: {},
           headers: { token: 'invalid' },
         },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, invalid authentication token provided');
   });
@@ -104,7 +98,6 @@ describe('authMiddleware', () => {
       testMiddleware({
         middleware: authMiddleware(Permission.ReadAndPay),
         requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, payment access required');
   });
@@ -122,7 +115,6 @@ describe('authMiddleware', () => {
       testMiddleware({
         middleware: authMiddleware(Permission.Admin),
         requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-        options: {},
       }),
     ).rejects.toThrow('Unauthorized, admin access required');
   });
@@ -141,7 +133,6 @@ describe('authMiddleware', () => {
     const { output } = await testMiddleware({
       middleware: authMiddleware(Permission.Read),
       requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
     });
 
     expect(output).toEqual({
@@ -166,7 +157,6 @@ describe('authMiddleware', () => {
     const { output } = await testMiddleware({
       middleware: authMiddleware(Permission.ReadAndPay),
       requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
     });
 
     expect(output).toEqual({
@@ -190,7 +180,6 @@ describe('authMiddleware', () => {
     const { output } = await testMiddleware({
       middleware: authMiddleware(Permission.Admin),
       requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
     });
 
     expect(output).toEqual({
@@ -214,7 +203,6 @@ describe('authMiddleware', () => {
     const { output } = await testMiddleware({
       middleware: authMiddleware(Permission.ReadAndPay),
       requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
     });
 
     expect(output).toEqual({

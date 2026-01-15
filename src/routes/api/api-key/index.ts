@@ -9,8 +9,8 @@ import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -89,8 +89,8 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 export const addAPIKeySchemaInput = z.object({
   usageLimited: z
     .string()
-    .transform((s) => (s.toLowerCase() == 'true' ? true : false))
     .default('true')
+    .transform((s) => (s.toLowerCase() == 'true' ? true : false))
     .describe(
       'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
     ),
