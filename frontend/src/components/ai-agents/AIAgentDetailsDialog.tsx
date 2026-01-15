@@ -20,7 +20,7 @@ import {
   PaymentSourceExtended,
   postRegistryDeregister,
 } from '@/lib/api/generated';
-import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
+import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
@@ -33,7 +33,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;

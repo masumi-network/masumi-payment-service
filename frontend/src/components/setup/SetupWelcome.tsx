@@ -1334,8 +1334,8 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   return (
     <div className="min-h-screen flex flex-col w-full">
       <Header />
-      <main className="flex-1 container w-full max-w-[1200px] mx-auto py-32 px-4">
-        <div className="flex items-center justify-center min-h-[calc(100vh-200px)] overflow-y-auto">
+      <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
+        <div className="flex items-center justify-center ">
           {steps[currentStep]}
         </div>
       </main>

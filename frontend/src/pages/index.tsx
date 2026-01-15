@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronRight, Plus } from 'lucide-react';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
-import { GetRegistryResponses } from '@/lib/api/generated';
+import { RegistryEntry } from '@/lib/api/generated';
 import { useAgents } from '@/lib/queries/useAgents';
 import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
 import { useQueryClient } from '@tanstack/react-query';
@@ -30,7 +30,7 @@ import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 export const getStaticProps: GetStaticProps = async () => {
   return {

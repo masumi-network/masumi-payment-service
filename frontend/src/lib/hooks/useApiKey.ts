@@ -1,10 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getApiKey, GetApiKeyResponses } from '@/lib/api/generated';
+import { getApiKey, ApiKey } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
-
-type ApiKey = GetApiKeyResponses['200']['data']['ApiKeys'][0];
 
 const PAGE_SIZE = 20;
 

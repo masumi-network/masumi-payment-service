@@ -14,7 +14,7 @@ import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteRegistry,
-  GetRegistryResponses,
+  RegistryEntry,
   PaymentSourceExtended,
   postRegistryDeregister,
 } from '@/lib/api/generated';
@@ -37,7 +37,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
   switch (status) {

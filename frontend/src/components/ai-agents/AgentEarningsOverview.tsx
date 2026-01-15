@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   getPayment,
-  GetPaymentResponses,
+  Payment,
   PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
@@ -69,7 +69,7 @@ export function AgentEarningsOverview({
             })();
 
       // Filter transactions by agent identifier and last 30 days
-      const allPayments: GetPaymentResponses['200']['data']['Payments'] = [];
+      const allPayments: Payment[] = [];
       let morePages = true;
       while (morePages) {
         // Fetch all payments for this agent

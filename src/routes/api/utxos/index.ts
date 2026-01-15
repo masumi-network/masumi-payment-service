@@ -33,28 +33,31 @@ export const getUTXOSchemaInput = z.object({
     .describe('The order to get the UTXOs in'),
 });
 
+// Standalone UTXO amount schema
+export const utxoAmountSchema = z
+  .object({
+    unit: z
+      .string()
+      .describe(
+        'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+      ),
+    quantity: z
+      .number({ coerce: true })
+      .int()
+      .min(0)
+      .max(100000000000000)
+      .describe(
+        'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+      ),
+  })
+  .openapi('UtxoAmount');
+
 export const utxoOutputSchema = z
   .object({
     txHash: z.string().describe('Transaction hash containing this UTXO'),
     address: z.string().describe('Cardano address holding this UTXO'),
     Amounts: z
-      .array(
-        z.object({
-          unit: z
-            .string()
-            .describe(
-              'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-            ),
-          quantity: z
-            .number({ coerce: true })
-            .int()
-            .min(0)
-            .max(100000000000000)
-            .describe(
-              'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-            ),
-        }),
-      )
+      .array(utxoAmountSchema)
       .describe('List of assets and amounts in this UTXO'),
     dataHash: z
       .string()
