@@ -13,7 +13,7 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { ez } from 'express-zod-api';
-import cuid2 from '@paralleldrive/cuid2';
+import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
@@ -762,7 +762,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     if (sellingWallet == null) {
       throw createHttpError(404, 'Selling wallet not found');
     }
-    const sellerCUID = cuid2.createId();
+    const sellerCUID = createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
