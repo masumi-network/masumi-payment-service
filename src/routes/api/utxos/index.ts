@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { $Enums, Network } from '@prisma/client';
+import { $Enums, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { errorToString } from 'advanced-retry';

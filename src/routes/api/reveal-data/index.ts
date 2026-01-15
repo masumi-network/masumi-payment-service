@@ -1,7 +1,7 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { $Enums } from '@prisma/client';
+import { $Enums } from '@/generated/prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';

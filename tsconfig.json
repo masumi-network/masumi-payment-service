@@ -14,10 +14,22 @@
     "strict": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@/*": ["src/*"],
-      "@smart-contracts/*": ["smart-contracts/*"]
+      "@/*": [
+        "src/*"
+      ],
+      "@smart-contracts/*": [
+        "smart-contracts/*"
+      ]
     }
   },
-  "include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src/**/*.ts",
+    "src/generated/**/*.ts",
+    "smart-contracts/**/plutus.json",
+    "tests/**/*.ts",
+    "jest.e2e.config.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

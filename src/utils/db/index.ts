@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { logger } from '../logger';
 import { recordPrismaDataTransfer } from '../metrics';
 
@@ -90,14 +91,14 @@ const countRows = (result: unknown): number => {
   return result !== null && result !== undefined ? 1 : 0;
 };
 
-// Create Prisma client with data transfer measurement middleware
+// Create Prisma adapter for PostgreSQL (Prisma v7 requirement)
+const adapter = new PrismaPg({
+  connectionString: getDatabaseUrlWithTimeouts(),
+});
+
+// Create Prisma client with driver adapter
 const basePrisma = new PrismaClient({
-  //log: ["query", "info", "warn", "error"]
-  datasources: {
-    db: {
-      url: getDatabaseUrlWithTimeouts(),
-    },
-  },
+  adapter,
 });
 
 // Extend Prisma client with query middleware to measure data transfer

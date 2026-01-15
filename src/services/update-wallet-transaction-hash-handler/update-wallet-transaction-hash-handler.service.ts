@@ -6,7 +6,7 @@ import {
   PurchasingAction,
   PurchaseErrorType,
   RegistrationState,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from '@/utils/logger';

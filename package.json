@@ -6,9 +6,6 @@
     "author": "NMKR",
     "license": "MIT",
     "type": "module",
-    "prisma": {
-        "seed": "tsx ./prisma/seed.ts"
-    },
     "scripts": {
         "prepare": "husky",
         "lint": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs",
@@ -48,8 +45,9 @@
         "@opentelemetry/sdk-node": "^0.209.0",
         "@opentelemetry/semantic-conventions": "^1.38.0",
         "@paralleldrive/cuid2": "^2.2.2",
-        "@prisma/client": "^6.19.1",
-        "@prisma/instrumentation": "^6.19.1",
+        "@prisma/adapter-pg": "^7.2.0",
+        "@prisma/client": "^7.2.0",
+        "@prisma/instrumentation": "^7.2.0",
         "@types/express": "^5.0.0",
         "@types/swagger-ui-express": "^4.1.8",
         "@typescript-eslint/eslint-plugin": "^8.52.0",
@@ -91,7 +89,7 @@
         "openapi-to-postmanv2": "^5.8.0",
         "pkgroll": "^2.21.5",
         "prettier": "^3.5.3",
-        "prisma": "^6.19.1",
+        "prisma": "^7.2.0",
         "ts-jest": "^29.3.1",
         "ts-node": "^10.9.2",
         "tsx": "^4.19.3",

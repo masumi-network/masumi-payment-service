@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { $Enums, Network } from '@prisma/client';
+import { $Enums, Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { splitWalletsByType } from '@/utils/shared/transformers';
 

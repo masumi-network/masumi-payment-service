@@ -1,6 +1,6 @@
 import { testMiddleware } from 'express-zod-api';
 import { authMiddleware } from './index';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/enums';
 
 jest.mock('@/utils/db', () => ({
   prisma: {

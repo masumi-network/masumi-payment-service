@@ -1,7 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
-import { $Enums, Network, RPCProvider } from '@prisma/client';
+import { $Enums, Network, RPCProvider } from '@/generated/prisma/client';
 
 export const getRpcProviderKeysSchemaInput = z.object({
   cursorId: z

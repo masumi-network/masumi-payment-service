@@ -2,7 +2,12 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from '@/utils/zod-openapi';
 import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
-import { $Enums, Network, Prisma, PricingType } from '@prisma/client';
+import {
+  $Enums,
+  Network,
+  Prisma,
+  PricingType,
+} from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';

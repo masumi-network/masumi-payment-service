@@ -2,7 +2,7 @@ import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
-import { Permission, ApiKeyStatus, Network } from '@prisma/client';
+import { Permission, ApiKeyStatus, Network } from '@/generated/prisma/enums';
 import { generateSHA256Hash } from '@/utils/crypto';
 
 export const authMiddleware = (minPermission: Permission) =>
