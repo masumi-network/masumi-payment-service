@@ -6,7 +6,6 @@ import {
   PrismaClient,
   RPCProvider,
 } from '../src/generated/prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
 import dotenv from 'dotenv';
 import {
   resolvePaymentKeyHash,
@@ -22,13 +21,13 @@ import paymentPlutus from '../smart-contracts/payment/plutus.json';
 import { generateSHA256Hash } from '../src/utils/crypto';
 import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+
 dotenv.config();
-
-// Create adapter for seed (Prisma v7 requirement)
-const adapter = new PrismaPg({
-  connectionString: process.env.DATABASE_URL!,
-});
-
+const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 export const seed = async (prisma: PrismaClient) => {
   const seedOnlyIfEmpty = process.env.SEED_ONLY_IF_EMPTY;

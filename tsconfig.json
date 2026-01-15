@@ -19,12 +19,14 @@
       ],
       "@smart-contracts/*": [
         "smart-contracts/*"
+      ],
+      "@prisma/client": [
+        "src/generated/prisma/client"
       ]
     }
   },
   "include": [
     "src/**/*.ts",
-    "src/generated/**/*.ts",
     "smart-contracts/**/plutus.json",
     "tests/**/*.ts",
     "jest.e2e.config.ts"

@@ -28,16 +28,16 @@
       "@/repositories/*": [
         "src/repositories/*"
       ],
-      "@/generated/*": [
-        "src/generated/*"
+      "@prisma/client": [
+        "src/generated/prisma/client"
       ]
     }
   },
   "include": [
     "src/**/*.spec.ts",
-    "src/generated/**/*.ts",
     "tests/**/*.ts",
-    "jest.e2e.config.ts"
+    "jest.e2e.config.ts",
+    "src/generated/**/*.ts"
   ],
   "exclude": [
     "node_modules"
