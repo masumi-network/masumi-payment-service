@@ -291,10 +291,10 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
@@ -304,10 +304,10 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
@@ -334,8 +334,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                 style={
                   shouldAnimateIcon && collapsed && !isHovered
                     ? {
-                        animation: 'rotateIn 0.3s ease-out',
-                      }
+                      animation: 'rotateIn 0.3s ease-out',
+                    }
                     : undefined
                 }
               >
@@ -379,7 +379,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   ? 'h-10 w-10 justify-center'
                   : 'px-3 h-10 gap-3',
                 router.pathname === item.href &&
-                  'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
               title={collapsed && !isHovered ? item.name : undefined}
             >
