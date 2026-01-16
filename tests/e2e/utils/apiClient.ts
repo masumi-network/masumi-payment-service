@@ -1,4 +1,4 @@
-import { Network } from '../../../src/generated/prisma/enums';
+import { Network } from '@prisma/client';
 
 export interface ApiClientConfig {
   baseUrl: string;

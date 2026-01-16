@@ -91,7 +91,6 @@ const countRows = (result: unknown): number => {
   return result !== null && result !== undefined ? 1 : 0;
 };
 
-// Create Prisma adapter for PostgreSQL (Prisma v7 requirement)
 const adapter = new PrismaPg({
   connectionString: getDatabaseUrlWithTimeouts(),
 });

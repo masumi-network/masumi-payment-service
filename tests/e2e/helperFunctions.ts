@@ -14,7 +14,7 @@
  * - Refund Functions
  */
 
-import { Network } from '../../src/generated/prisma/enums';
+import { Network } from '@prisma/client';
 import {
   PaymentResponse,
   PurchaseResponse,
