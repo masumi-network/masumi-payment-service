@@ -215,7 +215,7 @@ export default function Transactions() {
     }
   };
 
-  const getStatusColor = (status: string, hasError?: boolean) => {
+  const getStatusColor = (status: string | null, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
     switch (status?.toLowerCase()) {
       case 'fundslocked':
@@ -405,7 +405,7 @@ export default function Transactions() {
                       checked={
                         filteredTransactions.length > 0 &&
                         selectedTransactions.length ===
-                          filteredTransactions.length
+                        filteredTransactions.length
                       }
                       onCheckedChange={handleSelectAll}
                     />
@@ -481,8 +481,19 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.length
+                          transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
+                            const amount = formatPrice(fund.amount);
+                            const unit = formatFundUnit(fund.unit, network);
+                            return (
+                              <div key={index} className="text-sm">
+                                {amount} {unit}
+                              </div>
+                            );
+                          })
+                          : transaction.type === 'purchase' &&
+                            transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(fund.unit, network);
                               return (
@@ -491,17 +502,6 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(fund.unit, network);
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
                             : '—'}
                       </td>
                       <td className="p-4">

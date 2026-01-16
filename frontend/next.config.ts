@@ -11,6 +11,16 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  // Ensure TypeScript and ESLint errors are caught during build
+  // This matches CI behavior where caches don't exist
+  typescript: {
+    // Don't ignore build errors - fail the build on TypeScript errors
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    // Don't ignore ESLint errors during build - fail the build on lint errors
+    ignoreDuringBuilds: false,
+  },
 };
 
 export default nextConfig;
