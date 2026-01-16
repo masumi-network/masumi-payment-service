@@ -46,7 +46,7 @@
         "@opentelemetry/resources": "^2.4.0",
         "@opentelemetry/sdk-metrics": "^2.4.0",
         "@opentelemetry/sdk-node": "^0.210.0",
-        "@opentelemetry/semantic-conventions": "^1.38.0",
+        "@opentelemetry/semantic-conventions": "^1.39.0",
         "@paralleldrive/cuid2": "^3.0.6",
         "@prisma/client": "^6.19.1",
         "@prisma/instrumentation": "^6.19.1",
