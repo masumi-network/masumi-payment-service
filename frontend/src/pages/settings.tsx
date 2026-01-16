@@ -75,7 +75,7 @@ export default function Settings() {
               <div className="relative bg-[#F4F4F5] dark:bg-secondary rounded-full p-1 flex items-center w-[110px] h-8 gap-1">
                 <div
                   className={cn(
-                    'absolute h-6 w-[32px] bg-white dark:bg-[#18181B] rounded-full shadow-sm transition-transform duration-200',
+                    'absolute h-6 w-[32px] bg-white dark:bg-[#18181B] rounded-full shadow-xs transition-transform duration-200',
                     preference === 'light' && 'translate-x-0',
                     preference === 'auto' && 'translate-x-[35px]',
                     preference === 'dark' && 'translate-x-[70px]',

@@ -242,7 +242,7 @@ export function AddWalletDialog({
                   <SelectItem value="Selling">Selling wallet</SelectItem>
                 </SelectContent>
               </Select>
-              <WalletTypeBadge type={type} className="flex-shrink-0" />
+              <WalletTypeBadge type={type} className="shrink-0" />
             </div>
             <p className="text-sm text-muted-foreground">
               {type === 'Purchasing'
