@@ -99,7 +99,7 @@ export async function deRegisterAgentV1() {
         );
 
         //we can only deregister one agent at a time
-        const deregistrationRequest = registryRequests.at(0);
+        const deregistrationRequest = registryRequests[0];
         if (deregistrationRequest == null) {
           logger.warn('No agents to deregister');
           return;

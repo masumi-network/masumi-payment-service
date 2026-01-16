@@ -7,7 +7,7 @@ import {
   PurchasingWallet,
   SellingWallet,
 } from '@/lib/api/generated';
-import { Client } from '@hey-api/client-axios';
+import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';

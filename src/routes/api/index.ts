@@ -1,4 +1,4 @@
-import { DependsOnMethod, Routing } from 'express-zod-api';
+import { Routing } from 'express-zod-api';
 import { healthEndpointGet } from '@/routes/api/health';
 import {
   queryAPIKeyEndpointGet as queryCentralizedRegistrySourceGet,
@@ -60,118 +60,113 @@ import {
 
 export const apiRouter: Routing = {
   v1: {
-    'reveal-data': new DependsOnMethod({
+    'reveal-data': {
       post: revealDataEndpointPost,
-    }),
+    },
     health: healthEndpointGet,
-    purchase: new DependsOnMethod({
+    purchase: {
       get: queryPurchaseRequestGet,
       post: createPurchaseInitPost,
-    }).nest({
-      diff: new DependsOnMethod({
+      diff: {
         get: queryPurchaseDiffCombinedGet,
-      }).nest({
-        'next-action': new DependsOnMethod({
+        'next-action': {
           get: queryPurchaseDiffNextActionGet,
-        }),
-        'onchain-state-or-result': new DependsOnMethod({
+        },
+        'onchain-state-or-result': {
           get: queryPurchaseDiffOnChainStateOrResultGet,
-        }),
-      }),
-      'request-refund': new DependsOnMethod({
+        },
+      },
+      'request-refund': {
         post: requestPurchaseRefundPost,
-      }),
-      'cancel-refund-request': new DependsOnMethod({
+      },
+      'cancel-refund-request': {
         post: cancelPurchaseRefundRequestPost,
-      }),
-      'resolve-blockchain-identifier': new DependsOnMethod({
+      },
+      'resolve-blockchain-identifier': {
         post: resolvePurchaseRequestPost,
-      }),
-      'error-state-recovery': new DependsOnMethod({
+      },
+      'error-state-recovery': {
         post: purchaseErrorStateRecoveryPost,
-      }),
-      spending: new DependsOnMethod({
+      },
+      spending: {
         post: postPurchaseSpending,
-      }),
-    }),
-    payment: new DependsOnMethod({
+      },
+    },
+    payment: {
       get: queryPaymentEntryGet,
       post: paymentInitPost,
-    }).nest({
-      diff: new DependsOnMethod({
+      diff: {
         get: queryPaymentDiffCombinedGet,
-      }).nest({
-        'next-action': new DependsOnMethod({
+        'next-action': {
           get: queryPaymentDiffNextActionGet,
-        }),
-        'onchain-state-or-result': new DependsOnMethod({
+        },
+        'onchain-state-or-result': {
           get: queryPaymentDiffOnChainStateOrResultGet,
-        }),
-      }),
-      'authorize-refund': new DependsOnMethod({
+        },
+      },
+      'authorize-refund': {
         post: authorizePaymentRefundEndpointPost,
-      }),
-      'submit-result': new DependsOnMethod({
+      },
+      'submit-result': {
         post: submitPaymentResultEndpointPost,
-      }),
-      'resolve-blockchain-identifier': new DependsOnMethod({
+      },
+      'resolve-blockchain-identifier': {
         post: resolvePaymentRequestPost,
-      }),
-      'error-state-recovery': new DependsOnMethod({
+      },
+      'error-state-recovery': {
         post: paymentErrorStateRecoveryPost,
-      }),
-      income: new DependsOnMethod({
+      },
+      income: {
         post: getPaymentIncome,
-      }),
-    }),
-    registry: new DependsOnMethod({
+      },
+    },
+    registry: {
       get: queryRegistryRequestGet,
       post: registerAgentPost,
       delete: deleteAgentRegistration,
-    }).nest({
-      diff: new DependsOnMethod({
+      diff: {
         get: queryRegistryDiffGet,
-      }),
-      wallet: new DependsOnMethod({
+      },
+      wallet: {
         get: queryAgentFromWalletGet,
-      }),
-      deregister: new DependsOnMethod({
+      },
+      deregister: {
         post: unregisterAgentPost,
-      }),
-    }),
-    'api-key-status': new DependsOnMethod({
+      },
+    },
+    'api-key-status': {
       get: queryAPIKeyStatusEndpointGet,
-    }),
-    'api-key': new DependsOnMethod({
+    },
+    'api-key': {
       get: queryCentralizedRegistrySourceGet,
       post: addCentralizedRegistrySourceEndpointPost,
       patch: updateAPIKeyEndpointPatch,
       delete: deleteAPIKeyEndpointDelete,
-    }),
-    wallet: new DependsOnMethod({
+    },
+    wallet: {
       get: queryWalletEndpointGet,
       post: postWalletEndpointPost,
       patch: patchWalletEndpointPatch,
-    }),
-    'payment-source-extended': new DependsOnMethod({
+    },
+    'payment-source-extended': {
       get: paymentSourceExtendedEndpointGet,
       post: paymentSourceExtendedEndpointPost,
       patch: paymentSourceExtendedEndpointPatch,
       delete: paymentSourceExtendedEndpointDelete,
-    }),
-    'rpc-api-keys': new DependsOnMethod({
+    },
+    'rpc-api-keys': {
       get: queryRpcProviderKeysEndpointGet,
-    }),
-    utxos: new DependsOnMethod({
+    },
+    utxos: {
       get: queryUTXOEndpointGet,
-    }),
-    'payment-source': new DependsOnMethod({
+    },
+    'payment-source': {
       get: paymentSourceEndpointGet,
-    }),
-    webhooks: new DependsOnMethod({
+    },
+    webhooks: {
       get: listWebhooksGet,
       post: registerWebhookPost,
       delete: deleteWebhookDelete,
-    }),
+    },
   },
 };

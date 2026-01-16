@@ -26,8 +26,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 type Transaction =
   | (Payment & { type: 'payment' })
   | (Purchase & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -48,8 +48,12 @@ const handleError = (error: ApiError) => {
   toast.error(errorMessage);
 };
 
-const formatTimestamp = (timestamp: string | null | undefined): string => {
+const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
   if (!timestamp) return '—';
+
+  if (timestamp instanceof Date) {
+    return timestamp.toLocaleString();
+  }
 
   if (/^\d+$/.test(timestamp)) {
     return new Date(parseInt(timestamp)).toLocaleString();
@@ -58,7 +62,7 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
   return new Date(timestamp).toLocaleString();
 };
 
-const getStatusColor = (status: string, hasError?: boolean) => {
+const getStatusColor = (status: string | null, hasError?: boolean) => {
   if (hasError) return 'text-destructive';
   switch (status?.toLowerCase()) {
     case 'fundslocked':
@@ -77,7 +81,7 @@ const getStatusColor = (status: string, hasError?: boolean) => {
   }
 };
 
-const formatStatus = (status: string) => {
+const formatStatus = (status: string | null) => {
   if (!status) return '—';
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
@@ -141,7 +145,7 @@ export default function TransactionDetailsDialog({
         if (response.error) {
           toast.error(
             (response.error as { message: string }).message ||
-              'Failed to clear error state',
+            'Failed to clear error state',
           );
           return false;
         }
@@ -162,7 +166,7 @@ export default function TransactionDetailsDialog({
         if (response.error) {
           toast.error(
             (response.error as { message: string }).message ||
-              'Failed to clear error state',
+            'Failed to clear error state',
           );
           return false;
         }
@@ -427,8 +431,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds &&
-                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds &&
+                    transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =

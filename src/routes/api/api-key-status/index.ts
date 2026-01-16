@@ -14,9 +14,9 @@ export const queryAPIKeyStatusEndpointGet =
     method: 'get',
     input: getAPIKeyStatusSchemaInput,
     output: getAPIKeyStatusSchemaOutput,
-    handler: async ({ options }) => {
+    handler: async ({ ctx }) => {
       const result = await prisma.apiKey.findFirst({
-        where: { id: options.id },
+        where: { id: ctx.id },
         include: {
           RemainingUsageCredits: { select: { amount: true, unit: true } },
         },

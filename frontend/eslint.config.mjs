@@ -13,6 +13,9 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {
+    ignores: ["**/*.gen.ts", "src/lib/api/generated/**"]
+  },
+  {
     files: ["**/*.{js,jsx,ts,tsx}"],
     plugins: {
       "react-hooks": reactHooksPlugin
@@ -20,6 +23,12 @@ const eslintConfig = [
     rules: {
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn"
+    }
+  },
+  {
+    files: ["**/*.gen.ts", "src/lib/api/generated/**"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off"
     }
   }
 ];

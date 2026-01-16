@@ -111,8 +111,9 @@ export function AIAgentDetailsDialog({
     }
   }, [agent, activeTab]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
+  const formatDate = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleDateString();
   };
 
   const handleDelete = useCallback(async () => {
@@ -232,7 +233,7 @@ export function AIAgentDetailsDialog({
                         variant={getStatusBadgeVariant(agent.state)}
                         className={cn(
                           agent.state === 'RegistrationConfirmed' &&
-                            'bg-green-50 text-green-700 hover:bg-green-50/80',
+                          'bg-green-50 text-green-700 hover:bg-green-50/80',
                           'w-fit min-w-fit truncate',
                         )}
                       >
@@ -349,10 +350,10 @@ export function AIAgentDetailsDialog({
                           {(!agent.AgentPricing ||
                             (agent.AgentPricing.pricingType == 'Fixed' &&
                               agent.AgentPricing.Pricing.length === 0)) && (
-                            <div className="text-sm text-muted-foreground">
-                              No pricing information available
-                            </div>
-                          )}
+                              <div className="text-sm text-muted-foreground">
+                                No pricing information available
+                              </div>
+                            )}
                         </div>
                       </CardContent>
                     </Card>
@@ -463,10 +464,10 @@ export function AIAgentDetailsDialog({
                           )}
                           {(!agent.Legal ||
                             Object.values(agent.Legal).every((v) => !v)) && (
-                            <span className="text-muted-foreground">
-                              No legal information provided.
-                            </span>
-                          )}
+                              <span className="text-muted-foreground">
+                                No legal information provided.
+                              </span>
+                            )}
                         </div>
                       </div>
                     </div>

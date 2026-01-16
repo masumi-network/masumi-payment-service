@@ -2,7 +2,7 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { WebhookEventType, Permission } from '@prisma/client';
+import { WebhookEventType, Permission, Network } from '@prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 
 // Schema for registering a new webhook
@@ -48,19 +48,27 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
   input: registerWebhookSchemaInput,
   output: registerWebhookSchemaOutput,
-  handler: async ({ input, options }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
-      input.network,
-      options.permission,
-    );
-
+  handler: async ({ input, ctx }) => {
     if (input.paymentSourceId) {
       const paymentSource = await prisma.paymentSource.findUnique({
         where: { id: input.paymentSourceId, deletedAt: null },
       });
       if (!paymentSource) {
         throw createHttpError(404, 'Payment source not found');
+      }
+
+      await checkIsAllowedNetworkOrThrowUnauthorized(
+        ctx.networkLimit,
+        paymentSource.network,
+        ctx.permission,
+      );
+    } else {
+      for (const network of Object.values(Network)) {
+        await checkIsAllowedNetworkOrThrowUnauthorized(
+          ctx.networkLimit,
+          network,
+          ctx.permission,
+        );
       }
     }
 
@@ -87,7 +95,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
         events: input.events,
         name: input.name,
         paymentSourceId: input.paymentSourceId,
-        createdByApiKeyId: options.id, // Track who created this webhook
+        createdByApiKeyId: ctx.id, // Track who created this webhook
         isActive: true,
       },
     });
@@ -115,8 +123,8 @@ export const listWebhooksSchemaInput = z.object({
     .string()
     .optional()
     .describe('Cursor ID to paginate through the results'),
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(50)
     .default(10)
@@ -151,32 +159,21 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
   method: 'get',
   input: listWebhooksSchemaInput,
   output: listWebhooksSchemaOutput,
-  handler: async ({
-    input,
-    options,
-  }: {
-    input: z.infer<typeof listWebhooksSchemaInput>;
-    options: {
-      id: string;
-      permission: Permission;
-      networkLimit: any[];
-      usageLimited: boolean;
-    };
-  }) => {
+  handler: async ({ input, ctx }) => {
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
         PaymentSource: {
           network:
-            options.permission === Permission.Admin
+            ctx.permission === Permission.Admin
               ? undefined
-              : { in: options.networkLimit },
+              : { in: ctx.networkLimit },
           deletedAt: null,
           ...(input.paymentSourceId ? { id: input.paymentSourceId } : {}),
         },
         // Only show webhooks created by this API key, unless user is admin
-        ...(options.permission === Permission.Admin
+        ...(ctx.permission === Permission.Admin
           ? {}
-          : { createdByApiKeyId: options.id }),
+          : { createdByApiKeyId: ctx.id }),
       },
       include: {
         CreatedByApiKey: {
@@ -231,18 +228,7 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
   method: 'delete',
   input: deleteWebhookSchemaInput,
   output: deleteWebhookSchemaOutput,
-  handler: async ({
-    input,
-    options,
-  }: {
-    input: z.infer<typeof deleteWebhookSchemaInput>;
-    options: {
-      id: string;
-      permission: Permission;
-      networkLimit: any[];
-      usageLimited: boolean;
-    };
-  }) => {
+  handler: async ({ input, ctx }) => {
     const webhook = await prisma.webhookEndpoint.findUnique({
       where: { id: input.webhookId },
       include: {
@@ -259,8 +245,8 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
     }
 
     // Authorization check: Only creator or admin can delete
-    const isCreator = webhook.createdByApiKeyId === options.id;
-    const isAdmin = options.permission === Permission.Admin;
+    const isCreator = webhook.createdByApiKeyId === ctx.id;
+    const isAdmin = ctx.permission === Permission.Admin;
 
     if (!isCreator && !isAdmin) {
       throw createHttpError(

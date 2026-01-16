@@ -1,7 +1,10 @@
-import { $Enums, Network, OnChainState } from '@prisma/client';
+import { Network, OnChainState } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
   parseDateRange,
@@ -146,22 +149,17 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
   output: postPaymentIncomeSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof postPaymentIncomeSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const { periodStart, periodEnd } = parseDateRange(
@@ -326,7 +324,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
           start_date: input.startDate?.toISOString() || 'null',
           end_date: input.endDate?.toISOString() || 'null',
           network: input.network,
-          user_id: options.id,
+          user_id: ctx.id,
           duration: Date.now() - startTime,
         },
       );

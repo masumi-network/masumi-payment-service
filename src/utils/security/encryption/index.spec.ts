@@ -1,10 +1,12 @@
-import { describe, it, expect } from '@jest/globals';
-import { encrypt, decrypt } from './index';
-jest.mock('@/utils/config', () => ({
+import { describe, it, expect, jest } from '@jest/globals';
+
+jest.unstable_mockModule('@/utils/config', () => ({
   CONFIG: {
     ENCRYPTION_KEY: '12345678901234567890',
   },
 }));
+
+const { encrypt, decrypt } = await import('./index');
 
 describe('encryption utils', () => {
   it('should encrypt and decrypt a string correctly', () => {

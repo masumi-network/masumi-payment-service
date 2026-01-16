@@ -4,12 +4,14 @@ import {
   PurchasingAction,
   OnChainState,
   Permission,
-  $Enums,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -39,20 +41,15 @@ export const cancelPurchaseRefundRequestPost =
     output: cancelPurchaseRefundRequestSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof cancelPurchaseRefundRequestSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const purchase = await prisma.purchaseRequest.findUnique({
@@ -83,8 +80,8 @@ export const cancelPurchaseRefundRequestPost =
       }
 
       if (
-        purchase.requestedById != options.id &&
-        options.permission != Permission.Admin
+        purchase.requestedById != ctx.id &&
+        ctx.permission != Permission.Admin
       ) {
         throw createHttpError(
           403,

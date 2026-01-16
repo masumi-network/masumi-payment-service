@@ -16,7 +16,7 @@ export const baseWebhookPayloadSchema = z.object({
     .string()
     .describe('Unique identifier for this webhook delivery'),
   data: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .describe('The actual data payload for the webhook event'),
 });
 

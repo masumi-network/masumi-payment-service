@@ -3,21 +3,22 @@ import type { Config } from '@jest/types';
 const moduleNameMapper = {
   '@/(.*)': '<rootDir>/src/$1',
   '@e2e/(.*)': '<rootDir>/tests/e2e/$1',
+  '^(\\.{1,2}/.*)\\.js$': '$1',
 };
 
 const config: Config.InitialOptions = {
+  preset: 'ts-jest/presets/default-esm',
   displayName: 'E2E Tests',
   verbose: true,
   moduleNameMapper,
   roots: ['<rootDir>/tests/e2e', '<rootDir>/src'],
   testMatch: ['<rootDir>/tests/e2e/**/*.test.ts'],
-  transform: {
-    '^.+\\.ts?$': [
-      'ts-jest',
-      {
-        tsconfig: 'tsconfig.test.json',
-      },
-    ],
+  extensionsToTreatAsEsm: ['.ts'],
+  globals: {
+    'ts-jest': {
+      useESM: true,
+      tsconfig: 'tsconfig.test.json',
+    },
   },
   testEnvironment: 'node',
   globalSetup: '<rootDir>/tests/e2e/setup/globalSetup.ts',

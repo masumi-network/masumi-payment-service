@@ -103,10 +103,12 @@
                         "properties": {
                             "createdAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the secret was created"
                             },
                             "updatedAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the secret was last updated"
                             },
                             "mnemonic": {
@@ -127,10 +129,12 @@
                         "properties": {
                             "createdAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the pending transaction was created"
                             },
                             "updatedAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the pending transaction was last updated"
                             },
                             "hash": {
@@ -141,6 +145,7 @@
                             "lastCheckedAt": {
                                 "type": "string",
                                 "nullable": true,
+                                "format": "date-time",
                                 "description": "Timestamp when the pending transaction was last checked. Null if never checked"
                             }
                         },
@@ -215,10 +220,12 @@
                     },
                     "createdAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the payment was created"
                     },
                     "updatedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the payment was last updated"
                     },
                     "blockchainIdentifier": {
@@ -233,6 +240,7 @@
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
+                        "format": "date-time",
                         "description": "Timestamp when the payment was last checked on-chain. Null if never checked"
                     },
                     "payByTime": {
@@ -268,14 +276,17 @@
                     },
                     "nextActionLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the next action was last changed"
                     },
                     "onChainStateOrResultLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the on-chain state or result was last changed"
                     },
                     "nextActionOrOnChainStateOrResultLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the next action or on-chain state or result was last changed"
                     },
                     "inputHash": {
@@ -310,7 +321,8 @@
                             "Disputed",
                             "Withdrawn",
                             "RefundWithdrawn",
-                            "DisputedWithdrawn"
+                            "DisputedWithdrawn",
+                            null
                         ],
                         "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                     },
@@ -338,7 +350,8 @@
                                 "nullable": true,
                                 "enum": [
                                     "NetworkError",
-                                    "Unknown"
+                                    "Unknown",
+                                    null
                                 ],
                                 "description": "Type of error that occurred, if any"
                             },
@@ -371,10 +384,12 @@
                             },
                             "createdAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the transaction was created"
                             },
                             "updatedAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the transaction was last updated"
                             },
                             "fees": {
@@ -418,7 +433,8 @@
                                     "Disputed",
                                     "Withdrawn",
                                     "RefundWithdrawn",
-                                    "DisputedWithdrawn"
+                                    "DisputedWithdrawn",
+                                    null
                                 ],
                                 "description": "Previous on-chain state before this transaction"
                             },
@@ -433,7 +449,8 @@
                                     "Disputed",
                                     "Withdrawn",
                                     "RefundWithdrawn",
-                                    "DisputedWithdrawn"
+                                    "DisputedWithdrawn",
+                                    null
                                 ],
                                 "description": "New on-chain state of this transaction"
                             },
@@ -470,10 +487,12 @@
                                 },
                                 "createdAt": {
                                     "type": "string",
+                                    "format": "date-time",
                                     "description": "Timestamp when the transaction was created"
                                 },
                                 "updatedAt": {
                                     "type": "string",
+                                    "format": "date-time",
                                     "description": "Timestamp when the transaction was last updated"
                                 },
                                 "txHash": {
@@ -518,7 +537,8 @@
                                         "Disputed",
                                         "Withdrawn",
                                         "RefundWithdrawn",
-                                        "DisputedWithdrawn"
+                                        "DisputedWithdrawn",
+                                        null
                                     ],
                                     "description": "Previous on-chain state before this transaction"
                                 },
@@ -533,7 +553,8 @@
                                         "Disputed",
                                         "Withdrawn",
                                         "RefundWithdrawn",
-                                        "DisputedWithdrawn"
+                                        "DisputedWithdrawn",
+                                        null
                                     ],
                                     "description": "New on-chain state of this transaction"
                                 },
@@ -747,10 +768,12 @@
                     },
                     "createdAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the purchase was created"
                     },
                     "updatedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the purchase was last updated"
                     },
                     "blockchainIdentifier": {
@@ -765,6 +788,7 @@
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
+                        "format": "date-time",
                         "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
                     },
                     "payByTime": {
@@ -794,14 +818,17 @@
                     },
                     "nextActionOrOnChainStateOrResultLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the next action or on-chain state or result was last changed"
                     },
                     "nextActionLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the next action was last changed"
                     },
                     "onChainStateOrResultLastChangedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the on-chain state or result was last changed"
                     },
                     "requestedById": {
@@ -819,7 +846,8 @@
                             "Disputed",
                             "Withdrawn",
                             "RefundWithdrawn",
-                            "DisputedWithdrawn"
+                            "DisputedWithdrawn",
+                            null
                         ],
                         "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                     },
@@ -872,7 +900,8 @@
                                 "enum": [
                                     "NetworkError",
                                     "InsufficientFunds",
-                                    "Unknown"
+                                    "Unknown",
+                                    null
                                 ],
                                 "description": "Type of error that occurred, if any"
                             },
@@ -899,10 +928,12 @@
                             },
                             "createdAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the transaction was created"
                             },
                             "updatedAt": {
                                 "type": "string",
+                                "format": "date-time",
                                 "description": "Timestamp when the transaction was last updated"
                             },
                             "txHash": {
@@ -947,7 +978,8 @@
                                     "Disputed",
                                     "Withdrawn",
                                     "RefundWithdrawn",
-                                    "DisputedWithdrawn"
+                                    "DisputedWithdrawn",
+                                    null
                                 ],
                                 "description": "Previous on-chain state before this transaction"
                             },
@@ -962,7 +994,8 @@
                                     "Disputed",
                                     "Withdrawn",
                                     "RefundWithdrawn",
-                                    "DisputedWithdrawn"
+                                    "DisputedWithdrawn",
+                                    null
                                 ],
                                 "description": "New on-chain state of this transaction"
                             },
@@ -998,10 +1031,12 @@
                                 },
                                 "createdAt": {
                                     "type": "string",
+                                    "format": "date-time",
                                     "description": "Timestamp when the transaction was created"
                                 },
                                 "updatedAt": {
                                     "type": "string",
+                                    "format": "date-time",
                                     "description": "Timestamp when the transaction was last updated"
                                 },
                                 "txHash": {
@@ -1046,7 +1081,8 @@
                                         "Disputed",
                                         "Withdrawn",
                                         "RefundWithdrawn",
-                                        "DisputedWithdrawn"
+                                        "DisputedWithdrawn",
+                                        null
                                     ],
                                     "description": "Previous on-chain state before this transaction"
                                 },
@@ -1061,7 +1097,8 @@
                                         "Disputed",
                                         "Withdrawn",
                                         "RefundWithdrawn",
-                                        "DisputedWithdrawn"
+                                        "DisputedWithdrawn",
+                                        null
                                     ],
                                     "description": "New on-chain state of this transaction"
                                 },
@@ -1617,15 +1654,18 @@
                     },
                     "createdAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the registry request was created"
                     },
                     "updatedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the registry request was last updated"
                     },
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
+                        "format": "date-time",
                         "description": "Timestamp when the registry was last checked. Null if never checked"
                     },
                     "ExampleOutputs": {
@@ -1814,6 +1854,108 @@
                     "CurrentTransaction"
                 ]
             },
+            "PaymentSource": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the payment source"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when the payment source was created"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Timestamp when the payment source was last updated"
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": [
+                            "Preprod",
+                            "Mainnet"
+                        ],
+                        "description": "The Cardano network (Mainnet, Preprod, or Preview)"
+                    },
+                    "policyId": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Policy ID for the agent registry NFTs. Null if not applicable"
+                    },
+                    "smartContractAddress": {
+                        "type": "string",
+                        "description": "Address of the smart contract for this payment source"
+                    },
+                    "lastIdentifierChecked": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Last agent identifier checked during registry sync. Null if not synced yet"
+                    },
+                    "lastCheckedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Timestamp when the registry was last synced. Null if never synced"
+                    },
+                    "AdminWallets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AdminWallet"
+                        },
+                        "description": "List of admin wallets for dispute resolution"
+                    },
+                    "PurchasingWallets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PurchasingWallet"
+                        },
+                        "description": "List of wallets used for purchasing (buyer side)"
+                    },
+                    "SellingWallets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SellingWallet"
+                        },
+                        "description": "List of wallets used for selling (seller side)"
+                    },
+                    "FeeReceiverNetworkWallet": {
+                        "type": "object",
+                        "properties": {
+                            "walletAddress": {
+                                "type": "string",
+                                "description": "Cardano address that receives network fees"
+                            }
+                        },
+                        "required": [
+                            "walletAddress"
+                        ],
+                        "description": "Wallet that receives network fees from transactions"
+                    },
+                    "feeRatePermille": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1000,
+                        "description": "Fee rate in permille"
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "network",
+                    "policyId",
+                    "smartContractAddress",
+                    "lastIdentifierChecked",
+                    "lastCheckedAt",
+                    "AdminWallets",
+                    "PurchasingWallets",
+                    "SellingWallets",
+                    "FeeReceiverNetworkWallet",
+                    "feeRatePermille"
+                ]
+            },
             "AdminWallet": {
                 "type": "object",
                 "properties": {
@@ -1899,105 +2041,6 @@
                     "note"
                 ]
             },
-            "PaymentSource": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "description": "Unique identifier for the payment source"
-                    },
-                    "createdAt": {
-                        "type": "string",
-                        "description": "Timestamp when the payment source was created"
-                    },
-                    "updatedAt": {
-                        "type": "string",
-                        "description": "Timestamp when the payment source was last updated"
-                    },
-                    "network": {
-                        "type": "string",
-                        "enum": [
-                            "Preprod",
-                            "Mainnet"
-                        ],
-                        "description": "The Cardano network (Mainnet, Preprod, or Preview)"
-                    },
-                    "policyId": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Policy ID for the agent registry NFTs. Null if not applicable"
-                    },
-                    "smartContractAddress": {
-                        "type": "string",
-                        "description": "Address of the smart contract for this payment source"
-                    },
-                    "lastIdentifierChecked": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Last agent identifier checked during registry sync. Null if not synced yet"
-                    },
-                    "lastCheckedAt": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Timestamp when the registry was last synced. Null if never synced"
-                    },
-                    "AdminWallets": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/AdminWallet"
-                        },
-                        "description": "List of admin wallets for dispute resolution"
-                    },
-                    "PurchasingWallets": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/PurchasingWallet"
-                        },
-                        "description": "List of wallets used for purchasing (buyer side)"
-                    },
-                    "SellingWallets": {
-                        "type": "array",
-                        "items": {
-                            "$ref": "#/components/schemas/SellingWallet"
-                        },
-                        "description": "List of wallets used for selling (seller side)"
-                    },
-                    "FeeReceiverNetworkWallet": {
-                        "type": "object",
-                        "properties": {
-                            "walletAddress": {
-                                "type": "string",
-                                "description": "Cardano address that receives network fees"
-                            }
-                        },
-                        "required": [
-                            "walletAddress"
-                        ],
-                        "description": "Wallet that receives network fees from transactions"
-                    },
-                    "feeRatePermille": {
-                        "type": "number",
-                        "minimum": 0,
-                        "maximum": 1000,
-                        "description": "Fee rate in permille"
-                    }
-                },
-                "required": [
-                    "id",
-                    "createdAt",
-                    "updatedAt",
-                    "network",
-                    "policyId",
-                    "smartContractAddress",
-                    "lastIdentifierChecked",
-                    "lastCheckedAt",
-                    "AdminWallets",
-                    "PurchasingWallets",
-                    "SellingWallets",
-                    "FeeReceiverNetworkWallet",
-                    "feeRatePermille"
-                ]
-            },
             "PaymentSourceExtended": {
                 "type": "object",
                 "properties": {
@@ -2007,10 +2050,12 @@
                     },
                     "createdAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the payment source was created"
                     },
                     "updatedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the payment source was last updated"
                     },
                     "network": {
@@ -2063,6 +2108,7 @@
                     "lastCheckedAt": {
                         "type": "string",
                         "nullable": true,
+                        "format": "date-time",
                         "description": "Timestamp when the registry was last synced. Null if never synced"
                     },
                     "AdminWallets": {
@@ -2200,26 +2246,6 @@
                     "feeRatePermille"
                 ]
             },
-            "UtxoAmount": {
-                "type": "object",
-                "properties": {
-                    "unit": {
-                        "type": "string",
-                        "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
-                    },
-                    "quantity": {
-                        "type": "integer",
-                        "nullable": true,
-                        "minimum": 0,
-                        "maximum": 100000000000000,
-                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
-                    }
-                },
-                "required": [
-                    "unit",
-                    "quantity"
-                ]
-            },
             "Utxo": {
                 "type": "object",
                 "properties": {
@@ -2276,6 +2302,26 @@
                     "block"
                 ]
             },
+            "UtxoAmount": {
+                "type": "object",
+                "properties": {
+                    "unit": {
+                        "type": "string",
+                        "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 100000000000000,
+                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                    }
+                },
+                "required": [
+                    "unit",
+                    "quantity"
+                ]
+            },
             "RpcProviderKey": {
                 "type": "object",
                 "properties": {
@@ -2296,10 +2342,12 @@
                     },
                     "createdAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the RPC provider key was created"
                     },
                     "updatedAt": {
                         "type": "string",
+                        "format": "date-time",
                         "description": "Timestamp when the RPC provider key was last updated"
                     },
                     "network": {
@@ -3567,10 +3615,12 @@
                                                 },
                                                 "createdAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was created"
                                                 },
                                                 "updatedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last updated"
                                                 },
                                                 "blockchainIdentifier": {
@@ -3585,6 +3635,7 @@
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last checked on-chain. Null if never checked"
                                                 },
                                                 "payByTime": {
@@ -3620,14 +3671,17 @@
                                                 },
                                                 "nextActionLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action was last changed"
                                                 },
                                                 "onChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "nextActionOrOnChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action or on-chain state or result was last changed"
                                                 },
                                                 "inputHash": {
@@ -3662,7 +3716,8 @@
                                                         "Disputed",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
-                                                        "DisputedWithdrawn"
+                                                        "DisputedWithdrawn",
+                                                        null
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
@@ -3690,7 +3745,8 @@
                                                             "nullable": true,
                                                             "enum": [
                                                                 "NetworkError",
-                                                                "Unknown"
+                                                                "Unknown",
+                                                                null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
                                                         },
@@ -3723,10 +3779,12 @@
                                                         },
                                                         "createdAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was created"
                                                         },
                                                         "updatedAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was last updated"
                                                         },
                                                         "fees": {
@@ -3770,7 +3828,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "Previous on-chain state before this transaction"
                                                         },
@@ -3785,7 +3844,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "New on-chain state of this transaction"
                                                         },
@@ -4729,10 +4789,12 @@
                                                 },
                                                 "createdAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was created"
                                                 },
                                                 "updatedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last updated"
                                                 },
                                                 "blockchainIdentifier": {
@@ -4747,6 +4809,7 @@
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last checked on-chain. Null if never checked"
                                                 },
                                                 "payByTime": {
@@ -4782,14 +4845,17 @@
                                                 },
                                                 "nextActionLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action was last changed"
                                                 },
                                                 "onChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "nextActionOrOnChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action or on-chain state or result was last changed"
                                                 },
                                                 "inputHash": {
@@ -4824,7 +4890,8 @@
                                                         "Disputed",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
-                                                        "DisputedWithdrawn"
+                                                        "DisputedWithdrawn",
+                                                        null
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
@@ -4852,7 +4919,8 @@
                                                             "nullable": true,
                                                             "enum": [
                                                                 "NetworkError",
-                                                                "Unknown"
+                                                                "Unknown",
+                                                                null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
                                                         },
@@ -4885,10 +4953,12 @@
                                                         },
                                                         "createdAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was created"
                                                         },
                                                         "updatedAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was last updated"
                                                         },
                                                         "fees": {
@@ -4932,7 +5002,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "Previous on-chain state before this transaction"
                                                         },
@@ -4947,7 +5018,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "New on-chain state of this transaction"
                                                         },
@@ -5287,10 +5359,12 @@
                                                 },
                                                 "createdAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was created"
                                                 },
                                                 "updatedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last updated"
                                                 },
                                                 "blockchainIdentifier": {
@@ -5305,6 +5379,7 @@
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the payment was last checked on-chain. Null if never checked"
                                                 },
                                                 "payByTime": {
@@ -5340,14 +5415,17 @@
                                                 },
                                                 "nextActionLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action was last changed"
                                                 },
                                                 "onChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "nextActionOrOnChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action or on-chain state or result was last changed"
                                                 },
                                                 "inputHash": {
@@ -5382,7 +5460,8 @@
                                                         "Disputed",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
-                                                        "DisputedWithdrawn"
+                                                        "DisputedWithdrawn",
+                                                        null
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
@@ -5410,7 +5489,8 @@
                                                             "nullable": true,
                                                             "enum": [
                                                                 "NetworkError",
-                                                                "Unknown"
+                                                                "Unknown",
+                                                                null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
                                                         },
@@ -5443,10 +5523,12 @@
                                                         },
                                                         "createdAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was created"
                                                         },
                                                         "updatedAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was last updated"
                                                         },
                                                         "fees": {
@@ -5490,7 +5572,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "Previous on-chain state before this transaction"
                                                         },
@@ -5505,7 +5588,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "New on-chain state of this transaction"
                                                         },
@@ -7122,10 +7206,12 @@
                                                 },
                                                 "createdAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was created"
                                                 },
                                                 "updatedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was last updated"
                                                 },
                                                 "blockchainIdentifier": {
@@ -7140,6 +7226,7 @@
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
                                                 },
                                                 "payByTime": {
@@ -7169,14 +7256,17 @@
                                                 },
                                                 "nextActionOrOnChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action or on-chain state or result was last changed"
                                                 },
                                                 "nextActionLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action was last changed"
                                                 },
                                                 "onChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "requestedById": {
@@ -7194,7 +7284,8 @@
                                                         "Disputed",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
-                                                        "DisputedWithdrawn"
+                                                        "DisputedWithdrawn",
+                                                        null
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                                                 },
@@ -7247,7 +7338,8 @@
                                                             "enum": [
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
-                                                                "Unknown"
+                                                                "Unknown",
+                                                                null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
                                                         },
@@ -7274,10 +7366,12 @@
                                                         },
                                                         "createdAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was created"
                                                         },
                                                         "updatedAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was last updated"
                                                         },
                                                         "txHash": {
@@ -7322,7 +7416,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "Previous on-chain state before this transaction"
                                                         },
@@ -7337,7 +7432,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "New on-chain state of this transaction"
                                                         },
@@ -7664,10 +7760,12 @@
                                                 },
                                                 "createdAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was created"
                                                 },
                                                 "updatedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was last updated"
                                                 },
                                                 "blockchainIdentifier": {
@@ -7682,6 +7780,7 @@
                                                 "lastCheckedAt": {
                                                     "type": "string",
                                                     "nullable": true,
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the purchase was last checked on-chain. Null if never checked"
                                                 },
                                                 "payByTime": {
@@ -7711,14 +7810,17 @@
                                                 },
                                                 "nextActionOrOnChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action or on-chain state or result was last changed"
                                                 },
                                                 "nextActionLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the next action was last changed"
                                                 },
                                                 "onChainStateOrResultLastChangedAt": {
                                                     "type": "string",
+                                                    "format": "date-time",
                                                     "description": "Timestamp when the on-chain state or result was last changed"
                                                 },
                                                 "requestedById": {
@@ -7736,7 +7838,8 @@
                                                         "Disputed",
                                                         "Withdrawn",
                                                         "RefundWithdrawn",
-                                                        "DisputedWithdrawn"
+                                                        "DisputedWithdrawn",
+                                                        null
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                                                 },
@@ -7789,7 +7892,8 @@
                                                             "enum": [
                                                                 "NetworkError",
                                                                 "InsufficientFunds",
-                                                                "Unknown"
+                                                                "Unknown",
+                                                                null
                                                             ],
                                                             "description": "Type of error that occurred, if any"
                                                         },
@@ -7816,10 +7920,12 @@
                                                         },
                                                         "createdAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was created"
                                                         },
                                                         "updatedAt": {
                                                             "type": "string",
+                                                            "format": "date-time",
                                                             "description": "Timestamp when the transaction was last updated"
                                                         },
                                                         "txHash": {
@@ -7864,7 +7970,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "Previous on-chain state before this transaction"
                                                         },
@@ -7879,7 +7986,8 @@
                                                                 "Disputed",
                                                                 "Withdrawn",
                                                                 "RefundWithdrawn",
-                                                                "DisputedWithdrawn"
+                                                                "DisputedWithdrawn",
+                                                                null
                                                             ],
                                                             "description": "New on-chain state of this transaction"
                                                         },
@@ -10848,10 +10956,12 @@
                                                     "nullable": true
                                                 },
                                                 "periodStart": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 },
                                                 "periodEnd": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 },
                                                 "totalTransactions": {
                                                     "type": "number"
@@ -11484,10 +11594,12 @@
                                                     "nullable": true
                                                 },
                                                 "periodStart": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 },
                                                 "periodEnd": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 },
                                                 "totalTransactions": {
                                                     "type": "number"
@@ -12115,10 +12227,12 @@
                                                                 "type": "boolean"
                                                             },
                                                             "createdAt": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "format": "date-time"
                                                             },
                                                             "updatedAt": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "format": "date-time"
                                                             },
                                                             "paymentSourceId": {
                                                                 "type": "string",
@@ -12129,11 +12243,13 @@
                                                             },
                                                             "lastSuccessAt": {
                                                                 "type": "string",
-                                                                "nullable": true
+                                                                "nullable": true,
+                                                                "format": "date-time"
                                                             },
                                                             "disabledAt": {
                                                                 "type": "string",
-                                                                "nullable": true
+                                                                "nullable": true,
+                                                                "format": "date-time"
                                                             },
                                                             "createdBy": {
                                                                 "type": "object",
@@ -12332,7 +12448,8 @@
                                                     "type": "boolean"
                                                 },
                                                 "createdAt": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 },
                                                 "paymentSourceId": {
                                                     "type": "string",
@@ -12442,7 +12559,8 @@
                                                     "nullable": true
                                                 },
                                                 "deletedAt": {
-                                                    "type": "string"
+                                                    "type": "string",
+                                                    "format": "date-time"
                                                 }
                                             },
                                             "required": [

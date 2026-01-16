@@ -1,7 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   Network,
   OnChainState,
   PaymentAction,
@@ -9,7 +8,10 @@ import {
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -44,20 +46,15 @@ export const submitPaymentResultEndpointPost =
     output: submitPaymentResultSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof submitPaymentResultSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const payment = await prisma.paymentRequest.findUnique({
@@ -92,8 +89,8 @@ export const submitPaymentResultEndpointPost =
       }
 
       if (
-        payment.requestedById != options.id &&
-        options.permission != Permission.Admin
+        payment.requestedById != ctx.id &&
+        ctx.permission != Permission.Admin
       ) {
         throw createHttpError(
           403,

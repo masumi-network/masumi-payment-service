@@ -1,7 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   HotWalletType,
   Network,
   OnChainState,
@@ -13,9 +12,12 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { ez } from 'express-zod-api';
-import cuid2 from '@paralleldrive/cuid2';
+import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataSchema } from '../registry/wallet';
@@ -34,9 +36,11 @@ import {
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
+const paymentTimeSchema = ez.dateIn();
+
 export const queryPaymentsSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -58,9 +62,9 @@ export const queryPaymentsSchemaInput = z.object({
 
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the payments',
     ),
@@ -365,20 +369,15 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
   output: queryPaymentsSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryPaymentsSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.paymentRequest.findMany({
@@ -534,13 +533,17 @@ export const createPaymentsSchemaInput = z.object({
     .describe('The amounts of the payment, should be null for fixed amount'),
   payByTime: ez
     .dateIn()
-    .default(new Date(1000 * 60 * 60 * 12).toISOString())
+    .default(() =>
+      paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()),
+    )
     .describe(
       'The time after which the payment has to be submitted to the smart contract',
     ),
   submitResultTime: ez
     .dateIn()
-    .default(new Date(1000 * 60 * 60 * 12).toISOString())
+    .default(() =>
+      paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()),
+    )
     .describe(
       'The time after which the payment has to be submitted to the smart contract',
     ),
@@ -577,20 +580,15 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
   output: createPaymentSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof createPaymentsSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
     const policyId = extractPolicyId(input.agentIdentifier);
 
@@ -613,9 +611,9 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       );
     }
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
     const purchaserId = input.identifierFromPurchaser;
     if (validateHexString(purchaserId) == false) {
@@ -762,7 +760,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     if (sellingWallet == null) {
       throw createHttpError(404, 'Selling wallet not found');
     }
-    const sellerCUID = cuid2.createId();
+    const sellerCUID = createId();
     const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
     const blockchainIdentifier = {
       inputHash: input.inputHash,
@@ -830,7 +828,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
         externalDisputeUnlockTime: externalDisputeUnlockTime,
         sellerCoolDownTime: 0,
         buyerCoolDownTime: 0,
-        requestedBy: { connect: { id: options.id } },
+        requestedBy: { connect: { id: ctx.id } },
         metadata: input.metadata,
       },
       include: {
