@@ -25,19 +25,19 @@ describe('authMiddleware', () => {
   it('should resolve successfully if valid token provided', async () => {
     mockFindUnique.mockResolvedValue({
       id: 1,
-      permission: Permission.Read,
+      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
-      tokenHash: generateSHA256Hash('1'),
-      token: '1',
+      tokenHash: generateSHA256Hash('valid'),
+      token: 'valid',
       usageLimited: true,
       networkLimit: [],
     });
     const { responseMock } = await testMiddleware({
-      middleware: authMiddleware(Permission.Read),
+      middleware: authMiddleware(Permission.Admin),
       requestProps: {
         method: 'POST',
         body: {},
-        headers: { token: '1' },
+        headers: { token: 'valid' },
       },
     });
 
@@ -116,6 +116,8 @@ describe('authMiddleware', () => {
       id: 1,
       permission: Permission.Read,
       status: ApiKeyStatus.Active,
+      tokenHash: generateSHA256Hash('valid'),
+      token: 'valid',
       usageLimited: true,
     });
 
@@ -131,6 +133,26 @@ describe('authMiddleware', () => {
       id: 1,
       permission: Permission.ReadAndPay,
       status: ApiKeyStatus.Active,
+      tokenHash: generateSHA256Hash('valid'),
+      token: 'valid',
+      usageLimited: true,
+      networkLimit: [Network.Preprod],
+    });
+
+    const { responseMock } = await testMiddleware({
+      middleware: authMiddleware(Permission.Admin),
+      requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+    });
+
+    expect(responseMock.statusCode).toBe(401);
+  });
+  it('should throw 401 if token is revoked', async () => {
+    mockFindUnique.mockResolvedValue({
+      id: 1,
+      permission: Permission.Admin,
+      status: ApiKeyStatus.Revoked,
+      tokenHash: generateSHA256Hash('valid'),
+      token: 'valid',
       usageLimited: true,
       networkLimit: [Network.Preprod],
     });
@@ -148,6 +170,8 @@ describe('authMiddleware', () => {
       id: 1,
       permission: Permission.Read,
       status: ApiKeyStatus.Active,
+      tokenHash: generateSHA256Hash('valid'),
+      token: 'valid',
       usageLimited: true,
       networkLimit: [],
     };
@@ -220,10 +244,11 @@ describe('authMiddleware', () => {
     };
     mockFindUnique.mockResolvedValue(mockApiKey);
 
-    const { output } = await testMiddleware({
+    const { output, responseMock } = await testMiddleware({
       middleware: authMiddleware(Permission.ReadAndPay),
       requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
     });
+    expect(responseMock.statusCode).toBe(200);
 
     expect(output).toEqual({
       id: mockApiKey.id,
