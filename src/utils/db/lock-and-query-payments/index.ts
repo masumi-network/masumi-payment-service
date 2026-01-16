@@ -1,4 +1,8 @@
-import { HotWallet, OnChainState, PaymentAction } from '@prisma/client';
+import {
+  HotWallet,
+  OnChainState,
+  PaymentAction,
+} from '@/generated/prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({

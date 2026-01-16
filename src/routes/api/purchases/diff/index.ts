@@ -1,7 +1,7 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { $Enums, Network, Prisma } from '@prisma/client';
+import { $Enums, Network, Prisma } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';

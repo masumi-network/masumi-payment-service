@@ -1,4 +1,4 @@
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/enums';
 import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
 import { createHash } from 'crypto';
 import { createId } from '@paralleldrive/cuid2';

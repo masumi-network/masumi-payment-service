@@ -1,4 +1,8 @@
-import { PaymentSource, PaymentSourceConfig, Prisma } from '@prisma/client';
+import {
+  PaymentSource,
+  PaymentSourceConfig,
+  Prisma,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';

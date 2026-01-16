@@ -3,7 +3,7 @@ import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { $Enums, HotWalletType, Network } from '@prisma/client';
+import { $Enums, HotWalletType, Network } from '@/generated/prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';

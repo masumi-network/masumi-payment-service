@@ -6,7 +6,7 @@ import {
   PurchasingAction,
   WalletBase,
   WalletType,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 
 async function handlePurchaseCreditInit({
   id,

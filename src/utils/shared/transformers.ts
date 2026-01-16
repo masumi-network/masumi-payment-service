@@ -1,4 +1,4 @@
-import { HotWalletType } from '@prisma/client';
+import { HotWalletType } from '@/generated/prisma/client';
 
 export function splitWalletsByType<T extends { type: HotWalletType }>(
   wallets: T[],

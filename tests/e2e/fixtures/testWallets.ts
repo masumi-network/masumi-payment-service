@@ -1,4 +1,4 @@
-import { Network } from '@prisma/client';
+import { Network } from '../../../src/generated/prisma/enums';
 
 /**
  * Test wallet configurations for e2e tests

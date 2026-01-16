@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, $Enums } from '@prisma/client';
+import { Network, $Enums } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';

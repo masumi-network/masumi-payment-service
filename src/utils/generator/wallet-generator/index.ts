@@ -4,7 +4,7 @@ import {
   MeshWallet,
   resolvePaymentKeyHash,
 } from '@meshsdk/core';
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 
 export function generateOfflineWallet(network: Network, mnemonic: string[]) {

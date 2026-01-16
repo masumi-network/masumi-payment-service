@@ -1,4 +1,7 @@
-import { WebhookDeliveryStatus, WebhookEventType } from '@prisma/client';
+import {
+  WebhookDeliveryStatus,
+  WebhookEventType,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { webhookSenderService } from './webhook-sender.service';

@@ -1,7 +1,7 @@
 import { webhookQueueService } from './webhook-queue.service';
 import { logger } from '@/utils/logger';
 import { prisma } from '@/utils/db';
-import { WebhookEventType } from '@prisma/client';
+import { WebhookEventType } from '@/generated/prisma/client';
 
 export class WebhookEventsService {
   private async queryPurchaseForWebhook(purchaseId: string) {

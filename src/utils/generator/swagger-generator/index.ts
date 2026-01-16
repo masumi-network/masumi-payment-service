@@ -76,7 +76,7 @@ import {
   RPCProvider,
   PricingType,
   RegistrationState,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import {
   authorizePaymentRefundSchemaInput,
   authorizePaymentRefundSchemaOutput,

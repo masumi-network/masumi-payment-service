@@ -17,7 +17,7 @@ import {
   PurchasingAction,
   TransactionStatus,
   WalletType,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import {
   calculateValueChange,
   checkIfTxIsInHistory,

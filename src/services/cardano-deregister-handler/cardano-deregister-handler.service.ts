@@ -1,4 +1,7 @@
-import { TransactionStatus, RegistrationState } from '@prisma/client';
+import {
+  TransactionStatus,
+  RegistrationState,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,

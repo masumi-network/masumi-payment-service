@@ -3,7 +3,7 @@ import {
   PurchasingAction,
   PaymentSource,
   OnChainState,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { CONFIG } from '@/utils/config';
