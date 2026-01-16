@@ -11,7 +11,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['Arial', 'sans-serif'],
+        sans: ['Inter', 'sans-serif'],
+        mono: ['Inter', 'sans-serif'],
       },
       colors: {
         background: 'hsl(var(--background))',
