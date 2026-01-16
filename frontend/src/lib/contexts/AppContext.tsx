@@ -7,7 +7,7 @@ import {
   useRef,
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
-import { Client, createClient } from '@hey-api/client-axios';
+import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
 import { PaymentSource, PaymentSourceExtended } from '../api/generated';
 
@@ -15,25 +15,25 @@ type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {
-      selectedPaymentSource: PaymentSource | null;
-      apiKey: string | null;
-      updateApiKey: (apiKey: string | null) => void;
-      authorized: boolean;
-      setAuthorized: (authorized: boolean) => void;
-      network: NetworkType;
-      setNetwork: (network: NetworkType) => void;
-      showError: (error: {
-        code?: number;
-        message: string;
-        details?: unknown;
-      }) => void;
-      apiClient: Client;
-      setApiClient: React.Dispatch<React.SetStateAction<Client>>;
-      selectedPaymentSourceId: string | null;
-      setSelectedPaymentSourceId: (id: string | null) => void;
-      signOut: () => void;
-      isChangingNetwork: boolean;
-    }
+    selectedPaymentSource: PaymentSource | null;
+    apiKey: string | null;
+    updateApiKey: (apiKey: string | null) => void;
+    authorized: boolean;
+    setAuthorized: (authorized: boolean) => void;
+    network: NetworkType;
+    setNetwork: (network: NetworkType) => void;
+    showError: (error: {
+      code?: number;
+      message: string;
+      details?: unknown;
+    }) => void;
+    apiClient: Client;
+    setApiClient: React.Dispatch<React.SetStateAction<Client>>;
+    selectedPaymentSourceId: string | null;
+    setSelectedPaymentSourceId: (id: string | null) => void;
+    signOut: () => void;
+    isChangingNetwork: boolean;
+  }
   | undefined
 >(undefined);
 

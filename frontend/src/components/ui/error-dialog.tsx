@@ -19,7 +19,7 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="z-[9999] !fixed" hideClose>
+      <DialogContent className="z-9999 fixed!" hideClose>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="flex items-center gap-2">

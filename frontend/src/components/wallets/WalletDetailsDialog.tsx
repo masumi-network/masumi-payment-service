@@ -355,7 +355,7 @@ export function WalletDetailsDialog({
             {wallet.note && (
               <div className="bg-muted rounded-lg p-4">
                 <div className="text-sm font-medium">Note</div>
-                <div className="text-sm mt-1 break-words">{wallet.note}</div>
+                <div className="text-sm mt-1 wrap-break-word">{wallet.note}</div>
               </div>
             )}
 

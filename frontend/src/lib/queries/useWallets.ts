@@ -7,7 +7,7 @@ import {
   PurchasingWallet,
   SellingWallet,
 } from '@/lib/api/generated';
-import { Client } from '@hey-api/client-axios';
+import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';
@@ -17,13 +17,13 @@ type UTXOAmount = UtxoAmount;
 
 type Wallet =
   | (PurchasingWallet & {
-      type: 'Purchasing';
-      network: 'Preprod' | 'Mainnet';
-    })
+    type: 'Purchasing';
+    network: 'Preprod' | 'Mainnet';
+  })
   | (SellingWallet & {
-      type: 'Selling';
-      network: 'Preprod' | 'Mainnet';
-    });
+    type: 'Selling';
+    network: 'Preprod' | 'Mainnet';
+  });
 
 export type WalletWithBalance = Wallet & {
   balance: string;

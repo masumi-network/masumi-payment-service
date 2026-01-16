@@ -236,7 +236,7 @@ export function AgentEarningsOverview({
               onClick={() => setSelectedPeriod(period)}
               className={`px-3 py-1 text-sm rounded-md transition-colors ${
                 selectedPeriod === period
-                  ? 'bg-background text-foreground shadow-sm'
+                  ? 'bg-background text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >

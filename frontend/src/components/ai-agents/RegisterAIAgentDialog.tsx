@@ -44,8 +44,8 @@ interface RegisterAIAgentDialogProps {
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
   const usdmUnit = network === 'Mainnet' ? 'USDM' : 'tUSDM';
   return z.object({
-    unit: z.enum(['lovelace', usdmUnit], {
-      required_error: 'Token is required',
+    unit: z.enum(['lovelace', usdmUnit] as const, {
+      error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
       if (val === '0' || val === '0.0' || val === '0.00') return true;
@@ -300,9 +300,9 @@ export function RegisterAIAgentDialog({
         const capability =
           data.capabilityName && data.capabilityVersion
             ? {
-                name: data.capabilityName,
-                version: data.capabilityVersion,
-              }
+              name: data.capabilityName,
+              version: data.capabilityVersion,
+            }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({

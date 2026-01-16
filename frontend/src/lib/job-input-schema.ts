@@ -33,12 +33,12 @@ export const optionalValidationSchema = z.object({
 
 export const minValidationSchema = z.object({
   validation: z.enum([ValidJobInputValidationTypes.MIN]),
-  value: z.number({ coerce: true }).int().min(0),
+  value: z.coerce.number().int().min(0),
 });
 
 export const maxValidationSchema = z.object({
   validation: z.enum([ValidJobInputValidationTypes.MAX]),
-  value: z.number({ coerce: true }).int().min(0),
+  value: z.coerce.number().int().min(0),
 });
 
 export const formatUrlValidationSchema = z.object({
@@ -288,7 +288,7 @@ const makeZodSchemaFromJobInputNumberSchema = (
   jobInputNumberSchema: JobInputNumberSchemaType,
 ) => {
   const { validations } = jobInputNumberSchema;
-  const defaultSchema = z.number({ coerce: true });
+  const defaultSchema = z.coerce.number();
   if (!validations) return defaultSchema;
 
   let canBeOptional: boolean = false;
