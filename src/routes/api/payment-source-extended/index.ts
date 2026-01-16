@@ -6,7 +6,7 @@ import { prisma } from '@/utils/db';
 import { encrypt } from '@/utils/security/encryption';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { HotWalletType, RPCProvider, Network, $Enums } from '@prisma/client';
+import { HotWalletType, RPCProvider, Network } from '@prisma/client';
 import createHttpError from 'http-errors';
 import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
