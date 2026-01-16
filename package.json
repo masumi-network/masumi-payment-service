@@ -17,7 +17,7 @@
         "test:e2e": "jest --config jest.e2e.config.ts --bail --forceExit",
         "test:e2e:watch": "jest --config jest.e2e.config.ts --watch",
         "test:e2e:verbose": "jest --config jest.e2e.config.ts --verbose",
-        "prisma:generate": "npx prisma generate",
+        "prisma:generate": "npx prisma generate --config prisma/prisma.config.ts",
         "prisma:migrate": "npx prisma migrate deploy",
         "prisma:migrate:dev": "npx prisma migrate dev",
         "prisma:seed": "npx prisma db seed",
