@@ -1,4 +1,9 @@
 {
+  "ts-node": {
+    "require": [
+      "tsconfig-paths/register"
+    ]
+  },
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "node",
@@ -13,20 +18,8 @@
     "experimentalDecorators": true,
     "strict": true,
     "paths": {
-      "@/index": [
-        "src/index"
-      ],
-      "@/routes/*": [
-        "src/routes/*"
-      ],
-      "@/services/*": [
-        "src/services/*"
-      ],
-      "@/utils/*": [
-        "src/utils/*"
-      ],
-      "@/repositories/*": [
-        "src/repositories/*"
+      "@/*": [
+        "src/*"
       ],
       "@prisma/client": [
         "src/generated/prisma/client"

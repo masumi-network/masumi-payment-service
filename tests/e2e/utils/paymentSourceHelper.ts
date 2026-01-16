@@ -1,15 +1,18 @@
 import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, Network, HotWalletType } from '@prisma/client';
+import { Network, HotWalletType } from '@/generated/prisma/enums';
 
+/**
+ * Helper functions for querying PaymentSource data in E2E tests
+ * 
+ * Note: Uses raw pg queries instead of Prisma ORM because the Prisma-generated
+ * client has ESM syntax that is incompatible with Jest's globalSetup execution
+ * context (which runs in CommonJS mode). This is a Prisma v7 + Jest limitation.
+ */
 
-
-// Create a PrismaClient instance with the pg adapter (required for Prisma v7)
-function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL!;
-  const pool = new Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  return new PrismaClient({ adapter });
+function createPool(): Pool {
+  return new Pool({
+    connectionString: process.env.DATABASE_URL!,
+  });
 }
 
 /**
@@ -18,34 +21,27 @@ function createPrismaClient(): PrismaClient {
 export async function getActiveSmartContractAddress(
   network: Network,
 ): Promise<string> {
-  const prisma = createPrismaClient();
+  const pool = createPool();
 
   try {
-    const paymentSource = await prisma.paymentSource.findFirst({
-      where: {
-        network: network,
-        deletedAt: null,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        smartContractAddress: true,
-        id: true,
-      },
-    });
+    const result = await pool.query(
+      `SELECT "smartContractAddress", "id" 
+       FROM "PaymentSource" 
+       WHERE "network" = $1 AND "deletedAt" IS NULL 
+       ORDER BY "createdAt" DESC 
+       LIMIT 1`,
+      [network],
+    );
 
-    if (!paymentSource) {
+    if (result.rows.length === 0) {
       throw new Error(
         `No active PaymentSource found for network ${network}. Please run database seeding first.`,
       );
     }
 
-    return paymentSource.smartContractAddress;
-  } catch (error) {
-    throw error;
+    return result.rows[0].smartContractAddress;
   } finally {
-    await prisma.$disconnect();
+    await pool.end();
   }
 }
 
@@ -56,44 +52,38 @@ export async function getActiveWalletVKey(
   network: Network,
   walletType: HotWalletType = HotWalletType.Selling,
 ): Promise<string> {
-  const prisma = createPrismaClient();
+  const pool = createPool();
 
   try {
-    const hotWallet = await prisma.hotWallet.findFirst({
-      where: {
-        type: walletType,
-        deletedAt: null,
-        PaymentSource: {
-          network: network,
-          deletedAt: null,
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      select: {
-        walletVkey: true,
-        walletAddress: true,
-        type: true,
-      },
-    });
+    const result = await pool.query(
+      `SELECT hw."walletVkey", hw."walletAddress", hw."type"
+       FROM "HotWallet" hw
+       INNER JOIN "PaymentSource" ps ON hw."paymentSourceId" = ps."id"
+       WHERE hw."type" = $1 
+         AND hw."deletedAt" IS NULL 
+         AND ps."network" = $2 
+         AND ps."deletedAt" IS NULL
+       ORDER BY hw."createdAt" DESC 
+       LIMIT 1`,
+      [walletType, network],
+    );
 
-    if (!hotWallet) {
+    if (result.rows.length === 0) {
       throw new Error(
         `No active ${walletType} wallet found for network ${network}. Please run database seeding first.`,
       );
     }
 
     console.log(
-      `✅ Found active ${walletType} wallet for ${network}: ${hotWallet.walletVkey}`,
+      `✅ Found active ${walletType} wallet for ${network}: ${result.rows[0].walletVkey}`,
     );
 
-    return hotWallet.walletVkey;
+    return result.rows[0].walletVkey;
   } catch (error) {
     console.error('❌ Error querying active wallet VKey:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await pool.end();
   }
 }
 
