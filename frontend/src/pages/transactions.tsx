@@ -235,7 +235,7 @@ export default function Transactions() {
     }
   };
 
-  const formatStatus = (status: string) => {
+  const formatStatus = (status: string | null) => {
     if (!status) return '—';
     return status.replace(/([A-Z])/g, ' $1').trim();
   };
