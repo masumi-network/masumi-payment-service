@@ -48,8 +48,12 @@ const handleError = (error: ApiError) => {
   toast.error(errorMessage);
 };
 
-const formatTimestamp = (timestamp: string | null | undefined): string => {
+const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
   if (!timestamp) return '—';
+
+  if (timestamp instanceof Date) {
+    return timestamp.toLocaleString();
+  }
 
   if (/^\d+$/.test(timestamp)) {
     return new Date(parseInt(timestamp)).toLocaleString();
@@ -77,7 +81,7 @@ const getStatusColor = (status: string | null, hasError?: boolean) => {
   }
 };
 
-const formatStatus = (status: string) => {
+const formatStatus = (status: string | null) => {
   if (!status) return '—';
   return status.replace(/([A-Z])/g, ' $1').trim();
 };

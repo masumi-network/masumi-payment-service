@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:clean": "rm -rf .next node_modules/.cache tsconfig.tsbuildinfo && find . -maxdepth 3 -name '*.tsbuildinfo' -not -path './node_modules/*' -not -path './.next/*' -delete && npm run build",
+    "clean": "rm -rf .next node_modules/.cache tsconfig.tsbuildinfo && find . -maxdepth 3 -name '*.tsbuildinfo' -not -path './node_modules/*' -not -path './.next/*' -delete",
     "lint": "next lint",
     "openapi-ts": "openapi-ts",
     "openapi-ts-latest": "cp ./../src/utils/generator/swagger-generator/openapi-docs.json ./openapi-docs.json && openapi-ts"
