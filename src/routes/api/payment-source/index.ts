@@ -1,12 +1,13 @@
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { $Enums, Network } from '@prisma/client';
+import { Network } from '@prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { splitWalletsByType } from '@/utils/shared/transformers';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
 
 export const paymentSourceSchemaInput = z.object({
-  take: z
-    .number({ coerce: true })
+  take: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -130,15 +131,10 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
   output: paymentSourceSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof paymentSourceSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const paymentSources = await prisma.paymentSource.findMany({
       take: input.take,
@@ -147,7 +143,7 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
       },
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       where: {
-        network: { in: options.networkLimit },
+        network: { in: ctx.networkLimit },
         deletedAt: null,
       },
       include: {
