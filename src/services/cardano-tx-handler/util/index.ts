@@ -11,7 +11,10 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
 import { Network, OnChainState } from '@prisma/client';
-import { getSmartContractInteractionTxHistoryList } from '../blockchain';
+import {
+  getSmartContractInteractionTxHistoryList,
+  TransactionMetadata,
+} from '../blockchain';
 
 export function calculateValueChange(
   inputs: Array<{
@@ -112,6 +115,43 @@ export function checkPaymentAmountsMatch(
     //require exact match for non-lovelace amounts
     return x.amount == BigInt(existingAmount.quantity);
   });
+}
+
+export function getCardanoFeesSeller(
+  redeemerVersion: number,
+  tx: TransactionMetadata,
+) {
+  if (redeemerVersion == 0) {
+    //Withdraw
+    return tx.fees;
+  } else if (redeemerVersion == 5) {
+    //SubmitResult
+    return tx.fees;
+  } else if (redeemerVersion == 6) {
+    //AllowRefund
+    return tx.fees;
+  }
+  return BigInt(0);
+}
+
+export function getCardanoFeesBuyer(
+  redeemerVersion: number,
+  tx: TransactionMetadata,
+) {
+  if (redeemerVersion == 1) {
+    //RequestRefund
+    return tx.fees;
+  } else if (redeemerVersion == 2) {
+    //CancelRefundRequest
+    return tx.fees;
+  } else if (redeemerVersion == 3) {
+    //WithdrawRefund
+    return tx.fees;
+  } else if (redeemerVersion == 6) {
+    //WithdrawDisputed
+    return tx.fees;
+  }
+  return BigInt(0);
 }
 
 export function redeemerToOnChainState(

@@ -3,10 +3,13 @@ import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { $Enums, HotWalletType, Network } from '@prisma/client';
+import { HotWalletType, Network } from '@prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const getWalletSchemaInput = z.object({
@@ -16,8 +19,8 @@ export const getWalletSchemaInput = z.object({
   id: z.string().min(1).max(250).describe('The id of the wallet to query'),
   includeSecret: z
     .string()
-    .transform((s) => (s.toLowerCase() == 'true' ? true : false))
     .default('false')
+    .transform((s) => s.toLowerCase() === 'true')
     .describe('Whether to include the decrypted secret in the response'),
 });
 
@@ -81,15 +84,10 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
   output: getWalletSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof getWalletSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
@@ -99,14 +97,26 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             id: input.id,
             type: HotWalletType.Selling,
             PaymentSource: {
-              network: { in: options.networkLimit },
+              network: { in: ctx.networkLimit },
             },
             deletedAt: null,
           },
           include: {
-            Secret: true,
-            PendingTransaction: true,
-            PaymentSource: true,
+            Secret: {
+              select: {
+                encryptedMnemonic: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            PendingTransaction: {
+              select: {
+                createdAt: true,
+                updatedAt: true,
+                txHash: true,
+                lastCheckedAt: true,
+              },
+            },
           },
         });
         if (result == null) {
@@ -168,14 +178,26 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
             id: input.id,
             type: HotWalletType.Purchasing,
             PaymentSource: {
-              network: { in: options.networkLimit },
+              network: { in: ctx.networkLimit },
             },
             deletedAt: null,
           },
           include: {
-            Secret: true,
-            PendingTransaction: true,
-            PaymentSource: true,
+            Secret: {
+              select: {
+                encryptedMnemonic: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+            },
+            PendingTransaction: {
+              select: {
+                createdAt: true,
+                updatedAt: true,
+                txHash: true,
+                lastCheckedAt: true,
+              },
+            },
           },
         });
         if (result == null) {
@@ -236,7 +258,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
         statusCode,
         errorInstance,
         {
-          user_id: options.id,
+          user_id: ctx.id,
           wallet_id: input.id,
           wallet_type: input.walletType.toLowerCase(),
           operation: 'query_wallet',
@@ -274,24 +296,13 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: postWalletSchemaInput,
   output: postWalletSchemaOutput,
-  handler: async ({
-    input,
-    options,
-  }: {
-    input: z.infer<typeof postWalletSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
-  }) => {
+  handler: async ({ input, ctx }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
       const secretKey = MeshWallet.brew(false);
       const secretWords =
@@ -323,7 +334,7 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
         statusCode,
         errorInstance,
         {
-          user_id: options.id,
+          user_id: ctx.id,
           network: input.network,
           operation: 'create_wallet',
           duration: Date.now() - startTime,
@@ -373,8 +384,14 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
         data: { collectionAddress: input.newCollectionAddress },
         include: {
           Secret: false,
-          PendingTransaction: true,
-          PaymentSource: true,
+          PendingTransaction: {
+            select: {
+              createdAt: true,
+              updatedAt: true,
+              txHash: true,
+              lastCheckedAt: true,
+            },
+          },
         },
       });
 

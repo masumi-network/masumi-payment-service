@@ -21,12 +21,21 @@ import {
   queryPaymentsSchemaInput,
   queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
+import { queryPaymentDiffSchemaInput } from '@/routes/api/payments/diff';
+import {
+  postPaymentIncomeSchemaInput,
+  postPaymentIncomeSchemaOutput,
+} from '@/routes/api/payments/income';
 import {
   createPurchaseInitSchemaInput,
   createPurchaseInitSchemaOutput,
   queryPurchaseRequestSchemaInput,
   queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
+import {
+  postPurchaseSpendingSchemaInput,
+  postPurchaseSpendingSchemaOutput,
+} from '@/routes/api/purchases/spending';
 import {
   queryRegistryRequestSchemaInput,
   queryRegistryRequestSchemaOutput,
@@ -35,6 +44,7 @@ import {
   deleteAgentRegistrationSchemaInput,
   deleteAgentRegistrationSchemaOutput,
 } from '@/routes/api/registry';
+import { queryRegistryDiffSchemaInput } from '@/routes/api/registry/diff';
 import {
   unregisterAgentSchemaInput,
   unregisterAgentSchemaOutput,
@@ -101,7 +111,6 @@ const paymentSchemaOutputExample = {
     resultHash: null,
   },
   CurrentTransaction: null,
-  TransactionHistory: [],
   RequestedFunds: [
     {
       unit: '', // Empty string = ADA/lovelace
@@ -119,6 +128,11 @@ const paymentSchemaOutputExample = {
   BuyerWallet: null,
   SmartContractWallet: null,
   metadata: null,
+  totalBuyerCardanoFees: 0,
+  totalSellerCardanoFees: 0,
+  nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
+  nextActionLastChangedAt: new Date(1713636260),
+  onChainStateOrResultLastChangedAt: new Date(1713636260),
 } satisfies z.infer<typeof createPaymentSchemaOutput>;
 
 const paymentSourceExtendedExample = {
@@ -292,6 +306,11 @@ const purchaseResponseSchemaExample = {
   metadata: null,
   WithdrawnForSeller: [],
   WithdrawnForBuyer: [],
+  totalBuyerCardanoFees: 0,
+  totalSellerCardanoFees: 0,
+  nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
+  nextActionLastChangedAt: new Date(1713636260),
+  onChainStateOrResultLastChangedAt: new Date(1713636260),
 } satisfies z.infer<typeof createPurchaseInitSchemaOutput>;
 import {
   requestPurchaseRefundSchemaInput,
@@ -327,6 +346,22 @@ import {
   postRevealDataSchemaOutput,
   postVerifyDataRevealSchemaInput,
 } from '@/routes/api/reveal-data';
+import {
+  paymentErrorStateRecoverySchemaInput,
+  paymentErrorStateRecoverySchemaOutput,
+} from '@/routes/api/payments/error-state-recovery';
+import {
+  purchaseErrorStateRecoverySchemaInput,
+  purchaseErrorStateRecoverySchemaOutput,
+} from '@/routes/api/purchases/error-state-recovery';
+import {
+  registerWebhookSchemaInput,
+  registerWebhookSchemaOutput,
+  listWebhooksSchemaInput,
+  listWebhooksSchemaOutput,
+  deleteWebhookSchemaInput,
+  deleteWebhookSchemaOutput,
+} from '@/routes/api/webhooks';
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -785,7 +820,163 @@ export function generateOpenAPI() {
                 example: {
                   status: 'success',
                   data: {
-                    Payments: [paymentSchemaOutputExample],
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff',
+    description:
+      'Returns payments that changed since the provided timestamp (combined next-action + on-chain-state/result).',
+    summary:
+      'Diff payments by combined status timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff/next-action',
+    description: 'Returns payments whose next action changed since lastUpdate.',
+    summary: 'Diff payments by next-action timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/payment/diff/onchain-state-or-result',
+    description:
+      'Returns payments whose on-chain state or result hash changed since lastUpdate.',
+    summary:
+      'Diff payments by on-chain-state/result timestamp (READ access required)',
+    tags: ['payment'],
+    request: {
+      query: queryPaymentDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Payment diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Payments: [
+                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
+                    ],
                   },
                 },
               }),
@@ -973,7 +1164,222 @@ export function generateOpenAPI() {
     },
   });
 
+  /********************* PAYMENT ERROR RECOVERY *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/payment/error-state-recovery/',
+    description:
+      'Clears error states for payment requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
+    summary: 'Clear error state for payment request (PAY access required)',
+    tags: ['error-state-recovery'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Payment error recovery request details',
+        content: {
+          'application/json': {
+            schema: paymentErrorStateRecoverySchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                updatedAt: new Date(1713636260).toISOString(),
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Error state cleared successfully for payment request',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: paymentErrorStateRecoverySchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'cmf40vg7h0016ucj1u1ro6651',
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description:
+          'Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: {
+                message:
+                  'Payment request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
+              },
+            },
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Payment request not found',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: { message: 'Payment request not found' },
+            },
+          },
+        },
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* PURCHASE ERROR RECOVERY *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/purchase/error-state-recovery/',
+    description:
+      'Clears error states for purchase requests in WaitingForManualAction state and resets them up for retry or other actions. This endpoint provides manual intervention capability to recover from error states by clearing error fields.',
+    summary: 'Clear error state for purchase request (PAY access required)',
+    tags: ['error-state-recovery'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Purchase error recovery request details',
+        content: {
+          'application/json': {
+            schema: purchaseErrorStateRecoverySchemaInput.openapi({
+              example: {
+                blockchainIdentifier: 'blockchain_identifier',
+                network: Network.Preprod,
+                updatedAt: new Date(1713636260).toISOString(),
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Error state cleared successfully for purchase request',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: purchaseErrorStateRecoverySchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'cmf40vg7h0016ucj1u1ro6651',
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description:
+          'Bad Request (not in WaitingForManualAction state, no error to clear, or invalid input)',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: {
+                message:
+                  'Purchase request is not in WaitingForManualAction state. Current state: WaitingForExternalAction',
+              },
+            },
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Purchase request not found',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              error: z.object({ message: z.string() }),
+            }),
+            example: {
+              status: 'error',
+              error: { message: 'Purchase request not found' },
+            },
+          },
+        },
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
   /********************* PURCHASE *****************************/
+  const queryPurchaseDiffSchemaInputForDocs = z.object({
+    limit: z.coerce
+      .number()
+      .min(1)
+      .max(100)
+      .default(10)
+      .describe('The number of purchases to return'),
+    cursorId: z
+      .string()
+      .optional()
+      .describe(
+        'Pagination cursor (purchase id). Used as tie-breaker when lastUpdate equals a purchase change timestamp',
+      ),
+    lastUpdate: z
+      .string()
+      .optional()
+      .default(new Date(0).toISOString())
+      .describe(
+        'Return purchases whose selected status timestamp changed at/after this ISO timestamp',
+      ),
+    network: z
+      .nativeEnum(Network)
+      .describe('The network the purchases were made on'),
+    filterSmartContractAddress: z
+      .string()
+      .optional()
+      .nullable()
+      .describe('The smart contract address of the payment source'),
+    includeHistory: z
+      .string()
+      .optional()
+      .default('false')
+      .describe(
+        'Whether to include the full transaction and status history of the purchases',
+      ),
+  });
+
   registry.registerPath({
     method: 'get',
     path: '/purchase/',
@@ -1045,11 +1451,205 @@ export function generateOpenAPI() {
                         TransactionHistory: [],
                         WithdrawnForSeller: [],
                         WithdrawnForBuyer: [],
+                        totalBuyerCardanoFees: 0,
+                        totalSellerCardanoFees: 0,
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                          1713636260,
+                        ),
+                        nextActionLastChangedAt: new Date(1713636260),
+                        onChainStateOrResultLastChangedAt: new Date(1713636260),
                       },
                     ],
                   },
                 },
               }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff',
+    description:
+      'Returns purchases that changed since the provided timestamp (combined next-action + on-chain-state/result).',
+    summary:
+      'Diff purchases by combined status timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: queryPurchaseRequestSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    Purchases: [
+                      {
+                        id: 'cuid_v2_auto_generated',
+                        blockchainIdentifier: 'blockchain_identifier',
+                        agentIdentifier: 'agent_identifier',
+                        lastCheckedAt: null,
+                        onChainState: null,
+                        metadata: null,
+                        requestedById: 'requester_id',
+                        resultHash: '',
+                        cooldownTime: 0,
+                        payByTime: null,
+                        cooldownTimeOtherParty: 0,
+                        collateralReturnLovelace: null,
+                        inputHash: 'input_hash',
+                        NextAction: {
+                          requestedAction:
+                            PurchasingAction.FundsLockingRequested,
+                          errorType: null,
+                          errorNote: null,
+                        },
+                        createdAt: new Date(1713636260),
+                        updatedAt: new Date(1713636260),
+                        externalDisputeUnlockTime: (1713636260).toString(),
+                        submitResultTime: new Date(1713636260).toISOString(),
+                        unlockTime: (1713636260).toString(),
+                        PaidFunds: [],
+                        PaymentSource: {
+                          id: 'payment_source_id',
+                          network: Network.Preprod,
+                          policyId: 'policy_id',
+                          smartContractAddress: 'address',
+                        },
+                        SellerWallet: null,
+                        SmartContractWallet: null,
+                        CurrentTransaction: null,
+                        TransactionHistory: [],
+                        WithdrawnForSeller: [],
+                        WithdrawnForBuyer: [],
+                        totalBuyerCardanoFees: 0,
+                        totalSellerCardanoFees: 0,
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                          1713636260,
+                        ),
+                        nextActionLastChangedAt: new Date(1713636260),
+                        onChainStateOrResultLastChangedAt: new Date(1713636260),
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff/next-action',
+    description:
+      'Returns purchases whose next action changed since lastUpdate.',
+    summary: 'Diff purchases by next-action timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryPurchaseRequestSchemaOutput,
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/purchase/diff/onchain-state-or-result',
+    description:
+      'Returns purchases whose on-chain state or result hash changed since lastUpdate.',
+    summary:
+      'Diff purchases by on-chain-state/result timestamp (READ access required)',
+    tags: ['purchase'],
+    request: {
+      query: queryPurchaseDiffSchemaInputForDocs.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cuid_v2_of_last_cursor_entry',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+          includeHistory: 'false',
+        },
+      }),
+    },
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Purchase diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryPurchaseRequestSchemaOutput,
+            }),
           },
         },
       },
@@ -1336,6 +1936,13 @@ export function generateOpenAPI() {
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerCardanoFees: 0,
+                    totalSellerCardanoFees: 0,
+                    nextActionLastChangedAt: new Date(1713636260),
+                    onChainStateOrResultLastChangedAt: new Date(1713636260),
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                      1713636260,
+                    ),
                   },
                 },
               }),
@@ -1436,6 +2043,13 @@ export function generateOpenAPI() {
                     metadata: null,
                     WithdrawnForSeller: [],
                     WithdrawnForBuyer: [],
+                    totalBuyerCardanoFees: 0,
+                    totalSellerCardanoFees: 0,
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
+                      1713636260,
+                    ),
+                    nextActionLastChangedAt: new Date(1713636260),
+                    onChainStateOrResultLastChangedAt: new Date(1713636260),
                   },
                 },
               }),
@@ -1618,6 +2232,49 @@ export function generateOpenAPI() {
               }),
           },
         },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/registry/diff',
+    description:
+      'Returns registry entries that changed since the provided timestamp (registrationStateLastChangedAt).',
+    summary:
+      'Diff registry entries by state-change timestamp (READ access required)',
+    tags: ['registry'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: queryRegistryDiffSchemaInput.openapi({
+        example: {
+          limit: 10,
+          cursorId: 'cursor_id',
+          lastUpdate: new Date(1713636260).toISOString(),
+          network: Network.Preprod,
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Agent metadata diff',
+        content: {
+          'application/json': {
+            schema: z.object({
+              status: z.string(),
+              data: queryRegistryRequestSchemaOutput,
+            }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
       },
     },
   });
@@ -1821,7 +2478,6 @@ export function generateOpenAPI() {
     },
   });
 
-  /********************* PAYMENT CONTRACT *****************************/
   registry.registerPath({
     method: 'get',
     path: '/payment-source/',
@@ -2278,6 +2934,482 @@ export function generateOpenAPI() {
             }),
           },
         },
+      },
+    },
+  });
+
+  /********************* PURCHASE SPENDINGS *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/purchase/spending',
+    description:
+      'Get agent spending, fees, and volume analytics for Purchase Request transactions only, over specified time periods.',
+    summary: 'Get agent purchase spending analytics. (READ access required)',
+    tags: ['purchase-spending'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPurchaseSpendingSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Agent purchase spending analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postPurchaseSpendingSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalSpend: {
+                      units: [
+                        {
+                          unit: '',
+                          amount: 47500000,
+                        },
+                      ],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [
+                        {
+                          unit: '',
+                          amount: 2500000,
+                        },
+                      ],
+                      blockchainFees: 100000,
+                    },
+                    totalPending: {
+                      units: [],
+                      blockchainFees: 0,
+                    },
+                    dailySpend: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 2100000,
+                          },
+                        ],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    dailyRefunded: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 0,
+                          },
+                        ],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    dailyPending: [
+                      {
+                        day: 15,
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 0,
+                          },
+                        ],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlySpend: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [
+                          {
+                            unit: '',
+                            amount: 2100000,
+                          },
+                        ],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    monthlyRefunded: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        month: 9,
+                        year: 2024,
+                        units: [],
+                        blockchainFees: 0,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no spendings data available',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* PAYMENT INCOME *****************************/
+  registry.registerPath({
+    method: 'post',
+    path: '/payment/income',
+    description:
+      'Get payment income analytics for Payment Request transactions, over specified time periods.',
+    summary: 'Get payment income analytics. (READ access required)',
+    tags: ['payment-income'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: '',
+        content: {
+          'application/json': {
+            schema: postPaymentIncomeSchemaInput.openapi({
+              example: {
+                agentIdentifier: 'example_agent_identifier_asset_id',
+                startDate: '2024-01-01',
+                endDate: '2024-01-31',
+                network: Network.Preprod,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Agent payment income analytics',
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                status: z.string(),
+                data: postPaymentIncomeSchemaOutput,
+              })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    agentIdentifier: 'example_agent_identifier_asset_id',
+                    periodStart: new Date('2024-01-01T00:00:00.000Z'),
+                    periodEnd: new Date('2024-01-31T23:59:59.000Z'),
+                    totalTransactions: 25,
+                    totalIncome: {
+                      units: [{ unit: '', amount: 45000000 }],
+                      blockchainFees: 2500000,
+                    },
+                    totalRefunded: {
+                      units: [{ unit: '', amount: 5000000 }],
+                      blockchainFees: 400000,
+                    },
+                    totalPending: {
+                      units: [{ unit: '', amount: 2000000 }],
+                      blockchainFees: 100000,
+                    },
+                    dailyIncome: [
+                      {
+                        day: 10,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 2000000 }],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                    dailyRefunded: [
+                      {
+                        day: 12,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 500000 }],
+                        blockchainFees: 20000,
+                      },
+                    ],
+                    dailyPending: [
+                      {
+                        day: 15,
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 500000 }],
+                        blockchainFees: 0,
+                      },
+                    ],
+                    monthlyIncome: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 45000000 }],
+                        blockchainFees: 2500000,
+                      },
+                    ],
+                    monthlyRefunded: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 5000000 }],
+                        blockchainFees: 400000,
+                      },
+                    ],
+                    monthlyPending: [
+                      {
+                        month: 1,
+                        year: 2024,
+                        units: [{ unit: '', amount: 2000000 }],
+                        blockchainFees: 100000,
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (possible parameters missing or invalid)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      404: {
+        description: 'Agent not found or no income data available',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* WEBHOOKS *****************************/
+  registry.registerPath({
+    method: 'get',
+    path: '/webhooks/',
+    description: 'List webhook endpoints',
+    summary:
+      'List all webhook endpoints registered by your API key. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      query: listWebhooksSchemaInput.openapi({
+        example: {
+          paymentSourceId: 'payment_source_id_optional',
+        },
+      }),
+    },
+    responses: {
+      200: {
+        description: 'List of webhook endpoints',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: listWebhooksSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    webhooks: [
+                      {
+                        id: 'webhook_endpoint_id',
+                        url: 'https://your-server.com/webhook',
+                        name: 'My Webhook',
+                        events: [
+                          'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                          'PAYMENT_ON_ERROR',
+                        ],
+                        isActive: true,
+                        createdAt: new Date(1713636260),
+                        updatedAt: new Date(1713636260),
+                        paymentSourceId: null,
+                        failureCount: 0,
+                        lastSuccessAt: new Date(1713636260),
+                        disabledAt: null,
+                        createdBy: {
+                          apiKeyId: 'api_key_id',
+                          apiKeyToken: 'masked_token',
+                        },
+                      },
+                    ],
+                  },
+                },
+              }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/webhooks/',
+    description: 'Register a new webhook endpoint',
+    summary:
+      'Register a new webhook endpoint to receive event notifications. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Webhook registration details',
+        content: {
+          'application/json': {
+            schema: registerWebhookSchemaInput.openapi({
+              example: {
+                url: 'https://your-server.com/webhook',
+                authToken: 'your-webhook-secret-token',
+                events: [
+                  'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                  'PAYMENT_ON_ERROR',
+                ],
+                name: 'My Payment Webhook',
+                paymentSourceId: 'payment_source_id_optional',
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: 'Webhook endpoint registered successfully',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: registerWebhookSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'webhook_endpoint_id',
+                    url: 'https://your-server.com/webhook',
+                    name: 'My Payment Webhook',
+                    events: [
+                      'PURCHASE_ON_CHAIN_STATUS_CHANGED',
+                      'PAYMENT_ON_ERROR',
+                    ],
+                    isActive: true,
+                    createdAt: new Date(1713636260),
+                    paymentSourceId: null,
+                  },
+                },
+              }),
+          },
+        },
+      },
+      400: {
+        description: 'Bad Request (invalid webhook URL or configuration)',
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      500: {
+        description: 'Internal Server Error',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'delete',
+    path: '/webhooks/',
+    description: 'Delete a webhook endpoint',
+    summary:
+      'Delete an existing webhook endpoint. Only the creator or admin can delete a webhook. (pay-authenticated access required)',
+    tags: ['webhooks'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Webhook deletion request',
+        content: {
+          'application/json': {
+            schema: deleteWebhookSchemaInput.openapi({
+              example: {
+                webhookId: 'webhook_endpoint_id',
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Webhook endpoint deleted successfully',
+        content: {
+          'application/json': {
+            schema: z
+              .object({ status: z.string(), data: deleteWebhookSchemaOutput })
+              .openapi({
+                example: {
+                  status: 'success',
+                  data: {
+                    id: 'webhook_endpoint_id',
+                    url: 'https://your-server.com/webhook',
+                    name: 'My Payment Webhook',
+                    deletedAt: new Date(1713636260),
+                  },
+                },
+              }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (only creator or admin can delete)',
+      },
+      404: {
+        description: 'Webhook endpoint not found',
+      },
+      500: {
+        description: 'Internal Server Error',
       },
     },
   });

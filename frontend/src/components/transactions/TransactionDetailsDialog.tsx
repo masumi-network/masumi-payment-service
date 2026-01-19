@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
@@ -14,18 +13,21 @@ import { parseError } from '@/lib/utils';
 import { getUsdmConfig, TESTUSDM_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  GetPaymentResponses,
-  GetPurchaseResponses,
+  Payment,
+  Purchase,
   postPurchaseRequestRefund,
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
+  postPurchaseErrorStateRecovery,
+  postPaymentErrorStateRecovery,
 } from '@/lib/api/generated';
+import { useAppContext } from '@/lib/contexts/AppContext';
 
 type Transaction =
-  | (GetPaymentResponses['200']['data']['Payments'][0] & { type: 'payment' })
-  | (GetPurchaseResponses['200']['data']['Purchases'][0] & {
-      type: 'purchase';
-    });
+  | (Payment & { type: 'payment' })
+  | (Purchase & {
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -38,8 +40,6 @@ interface TransactionDetailsDialogProps {
   transaction: Transaction | null;
   onClose: () => void;
   onRefresh: () => void;
-  apiClient: any;
-  state: any;
 }
 
 const handleError = (error: ApiError) => {
@@ -48,8 +48,12 @@ const handleError = (error: ApiError) => {
   toast.error(errorMessage);
 };
 
-const formatTimestamp = (timestamp: string | null | undefined): string => {
+const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
   if (!timestamp) return '—';
+
+  if (timestamp instanceof Date) {
+    return timestamp.toLocaleString();
+  }
 
   if (/^\d+$/.test(timestamp)) {
     return new Date(parseInt(timestamp)).toLocaleString();
@@ -58,7 +62,7 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
   return new Date(timestamp).toLocaleString();
 };
 
-const getStatusColor = (status: string, hasError?: boolean) => {
+const getStatusColor = (status: string | null, hasError?: boolean) => {
   if (hasError) return 'text-destructive';
   switch (status?.toLowerCase()) {
     case 'fundslocked':
@@ -77,7 +81,7 @@ const getStatusColor = (status: string, hasError?: boolean) => {
   }
 };
 
-const formatStatus = (status: string) => {
+const formatStatus = (status: string | null) => {
   if (!status) return '—';
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
@@ -108,43 +112,76 @@ export default function TransactionDetailsDialog({
   transaction,
   onClose,
   onRefresh,
-  apiClient,
-  state,
 }: TransactionDetailsDialogProps) {
+  const { network, apiClient } = useAppContext();
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<
     'refund' | 'cancel' | null
   >(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const clearTransactionError = async (transaction: Transaction) => {
+  const clearTransactionError = async () => {
     try {
-      await apiClient.request({
-        method: 'PUT',
-        url: `/transactions/${transaction.id}/clear-error`,
-      });
-      toast.success('Error state cleared successfully');
-      return true;
-    } catch (error) {
-      handleError(error as ApiError);
-      return false;
-    }
-  };
+      setIsLoading(true);
 
-  const updateTransactionState = async (
-    transaction: Transaction,
-    newState: string,
-  ) => {
-    try {
-      await apiClient.request({
-        method: 'PUT',
-        url: `/transactions/${transaction.id}/state`,
-        data: { state: newState },
-      });
-      toast.success('Transaction state updated successfully');
-      return true;
+      if (!transaction) {
+        toast.error('Transaction not found');
+        return false;
+      }
+      if (!transaction.onChainState) {
+        toast.error(
+          'Transaction is in its initial on-chain state. Can not be recovered. Please start a new purchase request.',
+        );
+        return false;
+      }
+      if (transaction.type === 'purchase') {
+        const response = await postPurchaseErrorStateRecovery({
+          client: apiClient,
+          body: {
+            blockchainIdentifier: transaction.blockchainIdentifier,
+            updatedAt: new Date(transaction.updatedAt),
+            network: network,
+          },
+        });
+        if (response.error) {
+          toast.error(
+            (response.error as { message: string }).message ||
+            'Failed to clear error state',
+          );
+          return false;
+        }
+        toast.success('Error state cleared successfully');
+        onRefresh();
+        onClose();
+        return true;
+      }
+      if (transaction.type === 'payment') {
+        const response = await postPaymentErrorStateRecovery({
+          client: apiClient,
+          body: {
+            blockchainIdentifier: transaction.blockchainIdentifier,
+            updatedAt: new Date(transaction.updatedAt),
+            network: network,
+          },
+        });
+        if (response.error) {
+          toast.error(
+            (response.error as { message: string }).message ||
+            'Failed to clear error state',
+          );
+          return false;
+        }
+        toast.success('Error state cleared successfully');
+        onRefresh();
+        onClose();
+        return true;
+      }
+
+      return false;
     } catch (error) {
       handleError(error as ApiError);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -152,7 +189,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPurchaseRequestRefund({
         client: apiClient,
@@ -182,7 +219,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPaymentAuthorizeRefund({
         client: apiClient,
@@ -212,7 +249,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: state.network,
+        network: network,
       };
       const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
@@ -394,10 +431,10 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds &&
-                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds &&
+                    transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
-                      const usdmConfig = getUsdmConfig(state.network);
+                      const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
                         fund.unit === usdmConfig.fullAssetId ||
                         fund.unit === usdmConfig.policyId ||
@@ -410,7 +447,7 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
                                 : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
@@ -421,7 +458,7 @@ export default function TransactionDetailsDialog({
                     transaction.PaidFunds &&
                     transaction.PaidFunds.length > 0 ? (
                     transaction.PaidFunds.map((fund, index) => {
-                      const usdmConfig = getUsdmConfig(state.network);
+                      const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
                         fund.unit === usdmConfig.fullAssetId ||
                         fund.unit === usdmConfig.policyId ||
@@ -434,7 +471,7 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${state.network?.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM'}`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
                                 : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
@@ -454,7 +491,7 @@ export default function TransactionDetailsDialog({
                     <a
                       href={getExplorerUrl(
                         transaction.CurrentTransaction.txHash,
-                        state.network,
+                        network,
                         'transaction',
                       )}
                       target="_blank"
@@ -533,7 +570,7 @@ export default function TransactionDetailsDialog({
                       <a
                         href={getExplorerUrl(
                           transaction.SmartContractWallet.walletAddress,
-                          state.network,
+                          network,
                           'address',
                         )}
                         target="_blank"
@@ -570,30 +607,17 @@ export default function TransactionDetailsDialog({
                     <Button
                       variant="secondary"
                       size="sm"
+                      disabled={isLoading}
                       onClick={async () => {
-                        if (await clearTransactionError(transaction)) {
+                        if (await clearTransactionError()) {
                           onClose();
                           onRefresh();
                         }
                       }}
                     >
-                      Clear Error State
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={async () => {
-                        const newState = prompt('Enter new state:');
-                        if (
-                          newState &&
-                          (await updateTransactionState(transaction, newState))
-                        ) {
-                          onClose();
-                          onRefresh();
-                        }
-                      }}
-                    >
-                      Set New State
+                      {isLoading
+                        ? 'Clearing error state...'
+                        : 'Clear Error State'}
                     </Button>
                   </div>
                 </div>

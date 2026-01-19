@@ -6,17 +6,20 @@ import { prisma } from '@/utils/db';
 import { encrypt } from '@/utils/security/encryption';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { HotWalletType, RPCProvider, Network, $Enums } from '@prisma/client';
+import { HotWalletType, RPCProvider, Network } from '@prisma/client';
 import createHttpError from 'http-errors';
 import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { DEFAULTS } from '@/utils/config';
 import { splitWalletsByType } from '@/utils/shared/transformers';
 
 export const paymentSourceExtendedSchemaInput = z.object({
-  take: z
-    .number({ coerce: true })
+  take: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -161,20 +164,15 @@ export const paymentSourceExtendedEndpointGet =
     output: paymentSourceExtendedSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof paymentSourceExtendedSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       const paymentSources = await prisma.paymentSource.findMany({
         where: {
           network: {
-            in: options.networkLimit,
+            in: ctx.networkLimit,
           },
           deletedAt: null,
         },
@@ -184,10 +182,27 @@ export const paymentSourceExtendedEndpointGet =
         },
         cursor: input.cursorId ? { id: input.cursorId } : undefined,
         include: {
-          AdminWallets: { orderBy: { order: 'asc' } },
-          HotWallets: { where: { deletedAt: null } },
-          FeeReceiverNetworkWallet: true,
-          PaymentSourceConfig: true,
+          AdminWallets: {
+            orderBy: { order: 'asc' },
+            select: { walletAddress: true, order: true },
+          },
+          HotWallets: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              walletVkey: true,
+              walletAddress: true,
+              type: true,
+              collectionAddress: true,
+              note: true,
+            },
+          },
+          FeeReceiverNetworkWallet: {
+            select: { walletAddress: true },
+          },
+          PaymentSourceConfig: {
+            select: { rpcProviderApiKey: true, rpcProvider: true },
+          },
         },
       });
       const mappedPaymentSources = paymentSources.map((paymentSource) => {
@@ -216,15 +231,15 @@ export const paymentSourceExtendedCreateSchemaInput = z.object({
       .nativeEnum(RPCProvider)
       .describe('The rpc provider to be used for the payment source'),
   }),
-  feeRatePermille: z
-    .number({ coerce: true })
+  feeRatePermille: z.coerce
+    .number()
     .min(0)
     .max(1000)
     .describe(
       'The fee in permille to be used for the payment source. The default contract uses 50 (5%)',
     ),
-  cooldownTime: z
-    .number({ coerce: true })
+  cooldownTime: z.coerce
+    .number()
     .min(0)
     .optional()
     .describe(
@@ -303,20 +318,15 @@ export const paymentSourceExtendedEndpointPost =
     output: paymentSourceExtendedCreateSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof paymentSourceExtendedCreateSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
       const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
         return {
@@ -438,10 +448,34 @@ export const paymentSourceExtendedEndpointPost =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -553,27 +587,16 @@ export const paymentSourceExtendedEndpointPatch =
     output: paymentSourceExtendedUpdateSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof paymentSourceExtendedUpdateSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       const paymentSource = await prisma.paymentSource.findUnique({
         where: {
           id: input.id,
-          network: { in: options.networkLimit },
+          network: { in: ctx.networkLimit },
           deletedAt: null,
-        },
-        include: {
-          HotWallets: { where: { deletedAt: null } },
-          PaymentSourceConfig: true,
-          AdminWallets: true,
-          FeeReceiverNetworkWallet: true,
         },
       });
       if (paymentSource == null) {
@@ -689,10 +712,34 @@ export const paymentSourceExtendedEndpointPatch =
             },
           },
           include: {
-            HotWallets: { where: { deletedAt: null } },
-            PaymentSourceConfig: true,
-            AdminWallets: true,
-            FeeReceiverNetworkWallet: true,
+            HotWallets: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                walletVkey: true,
+                walletAddress: true,
+                type: true,
+                collectionAddress: true,
+                note: true,
+              },
+            },
+            PaymentSourceConfig: {
+              select: {
+                rpcProviderApiKey: true,
+                rpcProvider: true,
+              },
+            },
+            AdminWallets: {
+              select: {
+                walletAddress: true,
+                order: true,
+              },
+            },
+            FeeReceiverNetworkWallet: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         });
 
@@ -719,24 +766,43 @@ export const paymentSourceExtendedEndpointDelete =
     output: paymentSourceExtendedDeleteSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof paymentSourceExtendedDeleteSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       const paymentSource = await prisma.paymentSource.update({
-        where: { id: input.id, network: { in: options.networkLimit } },
+        where: { id: input.id, network: { in: ctx.networkLimit } },
         data: { deletedAt: new Date() },
         include: {
-          HotWallets: { where: { deletedAt: null } },
-          PaymentSourceConfig: true,
-          AdminWallets: true,
-          FeeReceiverNetworkWallet: true,
+          HotWallets: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              walletVkey: true,
+              walletAddress: true,
+              type: true,
+              collectionAddress: true,
+              note: true,
+            },
+          },
+          PaymentSourceConfig: {
+            select: {
+              rpcProviderApiKey: true,
+              rpcProvider: true,
+            },
+          },
+          AdminWallets: {
+            select: {
+              walletAddress: true,
+              order: true,
+            },
+          },
+          FeeReceiverNetworkWallet: {
+            select: {
+              walletAddress: true,
+            },
+          },
         },
       });
       const { HotWallets, ...rest } = paymentSource;

@@ -1,6 +1,15 @@
 import { logs, SeverityNumber } from '@opentelemetry/api-logs';
 import { logger as winstonLogger } from '@/utils/logger/';
 const logger = logs.getLogger('masumi-payment-logger', '1.0.0');
+logger.emit({
+  severityNumber: SeverityNumber.INFO,
+  severityText: 'INFO',
+  body: 'Logger initialized',
+  attributes: {
+    service: 'masumi-payment-service',
+  },
+  timestamp: Date.now(),
+});
 
 export enum LogLevel {
   DEBUG = 'debug',

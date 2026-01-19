@@ -13,7 +13,11 @@ export const APIKeySchema = {
         },
         permission: {
             type: 'string',
-            enum: ['Read', 'ReadAndPay', 'Admin'],
+            enum: [
+                'Read',
+                'ReadAndPay',
+                'Admin'
+            ],
             description: 'Permission level of the API key'
         },
         usageLimited: {
@@ -24,7 +28,10 @@ export const APIKeySchema = {
             type: 'array',
             items: {
                 type: 'string',
-                enum: ['Preprod', 'Mainnet']
+                enum: [
+                    'Preprod',
+                    'Mainnet'
+                ]
             },
             description: 'List of Cardano networks this API key is allowed to access'
         },
@@ -42,17 +49,31 @@ export const APIKeySchema = {
                         description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
                     }
                 },
-                required: ['unit', 'amount']
+                required: [
+                    'unit',
+                    'amount'
+                ]
             },
             description: 'Remaining usage credits for this API key'
         },
         status: {
             type: 'string',
-            enum: ['Active', 'Revoked'],
+            enum: [
+                'Active',
+                'Revoked'
+            ],
             description: 'Current status of the API key'
         }
     },
-    required: ['id', 'token', 'permission', 'usageLimited', 'networkLimit', 'RemainingUsageCredits', 'status']
+    required: [
+        'id',
+        'token',
+        'permission',
+        'usageLimited',
+        'networkLimit',
+        'RemainingUsageCredits',
+        'status'
+    ]
 } as const;
 
 export const WalletSchema = {
@@ -63,10 +84,12 @@ export const WalletSchema = {
             properties: {
                 createdAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the secret was created'
                 },
                 updatedAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the secret was last updated'
                 },
                 mnemonic: {
@@ -74,7 +97,11 @@ export const WalletSchema = {
                     description: 'Decrypted 24-word mnemonic phrase for the wallet'
                 }
             },
-            required: ['createdAt', 'updatedAt', 'mnemonic'],
+            required: [
+                'createdAt',
+                'updatedAt',
+                'mnemonic'
+            ],
             description: 'Wallet secret (mnemonic). Only included if includeSecret is true'
         },
         PendingTransaction: {
@@ -83,10 +110,12 @@ export const WalletSchema = {
             properties: {
                 createdAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the pending transaction was created'
                 },
                 updatedAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the pending transaction was last updated'
                 },
                 hash: {
@@ -97,10 +126,16 @@ export const WalletSchema = {
                 lastCheckedAt: {
                     type: 'string',
                     nullable: true,
+                    format: 'date-time',
                     description: 'Timestamp when the pending transaction was last checked. Null if never checked'
                 }
             },
-            required: ['createdAt', 'updatedAt', 'hash', 'lastCheckedAt'],
+            required: [
+                'createdAt',
+                'updatedAt',
+                'hash',
+                'lastCheckedAt'
+            ],
             description: 'Pending transaction for this wallet. Null if no transaction is pending'
         },
         note: {
@@ -122,7 +157,13 @@ export const WalletSchema = {
             description: 'Collection address for this wallet. Null if not set'
         }
     },
-    required: ['PendingTransaction', 'note', 'walletVkey', 'walletAddress', 'collectionAddress']
+    required: [
+        'PendingTransaction',
+        'note',
+        'walletVkey',
+        'walletAddress',
+        'collectionAddress'
+    ]
 } as const;
 
 export const GeneratedWalletSecretSchema = {
@@ -141,7 +182,11 @@ export const GeneratedWalletSecretSchema = {
             description: 'Payment key hash of the newly generated wallet'
         }
     },
-    required: ['walletMnemonic', 'walletAddress', 'walletVkey'],
+    required: [
+        'walletMnemonic',
+        'walletAddress',
+        'walletVkey'
+    ],
     example: {
         walletMnemonic: 'wallet_mnemonic',
         walletAddress: 'wallet_address',
@@ -158,10 +203,12 @@ export const PaymentSchema = {
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment was last updated'
         },
         blockchainIdentifier: {
@@ -176,6 +223,7 @@ export const PaymentSchema = {
         lastCheckedAt: {
             type: 'string',
             nullable: true,
+            format: 'date-time',
             description: 'Timestamp when the payment was last checked on-chain. Null if never checked'
         },
         payByTime: {
@@ -209,10 +257,33 @@ export const PaymentSchema = {
             nullable: true,
             description: 'SHA256 hash of the result submitted by the seller (hex string)'
         },
+        nextActionLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the next action was last changed'
+        },
+        onChainStateOrResultLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the on-chain state or result was last changed'
+        },
+        nextActionOrOnChainStateOrResultLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the next action or on-chain state or result was last changed'
+        },
         inputHash: {
             type: 'string',
             nullable: true,
             description: 'SHA256 hash of the input data for the payment (hex string)'
+        },
+        totalBuyerCardanoFees: {
+            type: 'number',
+            description: 'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)'
+        },
+        totalSellerCardanoFees: {
+            type: 'number',
+            description: 'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)'
         },
         cooldownTime: {
             type: 'number',
@@ -225,7 +296,17 @@ export const PaymentSchema = {
         onChainState: {
             type: 'string',
             nullable: true,
-            enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+            enum: [
+                'FundsLocked',
+                'FundsOrDatumInvalid',
+                'ResultSubmitted',
+                'RefundRequested',
+                'Disputed',
+                'Withdrawn',
+                'RefundWithdrawn',
+                'DisputedWithdrawn',
+                null
+            ],
             description: 'Current state of the payment on the blockchain. Null if not yet on-chain'
         },
         NextAction: {
@@ -233,13 +314,28 @@ export const PaymentSchema = {
             properties: {
                 requestedAction: {
                     type: 'string',
-                    enum: ['None', 'Ignore', 'WaitingForManualAction', 'WaitingForExternalAction', 'SubmitResultRequested', 'SubmitResultInitiated', 'WithdrawRequested', 'WithdrawInitiated', 'AuthorizeRefundRequested', 'AuthorizeRefundInitiated'],
+                    enum: [
+                        'None',
+                        'Ignore',
+                        'WaitingForManualAction',
+                        'WaitingForExternalAction',
+                        'SubmitResultRequested',
+                        'SubmitResultInitiated',
+                        'WithdrawRequested',
+                        'WithdrawInitiated',
+                        'AuthorizeRefundRequested',
+                        'AuthorizeRefundInitiated'
+                    ],
                     description: 'Next action required for this payment'
                 },
                 errorType: {
                     type: 'string',
                     nullable: true,
-                    enum: ['NetworkError', 'Unknown'],
+                    enum: [
+                        'NetworkError',
+                        'Unknown',
+                        null
+                    ],
                     description: 'Type of error that occurred, if any'
                 },
                 errorNote: {
@@ -253,7 +349,12 @@ export const PaymentSchema = {
                     description: 'SHA256 hash of the result to be submitted (hex string). Null if not applicable'
                 }
             },
-            required: ['requestedAction', 'errorType', 'errorNote', 'resultHash'],
+            required: [
+                'requestedAction',
+                'errorType',
+                'errorNote',
+                'resultHash'
+            ],
             description: 'Next action required for this payment'
         },
         CurrentTransaction: {
@@ -266,10 +367,12 @@ export const PaymentSchema = {
                 },
                 createdAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the transaction was created'
                 },
                 updatedAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the transaction was last updated'
                 },
                 fees: {
@@ -293,19 +396,45 @@ export const PaymentSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: [
+                        'Pending',
+                        'Confirmed',
+                        'FailedViaTimeout',
+                        'FailedViaManualReset',
+                        'RolledBack'
+                    ],
                     description: 'Current status of the transaction'
                 },
                 previousOnChainState: {
                     type: 'string',
                     nullable: true,
-                    enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                    enum: [
+                        'FundsLocked',
+                        'FundsOrDatumInvalid',
+                        'ResultSubmitted',
+                        'RefundRequested',
+                        'Disputed',
+                        'Withdrawn',
+                        'RefundWithdrawn',
+                        'DisputedWithdrawn',
+                        null
+                    ],
                     description: 'Previous on-chain state before this transaction'
                 },
                 newOnChainState: {
                     type: 'string',
                     nullable: true,
-                    enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                    enum: [
+                        'FundsLocked',
+                        'FundsOrDatumInvalid',
+                        'ResultSubmitted',
+                        'RefundRequested',
+                        'Disputed',
+                        'Withdrawn',
+                        'RefundWithdrawn',
+                        'DisputedWithdrawn',
+                        null
+                    ],
                     description: 'New on-chain state of this transaction'
                 },
                 confirmations: {
@@ -314,7 +443,19 @@ export const PaymentSchema = {
                     description: 'Number of block confirmations for this transaction'
                 }
             },
-            required: ['id', 'createdAt', 'updatedAt', 'fees', 'blockHeight', 'blockTime', 'txHash', 'status', 'previousOnChainState', 'newOnChainState', 'confirmations'],
+            required: [
+                'id',
+                'createdAt',
+                'updatedAt',
+                'fees',
+                'blockHeight',
+                'blockTime',
+                'txHash',
+                'status',
+                'previousOnChainState',
+                'newOnChainState',
+                'confirmations'
+            ],
             description: 'Current active transaction for this payment. Null if no transaction in progress'
         },
         TransactionHistory: {
@@ -329,10 +470,12 @@ export const PaymentSchema = {
                     },
                     createdAt: {
                         type: 'string',
+                        format: 'date-time',
                         description: 'Timestamp when the transaction was created'
                     },
                     updatedAt: {
                         type: 'string',
+                        format: 'date-time',
                         description: 'Timestamp when the transaction was last updated'
                     },
                     txHash: {
@@ -342,7 +485,13 @@ export const PaymentSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: [
+                            'Pending',
+                            'Confirmed',
+                            'FailedViaTimeout',
+                            'FailedViaManualReset',
+                            'RolledBack'
+                        ],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -363,13 +512,33 @@ export const PaymentSchema = {
                     previousOnChainState: {
                         type: 'string',
                         nullable: true,
-                        enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                        enum: [
+                            'FundsLocked',
+                            'FundsOrDatumInvalid',
+                            'ResultSubmitted',
+                            'RefundRequested',
+                            'Disputed',
+                            'Withdrawn',
+                            'RefundWithdrawn',
+                            'DisputedWithdrawn',
+                            null
+                        ],
                         description: 'Previous on-chain state before this transaction'
                     },
                     newOnChainState: {
                         type: 'string',
                         nullable: true,
-                        enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                        enum: [
+                            'FundsLocked',
+                            'FundsOrDatumInvalid',
+                            'ResultSubmitted',
+                            'RefundRequested',
+                            'Disputed',
+                            'Withdrawn',
+                            'RefundWithdrawn',
+                            'DisputedWithdrawn',
+                            null
+                        ],
                         description: 'New on-chain state of this transaction'
                     },
                     confirmations: {
@@ -378,7 +547,19 @@ export const PaymentSchema = {
                         description: 'Number of block confirmations for this transaction'
                     }
                 },
-                required: ['id', 'createdAt', 'updatedAt', 'txHash', 'status', 'fees', 'blockHeight', 'blockTime', 'previousOnChainState', 'newOnChainState', 'confirmations']
+                required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
+                    'txHash',
+                    'status',
+                    'fees',
+                    'blockHeight',
+                    'blockTime',
+                    'previousOnChainState',
+                    'newOnChainState',
+                    'confirmations'
+                ]
             },
             description: 'Historical list of all transactions for this payment. Null or empty if includeHistory is false'
         },
@@ -396,7 +577,10 @@ export const PaymentSchema = {
                         description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             }
         },
         WithdrawnForSeller: {
@@ -413,7 +597,10 @@ export const PaymentSchema = {
                         description: 'Asset policy id + asset name concatenated. Empty string for ADA/lovelace'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             },
             description: 'List of assets and amounts withdrawn for the seller'
         },
@@ -431,7 +618,10 @@ export const PaymentSchema = {
                         description: 'Asset policy id + asset name concatenated. Empty string for ADA/lovelace'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             },
             description: 'List of assets and amounts withdrawn for the buyer (refunds)'
         },
@@ -444,7 +634,10 @@ export const PaymentSchema = {
                 },
                 network: {
                     type: 'string',
-                    enum: ['Preprod', 'Mainnet'],
+                    enum: [
+                        'Preprod',
+                        'Mainnet'
+                    ],
                     description: 'The Cardano network (Mainnet, Preprod, or Preview)'
                 },
                 smartContractAddress: {
@@ -457,7 +650,12 @@ export const PaymentSchema = {
                     description: 'Policy ID for the agent registry NFTs. Null if not applicable'
                 }
             },
-            required: ['id', 'network', 'smartContractAddress', 'policyId'],
+            required: [
+                'id',
+                'network',
+                'smartContractAddress',
+                'policyId'
+            ],
             description: 'Payment source configuration for this payment'
         },
         BuyerWallet: {
@@ -473,7 +671,10 @@ export const PaymentSchema = {
                     description: 'Payment key hash of the buyer wallet'
                 }
             },
-            required: ['id', 'walletVkey'],
+            required: [
+                'id',
+                'walletVkey'
+            ],
             description: 'Buyer wallet information. Null if buyer has not yet submitted payment'
         },
         SmartContractWallet: {
@@ -493,7 +694,11 @@ export const PaymentSchema = {
                     description: 'Cardano address of the smart contract wallet'
                 }
             },
-            required: ['id', 'walletVkey', 'walletAddress'],
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress'
+            ],
             description: 'Smart contract wallet (seller wallet) managing this payment. Null if not set'
         },
         metadata: {
@@ -502,7 +707,40 @@ export const PaymentSchema = {
             description: 'Optional metadata stored with the payment for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'collateralReturnLovelace', 'externalDisputeUnlockTime', 'requestedById', 'resultHash', 'inputHash', 'cooldownTime', 'cooldownTimeOtherParty', 'onChainState', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'RequestedFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'BuyerWallet', 'SmartContractWallet', 'metadata']
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'blockchainIdentifier',
+        'agentIdentifier',
+        'lastCheckedAt',
+        'payByTime',
+        'submitResultTime',
+        'unlockTime',
+        'collateralReturnLovelace',
+        'externalDisputeUnlockTime',
+        'requestedById',
+        'resultHash',
+        'nextActionLastChangedAt',
+        'onChainStateOrResultLastChangedAt',
+        'nextActionOrOnChainStateOrResultLastChangedAt',
+        'inputHash',
+        'totalBuyerCardanoFees',
+        'totalSellerCardanoFees',
+        'cooldownTime',
+        'cooldownTimeOtherParty',
+        'onChainState',
+        'NextAction',
+        'CurrentTransaction',
+        'TransactionHistory',
+        'RequestedFunds',
+        'WithdrawnForSeller',
+        'WithdrawnForBuyer',
+        'PaymentSource',
+        'BuyerWallet',
+        'SmartContractWallet',
+        'metadata'
+    ]
 } as const;
 
 export const PurchaseSchema = {
@@ -514,10 +752,12 @@ export const PurchaseSchema = {
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the purchase was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the purchase was last updated'
         },
         blockchainIdentifier: {
@@ -532,6 +772,7 @@ export const PurchaseSchema = {
         lastCheckedAt: {
             type: 'string',
             nullable: true,
+            format: 'date-time',
             description: 'Timestamp when the purchase was last checked on-chain. Null if never checked'
         },
         payByTime: {
@@ -551,6 +792,29 @@ export const PurchaseSchema = {
             type: 'string',
             description: 'Unix timestamp (in milliseconds) after which external dispute resolution can occur'
         },
+        totalBuyerCardanoFees: {
+            type: 'number',
+            description: 'Total Cardano transaction fees paid by the buyer in ADA (sum of all confirmed transactions initiated by buyer)'
+        },
+        totalSellerCardanoFees: {
+            type: 'number',
+            description: 'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)'
+        },
+        nextActionOrOnChainStateOrResultLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the next action or on-chain state or result was last changed'
+        },
+        nextActionLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the next action was last changed'
+        },
+        onChainStateOrResultLastChangedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the on-chain state or result was last changed'
+        },
         requestedById: {
             type: 'string',
             description: 'ID of the API key that created this purchase'
@@ -558,7 +822,17 @@ export const PurchaseSchema = {
         onChainState: {
             type: 'string',
             nullable: true,
-            enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+            enum: [
+                'FundsLocked',
+                'FundsOrDatumInvalid',
+                'ResultSubmitted',
+                'RefundRequested',
+                'Disputed',
+                'Withdrawn',
+                'RefundWithdrawn',
+                'DisputedWithdrawn',
+                null
+            ],
             description: 'Current state of the purchase on the blockchain. Null if not yet on-chain'
         },
         collateralReturnLovelace: {
@@ -588,13 +862,31 @@ export const PurchaseSchema = {
             properties: {
                 requestedAction: {
                     type: 'string',
-                    enum: ['None', 'Ignore', 'WaitingForManualAction', 'WaitingForExternalAction', 'FundsLockingRequested', 'FundsLockingInitiated', 'SetRefundRequestedRequested', 'SetRefundRequestedInitiated', 'UnSetRefundRequestedRequested', 'UnSetRefundRequestedInitiated', 'WithdrawRefundRequested', 'WithdrawRefundInitiated'],
+                    enum: [
+                        'None',
+                        'Ignore',
+                        'WaitingForManualAction',
+                        'WaitingForExternalAction',
+                        'FundsLockingRequested',
+                        'FundsLockingInitiated',
+                        'SetRefundRequestedRequested',
+                        'SetRefundRequestedInitiated',
+                        'UnSetRefundRequestedRequested',
+                        'UnSetRefundRequestedInitiated',
+                        'WithdrawRefundRequested',
+                        'WithdrawRefundInitiated'
+                    ],
                     description: 'Next action required for this purchase'
                 },
                 errorType: {
                     type: 'string',
                     nullable: true,
-                    enum: ['NetworkError', 'InsufficientFunds', 'Unknown'],
+                    enum: [
+                        'NetworkError',
+                        'InsufficientFunds',
+                        'Unknown',
+                        null
+                    ],
                     description: 'Type of error that occurred, if any'
                 },
                 errorNote: {
@@ -603,7 +895,11 @@ export const PurchaseSchema = {
                     description: 'Additional details about the error, if any'
                 }
             },
-            required: ['requestedAction', 'errorType', 'errorNote'],
+            required: [
+                'requestedAction',
+                'errorType',
+                'errorNote'
+            ],
             description: 'Next action required for this purchase'
         },
         CurrentTransaction: {
@@ -616,10 +912,12 @@ export const PurchaseSchema = {
                 },
                 createdAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the transaction was created'
                 },
                 updatedAt: {
                     type: 'string',
+                    format: 'date-time',
                     description: 'Timestamp when the transaction was last updated'
                 },
                 txHash: {
@@ -629,7 +927,13 @@ export const PurchaseSchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: [
+                        'Pending',
+                        'Confirmed',
+                        'FailedViaTimeout',
+                        'FailedViaManualReset',
+                        'RolledBack'
+                    ],
                     description: 'Current status of the transaction'
                 },
                 fees: {
@@ -650,13 +954,33 @@ export const PurchaseSchema = {
                 previousOnChainState: {
                     type: 'string',
                     nullable: true,
-                    enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                    enum: [
+                        'FundsLocked',
+                        'FundsOrDatumInvalid',
+                        'ResultSubmitted',
+                        'RefundRequested',
+                        'Disputed',
+                        'Withdrawn',
+                        'RefundWithdrawn',
+                        'DisputedWithdrawn',
+                        null
+                    ],
                     description: 'Previous on-chain state before this transaction'
                 },
                 newOnChainState: {
                     type: 'string',
                     nullable: true,
-                    enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                    enum: [
+                        'FundsLocked',
+                        'FundsOrDatumInvalid',
+                        'ResultSubmitted',
+                        'RefundRequested',
+                        'Disputed',
+                        'Withdrawn',
+                        'RefundWithdrawn',
+                        'DisputedWithdrawn',
+                        null
+                    ],
                     description: 'New on-chain state of this transaction'
                 },
                 confirmations: {
@@ -665,7 +989,19 @@ export const PurchaseSchema = {
                     description: 'Number of block confirmations for this transaction'
                 }
             },
-            required: ['id', 'createdAt', 'updatedAt', 'txHash', 'status', 'fees', 'blockHeight', 'blockTime', 'previousOnChainState', 'newOnChainState', 'confirmations'],
+            required: [
+                'id',
+                'createdAt',
+                'updatedAt',
+                'txHash',
+                'status',
+                'fees',
+                'blockHeight',
+                'blockTime',
+                'previousOnChainState',
+                'newOnChainState',
+                'confirmations'
+            ],
             description: 'Current active transaction for this purchase. Null if no transaction in progress'
         },
         TransactionHistory: {
@@ -679,10 +1015,12 @@ export const PurchaseSchema = {
                     },
                     createdAt: {
                         type: 'string',
+                        format: 'date-time',
                         description: 'Timestamp when the transaction was created'
                     },
                     updatedAt: {
                         type: 'string',
+                        format: 'date-time',
                         description: 'Timestamp when the transaction was last updated'
                     },
                     txHash: {
@@ -692,7 +1030,13 @@ export const PurchaseSchema = {
                     },
                     status: {
                         type: 'string',
-                        enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                        enum: [
+                            'Pending',
+                            'Confirmed',
+                            'FailedViaTimeout',
+                            'FailedViaManualReset',
+                            'RolledBack'
+                        ],
                         description: 'Current status of the transaction'
                     },
                     fees: {
@@ -713,13 +1057,33 @@ export const PurchaseSchema = {
                     previousOnChainState: {
                         type: 'string',
                         nullable: true,
-                        enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                        enum: [
+                            'FundsLocked',
+                            'FundsOrDatumInvalid',
+                            'ResultSubmitted',
+                            'RefundRequested',
+                            'Disputed',
+                            'Withdrawn',
+                            'RefundWithdrawn',
+                            'DisputedWithdrawn',
+                            null
+                        ],
                         description: 'Previous on-chain state before this transaction'
                     },
                     newOnChainState: {
                         type: 'string',
                         nullable: true,
-                        enum: ['FundsLocked', 'FundsOrDatumInvalid', 'ResultSubmitted', 'RefundRequested', 'Disputed', 'Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'],
+                        enum: [
+                            'FundsLocked',
+                            'FundsOrDatumInvalid',
+                            'ResultSubmitted',
+                            'RefundRequested',
+                            'Disputed',
+                            'Withdrawn',
+                            'RefundWithdrawn',
+                            'DisputedWithdrawn',
+                            null
+                        ],
                         description: 'New on-chain state of this transaction'
                     },
                     confirmations: {
@@ -728,7 +1092,19 @@ export const PurchaseSchema = {
                         description: 'Number of block confirmations for this transaction'
                     }
                 },
-                required: ['id', 'createdAt', 'updatedAt', 'txHash', 'status', 'fees', 'blockHeight', 'blockTime', 'previousOnChainState', 'newOnChainState', 'confirmations']
+                required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
+                    'txHash',
+                    'status',
+                    'fees',
+                    'blockHeight',
+                    'blockTime',
+                    'previousOnChainState',
+                    'newOnChainState',
+                    'confirmations'
+                ]
             },
             description: 'Historical list of all transactions for this purchase'
         },
@@ -744,7 +1120,10 @@ export const PurchaseSchema = {
                         type: 'string'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             }
         },
         WithdrawnForSeller: {
@@ -759,7 +1138,10 @@ export const PurchaseSchema = {
                         type: 'string'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             }
         },
         WithdrawnForBuyer: {
@@ -774,7 +1156,10 @@ export const PurchaseSchema = {
                         type: 'string'
                     }
                 },
-                required: ['amount', 'unit']
+                required: [
+                    'amount',
+                    'unit'
+                ]
             }
         },
         PaymentSource: {
@@ -785,7 +1170,10 @@ export const PurchaseSchema = {
                 },
                 network: {
                     type: 'string',
-                    enum: ['Preprod', 'Mainnet']
+                    enum: [
+                        'Preprod',
+                        'Mainnet'
+                    ]
                 },
                 smartContractAddress: {
                     type: 'string'
@@ -795,7 +1183,12 @@ export const PurchaseSchema = {
                     nullable: true
                 }
             },
-            required: ['id', 'network', 'smartContractAddress', 'policyId']
+            required: [
+                'id',
+                'network',
+                'smartContractAddress',
+                'policyId'
+            ]
         },
         SellerWallet: {
             type: 'object',
@@ -810,7 +1203,10 @@ export const PurchaseSchema = {
                     description: 'Payment key hash of the seller wallet'
                 }
             },
-            required: ['id', 'walletVkey'],
+            required: [
+                'id',
+                'walletVkey'
+            ],
             description: 'Seller wallet information. Null if not set'
         },
         SmartContractWallet: {
@@ -830,7 +1226,11 @@ export const PurchaseSchema = {
                     description: 'Cardano address of the smart contract wallet'
                 }
             },
-            required: ['id', 'walletVkey', 'walletAddress'],
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress'
+            ],
             description: 'Smart contract wallet (seller wallet) managing this purchase. Null if not set'
         },
         metadata: {
@@ -839,7 +1239,40 @@ export const PurchaseSchema = {
             description: 'Optional metadata stored with the purchase for additional context. Null if not provided'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'blockchainIdentifier', 'agentIdentifier', 'lastCheckedAt', 'payByTime', 'submitResultTime', 'unlockTime', 'externalDisputeUnlockTime', 'requestedById', 'onChainState', 'collateralReturnLovelace', 'cooldownTime', 'cooldownTimeOtherParty', 'inputHash', 'resultHash', 'NextAction', 'CurrentTransaction', 'TransactionHistory', 'PaidFunds', 'WithdrawnForSeller', 'WithdrawnForBuyer', 'PaymentSource', 'SellerWallet', 'SmartContractWallet', 'metadata']
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'blockchainIdentifier',
+        'agentIdentifier',
+        'lastCheckedAt',
+        'payByTime',
+        'submitResultTime',
+        'unlockTime',
+        'externalDisputeUnlockTime',
+        'totalBuyerCardanoFees',
+        'totalSellerCardanoFees',
+        'nextActionOrOnChainStateOrResultLastChangedAt',
+        'nextActionLastChangedAt',
+        'onChainStateOrResultLastChangedAt',
+        'requestedById',
+        'onChainState',
+        'collateralReturnLovelace',
+        'cooldownTime',
+        'cooldownTimeOtherParty',
+        'inputHash',
+        'resultHash',
+        'NextAction',
+        'CurrentTransaction',
+        'TransactionHistory',
+        'PaidFunds',
+        'WithdrawnForSeller',
+        'WithdrawnForBuyer',
+        'PaymentSource',
+        'SellerWallet',
+        'SmartContractWallet',
+        'metadata'
+    ]
 } as const;
 
 export const AgentMetadataSchema = {
@@ -897,7 +1330,11 @@ export const AgentMetadataSchema = {
                                 description: 'URL to the example output'
                             }
                         },
-                        required: ['name', 'mimeType', 'url']
+                        required: [
+                            'name',
+                            'mimeType',
+                            'url'
+                        ]
                     },
                     maxItems: 25,
                     description: 'List of example outputs from the agent'
@@ -956,7 +1393,9 @@ export const AgentMetadataSchema = {
                             description: 'Organization of the author. Null if not provided'
                         }
                     },
-                    required: ['name'],
+                    required: [
+                        'name'
+                    ],
                     description: 'Author information for the agent'
                 },
                 Legal: {
@@ -991,7 +1430,9 @@ export const AgentMetadataSchema = {
                             properties: {
                                 pricingType: {
                                     type: 'string',
-                                    enum: ['Fixed'],
+                                    enum: [
+                                        'Fixed'
+                                    ],
                                     description: 'Pricing type for the agent (Fixed or Free)'
                                 },
                                 Pricing: {
@@ -1009,24 +1450,34 @@ export const AgentMetadataSchema = {
                                                 description: 'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
                                             }
                                         },
-                                        required: ['amount', 'unit']
+                                        required: [
+                                            'amount',
+                                            'unit'
+                                        ]
                                     },
                                     minItems: 1,
                                     description: 'List of assets and amounts for fixed pricing'
                                 }
                             },
-                            required: ['pricingType', 'Pricing']
+                            required: [
+                                'pricingType',
+                                'Pricing'
+                            ]
                         },
                         {
                             type: 'object',
                             properties: {
                                 pricingType: {
                                     type: 'string',
-                                    enum: ['Free'],
+                                    enum: [
+                                        'Free'
+                                    ],
                                     description: 'Pricing type for the agent (Fixed or Free)'
                                 }
                             },
-                            required: ['pricingType']
+                            required: [
+                                'pricingType'
+                            ]
                         }
                     ],
                     description: 'Pricing information for the agent'
@@ -1043,11 +1494,25 @@ export const AgentMetadataSchema = {
                     description: 'Version of the metadata schema (currently only version 1 is supported)'
                 }
             },
-            required: ['name', 'apiBaseUrl', 'ExampleOutputs', 'Tags', 'Author', 'AgentPricing', 'image', 'metadataVersion'],
+            required: [
+                'name',
+                'apiBaseUrl',
+                'ExampleOutputs',
+                'Tags',
+                'Author',
+                'AgentPricing',
+                'image',
+                'metadataVersion'
+            ],
             description: 'On-chain metadata for the agent'
         }
     },
-    required: ['policyId', 'assetName', 'agentIdentifier', 'Metadata']
+    required: [
+        'policyId',
+        'assetName',
+        'agentIdentifier',
+        'Metadata'
+    ]
 } as const;
 
 export const RegistryEntrySchema = {
@@ -1089,7 +1554,10 @@ export const RegistryEntrySchema = {
                     description: 'Version of the AI model/capability. Null if not provided'
                 }
             },
-            required: ['name', 'version'],
+            required: [
+                'name',
+                'version'
+            ],
             description: 'Information about the AI model and version used by the agent'
         },
         Author: {
@@ -1115,7 +1583,12 @@ export const RegistryEntrySchema = {
                     description: 'Organization of the author. Null if not provided'
                 }
             },
-            required: ['name', 'contactEmail', 'contactOther', 'organization'],
+            required: [
+                'name',
+                'contactEmail',
+                'contactOther',
+                'organization'
+            ],
             description: 'Author information for the agent'
         },
         Legal: {
@@ -1137,12 +1610,25 @@ export const RegistryEntrySchema = {
                     description: 'Other legal information. Null if not provided'
                 }
             },
-            required: ['privacyPolicy', 'terms', 'other'],
+            required: [
+                'privacyPolicy',
+                'terms',
+                'other'
+            ],
             description: 'Legal information about the agent'
         },
         state: {
             type: 'string',
-            enum: ['RegistrationRequested', 'RegistrationInitiated', 'RegistrationConfirmed', 'RegistrationFailed', 'DeregistrationRequested', 'DeregistrationInitiated', 'DeregistrationConfirmed', 'DeregistrationFailed'],
+            enum: [
+                'RegistrationRequested',
+                'RegistrationInitiated',
+                'RegistrationConfirmed',
+                'RegistrationFailed',
+                'DeregistrationRequested',
+                'DeregistrationInitiated',
+                'DeregistrationConfirmed',
+                'DeregistrationFailed'
+            ],
             description: 'Current state of the registration process'
         },
         Tags: {
@@ -1154,15 +1640,18 @@ export const RegistryEntrySchema = {
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the registry request was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the registry request was last updated'
         },
         lastCheckedAt: {
             type: 'string',
             nullable: true,
+            format: 'date-time',
             description: 'Timestamp when the registry was last checked. Null if never checked'
         },
         ExampleOutputs: {
@@ -1186,7 +1675,11 @@ export const RegistryEntrySchema = {
                         description: 'MIME type of the example output (e.g., image/png, text/plain)'
                     }
                 },
-                required: ['name', 'url', 'mimeType']
+                required: [
+                    'name',
+                    'url',
+                    'mimeType'
+                ]
             },
             maxItems: 25,
             description: 'List of example outputs from the agent'
@@ -1205,7 +1698,9 @@ export const RegistryEntrySchema = {
                     properties: {
                         pricingType: {
                             type: 'string',
-                            enum: ['Fixed'],
+                            enum: [
+                                'Fixed'
+                            ],
                             description: 'Pricing type for the agent '
                         },
                         Pricing: {
@@ -1223,24 +1718,34 @@ export const RegistryEntrySchema = {
                                         description: 'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
                                     }
                                 },
-                                required: ['amount', 'unit']
+                                required: [
+                                    'amount',
+                                    'unit'
+                                ]
                             },
                             minItems: 1,
                             description: 'List of assets and amounts for fixed pricing'
                         }
                     },
-                    required: ['pricingType', 'Pricing']
+                    required: [
+                        'pricingType',
+                        'Pricing'
+                    ]
                 },
                 {
                     type: 'object',
                     properties: {
                         pricingType: {
                             type: 'string',
-                            enum: ['Free'],
+                            enum: [
+                                'Free'
+                            ],
                             description: 'Pricing type for the agent '
                         }
                     },
-                    required: ['pricingType']
+                    required: [
+                        'pricingType'
+                    ]
                 }
             ],
             description: 'Pricing information for the agent'
@@ -1257,7 +1762,10 @@ export const RegistryEntrySchema = {
                     description: 'Cardano address of the smart contract wallet'
                 }
             },
-            required: ['walletVkey', 'walletAddress'],
+            required: [
+                'walletVkey',
+                'walletAddress'
+            ],
             description: 'Smart contract wallet managing this agent registration'
         },
         CurrentTransaction: {
@@ -1271,7 +1779,13 @@ export const RegistryEntrySchema = {
                 },
                 status: {
                     type: 'string',
-                    enum: ['Pending', 'Confirmed', 'FailedViaTimeout', 'RolledBack'],
+                    enum: [
+                        'Pending',
+                        'Confirmed',
+                        'FailedViaTimeout',
+                        'FailedViaManualReset',
+                        'RolledBack'
+                    ],
                     description: 'Current status of the transaction'
                 },
                 confirmations: {
@@ -1295,10 +1809,36 @@ export const RegistryEntrySchema = {
                     description: 'Block time of the transaction'
                 }
             },
-            required: ['txHash', 'status', 'confirmations', 'fees', 'blockHeight', 'blockTime']
+            required: [
+                'txHash',
+                'status',
+                'confirmations',
+                'fees',
+                'blockHeight',
+                'blockTime'
+            ]
         }
     },
-    required: ['error', 'id', 'name', 'description', 'apiBaseUrl', 'Capability', 'Author', 'Legal', 'state', 'Tags', 'createdAt', 'updatedAt', 'lastCheckedAt', 'ExampleOutputs', 'agentIdentifier', 'AgentPricing', 'SmartContractWallet', 'CurrentTransaction']
+    required: [
+        'error',
+        'id',
+        'name',
+        'description',
+        'apiBaseUrl',
+        'Capability',
+        'Author',
+        'Legal',
+        'state',
+        'Tags',
+        'createdAt',
+        'updatedAt',
+        'lastCheckedAt',
+        'ExampleOutputs',
+        'agentIdentifier',
+        'AgentPricing',
+        'SmartContractWallet',
+        'CurrentTransaction'
+    ]
 } as const;
 
 export const PaymentSourceSchema = {
@@ -1310,15 +1850,20 @@ export const PaymentSourceSchema = {
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment source was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment source was last updated'
         },
         network: {
             type: 'string',
-            enum: ['Preprod', 'Mainnet'],
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ],
             description: 'The Cardano network (Mainnet, Preprod, or Preview)'
         },
         policyId: {
@@ -1338,87 +1883,27 @@ export const PaymentSourceSchema = {
         lastCheckedAt: {
             type: 'string',
             nullable: true,
+            format: 'date-time',
             description: 'Timestamp when the registry was last synced. Null if never synced'
         },
         AdminWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the admin wallet'
-                    },
-                    order: {
-                        type: 'number',
-                        description: 'Order/index of this admin wallet '
-                    }
-                },
-                required: ['walletAddress', 'order']
+                $ref: '#/components/schemas/AdminWallet'
             },
             description: 'List of admin wallets for dispute resolution'
         },
         PurchasingWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the purchasing wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the purchasing wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the purchasing wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    }
-                },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                $ref: '#/components/schemas/PurchasingWallet'
             },
             description: 'List of wallets used for purchasing (buyer side)'
         },
         SellingWallets: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the selling wallet'
-                    },
-                    walletVkey: {
-                        type: 'string',
-                        description: 'Payment key hash of the selling wallet'
-                    },
-                    walletAddress: {
-                        type: 'string',
-                        description: 'Cardano address of the selling wallet'
-                    },
-                    collectionAddress: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional collection address for this wallet. Null if not set'
-                    },
-                    note: {
-                        type: 'string',
-                        nullable: true,
-                        description: 'Optional note about this wallet. Null if not set'
-                    }
-                },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                $ref: '#/components/schemas/SellingWallet'
             },
             description: 'List of wallets used for selling (seller side)'
         },
@@ -1430,7 +1915,9 @@ export const PaymentSourceSchema = {
                     description: 'Cardano address that receives network fees'
                 }
             },
-            required: ['walletAddress'],
+            required: [
+                'walletAddress'
+            ],
             description: 'Wallet that receives network fees from transactions'
         },
         feeRatePermille: {
@@ -1440,7 +1927,109 @@ export const PaymentSourceSchema = {
             description: 'Fee rate in permille'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'network', 'policyId', 'smartContractAddress', 'lastIdentifierChecked', 'lastCheckedAt', 'AdminWallets', 'PurchasingWallets', 'SellingWallets', 'FeeReceiverNetworkWallet', 'feeRatePermille']
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'network',
+        'policyId',
+        'smartContractAddress',
+        'lastIdentifierChecked',
+        'lastCheckedAt',
+        'AdminWallets',
+        'PurchasingWallets',
+        'SellingWallets',
+        'FeeReceiverNetworkWallet',
+        'feeRatePermille'
+    ]
+} as const;
+
+export const AdminWalletSchema = {
+    type: 'object',
+    properties: {
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the admin wallet'
+        },
+        order: {
+            type: 'number',
+            description: 'Order/index of this admin wallet '
+        }
+    },
+    required: [
+        'walletAddress',
+        'order'
+    ]
+} as const;
+
+export const PurchasingWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the purchasing wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash of the purchasing wallet'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the purchasing wallet'
+        },
+        collectionAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional collection address for this wallet. Null if not set'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note about this wallet. Null if not set'
+        }
+    },
+    required: [
+        'id',
+        'walletVkey',
+        'walletAddress',
+        'collectionAddress',
+        'note'
+    ]
+} as const;
+
+export const SellingWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the selling wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash of the selling wallet'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the selling wallet'
+        },
+        collectionAddress: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional collection address for this wallet. Null if not set'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note about this wallet. Null if not set'
+        }
+    },
+    required: [
+        'id',
+        'walletVkey',
+        'walletAddress',
+        'collectionAddress',
+        'note'
+    ]
 } as const;
 
 export const PaymentSourceExtendedSchema = {
@@ -1452,15 +2041,20 @@ export const PaymentSourceExtendedSchema = {
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment source was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the payment source was last updated'
         },
         network: {
             type: 'string',
-            enum: ['Preprod', 'Mainnet'],
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ],
             description: 'The Cardano network'
         },
         policyId: {
@@ -1481,11 +2075,16 @@ export const PaymentSourceExtendedSchema = {
                 },
                 rpcProvider: {
                     type: 'string',
-                    enum: ['Blockfrost'],
+                    enum: [
+                        'Blockfrost'
+                    ],
                     description: 'The RPC provider type (e.g., Blockfrost)'
                 }
             },
-            required: ['rpcProviderApiKey', 'rpcProvider'],
+            required: [
+                'rpcProviderApiKey',
+                'rpcProvider'
+            ],
             description: 'RPC provider configuration for blockchain interactions'
         },
         lastIdentifierChecked: {
@@ -1500,6 +2099,7 @@ export const PaymentSourceExtendedSchema = {
         lastCheckedAt: {
             type: 'string',
             nullable: true,
+            format: 'date-time',
             description: 'Timestamp when the registry was last synced. Null if never synced'
         },
         AdminWallets: {
@@ -1516,7 +2116,10 @@ export const PaymentSourceExtendedSchema = {
                         description: 'Order/index of this admin wallet (0-2)'
                     }
                 },
-                required: ['walletAddress', 'order']
+                required: [
+                    'walletAddress',
+                    'order'
+                ]
             },
             description: 'List of admin wallets for dispute resolution (exactly 3 required)'
         },
@@ -1548,7 +2151,13 @@ export const PaymentSourceExtendedSchema = {
                         description: 'Optional note about this wallet. Null if not set'
                     }
                 },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                required: [
+                    'id',
+                    'walletVkey',
+                    'walletAddress',
+                    'collectionAddress',
+                    'note'
+                ]
             },
             description: 'List of wallets used for purchasing (buyer side)'
         },
@@ -1580,7 +2189,13 @@ export const PaymentSourceExtendedSchema = {
                         description: 'Optional note about this wallet. Null if not set'
                     }
                 },
-                required: ['id', 'walletVkey', 'walletAddress', 'collectionAddress', 'note']
+                required: [
+                    'id',
+                    'walletVkey',
+                    'walletAddress',
+                    'collectionAddress',
+                    'note'
+                ]
             },
             description: 'List of wallets used for selling (seller side)'
         },
@@ -1592,7 +2207,9 @@ export const PaymentSourceExtendedSchema = {
                     description: 'Cardano address that receives network fees'
                 }
             },
-            required: ['walletAddress'],
+            required: [
+                'walletAddress'
+            ],
             description: 'Wallet that receives network fees from transactions'
         },
         feeRatePermille: {
@@ -1602,7 +2219,23 @@ export const PaymentSourceExtendedSchema = {
             description: 'Fee rate in permille (per thousand). Example: 50 = 5%'
         }
     },
-    required: ['id', 'createdAt', 'updatedAt', 'network', 'policyId', 'smartContractAddress', 'PaymentSourceConfig', 'lastIdentifierChecked', 'syncInProgress', 'lastCheckedAt', 'AdminWallets', 'PurchasingWallets', 'SellingWallets', 'FeeReceiverNetworkWallet', 'feeRatePermille']
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'network',
+        'policyId',
+        'smartContractAddress',
+        'PaymentSourceConfig',
+        'lastIdentifierChecked',
+        'syncInProgress',
+        'lastCheckedAt',
+        'AdminWallets',
+        'PurchasingWallets',
+        'SellingWallets',
+        'FeeReceiverNetworkWallet',
+        'feeRatePermille'
+    ]
 } as const;
 
 export const UtxoSchema = {
@@ -1619,21 +2252,7 @@ export const UtxoSchema = {
         Amounts: {
             type: 'array',
             items: {
-                type: 'object',
-                properties: {
-                    unit: {
-                        type: 'string',
-                        description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
-                    },
-                    quantity: {
-                        type: 'integer',
-                        nullable: true,
-                        minimum: 0,
-                        maximum: 100000000000000,
-                        description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
-                    }
-                },
-                required: ['unit', 'quantity']
+                $ref: '#/components/schemas/UtxoAmount'
             },
             description: 'List of assets and amounts in this UTXO'
         },
@@ -1664,7 +2283,37 @@ export const UtxoSchema = {
             description: 'Block hash where this UTXO was created'
         }
     },
-    required: ['txHash', 'address', 'Amounts', 'dataHash', 'inlineDatum', 'referenceScriptHash', 'outputIndex', 'block']
+    required: [
+        'txHash',
+        'address',
+        'Amounts',
+        'dataHash',
+        'inlineDatum',
+        'referenceScriptHash',
+        'outputIndex',
+        'block'
+    ]
+} as const;
+
+export const UtxoAmountSchema = {
+    type: 'object',
+    properties: {
+        unit: {
+            type: 'string',
+            description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+        },
+        quantity: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)'
+        }
+    },
+    required: [
+        'unit',
+        'quantity'
+    ]
 } as const;
 
 export const RpcProviderKeySchema = {
@@ -1680,22 +2329,36 @@ export const RpcProviderKeySchema = {
         },
         rpcProvider: {
             type: 'string',
-            enum: ['Blockfrost'],
+            enum: [
+                'Blockfrost'
+            ],
             description: 'The RPC provider type '
         },
         createdAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the RPC provider key was created'
         },
         updatedAt: {
             type: 'string',
+            format: 'date-time',
             description: 'Timestamp when the RPC provider key was last updated'
         },
         network: {
             type: 'string',
-            enum: ['Preprod', 'Mainnet'],
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ],
             description: 'The Cardano network this RPC provider key is for'
         }
     },
-    required: ['id', 'rpcProviderApiKey', 'rpcProvider', 'createdAt', 'updatedAt', 'network']
+    required: [
+        'id',
+        'rpcProviderApiKey',
+        'rpcProvider',
+        'createdAt',
+        'updatedAt',
+        'network'
+    ]
 } as const;

@@ -1,7 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   Network,
   OnChainState,
   PaymentAction,
@@ -9,7 +8,10 @@ import {
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -33,7 +35,9 @@ export const submitPaymentResultSchemaInput = z.object({
     .describe('The identifier of the payment'),
 });
 
-export const submitPaymentResultSchemaOutput = paymentResponseSchema;
+export const submitPaymentResultSchemaOutput = paymentResponseSchema.omit({
+  TransactionHistory: true,
+});
 
 export const submitPaymentResultEndpointPost =
   readAuthenticatedEndpointFactory.build({
@@ -42,20 +46,15 @@ export const submitPaymentResultEndpointPost =
     output: submitPaymentResultSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof submitPaymentResultSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const payment = await prisma.paymentRequest.findUnique({
@@ -73,66 +72,87 @@ export const submitPaymentResultEndpointPost =
               in: [PaymentAction.WaitingForExternalAction],
             },
           },
-        },
-        include: {
           PaymentSource: {
-            include: {
-              HotWallets: { where: { deletedAt: null } },
-              PaymentSourceConfig: true,
-            },
+            network: input.network,
+            deletedAt: null,
           },
-          NextAction: true,
-          SmartContractWallet: { where: { deletedAt: null } },
+          SmartContractWallet: {
+            deletedAt: null,
+          },
+          CurrentTransaction: {
+            isNot: null,
+          },
         },
       });
       if (payment == null) {
         throw createHttpError(404, 'Payment not found or in invalid state');
       }
-      if (payment.PaymentSource == null) {
-        throw createHttpError(404, 'Payment has no payment source');
-      }
-      if (payment.PaymentSource.deletedAt != null) {
-        throw createHttpError(404, 'Payment source is deleted');
-      }
-      if (payment.PaymentSource.network != input.network) {
-        throw createHttpError(
-          400,
-          'Payment was not made on the requested network',
-        );
-      }
+
       if (
-        payment.requestedById != options.id &&
-        options.permission != Permission.Admin
+        payment.requestedById != ctx.id &&
+        ctx.permission != Permission.Admin
       ) {
         throw createHttpError(
           403,
           'You are not authorized to submit results for this payment',
         );
       }
-      if (payment.SmartContractWallet == null) {
-        throw createHttpError(404, 'Smart contract wallet not found');
-      }
 
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },
         data: {
           NextAction: {
-            update: {
+            create: {
               requestedAction: PaymentAction.SubmitResultRequested,
               resultHash: input.submitResultHash,
             },
           },
         },
         include: {
-          NextAction: true,
-          BuyerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          CurrentTransaction: true,
-          RequestedFunds: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-          TransactionHistory: true,
+          BuyerWallet: { select: { id: true, walletVkey: true } },
+          SmartContractWallet: {
+            where: { deletedAt: null },
+            select: { id: true, walletVkey: true, walletAddress: true },
+          },
+          RequestedFunds: { select: { id: true, amount: true, unit: true } },
+          NextAction: {
+            select: {
+              id: true,
+              requestedAction: true,
+              errorType: true,
+              errorNote: true,
+              resultHash: true,
+            },
+          },
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              smartContractAddress: true,
+              policyId: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              id: true,
+              createdAt: true,
+              updatedAt: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+              txHash: true,
+              status: true,
+              previousOnChainState: true,
+              newOnChainState: true,
+              confirmations: true,
+            },
+          },
+          WithdrawnForSeller: {
+            select: { id: true, amount: true, unit: true },
+          },
+          WithdrawnForBuyer: {
+            select: { id: true, amount: true, unit: true },
+          },
         },
       });
       if (result.inputHash == null) {
@@ -143,22 +163,21 @@ export const submitPaymentResultEndpointPost =
       }
 
       const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+
       return {
         ...result,
         ...transformPaymentGetTimestamps(result),
         ...transformPaymentGetAmounts(result),
+        totalBuyerCardanoFees:
+          Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier: decoded?.agentIdentifier ?? null,
         CurrentTransaction: result.CurrentTransaction
           ? {
               ...result.CurrentTransaction,
               fees: result.CurrentTransaction.fees?.toString() ?? null,
             }
-          : null,
-        TransactionHistory: result.TransactionHistory
-          ? result.TransactionHistory.map((tx) => ({
-              ...tx,
-              fees: tx.fees?.toString() ?? null,
-            }))
           : null,
       };
     },

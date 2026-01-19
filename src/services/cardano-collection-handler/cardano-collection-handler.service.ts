@@ -228,7 +228,7 @@ async function processSinglePaymentCollection(
     collectionAddress = request.SmartContractWallet.walletAddress;
   }
 
-  const limitedFilteredUtxos = sortAndLimitUtxos(utxos);
+  const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
   if (collateralUtxo == null) {
     throw new Error('Collateral UTXO not found');
@@ -269,7 +269,7 @@ async function processSinglePaymentCollection(
     where: { id: request.id },
     data: {
       NextAction: {
-        update: {
+        create: {
           requestedAction: PaymentAction.WithdrawInitiated,
         },
       },
@@ -345,7 +345,6 @@ export async function collectOutstandingPaymentsV1() {
 
         const blockchainProvider = new BlockfrostProvider(
           paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-          undefined,
         );
 
         const paymentRequests = paymentContract.PaymentRequests;
@@ -385,7 +384,7 @@ export async function collectOutstandingPaymentsV1() {
               where: { id: request.id },
               data: {
                 NextAction: {
-                  update: {
+                  create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
                     errorNote:

@@ -1,49 +1,50 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, getPurchase } from '@/lib/api/generated';
+import {
+  getPayment,
+  getPurchase,
+  Payment,
+  Purchase,
+} from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
-interface Transaction {
-  id: string;
-  type: 'payment' | 'purchase';
-  createdAt: string;
-  updatedAt: string;
-  onChainState: string;
-  Amounts: Array<{
-    amount: string;
-    unit: string;
-  }>;
-  PaymentSource: {
-    network: 'Preprod' | 'Mainnet';
-    paymentType: string;
+type PaymentTx = Payment & {
+  type: 'payment';
+  RequestedFunds?: { amount: string; unit: string }[];
+  Amounts?: { amount: string; unit: string }[];
+  unlockTime?: string | null;
+  PaymentSource: Payment['PaymentSource'] & {
+    id?: string;
   };
-  CurrentTransaction?: {
-    txHash: string | null;
-  } | null;
-  NextAction?: {
-    errorType?: string;
-    errorNote?: string | null;
+};
+
+type PurchaseTx = Purchase & {
+  type: 'purchase';
+  PaidFunds?: { amount: string; unit: string }[];
+  Amounts?: { amount: string; unit: string }[];
+  unlockTime?: string | null;
+  PaymentSource: Purchase['PaymentSource'] & {
+    id?: string;
   };
-  SmartContractWallet?: {
-    walletAddress: string;
-  } | null;
-}
+};
+
+type Transaction = PaymentTx | PurchaseTx;
 
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
 export function useTransactions() {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const router = useRouter();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(true);
-  const [cursorId, setCursorId] = useState<string | null>(null);
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
+  const seenTransactionIdsRef = useRef<Set<string>>(new Set());
+  const lastFetchWasNextPageRef = useRef(false);
+  const hasInitializedRef = useRef(false);
 
   // Get last visit timestamp from localStorage
   const getLastVisitTimestamp = (): string | null => {
@@ -70,153 +71,199 @@ export function useTransactions() {
     localStorage.setItem(NEW_TRANSACTIONS_COUNT_KEY, count.toString());
   };
 
-  const fetchTransactions = useCallback(
-    async (cursor?: string, checkForNew = false) => {
-      setIsLoading(true);
-      try {
-        const combined: Transaction[] = [];
+  const query = useInfiniteQuery({
+    queryKey: ['transactions', network],
+    queryFn: async ({ pageParam }) => {
+      const combined: Transaction[] = [];
+      const cursor = pageParam ?? undefined;
 
-        // Fetch purchases
-        const purchases = await handleApiCall(
-          () =>
-            getPurchase({
-              client: apiClient,
-              query: {
-                network: 'Preprod',
-                cursorId: cursor,
-                includeHistory: 'true',
-                limit: 100,
-              },
-            }),
-          {
-            onError: (error: any) => {
-              console.error('Failed to fetch purchases:', error);
+      const purchases = await handleApiCall(
+        () =>
+          getPurchase({
+            client: apiClient,
+            query: {
+              network,
+              cursorId: cursor,
+              includeHistory: 'true',
+              limit: 10,
             },
-            errorMessage: 'Failed to fetch purchases',
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Failed to fetch purchases:', error);
           },
-        );
+          errorMessage: 'Failed to fetch purchases',
+        },
+      );
 
-        if (purchases?.data?.data?.Purchases) {
-          purchases.data.data.Purchases.forEach((purchase: any) => {
-            combined.push({
-              ...purchase,
-              type: 'purchase',
-            });
+      if (purchases?.data?.data?.Purchases) {
+        purchases.data.data.Purchases.forEach((purchase: any) => {
+          combined.push({
+            ...purchase,
+            type: 'purchase',
           });
-        }
-
-        // Fetch payments
-        const payments = await handleApiCall(
-          () =>
-            getPayment({
-              client: apiClient,
-              query: {
-                network: 'Preprod',
-                cursorId: cursor,
-                includeHistory: 'true',
-                limit: 100,
-              },
-            }),
-          {
-            onError: (error: any) => {
-              console.error('Failed to fetch payments:', error);
-            },
-            errorMessage: 'Failed to fetch payments',
-          },
-        );
-
-        if (payments?.data?.data?.Payments) {
-          payments.data.data.Payments.forEach((payment: any) => {
-            combined.push({
-              ...payment,
-              type: 'payment',
-            });
-          });
-        }
-
-        const newTransactions = combined.sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-
-        if (checkForNew) {
-          const lastVisitTimestamp = getLastVisitTimestamp();
-          if (lastVisitTimestamp) {
-            const existingIds = new Set(transactions.map((tx) => tx.id));
-            const trulyNewTransactions = newTransactions.filter(
-              (tx) =>
-                !existingIds.has(tx.id) &&
-                new Date(tx.createdAt) > new Date(lastVisitTimestamp),
-            );
-
-            const currentCount = getNewTransactionsCount();
-            const newCount = currentCount + trulyNewTransactions.length;
-            setNewTransactionsCount(newCount);
-            setNewTransactionsCountInStorage(newCount);
-          }
-        }
-
-        if (!checkForNew) {
-          const existingIds = new Set(transactions.map((tx) => tx.id));
-          const uniqueNewTransactions = newTransactions.filter(
-            (tx) => !existingIds.has(tx.id),
-          );
-
-          setTransactions((prev) =>
-            cursor
-              ? [...prev, ...uniqueNewTransactions]
-              : uniqueNewTransactions,
-          );
-          setHasMore(
-            purchases?.data?.data?.Purchases?.length === 100 ||
-              payments?.data?.data?.Payments?.length === 100,
-          );
-          setCursorId(newTransactions[newTransactions.length - 1]?.id ?? null);
-        }
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error fetching transactions:', error);
-        setIsLoading(false);
+        });
       }
+
+      const payments = await handleApiCall(
+        () =>
+          getPayment({
+            client: apiClient,
+            query: {
+              network,
+              cursorId: cursor,
+              includeHistory: 'true',
+              limit: 10,
+            },
+          }),
+        {
+          onError: (error: any) => {
+            console.error('Failed to fetch payments:', error);
+          },
+          errorMessage: 'Failed to fetch payments',
+        },
+      );
+
+      if (payments?.data?.data?.Payments) {
+        payments.data.data.Payments.forEach((payment: any) => {
+          combined.push({
+            ...payment,
+            type: 'payment',
+          });
+        });
+      }
+
+      const sortedTransactions = combined.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+
+      const purchasesCount = purchases?.data?.data?.Purchases?.length ?? 0;
+      const paymentsCount = payments?.data?.data?.Payments?.length ?? 0;
+      const hasMore = purchasesCount === 10 || paymentsCount === 10;
+      const nextCursor = hasMore
+        ? (sortedTransactions[sortedTransactions.length - 1]?.id ?? undefined)
+        : undefined;
+
+      return {
+        transactions: sortedTransactions,
+        nextCursor,
+        hasMore,
+      };
     },
-    [apiClient, transactions],
-  );
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+    refetchInterval: 25000,
+    enabled: !!apiClient,
+    staleTime: 15000,
+  });
+
+  const transactions = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    const combined = pages.flatMap((page) => page.transactions);
+    const seen = new Set<string>();
+    const unique: Transaction[] = [];
+
+    combined.forEach((tx) => {
+      if (tx.id) {
+        if (seen.has(tx.id)) return;
+        seen.add(tx.id);
+      }
+      unique.push(tx);
+    });
+
+    return unique.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [query.data]);
+
+  const isLoading = query.isLoading || query.isRefetching;
+  const hasMore = Boolean(query.hasNextPage);
+  const isFetchingNextPage = query.isFetchingNextPage;
+  const isRefetching = query.isRefetching;
+  const refetch = query.refetch;
 
   useEffect(() => {
-    fetchTransactions();
-    // Initialize new transactions count from localStorage
     const storedCount = getNewTransactionsCount();
     setNewTransactionsCount(storedCount);
-  }, [apiClient]);
+  }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchTransactions(undefined, true);
-    }, 60000);
+    if (!query.data) return;
 
-    return () => clearInterval(interval);
-  }, [fetchTransactions]);
+    if (!hasInitializedRef.current) {
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((tx) => tx.id ?? ''),
+      );
+      hasInitializedRef.current = true;
+      return;
+    }
+
+    if (lastFetchWasNextPageRef.current) {
+      seenTransactionIdsRef.current = new Set([
+        ...seenTransactionIdsRef.current,
+        ...transactions.map((tx) => tx.id ?? ''),
+      ]);
+      lastFetchWasNextPageRef.current = false;
+      return;
+    }
+
+    const lastVisitTimestamp = getLastVisitTimestamp();
+    if (!lastVisitTimestamp) {
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((tx) => tx.id ?? ''),
+      );
+      return;
+    }
+
+    const currentCount = getNewTransactionsCount();
+    const existingIds = seenTransactionIdsRef.current;
+    const newOnes = transactions.filter(
+      (tx) =>
+        !existingIds.has(tx.id ?? '') &&
+        new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+    );
+
+    if (newOnes.length > 0) {
+      const newCount = currentCount + newOnes.length;
+      setNewTransactionsCount(newCount);
+      setNewTransactionsCountInStorage(newCount);
+    }
+
+    seenTransactionIdsRef.current = new Set([
+      ...existingIds,
+      ...transactions.map((tx) => tx.id ?? ''),
+    ]);
+  }, [query.dataUpdatedAt, transactions]);
 
   useEffect(() => {
     if (router.pathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);
       setLastVisitTimestamp(new Date().toISOString());
+      seenTransactionIdsRef.current = new Set(
+        transactions.map((tx) => tx.id ?? ''),
+      );
     }
-  }, [router.pathname, newTransactionsCount]);
+  }, [router.pathname, newTransactionsCount, transactions]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
     setNewTransactionsCountInStorage(0);
     setLastVisitTimestamp(new Date().toISOString());
-  }, []);
+    seenTransactionIdsRef.current = new Set(
+      transactions.map((tx) => tx.id ?? ''),
+    );
+  }, [transactions]);
 
   const loadMore = useCallback(() => {
-    if (cursorId && !isLoading) {
-      fetchTransactions(cursorId);
+    if (query.hasNextPage && !query.isFetchingNextPage) {
+      lastFetchWasNextPageRef.current = true;
+      query.fetchNextPage();
     }
-  }, [cursorId, isLoading, fetchTransactions]);
+  }, [query]);
 
   return {
     transactions,
@@ -225,5 +272,8 @@ export function useTransactions() {
     loadMore,
     newTransactionsCount,
     markAllAsRead,
+    isFetchingNextPage,
+    refetch,
+    isRefetching,
   };
 }

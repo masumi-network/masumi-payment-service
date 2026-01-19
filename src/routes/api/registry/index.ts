@@ -1,7 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   HotWalletType,
   Network,
   PaymentType,
@@ -12,7 +11,10 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
@@ -210,20 +212,15 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
   output: queryRegistryRequestSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryRegistryRequestSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.registryRequest.findMany({
@@ -241,10 +238,33 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
       take: 10,
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       include: {
-        SmartContractWallet: true,
-        CurrentTransaction: true,
-        Pricing: { include: { FixedPricing: { include: { Amounts: true } } } },
-        ExampleOutputs: true,
+        SmartContractWallet: {
+          select: { walletVkey: true, walletAddress: true },
+        },
+        CurrentTransaction: {
+          select: {
+            txHash: true,
+            status: true,
+            confirmations: true,
+            fees: true,
+            blockHeight: true,
+            blockTime: true,
+          },
+        },
+        Pricing: {
+          include: {
+            FixedPricing: {
+              include: { Amounts: { select: { unit: true, amount: true } } },
+            },
+          },
+        },
+        ExampleOutputs: {
+          select: {
+            name: true,
+            url: true,
+            mimeType: true,
+          },
+        },
       },
     });
 
@@ -414,41 +434,27 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
   output: registerAgentSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof registerAgentSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const sellingWallet = await prisma.hotWallet.findUnique({
         where: {
           walletVkey: input.sellingWalletVkey,
           type: HotWalletType.Selling,
-
           deletedAt: null,
-        },
-        include: {
           PaymentSource: {
-            include: {
-              AdminWallets: true,
-              HotWallets: {
-                include: { Secret: true },
-                where: { deletedAt: null },
-              },
-              PaymentSourceConfig: true,
-            },
+            deletedAt: null,
+            network: input.network,
           },
         },
       });
@@ -471,9 +477,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         );
       }
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       if (sellingWallet == null) {
@@ -491,56 +497,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         );
         throw createHttpError(404, 'Selling wallet not found');
       }
-      const paymentSource = sellingWallet.PaymentSource;
-      if (paymentSource == null) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          404,
-          'Selling wallet has no payment source',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'payment_source_validation',
-            wallet_id: sellingWallet.id,
-          },
-        );
-        throw createHttpError(404, 'Selling wallet has no payment source');
-      }
-      if (paymentSource.network != input.network) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          400,
-          'Selling wallet is not on the requested network',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'network_validation',
-            wallet_network: paymentSource.network,
-            requested_network: input.network,
-          },
-        );
-        throw createHttpError(
-          400,
-          'Selling wallet is not on the requested network',
-        );
-      }
-      if (paymentSource.deletedAt != null) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          400,
-          'Payment source is deleted',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'payment_source_validation',
-            payment_source_id: paymentSource.id,
-          },
-        );
-        throw createHttpError(400, 'Payment source is deleted');
-      }
+
       const result = await prisma.registryRequest.create({
         data: {
           name: input.name,
@@ -578,7 +535,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
           PaymentSource: {
             connect: {
-              id: paymentSource.id,
+              id: sellingWallet.paymentSourceId,
             },
           },
           tags: input.Tags,
@@ -610,11 +567,32 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         },
         include: {
           Pricing: {
-            include: { FixedPricing: { include: { Amounts: true } } },
+            include: {
+              FixedPricing: {
+                include: { Amounts: { select: { unit: true, amount: true } } },
+              },
+            },
           },
-          SmartContractWallet: true,
-          ExampleOutputs: true,
-          CurrentTransaction: true,
+          SmartContractWallet: {
+            select: { walletVkey: true, walletAddress: true },
+          },
+          ExampleOutputs: {
+            select: {
+              name: true,
+              url: true,
+              mimeType: true,
+            },
+          },
+          CurrentTransaction: {
+            select: {
+              txHash: true,
+              status: true,
+              confirmations: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+            },
+          },
         },
       });
 
@@ -672,7 +650,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         errorInstance,
         {
           network: input.network,
-          user_id: options.id,
+          user_id: ctx.id,
           agent_name: input.name,
           operation: 'register_agent',
           duration: Date.now() - startTime,
@@ -707,7 +685,14 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
           id: input.id,
         },
         include: {
-          PaymentSource: true,
+          PaymentSource: {
+            select: {
+              id: true,
+              network: true,
+              policyId: true,
+              smartContractAddress: true,
+            },
+          },
         },
       });
 
@@ -757,11 +742,28 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
         },
         include: {
           Pricing: {
-            include: { FixedPricing: { include: { Amounts: true } } },
+            include: {
+              FixedPricing: {
+                include: { Amounts: { select: { unit: true, amount: true } } },
+              },
+            },
           },
-          SmartContractWallet: true,
-          ExampleOutputs: true,
-          CurrentTransaction: true,
+          SmartContractWallet: {
+            select: { walletVkey: true, walletAddress: true },
+          },
+          ExampleOutputs: {
+            select: { name: true, url: true, mimeType: true },
+          },
+          CurrentTransaction: {
+            select: {
+              txHash: true,
+              status: true,
+              confirmations: true,
+              fees: true,
+              blockHeight: true,
+              blockTime: true,
+            },
+          },
         },
       });
 

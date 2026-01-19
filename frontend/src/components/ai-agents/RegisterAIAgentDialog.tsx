@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import {
@@ -20,15 +19,21 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource, getUtxos } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistry,
+  SellingWallet,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
+import { useWallets } from '@/lib/queries/useWallets';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -36,22 +41,18 @@ interface RegisterAIAgentDialogProps {
   onSuccess: () => void;
 }
 
-interface SellingWallet {
-  id: string;
-  walletVkey: string;
-  walletAddress: string;
-  note: string | null;
-}
-
-const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM'], {
-    required_error: 'Token is required',
-  }),
-  amount: z.string().refine((val) => {
-    if (val === '0' || val === '0.0' || val === '0.00') return true;
-    return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
-  }, 'Amount must be a valid number >= 0'),
-});
+const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
+  const usdmUnit = network === 'Mainnet' ? 'USDM' : 'tUSDM';
+  return z.object({
+    unit: z.enum(['lovelace', usdmUnit], {
+      required_error: 'Token is required',
+    }),
+    amount: z.string().refine((val) => {
+      if (val === '0' || val === '0.0' || val === '0.00') return true;
+      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+    }, 'Amount must be a valid number >= 0'),
+  });
+};
 
 const exampleOutputSchema = z.object({
   name: z
@@ -65,80 +66,86 @@ const exampleOutputSchema = z.object({
     .min(1, 'MIME type is required'),
 });
 
-const agentSchema = z.object({
-  apiUrl: z
-    .string()
-    .url('API URL must be a valid URL')
-    .min(1, 'API URL is required')
-    .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-      message: 'API URL must start with http:// or https://',
-    }),
-  name: z.string().min(1, 'Name is required'),
-  description: z
-    .string()
-    .min(1, 'Description is required')
-    .max(250, 'Description must be less than 250 characters'),
-  selectedWallet: z.string().min(1, 'Wallet is required'),
-  prices: z.array(priceSchema).min(1, 'At least one price is required'),
-  tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-  isFree: z.boolean().optional(),
-  // Additional Fields
-  authorName: z
-    .string()
-    .max(250, 'Author name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  authorEmail: z
-    .string()
-    .email('Author email must be a valid email')
-    .max(250, 'Author email must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  organization: z
-    .string()
-    .max(250, 'Organization must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  contactOther: z
-    .string()
-    .max(250, 'Contact other must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
+  const priceSchema = createPriceSchema(network);
+  return z.object({
+    apiUrl: z
+      .string()
+      .url('API URL must be a valid URL')
+      .min(1, 'API URL is required')
+      .refine(
+        (val) => val.startsWith('http://') || val.startsWith('https://'),
+        {
+          message: 'API URL must start with http:// or https://',
+        },
+      ),
+    name: z.string().min(1, 'Name is required'),
+    description: z
+      .string()
+      .min(1, 'Description is required')
+      .max(250, 'Description must be less than 250 characters'),
+    selectedWallet: z.string().min(1, 'Wallet is required'),
+    prices: z.array(priceSchema).min(1, 'At least one price is required'),
+    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+    isFree: z.boolean().optional(),
+    // Additional Fields
+    authorName: z
+      .string()
+      .max(250, 'Author name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    authorEmail: z
+      .string()
+      .email('Author email must be a valid email')
+      .max(250, 'Author email must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    organization: z
+      .string()
+      .max(250, 'Organization must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    contactOther: z
+      .string()
+      .max(250, 'Contact other must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  termsOfUseUrl: z
-    .string()
-    .url('Terms of use URL must be a valid URL')
-    .max(250, 'Terms of use URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  privacyPolicyUrl: z
-    .string()
-    .url('Privacy policy URL must be a valid URL')
-    .max(250, 'Privacy policy URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  otherUrl: z
-    .string()
-    .url('Other URL must be a valid URL')
-    .max(250, 'Other URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    termsOfUseUrl: z
+      .string()
+      .url('Terms of use URL must be a valid URL')
+      .max(250, 'Terms of use URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    privacyPolicyUrl: z
+      .string()
+      .url('Privacy policy URL must be a valid URL')
+      .max(250, 'Privacy policy URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    otherUrl: z
+      .string()
+      .url('Other URL must be a valid URL')
+      .max(250, 'Other URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  capabilityName: z
-    .string()
-    .max(250, 'Capability name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  capabilityVersion: z
-    .string()
-    .max(250, 'Capability version must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    capabilityName: z
+      .string()
+      .max(250, 'Capability name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    capabilityVersion: z
+      .string()
+      .max(250, 'Capability version must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  exampleOutputs: z.array(exampleOutputSchema).optional(),
-});
+    exampleOutputs: z.array(exampleOutputSchema).optional(),
+  });
+};
 
-type AgentFormValues = z.infer<typeof agentSchema>;
+type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
 export function RegisterAIAgentDialog({
   open,
@@ -149,8 +156,9 @@ export function RegisterAIAgentDialog({
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: SellingWallet; balance: number }[]
   >([]);
-  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
-  const { apiClient, state } = useAppContext();
+
+  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { apiClient, network } = useAppContext();
 
   const {
     register,
@@ -161,7 +169,7 @@ export function RegisterAIAgentDialog({
     formState: { errors },
     watch,
   } = useForm<AgentFormValues>({
-    resolver: zodResolver(agentSchema),
+    resolver: zodResolver(createAgentSchema(network)),
     defaultValues: {
       apiUrl: '',
       name: '',
@@ -201,85 +209,39 @@ export function RegisterAIAgentDialog({
     name: 'exampleOutputs',
   });
 
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
+  }, [paymentSources, network]);
+
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
+  useEffect(() => {
+    setSellingWallets(
+      wallets
+        .filter((w) => w.type === 'Selling')
+        .map((w) => ({
+          wallet: {
+            id: w.id,
+            walletVkey: w.walletVkey,
+            walletAddress: w.walletAddress,
+            collectionAddress: w.collectionAddress,
+            note: w.note,
+          },
+          balance: parseInt(w.balance, 10),
+        })),
+    );
+  }, [wallets]);
 
   useEffect(() => {
     if (open) {
-      fetchSellingWallets();
       reset();
     }
   }, [open, reset]);
-
-  const fetchSellingWallets = async () => {
-    try {
-      setIsCheckingBalance(true);
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
-
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (s) => s.network == state.network,
-        );
-        if (paymentSources.length > 0) {
-          const aggregatedWallets: {
-            wallet: SellingWallet;
-            balance: number;
-          }[] = [];
-          await Promise.allSettled(
-            paymentSources.map(async (ps) => {
-              for (const sellingWallet of ps.SellingWallets) {
-                const balance = await getUtxos({
-                  client: apiClient,
-                  query: {
-                    address: sellingWallet.walletAddress,
-                    network: state.network,
-                  },
-                });
-
-                if (
-                  balance.error ||
-                  balance.data?.data?.Utxos == undefined ||
-                  balance.data?.data?.Utxos?.length === 0
-                ) {
-                  aggregatedWallets.push({ wallet: sellingWallet, balance: 0 });
-                } else {
-                  const lovelaceBalance = balance.data.data.Utxos.reduce(
-                    (acc, utxo) => {
-                      return (
-                        acc +
-                        utxo.Amounts.reduce((acc, amount) => {
-                          if (
-                            amount.unit.toLowerCase() === 'lovelace' ||
-                            amount.unit === ''
-                          ) {
-                            return acc + (amount.quantity ?? 0);
-                          }
-                          return acc;
-                        }, 0)
-                      );
-                    },
-                    0,
-                  );
-                  aggregatedWallets.push({
-                    wallet: sellingWallet,
-                    balance: lovelaceBalance,
-                  });
-                }
-              }
-            }),
-          );
-          setSellingWallets(aggregatedWallets);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching selling wallets:', error);
-      toast.error('Failed to load selling wallets');
-    } finally {
-      setIsCheckingBalance(false);
-    }
-  };
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
@@ -289,6 +251,16 @@ export function RegisterAIAgentDialog({
         const selectedWalletBalance = sellingWallets.find(
           (w) => w.wallet.walletVkey == selectedWalletVkey,
         )?.balance;
+        data.prices.map((price) => {
+          const unit =
+            price.unit === 'USDM' || price.unit === 'tUSDM'
+              ? getUsdmConfig(network).fullAssetId
+              : price.unit;
+          return {
+            unit,
+            amount: (parseFloat(price.amount) * 1_000_000).toString(),
+          };
+        });
         if (
           selectedWalletBalance == undefined ||
           selectedWalletBalance <= 3000000
@@ -296,7 +268,7 @@ export function RegisterAIAgentDialog({
           toast.error('Insufficient balance in selected wallet');
           return;
         }
-        const paymentSource = state.paymentSources?.find((ps) =>
+        const paymentSource = currentNetworkPaymentSources.find((ps) =>
           ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
         );
         if (!paymentSource) {
@@ -336,7 +308,7 @@ export function RegisterAIAgentDialog({
         const response = await postRegistry({
           client: apiClient,
           body: {
-            network: state.network,
+            network: network,
             sellingWalletVkey: selectedWalletVkey,
             name: data.name,
             description: data.description,
@@ -357,8 +329,8 @@ export function RegisterAIAgentDialog({
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => {
                   const unit =
-                    price.unit === 'USDM'
-                      ? getUsdmConfig(state.network).fullAssetId
+                    price.unit === 'USDM' || price.unit === 'tUSDM'
+                      ? getUsdmConfig(network).fullAssetId
                       : price.unit;
                   return {
                     unit,
@@ -396,13 +368,13 @@ export function RegisterAIAgentDialog({
       }
     },
     [
+      sellingWallets,
+      currentNetworkPaymentSources,
       apiClient,
-      state.network,
-      state.paymentSources,
+      network,
       onSuccess,
       onClose,
       reset,
-      sellingWallets,
     ],
   );
 
@@ -494,12 +466,12 @@ export function RegisterAIAgentDialog({
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
-                    disabled={isCheckingBalance}
-                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isCheckingBalance ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isLoadingWallets}
+                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <SelectValue
                       placeholder={
-                        isCheckingBalance
+                        isLoadingWallets
                           ? 'Loading wallets...'
                           : 'Select a wallet'
                       }
@@ -587,8 +559,14 @@ export function RegisterAIAgentDialog({
                           <SelectValue placeholder="Select token" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lovelace">ADA</SelectItem>
-                          <SelectItem value="USDM">USDM</SelectItem>
+                          <SelectItem value="lovelace">
+                            {formatFundUnit('lovelace', network)}
+                          </SelectItem>
+                          <SelectItem
+                            value={network === 'Mainnet' ? 'USDM' : 'tUSDM'}
+                          >
+                            {formatFundUnit('USDM', network)}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -863,7 +841,7 @@ export function RegisterAIAgentDialog({
               Cancel
             </Button>
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={isLoading || isCheckingBalance}>
+              <Button type="submit" disabled={isLoading || isLoadingWallets}>
                 {isLoading ? 'Registering...' : 'Register'}
               </Button>
             </div>

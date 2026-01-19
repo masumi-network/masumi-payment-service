@@ -2,7 +2,6 @@ import { PaymentSource, PaymentSourceConfig, Prisma } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { convertNetwork } from '@/utils/converter/network-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONFIG, CONSTANTS } from '@/utils/config';
 import { extractOnChainTransactionData } from './util';
@@ -16,6 +15,7 @@ import {
   updateTransaction,
   UpdateTransactionInput,
 } from './tx';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 type PaymentSourceWithConfig = PaymentSource & {
   PaymentSourceConfig: PaymentSourceConfig;
@@ -76,10 +76,10 @@ async function processPaymentSource(
   paymentContract: PaymentSourceWithConfig,
   maxParallelTransactionsExtendedLookup: number,
 ) {
-  const blockfrost = new BlockFrostAPI({
-    projectId: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
-    network: convertNetwork(paymentContract.network),
-  });
+  const blockfrost = getBlockfrostInstance(
+    paymentContract.network,
+    paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+  );
   let latestIdentifier = paymentContract.lastIdentifierChecked;
 
   const { latestTx, rolledBackTx } = await getTxsFromCardanoAfterSpecificTx(

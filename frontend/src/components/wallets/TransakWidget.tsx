@@ -24,7 +24,7 @@ export function TransakWidget({
   walletAddress,
   onSuccess,
 }: TransakWidgetProps) {
-  const { state } = useAppContext();
+  const { network } = useAppContext();
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -48,9 +48,7 @@ export function TransakWidget({
 
   if (!isOpen) return null;
 
-  const isPreprod = state.network === 'Preprod';
-
-  if (isPreprod) {
+  if (network === 'Preprod') {
     const handleOpenFaucet = () => {
       window.open(
         'https://docs.cardano.org/cardano-testnet/tools/faucet/',

@@ -9,8 +9,8 @@ import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -71,7 +71,9 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
     return {
       ApiKeys: result.map((data) => ({
@@ -87,8 +89,8 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 export const addAPIKeySchemaInput = z.object({
   usageLimited: z
     .string()
-    .transform((s) => (s.toLowerCase() == 'true' ? true : false))
     .default('true')
+    .transform((s) => (s.toLowerCase() == 'true' ? true : false))
     .describe(
       'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
     ),
@@ -157,7 +159,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
           },
         },
       },
-      include: { RemainingUsageCredits: true },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
     });
     return {
       ...result,
@@ -234,7 +238,11 @@ export const updateAPIKeyEndpointPatch =
         async (prisma) => {
           const apiKey = await prisma.apiKey.findUnique({
             where: { id: input.id },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: {
+                select: { id: true, amount: true, unit: true },
+              },
+            },
           });
           if (!apiKey) {
             throw createHttpError(404, 'API key not found');
@@ -284,7 +292,9 @@ export const updateAPIKeyEndpointPatch =
               status: input.status,
               networkLimit: input.networkLimit,
             },
-            include: { RemainingUsageCredits: true },
+            include: {
+              RemainingUsageCredits: { select: { amount: true, unit: true } },
+            },
           });
           return result;
         },
@@ -325,7 +335,9 @@ export const deleteAPIKeyEndpointDelete =
       const apiKey = await prisma.apiKey.update({
         where: { id: input.id },
         data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
-        include: { RemainingUsageCredits: true },
+        include: {
+          RemainingUsageCredits: { select: { amount: true, unit: true } },
+        },
       });
       return {
         ...apiKey,

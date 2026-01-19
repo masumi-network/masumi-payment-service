@@ -22,6 +22,7 @@ model ApiKey {
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
+  CreatedWebhooks       WebhookEndpoint[]
 }
 
 model UnitValue {
@@ -49,26 +50,25 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                   String              @id @default(cuid())
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  walletVkey           String              @unique
+  id                   String            @id @default(cuid())
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  walletVkey           String            @unique
   walletAddress        String
   type                 HotWalletType
   secretId             String
   collectionAddress    String?
-  pendingTransactionId String?             @unique
+  pendingTransactionId String?           @unique
   paymentSourceId      String
   lockedAt             DateTime?
   note                 String?
   deletedAt            DateTime?
-  PaymentSource        PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction   Transaction?        @relation(fields: [pendingTransactionId], references: [id])
-  Secret               WalletSecret        @relation(fields: [secretId], references: [id])
+  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
+  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
-  WalletThresholds     WalletThreshold[]
 }
 
 model Transaction {
@@ -125,37 +125,38 @@ model WalletBase {
 }
 
 model RegistryRequest {
-  id                    String            @id @default(cuid())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  lastCheckedAt         DateTime?
-  paymentSourceId       String
-  smartContractWalletId String
-  name                  String
-  apiBaseUrl            String
-  capabilityName        String?
-  capabilityVersion     String?
-  description           String?
-  privacyPolicy         String?
-  terms                 String?
-  other                 String?
-  authorName            String
-  authorContactEmail    String?
-  authorContactOther    String?
-  authorOrganization    String?
-  metadataVersion       Int
-  tags                  String[]
-  agentPricingId        String            @unique
-  agentIdentifier       String?           @unique
-  state                 RegistrationState
-  currentTransactionId  String?
-  error                 String?
-  paymentType           PaymentType       @default(Web3CardanoV1)
-  ExampleOutputs        ExampleOutput[]
-  Pricing               AgentPricing      @relation(fields: [agentPricingId], references: [id])
-  CurrentTransaction    Transaction?      @relation(fields: [currentTransactionId], references: [id])
-  PaymentSource         PaymentSource     @relation(fields: [paymentSourceId], references: [id])
-  SmartContractWallet   HotWallet         @relation(fields: [smartContractWalletId], references: [id])
+  id                             String            @id @default(cuid())
+  createdAt                      DateTime          @default(now())
+  updatedAt                      DateTime          @updatedAt
+  lastCheckedAt                  DateTime?
+  paymentSourceId                String
+  smartContractWalletId          String
+  name                           String
+  apiBaseUrl                     String
+  capabilityName                 String?
+  capabilityVersion              String?
+  description                    String?
+  privacyPolicy                  String?
+  terms                          String?
+  other                          String?
+  authorName                     String
+  authorContactEmail             String?
+  authorContactOther             String?
+  authorOrganization             String?
+  metadataVersion                Int
+  tags                           String[]
+  agentPricingId                 String            @unique
+  agentIdentifier                String?           @unique
+  state                          RegistrationState
+  registrationStateLastChangedAt DateTime          @default(now())
+  currentTransactionId           String?
+  error                          String?
+  paymentType                    PaymentType       @default(Web3CardanoV1)
+  ExampleOutputs                 ExampleOutput[]
+  Pricing                        AgentPricing      @relation(fields: [agentPricingId], references: [id])
+  CurrentTransaction             Transaction?      @relation(fields: [currentTransactionId], references: [id])
+  PaymentSource                  PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  SmartContractWallet            HotWallet         @relation(fields: [smartContractWalletId], references: [id])
 }
 
 model ExampleOutput {
@@ -188,38 +189,48 @@ model AgentFixedPricing {
 }
 
 model PaymentRequest {
-  id                        String            @id @default(cuid())
-  createdAt                 DateTime          @default(now())
-  updatedAt                 DateTime          @updatedAt
-  lastCheckedAt             DateTime?
-  paymentSourceId           String
-  smartContractWalletId     String?
-  buyerWalletId             String?
-  nextActionId              String            @unique
-  metadata                  String?
-  blockchainIdentifier      String            @unique
-  submitResultTime          BigInt
-  unlockTime                BigInt
-  externalDisputeUnlockTime BigInt
-  inputHash                 String?
-  resultHash                String?
-  onChainState              OnChainState?
-  sellerCoolDownTime        BigInt
-  buyerCoolDownTime         BigInt
-  requestedById             String
-  currentTransactionId      String?           @unique
-  collateralReturnLovelace  BigInt?
-  payByTime                 BigInt?
-  BuyerWallet               WalletBase?       @relation(fields: [buyerWalletId], references: [id])
-  CurrentTransaction        Transaction?      @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
-  NextAction                PaymentActionData @relation("NextAction", fields: [nextActionId], references: [id])
-  PaymentSource             PaymentSource     @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  requestedBy               ApiKey            @relation(fields: [requestedById], references: [id])
-  SmartContractWallet       HotWallet?        @relation(fields: [smartContractWalletId], references: [id])
-  TransactionHistory        Transaction[]     @relation("PaymentTransactionHistory")
-  WithdrawnForBuyer         UnitValue[]       @relation("BuyerWithdrawnPaymentRequest")
-  RequestedFunds            UnitValue[]
-  WithdrawnForSeller        UnitValue[]       @relation("SellerWithdrawnPaymentRequest")
+  id                                            String            @id @default(cuid())
+  createdAt                                     DateTime          @default(now())
+  updatedAt                                     DateTime          @updatedAt
+  lastCheckedAt                                 DateTime?
+  paymentSourceId                               String
+  smartContractWalletId                         String?
+  buyerWalletId                                 String?
+  nextActionId                                  String            @unique
+  nextActionLastChangedAt                       DateTime          @default(now())
+  metadata                                      String?
+  blockchainIdentifier                          String            @unique
+  submitResultTime                              BigInt
+  unlockTime                                    BigInt
+  externalDisputeUnlockTime                     BigInt
+  inputHash                                     String
+  resultHash                                    String?
+  onChainState                                  OnChainState?
+  onChainStateOrResultLastChangedAt             DateTime          @default(now())
+  nextActionOrOnChainStateOrResultLastChangedAt DateTime          @default(now())
+  sellerCoolDownTime                            BigInt
+  buyerCoolDownTime                             BigInt
+  requestedById                                 String
+  currentTransactionId                          String?           @unique
+  collateralReturnLovelace                      BigInt?
+  payByTime                                     BigInt?
+  BuyerWallet                                   WalletBase?       @relation(fields: [buyerWalletId], references: [id])
+  CurrentTransaction                            Transaction?      @relation("CurrentPaymentTransaction", fields: [currentTransactionId], references: [id])
+  NextAction                                    PaymentActionData @relation("NextAction", fields: [nextActionId], references: [id])
+  PaymentSource                                 PaymentSource     @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  totalBuyerCardanoFees                         BigInt            @default(0)
+  totalSellerCardanoFees                        BigInt            @default(0)
+  requestedBy                                   ApiKey            @relation(fields: [requestedById], references: [id])
+  SmartContractWallet                           HotWallet?        @relation(fields: [smartContractWalletId], references: [id])
+  TransactionHistory                            Transaction[]     @relation("PaymentTransactionHistory")
+  WithdrawnForBuyer                             UnitValue[]       @relation("BuyerWithdrawnPaymentRequest")
+  RequestedFunds                                UnitValue[]
+  WithdrawnForSeller                            UnitValue[]       @relation("SellerWithdrawnPaymentRequest")
+
+  @@index([nextActionLastChangedAt])
+  @@index([nextActionLastChangedAt, id])
+  @@index([onChainStateOrResultLastChangedAt])
+  @@index([onChainStateOrResultLastChangedAt, id])
 }
 
 model PaymentActionData {
@@ -235,38 +246,48 @@ model PaymentActionData {
 }
 
 model PurchaseRequest {
-  id                        String             @id @default(cuid())
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
-  lastCheckedAt             DateTime?
-  paymentSourceId           String
-  sellerWalletId            String
-  smartContractWalletId     String?
-  metadata                  String?
-  blockchainIdentifier      String             @unique
-  submitResultTime          BigInt
-  unlockTime                BigInt
-  externalDisputeUnlockTime BigInt
-  inputHash                 String
-  resultHash                String?
-  onChainState              OnChainState?
-  sellerCoolDownTime        BigInt
-  buyerCoolDownTime         BigInt
-  nextActionId              String             @unique
-  requestedById             String
-  currentTransactionId      String?            @unique
-  collateralReturnLovelace  BigInt?
-  payByTime                 BigInt?
-  CurrentTransaction        Transaction?       @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
-  NextAction                PurchaseActionData @relation("NextAction", fields: [nextActionId], references: [id])
-  PaymentSource             PaymentSource      @relation("PurchaseRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  requestedBy               ApiKey             @relation(fields: [requestedById], references: [id])
-  SellerWallet              WalletBase         @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
-  SmartContractWallet       HotWallet?         @relation(fields: [smartContractWalletId], references: [id])
-  TransactionHistory        Transaction[]      @relation("PurchaseTransactionHistory")
-  WithdrawnForBuyer         UnitValue[]        @relation("BuyerWithdrawnPurchaseRequest")
-  PaidFunds                 UnitValue[]
-  WithdrawnForSeller        UnitValue[]        @relation("SellerWithdrawnPurchaseRequest")
+  id                                            String             @id @default(cuid())
+  createdAt                                     DateTime           @default(now())
+  updatedAt                                     DateTime           @updatedAt
+  lastCheckedAt                                 DateTime?
+  paymentSourceId                               String
+  sellerWalletId                                String
+  smartContractWalletId                         String?
+  metadata                                      String?
+  blockchainIdentifier                          String             @unique
+  submitResultTime                              BigInt
+  unlockTime                                    BigInt
+  externalDisputeUnlockTime                     BigInt
+  inputHash                                     String
+  resultHash                                    String?
+  onChainState                                  OnChainState?
+  onChainStateOrResultLastChangedAt             DateTime           @default(now())
+  sellerCoolDownTime                            BigInt
+  buyerCoolDownTime                             BigInt
+  totalBuyerCardanoFees                         BigInt             @default(0)
+  totalSellerCardanoFees                        BigInt             @default(0)
+  nextActionId                                  String             @unique
+  nextActionLastChangedAt                       DateTime           @default(now())
+  nextActionOrOnChainStateOrResultLastChangedAt DateTime           @default(now())
+  requestedById                                 String
+  currentTransactionId                          String?            @unique
+  collateralReturnLovelace                      BigInt?
+  payByTime                                     BigInt?
+  CurrentTransaction                            Transaction?       @relation("CurrentPurchaseTransaction", fields: [currentTransactionId], references: [id])
+  NextAction                                    PurchaseActionData @relation("NextAction", fields: [nextActionId], references: [id])
+  PaymentSource                                 PaymentSource      @relation("PurchaseRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  requestedBy                                   ApiKey             @relation(fields: [requestedById], references: [id])
+  SellerWallet                                  WalletBase         @relation(fields: [sellerWalletId], references: [id], onDelete: Cascade)
+  SmartContractWallet                           HotWallet?         @relation(fields: [smartContractWalletId], references: [id])
+  TransactionHistory                            Transaction[]      @relation("PurchaseTransactionHistory")
+  WithdrawnForBuyer                             UnitValue[]        @relation("BuyerWithdrawnPurchaseRequest")
+  PaidFunds                                     UnitValue[]
+  WithdrawnForSeller                            UnitValue[]        @relation("SellerWithdrawnPurchaseRequest")
+
+  @@index([nextActionLastChangedAt])
+  @@index([nextActionLastChangedAt, id])
+  @@index([onChainStateOrResultLastChangedAt])
+  @@index([onChainStateOrResultLastChangedAt, id])
 }
 
 model PurchaseActionData {
@@ -315,7 +336,7 @@ model PaymentSource {
   PurchaseRequests         PurchaseRequest[]          @relation("PurchaseRequestPaymentSource")
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
-  WalletMonitorConfig      WalletMonitorConfig?
+  WebhookEndpoints         WebhookEndpoint[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -339,64 +360,6 @@ model PaymentSourceConfig {
   rpcProviderApiKey String
   rpcProvider       RPCProvider
   PaymentSource     PaymentSource?
-}
-
-// Wallet monitoring configuration per payment source
-model WalletMonitorConfig {
-  id                   String              @id @default(cuid())
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  
-  paymentSourceId      String              @unique
-  enabled              Boolean             @default(false)
-  checkIntervalSeconds Int                 @default(3600)
-  lastCheckedAt        DateTime?
-  lastCheckStatus      String?
-  lastCheckError       String?             @db.Text
-  
-  PaymentSource        PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  WalletThresholds     WalletThreshold[]
-  
-  @@index([enabled, lastCheckedAt])
-}
-
-// ADA threshold per wallet
-model WalletThreshold {
-  id                    String              @id @default(cuid())
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  
-  hotWalletId           String
-  walletMonitorConfigId String
-  enabled               Boolean             @default(true)
-  adaThresholdLovelace  BigInt              @default(10000000)
-  
-  HotWallet             HotWallet           @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
-  WalletMonitorConfig   WalletMonitorConfig @relation(fields: [walletMonitorConfigId], references: [id], onDelete: Cascade)
-  AssetThresholds       AssetThreshold[]
-  
-  @@unique([hotWalletId, walletMonitorConfigId])
-  @@index([enabled])
-}
-
-// Other asset thresholds (USDM, etc.)
-model AssetThreshold {
-  id                  String          @id @default(cuid())
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  
-  walletThresholdId   String
-  policyId            String
-  assetName           String
-  displayName         String?
-  displaySymbol       String?
-  decimals            Int             @default(0)
-  minAmount           BigInt
-  
-  WalletThreshold     WalletThreshold @relation(fields: [walletThresholdId], references: [id], onDelete: Cascade)
-  
-  @@unique([walletThresholdId, policyId, assetName])
-  @@index([policyId, assetName])
 }
 
 enum ApiKeyStatus {
@@ -456,6 +419,7 @@ enum TransactionStatus {
   Pending
   Confirmed
   FailedViaTimeout
+  FailedViaManualReset
   RolledBack
 }
 
@@ -505,4 +469,68 @@ enum Network {
 
 enum RPCProvider {
   Blockfrost
+}
+
+// Webhook models
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  url       String
+  authToken String
+  events    WebhookEventType[]
+  name      String?
+
+  PaymentSource   PaymentSource? @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  paymentSourceId String?
+
+  CreatedByApiKey   ApiKey? @relation(fields: [createdByApiKeyId], references: [id], onDelete: SetNull)
+  createdByApiKeyId String?
+
+  isActive            Boolean   @default(true)
+  failureCount        Int       @default(0)
+  consecutiveFailures Int       @default(0)
+  lastSuccessAt       DateTime?
+  disabledAt          DateTime?
+
+  WebhookDeliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  WebhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  webhookEndpointId String
+
+  eventType WebhookEventType
+  payload   Json
+  entityId  String?
+
+  status      WebhookDeliveryStatus @default(Pending)
+  attempts    Int                   @default(0)
+  maxAttempts Int                   @default(3)
+  nextRetryAt DateTime?
+
+  responseCode Int?
+  errorMessage String?
+  deliveredAt  DateTime?
+  durationMs   Int?
+}
+
+enum WebhookEventType {
+  PURCHASE_ON_CHAIN_STATUS_CHANGED
+  PAYMENT_ON_CHAIN_STATUS_CHANGED
+  PURCHASE_ON_ERROR
+  PAYMENT_ON_ERROR
+}
+
+enum WebhookDeliveryStatus {
+  Pending
+  Success
+  Failed
+  Retrying
+  Cancelled
 }

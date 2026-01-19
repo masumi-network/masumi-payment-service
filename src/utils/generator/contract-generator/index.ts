@@ -3,14 +3,15 @@ import {
   deserializePlutusScript,
   resolvePlutusScriptAddress,
   resolveStakeKeyHash,
+  resolvePaymentKeyHash,
+  applyParamsToScript,
 } from '@meshsdk/core-cst';
-import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import paymentPlutus from '@smart-contracts/payment/plutus.json';
 import registryPlutus from '@smart-contracts/registry/plutus.json';
 import { Network, OnChainState, PaymentSource } from '@prisma/client';
-import { applyParamsToScript } from '@meshsdk/core';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { validateHexString } from '@/utils/validator/hex';
 
 export async function getPaymentScriptFromPaymentSourceV1(
   paymentSourceSupported: PaymentSource & {
@@ -96,7 +97,15 @@ export async function getPaymentScriptV1(
     version: 'V3',
   };
   const networkId = convertNetworkToId(network);
-  const smartContractAddress = resolvePlutusScriptAddress(script, networkId);
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(
+    script,
+    networkId,
+  );
+  if (typeof smartContractAddress !== 'string') {
+    throw new TypeError(
+      `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
+    );
+  }
   return { script, smartContractAddress };
 }
 
@@ -116,11 +125,35 @@ export async function getRegistryScriptV1(
     script.version,
   );
 
-  const policyId = plutusScriptRegistry.hash().toString();
+  const policyAny: unknown = plutusScriptRegistry.hash();
+  if (
+    (typeof policyAny !== 'object' ||
+      policyAny === null ||
+      !('toString' in policyAny) ||
+      typeof (policyAny as { toString: unknown }).toString !== 'function') &&
+    typeof policyAny !== 'string'
+  ) {
+    throw new TypeError(
+      'Expected PlutusScript.hash() to return an object with toString() got: ' +
+        typeof policyAny,
+    );
+  }
+  const policyId =
+    typeof policyAny === 'string'
+      ? policyAny
+      : (policyAny as { toString: () => string }).toString();
 
   const networkId = convertNetworkToId(network);
 
-  const smartContractAddress = resolvePlutusScriptAddress(script, networkId);
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(
+    script,
+    networkId,
+  );
+  if (typeof smartContractAddress !== 'string') {
+    throw new TypeError(
+      `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
+    );
+  }
   return { script, policyId, smartContractAddress };
 }
 
@@ -175,13 +208,6 @@ function getSmartContractStateDatum(state: SmartContractState) {
         fields: [],
       };
   }
-}
-
-export function validateHexString(hexString: string) {
-  if (hexString.length % 2 !== 0) {
-    return false;
-  }
-  return /^[0-9a-fA-F]+$/.test(hexString);
 }
 
 export function getDatumFromBlockchainIdentifier({
