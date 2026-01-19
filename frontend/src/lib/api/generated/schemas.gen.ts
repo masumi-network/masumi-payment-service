@@ -2362,3 +2362,159 @@ export const RpcProviderKeySchema = {
         'network'
     ]
 } as const;
+
+export const WalletMonitorConfigSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier for the monitoring config'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Payment source this monitoring config belongs to'
+        },
+        enabled: {
+            type: 'boolean',
+            description: 'Whether monitoring is enabled for this payment source'
+        },
+        checkIntervalSeconds: {
+            type: 'number',
+            description: 'How often to check balances (in seconds)'
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Last time balances were checked'
+        },
+        lastCheckStatus: {
+            type: 'string',
+            nullable: true,
+            description: 'Status of last check (success, partial_failure, error)'
+        },
+        lastCheckError: {
+            type: 'string',
+            nullable: true,
+            description: 'Error message from last check, if any'
+        },
+        WalletThresholds: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Unique identifier for the wallet threshold'
+                    },
+                    hotWalletId: {
+                        type: 'string',
+                        description: 'ID of the hot wallet being monitored'
+                    },
+                    enabled: {
+                        type: 'boolean',
+                        description: 'Whether monitoring is enabled for this wallet'
+                    },
+                    adaThresholdLovelace: {
+                        type: 'string',
+                        description: 'ADA threshold in lovelace (1 ADA = 1,000,000 lovelace)'
+                    },
+                    HotWallet: {
+                        type: 'object',
+                        properties: {
+                            id: {
+                                type: 'string',
+                                description: 'Hot wallet ID'
+                            },
+                            walletAddress: {
+                                type: 'string',
+                                description: 'Cardano address of the wallet'
+                            },
+                            walletVkey: {
+                                type: 'string',
+                                description: 'Payment key hash'
+                            },
+                            type: {
+                                type: 'string',
+                                description: 'Wallet type (Selling or Purchasing)'
+                            }
+                        },
+                        required: [
+                            'id',
+                            'walletAddress',
+                            'walletVkey',
+                            'type'
+                        ]
+                    },
+                    AssetThresholds: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                id: {
+                                    type: 'string',
+                                    description: 'Unique identifier for the asset threshold'
+                                },
+                                policyId: {
+                                    type: 'string',
+                                    description: 'Policy ID of the asset'
+                                },
+                                assetName: {
+                                    type: 'string',
+                                    description: 'Asset name (hex encoded)'
+                                },
+                                displayName: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Human-readable name of the asset'
+                                },
+                                displaySymbol: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Display symbol for the asset (e.g., USDM)'
+                                },
+                                decimals: {
+                                    type: 'number',
+                                    description: 'Number of decimal places for this asset'
+                                },
+                                minAmount: {
+                                    type: 'string',
+                                    description: 'Minimum amount threshold (as string for large numbers)'
+                                }
+                            },
+                            required: [
+                                'id',
+                                'policyId',
+                                'assetName',
+                                'displayName',
+                                'displaySymbol',
+                                'decimals',
+                                'minAmount'
+                            ]
+                        },
+                        description: 'Thresholds for other assets (USDM, etc.)'
+                    }
+                },
+                required: [
+                    'id',
+                    'hotWalletId',
+                    'enabled',
+                    'adaThresholdLovelace',
+                    'HotWallet',
+                    'AssetThresholds'
+                ]
+            },
+            description: 'Individual wallet thresholds'
+        }
+    },
+    required: [
+        'id',
+        'paymentSourceId',
+        'enabled',
+        'checkIntervalSeconds',
+        'lastCheckedAt',
+        'lastCheckStatus',
+        'lastCheckError',
+        'WalletThresholds'
+    ]
+} as const;
