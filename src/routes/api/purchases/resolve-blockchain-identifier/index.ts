@@ -1,8 +1,11 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, $Enums } from '@prisma/client';
+import { Network } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
   transformPurchaseGetTimestamps,
@@ -25,9 +28,9 @@ export const postPurchaseRequestSchemaInput = z.object({
     .describe('The smart contract address of the payment source'),
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the purchases',
     ),
@@ -42,20 +45,15 @@ export const resolvePurchaseRequestPost =
     output: postPurchaseRequestSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof postPurchaseRequestSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const purchase = await prisma.purchaseRequest.findUnique({

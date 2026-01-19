@@ -6,14 +6,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:clean": "rm -rf .next node_modules/.cache tsconfig.tsbuildinfo && find . -maxdepth 3 -name '*.tsbuildinfo' -not -path './node_modules/*' -not -path './.next/*' -delete && npm run build",
+    "clean": "rm -rf .next node_modules/.cache tsconfig.tsbuildinfo && find . -maxdepth 3 -name '*.tsbuildinfo' -not -path './node_modules/*' -not -path './.next/*' -delete",
     "lint": "next lint",
     "openapi-ts": "openapi-ts",
     "openapi-ts-latest": "cp ./../src/utils/generator/swagger-generator/openapi-docs.json ./openapi-docs.json && openapi-ts"
   },
   "dependencies": {
-    "@hey-api/client-axios": "^0.6.3",
-    "@hey-api/client-fetch": "^0.8.4",
-    "@hey-api/openapi-ts": "0.68.1",
+    "@hey-api/openapi-ts": "0.90.4",
     "@hookform/resolvers": "^5.2.2",
     "@meshsdk/core": "^1.9.0-beta.94",
     "@monaco-editor/react": "^4.7.0",

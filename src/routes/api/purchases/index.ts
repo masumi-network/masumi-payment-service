@@ -7,12 +7,14 @@ import {
   PurchaseErrorType,
   OnChainState,
   PricingType,
-  $Enums,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
@@ -32,8 +34,8 @@ import {
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -55,9 +57,9 @@ export const queryPurchaseRequestSchemaInput = z.object({
 
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the purchases',
     ),
@@ -316,20 +318,15 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
   output: queryPurchaseRequestSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryPurchaseRequestSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.purchaseRequest.findMany({
@@ -526,22 +523,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   output: createPurchaseInitSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof createPurchaseInitSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
       const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
         where: {
@@ -979,7 +971,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       const smartContractAddress = paymentSource.smartContractAddress;
 
       const initialPurchaseRequest = await handlePurchaseCreditInit({
-        id: options.id,
+        id: ctx.id,
         cost: Array.from(agentIdentifierAmountsMap.entries()).map(
           ([unit, amount]) => {
             if (unit.toLowerCase() == 'lovelace') {
@@ -1028,7 +1020,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         errorInstance,
         {
           network: input.network,
-          user_id: options.id,
+          user_id: ctx.id,
           agent_identifier: input.agentIdentifier,
           duration: Date.now() - startTime,
           step: 'purchase_processing',
