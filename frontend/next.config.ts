@@ -18,7 +18,6 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   // Note: eslint config was removed as it's no longer supported in Next.js 16
-  // Run `npm run lint` separately to check for ESLint errors
 };
 
 export default nextConfig;
