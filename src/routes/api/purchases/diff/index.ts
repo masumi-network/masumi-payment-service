@@ -1,8 +1,16 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { $Enums, Network, Prisma } from '@prisma/client';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  Network,
+  Prisma,
+  PurchaseErrorType,
+  PurchasingAction,
+} from '@prisma/client';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import {
@@ -17,8 +25,8 @@ type PurchaseDiffMode =
   | 'nextActionOrOnChainStateOrResultLastChangedAt';
 
 export const queryPurchaseDiffSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -50,9 +58,9 @@ export const queryPurchaseDiffSchemaInput = z.object({
     .describe('The smart contract address of the payment source'),
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the purchases',
     ),
@@ -148,22 +156,17 @@ function buildPurchaseDiffOrderBy(
 
 async function queryPurchaseDiffByMode({
   input,
-  options,
+  ctx,
   mode,
 }: {
   input: z.infer<typeof queryPurchaseDiffSchemaInput>;
-  options: {
-    id: string;
-    permission: $Enums.Permission;
-    networkLimit: $Enums.Network[];
-    usageLimited: boolean;
-  };
+  ctx: AuthContext;
   mode: PurchaseDiffMode;
 }) {
   await checkIsAllowedNetworkOrThrowUnauthorized(
-    options.networkLimit,
+    ctx.networkLimit,
     input.network,
-    options.permission,
+    ctx.permission,
   );
 
   const since = input.lastUpdate;
@@ -240,6 +243,20 @@ async function queryPurchaseDiffByMode({
               },
             }
           : undefined,
+      ActionHistory:
+        input.includeHistory == true
+          ? {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+              },
+            }
+          : undefined,
     },
   });
 
@@ -272,7 +289,26 @@ async function queryPurchaseDiffByMode({
                 ...tx,
                 fees: tx.fees?.toString() ?? null,
               }))
-            : [],
+            : null,
+        ActionHistory: purchase.ActionHistory
+          ? (
+              purchase.ActionHistory as Array<{
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                requestedAction: PurchasingAction;
+                errorType: PurchaseErrorType | null;
+                errorNote: string | null;
+              }>
+            ).map((action) => ({
+              id: action.id,
+              createdAt: action.createdAt,
+              updatedAt: action.updatedAt,
+              requestedAction: action.requestedAction,
+              errorType: action.errorType,
+              errorNote: action.errorNote,
+            }))
+          : null,
       };
     }),
   };
@@ -283,10 +319,10 @@ export const queryPurchaseDiffCombinedGet =
     method: 'get',
     input: queryPurchaseDiffSchemaInput,
     output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       queryPurchaseDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
       }),
   });
@@ -296,10 +332,10 @@ export const queryPurchaseDiffNextActionGet =
     method: 'get',
     input: queryPurchaseDiffSchemaInput,
     output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       queryPurchaseDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'nextActionLastChangedAt',
       }),
   });
@@ -309,10 +345,10 @@ export const queryPurchaseDiffOnChainStateOrResultGet =
     method: 'get',
     input: queryPurchaseDiffSchemaInput,
     output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       queryPurchaseDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'onChainStateOrResultLastChangedAt',
       }),
   });

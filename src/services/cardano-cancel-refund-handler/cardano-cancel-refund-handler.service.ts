@@ -274,6 +274,11 @@ export async function cancelRefundsV1() {
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction:
@@ -332,6 +337,11 @@ export async function cancelRefundsV1() {
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,

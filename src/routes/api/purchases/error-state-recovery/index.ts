@@ -3,15 +3,22 @@ import {
   Network,
   PurchasingAction,
   TransactionStatus,
-  $Enums,
   OnChainState,
 } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
 import { ez } from 'express-zod-api';
+import {
+  transformPurchaseGetAmounts,
+  transformPurchaseGetTimestamps,
+} from '@/utils/shared/transformers';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -39,21 +46,16 @@ export const purchaseErrorStateRecoveryPost =
     output: purchaseErrorStateRecoverySchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof purchaseErrorStateRecoverySchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       // Check network permission
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       // Find purchase request
@@ -155,7 +157,7 @@ export const purchaseErrorStateRecoveryPost =
         transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
       });
 
-      await prisma.$transaction(async (tx) => {
+      const newPurchase = await prisma.$transaction(async (tx) => {
         for (const transaction of transactionsToFail) {
           await tx.transaction.update({
             where: { id: transaction.id },
@@ -178,9 +180,14 @@ export const purchaseErrorStateRecoveryPost =
             ] as OnChainState[]
           ).includes(purchaseRequest.onChainState);
 
-        await tx.purchaseRequest.update({
+        return await tx.purchaseRequest.update({
           where: { id: purchaseRequest.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: purchaseRequest.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 submittedTxHash: null,
@@ -188,6 +195,51 @@ export const purchaseErrorStateRecoveryPost =
                   ? PurchasingAction.None
                   : PurchasingAction.WaitingForExternalAction,
               },
+            },
+          },
+          include: {
+            NextAction: {
+              select: {
+                id: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+              },
+            },
+            CurrentTransaction: {
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                txHash: true,
+                status: true,
+                fees: true,
+                blockHeight: true,
+                blockTime: true,
+                previousOnChainState: true,
+                newOnChainState: true,
+                confirmations: true,
+              },
+            },
+            PaidFunds: { select: { id: true, amount: true, unit: true } },
+            PaymentSource: {
+              select: {
+                id: true,
+                network: true,
+                policyId: true,
+                smartContractAddress: true,
+              },
+            },
+            SellerWallet: { select: { id: true, walletVkey: true } },
+            SmartContractWallet: {
+              where: { deletedAt: null },
+              select: { id: true, walletVkey: true, walletAddress: true },
+            },
+            WithdrawnForSeller: {
+              select: { id: true, amount: true, unit: true },
+            },
+            WithdrawnForBuyer: {
+              select: { id: true, amount: true, unit: true },
             },
           },
         });
@@ -198,8 +250,25 @@ export const purchaseErrorStateRecoveryPost =
         failedTransactionsCount: transactionsToFail.length,
       });
 
+      const decoded = decodeBlockchainIdentifier(
+        newPurchase.blockchainIdentifier,
+      );
+
       return {
-        id: purchaseRequest.id,
+        ...newPurchase,
+        ...transformPurchaseGetTimestamps(newPurchase),
+        ...transformPurchaseGetAmounts(newPurchase),
+        totalBuyerCardanoFees:
+          Number(newPurchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(newPurchase.totalSellerCardanoFees.toString()) / 1_000_000,
+        agentIdentifier: decoded?.agentIdentifier ?? null,
+        CurrentTransaction: newPurchase.CurrentTransaction
+          ? {
+              ...newPurchase.CurrentTransaction,
+              fees: newPurchase.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
       };
     },
   });

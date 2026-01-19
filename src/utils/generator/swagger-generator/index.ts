@@ -288,7 +288,6 @@ const purchaseResponseSchemaExample = {
     errorNote: null,
   },
   CurrentTransaction: null,
-  TransactionHistory: [],
   PaidFunds: [
     {
       unit: '', // Empty string = ADA/lovelace
@@ -1344,8 +1343,8 @@ export function generateOpenAPI() {
 
   /********************* PURCHASE *****************************/
   const queryPurchaseDiffSchemaInputForDocs = z.object({
-    limit: z
-      .number({ coerce: true })
+    limit: z.coerce
+      .number()
       .min(1)
       .max(100)
       .default(10)

@@ -3,6 +3,7 @@
 import type { Options as ClientOptions, TDataShape, Client } from '@hey-api/client-axios';
 import type { GetHealthData, GetHealthResponse, GetApiKeyStatusData, GetApiKeyStatusResponse, GetWalletData, GetWalletResponse, PatchWalletData, PatchWalletResponse, PostWalletData, PostWalletResponse, PostRevealDataData, PostRevealDataResponse, DeleteApiKeyData, DeleteApiKeyResponse, GetApiKeyData, GetApiKeyResponse, PatchApiKeyData, PatchApiKeyResponse, PostApiKeyData, PostApiKeyResponse, GetPaymentData, GetPaymentResponse, PostPaymentData, PostPaymentResponse, GetPaymentDiffData, GetPaymentDiffResponse, GetPaymentDiffNextActionData, GetPaymentDiffNextActionResponse, GetPaymentDiffOnchainStateOrResultData, GetPaymentDiffOnchainStateOrResultResponse, PostPaymentSubmitResultData, PostPaymentSubmitResultResponse, PostPaymentAuthorizeRefundData, PostPaymentAuthorizeRefundResponse, PostPaymentErrorStateRecoveryData, PostPaymentErrorStateRecoveryResponse, PostPaymentErrorStateRecoveryError, PostPurchaseErrorStateRecoveryData, PostPurchaseErrorStateRecoveryResponse, PostPurchaseErrorStateRecoveryError, GetPurchaseData, GetPurchaseResponse, PostPurchaseData, PostPurchaseResponse, PostPurchaseError, GetPurchaseDiffData, GetPurchaseDiffResponse, GetPurchaseDiffNextActionData, GetPurchaseDiffNextActionResponse, GetPurchaseDiffOnchainStateOrResultData, GetPurchaseDiffOnchainStateOrResultResponse, PostPurchaseRequestRefundData, PostPurchaseRequestRefundResponse, PostPurchaseCancelRefundRequestData, PostPurchaseCancelRefundRequestResponse, PostPaymentResolveBlockchainIdentifierData, PostPaymentResolveBlockchainIdentifierResponse, PostPurchaseResolveBlockchainIdentifierData, PostPurchaseResolveBlockchainIdentifierResponse, GetRegistryWalletData, GetRegistryWalletResponse, DeleteRegistryData, DeleteRegistryResponse, DeleteRegistryError, GetRegistryData, GetRegistryResponse, PostRegistryData, PostRegistryResponse, GetRegistryDiffData, GetRegistryDiffResponse, PostRegistryDeregisterData, PostRegistryDeregisterResponse, GetPaymentSourceData, GetPaymentSourceResponse, DeletePaymentSourceExtendedData, DeletePaymentSourceExtendedResponse, GetPaymentSourceExtendedData, GetPaymentSourceExtendedResponse, PatchPaymentSourceExtendedData, PatchPaymentSourceExtendedResponse, PostPaymentSourceExtendedData, PostPaymentSourceExtendedResponse, GetUtxosData, GetUtxosResponse, GetRpcApiKeysData, GetRpcApiKeysResponse, PostPurchaseSpendingData, PostPurchaseSpendingResponse, PostPaymentIncomeData, PostPaymentIncomeResponse, DeleteWebhooksData, DeleteWebhooksResponse, GetWebhooksData, GetWebhooksResponse, PostWebhooksData, PostWebhooksResponse } from './types.gen';
 import { client as _heyApiClient } from './client.gen';
+import { getWalletResponseTransformer, getPaymentResponseTransformer, postPaymentResponseTransformer, getPaymentDiffResponseTransformer, getPaymentDiffNextActionResponseTransformer, getPaymentDiffOnchainStateOrResultResponseTransformer, postPaymentSubmitResultResponseTransformer, postPaymentAuthorizeRefundResponseTransformer, postPaymentErrorStateRecoveryResponseTransformer, getPurchaseResponseTransformer, postPurchaseResponseTransformer, getPurchaseDiffResponseTransformer, getPurchaseDiffNextActionResponseTransformer, getPurchaseDiffOnchainStateOrResultResponseTransformer, postPurchaseRequestRefundResponseTransformer, postPurchaseCancelRefundRequestResponseTransformer, postPaymentResolveBlockchainIdentifierResponseTransformer, postPurchaseResolveBlockchainIdentifierResponseTransformer, deleteRegistryResponseTransformer, getRegistryResponseTransformer, postRegistryResponseTransformer, getRegistryDiffResponseTransformer, postRegistryDeregisterResponseTransformer, getPaymentSourceResponseTransformer, deletePaymentSourceExtendedResponseTransformer, getPaymentSourceExtendedResponseTransformer, patchPaymentSourceExtendedResponseTransformer, postPaymentSourceExtendedResponseTransformer, getRpcApiKeysResponseTransformer, postPurchaseSpendingResponseTransformer, postPaymentIncomeResponseTransformer, deleteWebhooksResponseTransformer, getWebhooksResponseTransformer, postWebhooksResponseTransformer } from './transformers.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = ClientOptions<TData, ThrowOnError> & {
     /**
@@ -60,6 +61,7 @@ export const getWallet = <ThrowOnError extends boolean = false>(options: Options
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getWalletResponseTransformer,
         url: '/wallet/',
         ...options
     });
@@ -228,6 +230,7 @@ export const getPayment = <ThrowOnError extends boolean = false>(options: Option
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentResponseTransformer,
         url: '/payment/',
         ...options
     });
@@ -246,6 +249,7 @@ export const postPayment = <ThrowOnError extends boolean = false>(options?: Opti
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentResponseTransformer,
         url: '/payment/',
         ...options,
         headers: {
@@ -268,6 +272,7 @@ export const getPaymentDiff = <ThrowOnError extends boolean = false>(options: Op
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentDiffResponseTransformer,
         url: '/payment/diff',
         ...options
     });
@@ -286,6 +291,7 @@ export const getPaymentDiffNextAction = <ThrowOnError extends boolean = false>(o
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentDiffNextActionResponseTransformer,
         url: '/payment/diff/next-action',
         ...options
     });
@@ -304,6 +310,7 @@ export const getPaymentDiffOnchainStateOrResult = <ThrowOnError extends boolean 
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentDiffOnchainStateOrResultResponseTransformer,
         url: '/payment/diff/onchain-state-or-result',
         ...options
     });
@@ -322,6 +329,7 @@ export const postPaymentSubmitResult = <ThrowOnError extends boolean = false>(op
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentSubmitResultResponseTransformer,
         url: '/payment/submit-result',
         ...options,
         headers: {
@@ -344,6 +352,7 @@ export const postPaymentAuthorizeRefund = <ThrowOnError extends boolean = false>
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentAuthorizeRefundResponseTransformer,
         url: '/payment/authorize-refund',
         ...options,
         headers: {
@@ -366,6 +375,7 @@ export const postPaymentErrorStateRecovery = <ThrowOnError extends boolean = fal
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentErrorStateRecoveryResponseTransformer,
         url: '/payment/error-state-recovery/',
         ...options,
         headers: {
@@ -410,6 +420,7 @@ export const getPurchase = <ThrowOnError extends boolean = false>(options: Optio
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPurchaseResponseTransformer,
         url: '/purchase/',
         ...options
     });
@@ -428,6 +439,7 @@ export const postPurchase = <ThrowOnError extends boolean = false>(options?: Opt
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPurchaseResponseTransformer,
         url: '/purchase/',
         ...options,
         headers: {
@@ -450,6 +462,7 @@ export const getPurchaseDiff = <ThrowOnError extends boolean = false>(options: O
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPurchaseDiffResponseTransformer,
         url: '/purchase/diff',
         ...options
     });
@@ -468,6 +481,7 @@ export const getPurchaseDiffNextAction = <ThrowOnError extends boolean = false>(
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPurchaseDiffNextActionResponseTransformer,
         url: '/purchase/diff/next-action',
         ...options
     });
@@ -486,6 +500,7 @@ export const getPurchaseDiffOnchainStateOrResult = <ThrowOnError extends boolean
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPurchaseDiffOnchainStateOrResultResponseTransformer,
         url: '/purchase/diff/onchain-state-or-result',
         ...options
     });
@@ -504,6 +519,7 @@ export const postPurchaseRequestRefund = <ThrowOnError extends boolean = false>(
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPurchaseRequestRefundResponseTransformer,
         url: '/purchase/request-refund',
         ...options,
         headers: {
@@ -526,6 +542,7 @@ export const postPurchaseCancelRefundRequest = <ThrowOnError extends boolean = f
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPurchaseCancelRefundRequestResponseTransformer,
         url: '/purchase/cancel-refund-request',
         ...options,
         headers: {
@@ -548,6 +565,7 @@ export const postPaymentResolveBlockchainIdentifier = <ThrowOnError extends bool
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentResolveBlockchainIdentifierResponseTransformer,
         url: '/payment/resolve-blockchain-identifier',
         ...options,
         headers: {
@@ -570,6 +588,7 @@ export const postPurchaseResolveBlockchainIdentifier = <ThrowOnError extends boo
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPurchaseResolveBlockchainIdentifierResponseTransformer,
         url: '/purchase/resolve-blockchain-identifier',
         ...options,
         headers: {
@@ -610,6 +629,7 @@ export const deleteRegistry = <ThrowOnError extends boolean = false>(options?: O
                 type: 'apiKey'
             }
         ],
+        responseTransformer: deleteRegistryResponseTransformer,
         url: '/registry/',
         ...options,
         headers: {
@@ -632,6 +652,7 @@ export const getRegistry = <ThrowOnError extends boolean = false>(options: Optio
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getRegistryResponseTransformer,
         url: '/registry/',
         ...options
     });
@@ -650,6 +671,7 @@ export const postRegistry = <ThrowOnError extends boolean = false>(options?: Opt
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postRegistryResponseTransformer,
         url: '/registry/',
         ...options,
         headers: {
@@ -672,6 +694,7 @@ export const getRegistryDiff = <ThrowOnError extends boolean = false>(options: O
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getRegistryDiffResponseTransformer,
         url: '/registry/diff',
         ...options
     });
@@ -690,6 +713,7 @@ export const postRegistryDeregister = <ThrowOnError extends boolean = false>(opt
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postRegistryDeregisterResponseTransformer,
         url: '/registry/deregister',
         ...options,
         headers: {
@@ -712,6 +736,7 @@ export const getPaymentSource = <ThrowOnError extends boolean = false>(options?:
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentSourceResponseTransformer,
         url: '/payment-source/',
         ...options
     });
@@ -730,6 +755,7 @@ export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false
                 type: 'apiKey'
             }
         ],
+        responseTransformer: deletePaymentSourceExtendedResponseTransformer,
         url: '/payment-source-extended/',
         ...options,
         headers: {
@@ -752,6 +778,7 @@ export const getPaymentSourceExtended = <ThrowOnError extends boolean = false>(o
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getPaymentSourceExtendedResponseTransformer,
         url: '/payment-source-extended/',
         ...options
     });
@@ -770,6 +797,7 @@ export const patchPaymentSourceExtended = <ThrowOnError extends boolean = false>
                 type: 'apiKey'
             }
         ],
+        responseTransformer: patchPaymentSourceExtendedResponseTransformer,
         url: '/payment-source-extended/',
         ...options,
         headers: {
@@ -792,6 +820,7 @@ export const postPaymentSourceExtended = <ThrowOnError extends boolean = false>(
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentSourceExtendedResponseTransformer,
         url: '/payment-source-extended/',
         ...options,
         headers: {
@@ -832,6 +861,7 @@ export const getRpcApiKeys = <ThrowOnError extends boolean = false>(options?: Op
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getRpcApiKeysResponseTransformer,
         url: '/rpc-api-keys/',
         ...options
     });
@@ -850,6 +880,7 @@ export const postPurchaseSpending = <ThrowOnError extends boolean = false>(optio
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPurchaseSpendingResponseTransformer,
         url: '/purchase/spending',
         ...options,
         headers: {
@@ -872,6 +903,7 @@ export const postPaymentIncome = <ThrowOnError extends boolean = false>(options?
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postPaymentIncomeResponseTransformer,
         url: '/payment/income',
         ...options,
         headers: {
@@ -894,6 +926,7 @@ export const deleteWebhooks = <ThrowOnError extends boolean = false>(options?: O
                 type: 'apiKey'
             }
         ],
+        responseTransformer: deleteWebhooksResponseTransformer,
         url: '/webhooks/',
         ...options,
         headers: {
@@ -916,6 +949,7 @@ export const getWebhooks = <ThrowOnError extends boolean = false>(options?: Opti
                 type: 'apiKey'
             }
         ],
+        responseTransformer: getWebhooksResponseTransformer,
         url: '/webhooks/',
         ...options
     });
@@ -934,6 +968,7 @@ export const postWebhooks = <ThrowOnError extends boolean = false>(options?: Opt
                 type: 'apiKey'
             }
         ],
+        responseTransformer: postWebhooksResponseTransformer,
         url: '/webhooks/',
         ...options,
         headers: {
