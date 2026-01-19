@@ -291,7 +291,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
                   'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
@@ -304,7 +304,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
                   'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
