@@ -127,6 +127,20 @@ export const resolvePurchaseRequestPost =
                   },
                 }
               : undefined,
+          ActionHistory:
+            input.includeHistory == true
+              ? {
+                  orderBy: { createdAt: 'desc' },
+                  select: {
+                    id: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    requestedAction: true,
+                    errorType: true,
+                    errorNote: true,
+                  },
+                }
+              : undefined,
         },
       });
       if (purchase == null) {
@@ -156,7 +170,14 @@ export const resolvePurchaseRequestPost =
                 ...tx,
                 fees: tx.fees?.toString() ?? null,
               }))
-            : [],
+            : null,
+        ActionHistory: purchase.ActionHistory
+          ? purchase.ActionHistory.map((action) => ({
+              ...action,
+              createdAt: action.createdAt.toISOString(),
+              updatedAt: action.updatedAt.toISOString(),
+            }))
+          : null,
       };
     },
   });

@@ -1,7 +1,12 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { Network, Prisma } from '@prisma/client';
+import {
+  Network,
+  Prisma,
+  PurchaseErrorType,
+  PurchasingAction,
+} from '@prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,
@@ -238,6 +243,20 @@ async function queryPurchaseDiffByMode({
               },
             }
           : undefined,
+      ActionHistory:
+        input.includeHistory == true
+          ? {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+              },
+            }
+          : undefined,
     },
   });
 
@@ -270,7 +289,26 @@ async function queryPurchaseDiffByMode({
                 ...tx,
                 fees: tx.fees?.toString() ?? null,
               }))
-            : [],
+            : null,
+        ActionHistory: purchase.ActionHistory
+          ? (
+              purchase.ActionHistory as Array<{
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                requestedAction: PurchasingAction;
+                errorType: PurchaseErrorType | null;
+                errorNote: string | null;
+              }>
+            ).map((action) => ({
+              id: action.id,
+              createdAt: action.createdAt,
+              updatedAt: action.updatedAt,
+              requestedAction: action.requestedAction,
+              errorType: action.errorType,
+              errorNote: action.errorNote,
+            }))
+          : null,
       };
     }),
   };

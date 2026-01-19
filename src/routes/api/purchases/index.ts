@@ -61,7 +61,7 @@ export const queryPurchaseRequestSchemaInput = z.object({
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
     .describe(
-      'Whether to include the full transaction and status history of the purchases',
+      'Whether to include the full transaction and action history of the purchases',
     ),
 });
 
@@ -172,6 +172,28 @@ export const purchaseResponseSchema = z
           .describe('Additional details about the error, if any'),
       })
       .describe('Next action required for this purchase'),
+    ActionHistory: z
+      .array(
+        z
+          .object({
+            requestedAction: z
+              .nativeEnum(PurchasingAction)
+              .describe('Next action required for this purchase'),
+            errorType: z
+              .nativeEnum(PurchaseErrorType)
+              .nullable()
+              .describe('Type of error that occurred, if any'),
+            errorNote: z
+              .string()
+              .nullable()
+              .describe('Additional details about the error, if any'),
+          })
+          .describe('Next action required for this purchase'),
+      )
+      .nullable()
+      .describe(
+        'Historical list of all actions for this purchase. Null if includeHistory is false',
+      ),
     CurrentTransaction: z
       .object({
         id: z.string().describe('Unique identifier for the transaction'),
@@ -249,6 +271,7 @@ export const purchaseResponseSchema = z
             .describe('Number of block confirmations for this transaction'),
         }),
       )
+      .nullable()
       .describe('Historical list of all transactions for this purchase'),
     PaidFunds: z.array(
       z.object({
@@ -402,6 +425,20 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                 },
               }
             : undefined,
+        ActionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  requestedAction: true,
+                  errorType: true,
+                  errorNote: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -432,7 +469,26 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                   ...tx,
                   fees: tx.fees?.toString() ?? null,
                 }))
-              : [],
+              : null,
+          ActionHistory: purchase.ActionHistory
+            ? (
+                purchase.ActionHistory as Array<{
+                  id: string;
+                  createdAt: Date;
+                  updatedAt: Date;
+                  requestedAction: PurchasingAction;
+                  errorType: PurchaseErrorType | null;
+                  errorNote: string | null;
+                }>
+              ).map((action) => ({
+                id: action.id,
+                createdAt: action.createdAt,
+                updatedAt: action.updatedAt,
+                requestedAction: action.requestedAction,
+                errorType: action.errorType,
+                errorNote: action.errorNote,
+              }))
+            : null,
         };
       }),
     };
@@ -515,7 +571,10 @@ export const createPurchaseInitSchemaInput = z.object({
     ),
 });
 
-export const createPurchaseInitSchemaOutput = purchaseResponseSchema;
+export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
+  TransactionHistory: true,
+  ActionHistory: true,
+});
 
 export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -1001,7 +1060,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         totalBuyerCardanoFees: 0,
         totalSellerCardanoFees: 0,
         agentIdentifier: input.agentIdentifier,
-        TransactionHistory: [],
         CurrentTransaction: null,
       };
     } catch (error: unknown) {

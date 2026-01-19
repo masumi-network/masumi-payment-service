@@ -111,6 +111,11 @@ export async function updateWalletTransactionHash() {
                             : undefined,
                       },
                     },
+              ActionHistory: {
+                connect: {
+                  id: paymentRequest.nextActionId,
+                },
+              },
               NextAction: {
                 create: {
                   requestedAction: PaymentAction.WaitingForExternalAction,
@@ -177,6 +182,11 @@ export async function updateWalletTransactionHash() {
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.FailedViaTimeout,
+                },
+              },
+              ActionHistory: {
+                connect: {
+                  id: paymentRequest.nextActionId,
                 },
               },
               NextAction: {
@@ -270,6 +280,11 @@ export async function updateWalletTransactionHash() {
                             : undefined,
                       },
                     },
+              ActionHistory: {
+                connect: {
+                  id: purchaseRequest.nextActionId,
+                },
+              },
               NextAction: {
                 create: {
                   requestedAction: PurchasingAction.WaitingForExternalAction,
@@ -337,6 +352,11 @@ export async function updateWalletTransactionHash() {
               CurrentTransaction: {
                 update: {
                   status: TransactionStatus.FailedViaTimeout,
+                },
+              },
+              ActionHistory: {
+                connect: {
+                  id: purchaseRequest.nextActionId,
                 },
               },
               NextAction: {

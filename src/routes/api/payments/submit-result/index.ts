@@ -37,6 +37,7 @@ export const submitPaymentResultSchemaInput = z.object({
 
 export const submitPaymentResultSchemaOutput = paymentResponseSchema.omit({
   TransactionHistory: true,
+  ActionHistory: true,
 });
 
 export const submitPaymentResultEndpointPost =
@@ -101,6 +102,11 @@ export const submitPaymentResultEndpointPost =
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },
         data: {
+          ActionHistory: {
+            connect: {
+              id: payment.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PaymentAction.SubmitResultRequested,

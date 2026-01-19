@@ -31,6 +31,7 @@ export const authorizePaymentRefundSchemaInput = z.object({
 
 export const authorizePaymentRefundSchemaOutput = paymentResponseSchema.omit({
   TransactionHistory: true,
+  ActionHistory: true,
 });
 
 export const authorizePaymentRefundEndpointPost =
@@ -91,6 +92,11 @@ export const authorizePaymentRefundEndpointPost =
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },
         data: {
+          ActionHistory: {
+            connect: {
+              id: payment.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PaymentAction.AuthorizeRefundRequested,

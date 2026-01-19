@@ -137,6 +137,11 @@ async function executeSpecificBatchPayment(
     await prisma.purchaseRequest.update({
       where: { id: request.paymentRequest.id },
       data: {
+        ActionHistory: {
+          connect: {
+            id: request.paymentRequest.nextActionId,
+          },
+        },
         NextAction: {
           create: {
             requestedAction: PurchasingAction.FundsLockingInitiated,
@@ -292,6 +297,11 @@ export async function batchLatestPaymentEntriesV1() {
               await prisma.purchaseRequest.update({
                 where: { id: purchaseRequest.id },
                 data: {
+                  ActionHistory: {
+                    connect: {
+                      id: purchaseRequest.nextActionId,
+                    },
+                  },
                   NextAction: {
                     create: {
                       requestedAction: PurchasingAction.WaitingForManualAction,
@@ -310,6 +320,11 @@ export async function batchLatestPaymentEntriesV1() {
               await prisma.purchaseRequest.update({
                 where: { id: purchaseRequest.id },
                 data: {
+                  ActionHistory: {
+                    connect: {
+                      id: purchaseRequest.nextActionId,
+                    },
+                  },
                   NextAction: {
                     create: {
                       requestedAction: PurchasingAction.FundsLockingRequested,
@@ -639,6 +654,11 @@ export async function batchLatestPaymentEntriesV1() {
                 await prisma.purchaseRequest.update({
                   where: { id: paymentRequest.id },
                   data: {
+                    ActionHistory: {
+                      connect: {
+                        id: paymentRequest.nextActionId,
+                      },
+                    },
                     NextAction: {
                       create: {
                         requestedAction:
@@ -694,6 +714,11 @@ export async function batchLatestPaymentEntriesV1() {
                   await prisma.purchaseRequest.update({
                     where: { id: batchedRequest.paymentRequest.id },
                     data: {
+                      ActionHistory: {
+                        connect: {
+                          id: batchedRequest.paymentRequest.nextActionId,
+                        },
+                      },
                       NextAction: {
                         create: {
                           requestedAction:
@@ -753,6 +778,11 @@ export async function batchLatestPaymentEntriesV1() {
               await prisma.purchaseRequest.update({
                 where: { id: x.id },
                 data: {
+                  ActionHistory: {
+                    connect: {
+                      id: x.nextActionId,
+                    },
+                  },
                   NextAction: {
                     create: {
                       requestedAction: PurchasingAction.WaitingForManualAction,
