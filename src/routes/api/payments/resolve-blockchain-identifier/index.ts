@@ -1,8 +1,11 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, $Enums } from '@prisma/client';
+import { Network, PaymentAction, PaymentErrorType } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
   transformPaymentGetTimestamps,
@@ -26,9 +29,9 @@ export const postPaymentRequestSchemaInput = z.object({
 
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the purchases',
     ),
@@ -43,20 +46,15 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
     output: postPaymentRequestSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof postPaymentRequestSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const result = await prisma.paymentRequest.findUnique({
@@ -132,6 +130,21 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
                   },
                 }
               : undefined,
+          ActionHistory:
+            input.includeHistory == true
+              ? {
+                  orderBy: { createdAt: 'desc' },
+                  select: {
+                    id: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    requestedAction: true,
+                    errorType: true,
+                    errorNote: true,
+                    resultHash: true,
+                  },
+                }
+              : undefined,
         },
       });
       if (result == null) {
@@ -159,6 +172,29 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
           ? result.TransactionHistory.map((tx) => ({
               ...tx,
               fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
+        ActionHistory: result.ActionHistory
+          ? (
+              result.ActionHistory as Array<{
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                submittedTxHash: string | null;
+                requestedAction: PaymentAction;
+                errorType: PaymentErrorType | null;
+                errorNote: string | null;
+                resultHash: string | null;
+              }>
+            ).map((action) => ({
+              id: action.id,
+              createdAt: action.createdAt,
+              updatedAt: action.updatedAt,
+              submittedTxHash: action.submittedTxHash,
+              requestedAction: action.requestedAction,
+              errorType: action.errorType,
+              errorNote: action.errorNote,
+              resultHash: action.resultHash,
             }))
           : null,
       };

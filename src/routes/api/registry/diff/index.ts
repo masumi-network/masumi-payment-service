@@ -2,14 +2,19 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from '@/utils/zod-openapi';
 import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
-import { $Enums, Network, Prisma, PricingType } from '@prisma/client';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { Network, Prisma, PricingType } from '@prisma/client';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
 
+const registryDiffLastUpdateSchema = ez.dateIn();
+
 export const queryRegistryDiffSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -20,9 +25,10 @@ export const queryRegistryDiffSchemaInput = z.object({
     .describe(
       'Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp',
     ),
-  lastUpdate: ez
-    .dateIn()
-    .default(new Date(0).toISOString())
+  lastUpdate: registryDiffLastUpdateSchema
+    .default(() =>
+      registryDiffLastUpdateSchema.parse(new Date(0).toISOString()),
+    )
     .describe(
       'Return registry entries whose registration state changed at/after this ISO timestamp',
     ),
@@ -73,20 +79,15 @@ export const queryRegistryDiffGet = payAuthenticatedEndpointFactory.build({
   output: queryRegistryRequestSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryRegistryDiffSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.registryRequest.findMany({

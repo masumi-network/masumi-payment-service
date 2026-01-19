@@ -76,7 +76,7 @@ initialize()
         app.use(requestTiming);
         app.use(requestLogger);
 
-        const replacer = (key: string, value: unknown): unknown => {
+        const replacer = (_key: string, value: unknown): unknown => {
           if (typeof value === 'bigint') {
             return value.toString();
           }

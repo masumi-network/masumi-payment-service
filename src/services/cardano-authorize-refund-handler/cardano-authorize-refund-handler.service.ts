@@ -239,6 +239,11 @@ export async function authorizeRefundV1() {
             await prisma.paymentRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PaymentAction.AuthorizeRefundInitiated,
@@ -296,6 +301,11 @@ export async function authorizeRefundV1() {
             await prisma.paymentRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PaymentAction.WaitingForManualAction,

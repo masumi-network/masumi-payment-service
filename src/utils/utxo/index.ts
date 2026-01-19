@@ -41,7 +41,7 @@ function filterUtxosByRequiredLovelace(
  * Limits UTXOs to maximum count for transaction size optimization
  */
 export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
-  const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 3000000);
+  const filteredUtxos = filterUtxosByRequiredLovelace(utxos, 5000000);
   if (filteredUtxos.length === 0) {
     throw new Error('No suitable UTXOs found');
   }
