@@ -130,20 +130,52 @@ export const getActivePaymentGauge = (): UpDownCounter => {
   return activePaymentGauge;
 };
 
-// Wallet balance monitoring gauge
-export const walletBalanceGauge = meter.createObservableGauge(
-  'wallet_balance_lovelace',
-  {
-    description: 'Current wallet balance in lovelace by network and address',
-    unit: 'lovelace',
-  },
-);
-
 // Store for wallet balance observations
 const walletBalances = new Map<
   string,
   { balance: number; network: string; address: string }
 >();
+
+// Wallet balance monitoring gauge (lazy initialization)
+let _walletBalanceGauge: ReturnType<
+  ReturnType<typeof metrics.getMeter>['createObservableGauge']
+> | null = null;
+
+const getWalletBalanceGauge = () => {
+  if (!_walletBalanceGauge) {
+    _walletBalanceGauge = getMeter().createObservableGauge(
+      'wallet_balance_lovelace',
+      {
+        description:
+          'Current wallet balance in lovelace by network and address',
+        unit: 'lovelace',
+      },
+    );
+
+    // Register callback when gauge is created
+    _walletBalanceGauge.addCallback((observableResult) => {
+      walletBalances.forEach((data) => {
+        observableResult.observe(data.balance, {
+          wallet_address: data.address,
+          network: data.network,
+          wallet_type: 'monitored',
+        });
+      });
+    });
+  }
+  return _walletBalanceGauge;
+};
+
+// Export for external use
+export const walletBalanceGauge = {
+  addCallback: (
+    _callback: (observableResult: unknown) => void,
+  ): ReturnType<
+    ReturnType<typeof metrics.getMeter>['createObservableGauge']
+  > => {
+    return getWalletBalanceGauge();
+  },
+};
 
 // Helper to update wallet balance
 export const updateWalletBalance = (
@@ -157,28 +189,11 @@ export const updateWalletBalance = (
     network,
     address,
   });
+  // Ensure gauge is initialized
+  getWalletBalanceGauge();
 };
 
-// Register callback for observable gauge
-walletBalanceGauge.addCallback((observableResult) => {
-  walletBalances.forEach((data) => {
-    observableResult.observe(data.balance, {
-      wallet_address: data.address,
-      network: data.network,
-      wallet_type: 'monitored',
-    });
-  });
-});
-
-export const assetBalanceGauge = meter.createObservableGauge(
-  'wallet_asset_balance',
-  {
-    description:
-      'Wallet asset balance by network, address, policy ID, and asset name',
-    unit: 'quantity',
-  },
-);
-
+// Asset balance storage
 const assetBalances = new Map<
   string,
   {
@@ -189,6 +204,49 @@ const assetBalances = new Map<
     assetName: string;
   }
 >();
+
+// Asset balance monitoring gauge (lazy initialization)
+let _assetBalanceGauge: ReturnType<
+  ReturnType<typeof metrics.getMeter>['createObservableGauge']
+> | null = null;
+
+const getAssetBalanceGauge = () => {
+  if (!_assetBalanceGauge) {
+    _assetBalanceGauge = getMeter().createObservableGauge(
+      'wallet_asset_balance',
+      {
+        description:
+          'Wallet asset balance by network, address, policy ID, and asset name',
+        unit: 'quantity',
+      },
+    );
+
+    // Register callback when gauge is created
+    _assetBalanceGauge.addCallback((observableResult) => {
+      assetBalances.forEach((data) => {
+        observableResult.observe(data.balance, {
+          wallet_address: data.address,
+          network: data.network,
+          policy_id: data.policyId,
+          asset_name: data.assetName,
+          wallet_type: 'monitored',
+        });
+      });
+    });
+  }
+  return _assetBalanceGauge;
+};
+
+// Export for external use
+export const assetBalanceGauge = {
+  addCallback: (
+    _callback: (observableResult: unknown) => void,
+  ): ReturnType<
+    ReturnType<typeof metrics.getMeter>['createObservableGauge']
+  > => {
+    return getAssetBalanceGauge();
+  },
+};
 
 export const updateAssetBalance = (
   address: string,
@@ -211,19 +269,9 @@ export const updateAssetBalance = (
     policyId,
     assetName,
   });
+  // Ensure gauge is initialized
+  getAssetBalanceGauge();
 };
-
-assetBalanceGauge.addCallback((observableResult) => {
-  assetBalances.forEach((data) => {
-    observableResult.observe(data.balance, {
-      wallet_address: data.address,
-      network: data.network,
-      policy_id: data.policyId,
-      asset_name: data.assetName,
-      wallet_type: 'monitored',
-    });
-  });
-});
 
 // Business Endpoint Types
 type BusinessEndpoint = 'purchase' | 'registry' | 'wallet' | 'unknown';

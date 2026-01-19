@@ -57,6 +57,12 @@ import {
   queryPurchaseDiffNextActionGet,
   queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
+import {
+  walletMonitoringGet,
+  walletMonitoringPost,
+  walletMonitoringPatch,
+  walletMonitoringDelete,
+} from './wallet-monitoring';
 
 export const apiRouter: Routing = {
   v1: {
@@ -167,6 +173,12 @@ export const apiRouter: Routing = {
       get: listWebhooksGet,
       post: registerWebhookPost,
       delete: deleteWebhookDelete,
+    },
+    'wallet-monitoring': {
+      get: walletMonitoringGet,
+      post: walletMonitoringPost,
+      patch: walletMonitoringPatch,
+      delete: walletMonitoringDelete,
     },
   },
 };
