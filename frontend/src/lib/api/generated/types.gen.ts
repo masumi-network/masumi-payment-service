@@ -1310,6 +1310,109 @@ export type RpcProviderKey = {
     network: 'Preprod' | 'Mainnet';
 };
 
+export type WalletMonitorConfig = {
+    /**
+     * Unique identifier for the monitoring config
+     */
+    id: string;
+    /**
+     * Payment source this monitoring config belongs to
+     */
+    paymentSourceId: string;
+    /**
+     * Whether monitoring is enabled for this payment source
+     */
+    enabled: boolean;
+    /**
+     * How often to check balances (in seconds)
+     */
+    checkIntervalSeconds: number;
+    /**
+     * Last time balances were checked
+     */
+    lastCheckedAt: Date | null;
+    /**
+     * Status of last check (success, partial_failure, error)
+     */
+    lastCheckStatus: string | null;
+    /**
+     * Error message from last check, if any
+     */
+    lastCheckError: string | null;
+    /**
+     * Individual wallet thresholds
+     */
+    WalletThresholds: Array<{
+        /**
+         * Unique identifier for the wallet threshold
+         */
+        id: string;
+        /**
+         * ID of the hot wallet being monitored
+         */
+        hotWalletId: string;
+        /**
+         * Whether monitoring is enabled for this wallet
+         */
+        enabled: boolean;
+        /**
+         * ADA threshold in lovelace (1 ADA = 1,000,000 lovelace)
+         */
+        adaThresholdLovelace: string;
+        HotWallet: {
+            /**
+             * Hot wallet ID
+             */
+            id: string;
+            /**
+             * Cardano address of the wallet
+             */
+            walletAddress: string;
+            /**
+             * Payment key hash
+             */
+            walletVkey: string;
+            /**
+             * Wallet type (Selling or Purchasing)
+             */
+            type: string;
+        };
+        /**
+         * Thresholds for other assets (USDM, etc.)
+         */
+        AssetThresholds: Array<{
+            /**
+             * Unique identifier for the asset threshold
+             */
+            id: string;
+            /**
+             * Policy ID of the asset
+             */
+            policyId: string;
+            /**
+             * Asset name (hex encoded)
+             */
+            assetName: string;
+            /**
+             * Human-readable name of the asset
+             */
+            displayName: string | null;
+            /**
+             * Display symbol for the asset (e.g., USDM)
+             */
+            displaySymbol: string | null;
+            /**
+             * Number of decimal places for this asset
+             */
+            decimals: number;
+            /**
+             * Minimum amount threshold (as string for large numbers)
+             */
+            minAmount: string;
+        }>;
+    }>;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -5203,3 +5306,243 @@ export type PostWebhooksResponses = {
 };
 
 export type PostWebhooksResponse = PostWebhooksResponses[keyof PostWebhooksResponses];
+
+export type DeleteWalletMonitoringData = {
+    /**
+     * Wallet monitoring configuration to delete
+     */
+    body?: {
+        /**
+         * Monitoring config ID to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet-monitoring/';
+};
+
+export type DeleteWalletMonitoringErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Monitoring config not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type DeleteWalletMonitoringResponses = {
+    /**
+     * Wallet monitoring configuration deleted
+     */
+    200: {
+        status: string;
+        data: WalletMonitorConfig;
+    };
+};
+
+export type DeleteWalletMonitoringResponse = DeleteWalletMonitoringResponses[keyof DeleteWalletMonitoringResponses];
+
+export type GetWalletMonitoringData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by specific payment source ID
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter by network (Preprod or Mainnet)
+         */
+        network?: 'Preprod' | 'Mainnet';
+    };
+    url: '/wallet-monitoring/';
+};
+
+export type GetWalletMonitoringErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetWalletMonitoringResponses = {
+    /**
+     * List of wallet monitoring configurations
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * List of wallet monitoring configurations
+             */
+            WalletMonitorConfigs: Array<WalletMonitorConfig>;
+        };
+    };
+};
+
+export type GetWalletMonitoringResponse = GetWalletMonitoringResponses[keyof GetWalletMonitoringResponses];
+
+export type PatchWalletMonitoringData = {
+    /**
+     * Wallet monitoring configuration updates
+     */
+    body?: {
+        /**
+         * Monitoring config ID to update
+         */
+        id: string;
+        /**
+         * Enable or disable monitoring
+         */
+        enabled?: boolean;
+        /**
+         * Update check interval in seconds
+         */
+        checkIntervalSeconds?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet-monitoring/';
+};
+
+export type PatchWalletMonitoringErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Monitoring config not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PatchWalletMonitoringResponses = {
+    /**
+     * Wallet monitoring configuration updated
+     */
+    200: {
+        status: string;
+        data: WalletMonitorConfig;
+    };
+};
+
+export type PatchWalletMonitoringResponse = PatchWalletMonitoringResponses[keyof PatchWalletMonitoringResponses];
+
+export type PostWalletMonitoringData = {
+    /**
+     * Wallet monitoring configuration to create
+     */
+    body?: {
+        /**
+         * Payment source ID to add monitoring to
+         */
+        paymentSourceId: string;
+        /**
+         * Whether monitoring is enabled (default: false for safety)
+         */
+        enabled?: boolean;
+        /**
+         * How often to check balances in seconds (min: 60, max: 86400, default: 3600 = 1 hour)
+         */
+        checkIntervalSeconds?: number;
+        /**
+         * At least one wallet threshold is required
+         */
+        walletThresholds: Array<{
+            /**
+             * Hot wallet ID to monitor
+             */
+            hotWalletId: string;
+            /**
+             * Whether this wallet threshold is enabled
+             */
+            enabled?: boolean;
+            /**
+             * ADA threshold in lovelace (default: 10 ADA = 10,000,000)
+             */
+            adaThresholdLovelace?: string;
+            /**
+             * Optional asset thresholds for tokens like USDM
+             */
+            assetThresholds?: Array<{
+                /**
+                 * Policy ID of the asset (56 hex characters)
+                 */
+                policyId: string;
+                /**
+                 * Asset name in hex (can be empty string)
+                 */
+                assetName: string;
+                /**
+                 * Human-readable name (e.g., "USD Masumi")
+                 */
+                displayName?: string;
+                /**
+                 * Display symbol (e.g., "USDM")
+                 */
+                displaySymbol?: string;
+                /**
+                 * Number of decimal places (0 for no decimals, 6 for USDM)
+                 */
+                decimals?: number | null;
+                /**
+                 * Minimum amount threshold in smallest unit
+                 */
+                minAmount: string;
+            }>;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet-monitoring/';
+};
+
+export type PostWalletMonitoringErrors = {
+    /**
+     * Bad Request (possible parameters missing or invalid)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment source not found
+     */
+    404: unknown;
+    /**
+     * Monitoring config already exists for this payment source
+     */
+    409: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostWalletMonitoringResponses = {
+    /**
+     * Wallet monitoring configuration created
+     */
+    200: {
+        status: string;
+        data: WalletMonitorConfig;
+    };
+};
+
+export type PostWalletMonitoringResponse = PostWalletMonitoringResponses[keyof PostWalletMonitoringResponses];
