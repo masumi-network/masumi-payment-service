@@ -7553,7 +7553,6 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
-                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
                                                     "unit": "",
@@ -8076,7 +8075,6 @@
                                             "errorNote": null
                                         },
                                         "CurrentTransaction": null,
-                                        "TransactionHistory": [],
                                         "PaidFunds": [
                                             {
                                                 "unit": "",
@@ -9063,7 +9061,6 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
-                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
                                                     "unit": "",
@@ -9617,7 +9614,6 @@
                                                 "errorNote": null
                                             },
                                             "CurrentTransaction": null,
-                                            "TransactionHistory": [],
                                             "PaidFunds": [
                                                 {
                                                     "unit": "",
