@@ -50,25 +50,26 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                   String            @id @default(cuid())
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  walletVkey           String            @unique
+  id                   String              @id @default(cuid())
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  walletVkey           String              @unique
   walletAddress        String
   type                 HotWalletType
   secretId             String
   collectionAddress    String?
-  pendingTransactionId String?           @unique
+  pendingTransactionId String?             @unique
   paymentSourceId      String
   lockedAt             DateTime?
   note                 String?
   deletedAt            DateTime?
-  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
-  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
+  PaymentSource        PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction   Transaction?        @relation(fields: [pendingTransactionId], references: [id])
+  Secret               WalletSecret        @relation(fields: [secretId], references: [id])
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
+  WalletThresholds     WalletThreshold[]
 }
 
 model Transaction {
@@ -337,6 +338,7 @@ model PaymentSource {
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
+  WalletMonitorConfig      WalletMonitorConfig?
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -360,6 +362,64 @@ model PaymentSourceConfig {
   rpcProviderApiKey String
   rpcProvider       RPCProvider
   PaymentSource     PaymentSource?
+}
+
+// Wallet monitoring configuration per payment source
+model WalletMonitorConfig {
+  id                   String              @id @default(cuid())
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  
+  paymentSourceId      String              @unique
+  enabled              Boolean             @default(false)
+  checkIntervalSeconds Int                 @default(3600)
+  lastCheckedAt        DateTime?
+  lastCheckStatus      String?
+  lastCheckError       String?             @db.Text
+  
+  PaymentSource        PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  WalletThresholds     WalletThreshold[]
+  
+  @@index([enabled, lastCheckedAt])
+}
+
+// ADA threshold per wallet
+model WalletThreshold {
+  id                    String              @id @default(cuid())
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  
+  hotWalletId           String
+  walletMonitorConfigId String
+  enabled               Boolean             @default(true)
+  adaThresholdLovelace  BigInt              @default(10000000)
+  
+  HotWallet             HotWallet           @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  WalletMonitorConfig   WalletMonitorConfig @relation(fields: [walletMonitorConfigId], references: [id], onDelete: Cascade)
+  AssetThresholds       AssetThreshold[]
+  
+  @@unique([hotWalletId, walletMonitorConfigId])
+  @@index([enabled])
+}
+
+// Other asset thresholds (USDM, etc.)
+model AssetThreshold {
+  id                  String          @id @default(cuid())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  
+  walletThresholdId   String
+  policyId            String
+  assetName           String
+  displayName         String?
+  displaySymbol       String?
+  decimals            Int             @default(0)
+  minAmount           BigInt
+  
+  WalletThreshold     WalletThreshold @relation(fields: [walletThresholdId], references: [id], onDelete: Cascade)
+  
+  @@unique([walletThresholdId, policyId, assetName])
+  @@index([policyId, assetName])
 }
 
 enum ApiKeyStatus {
