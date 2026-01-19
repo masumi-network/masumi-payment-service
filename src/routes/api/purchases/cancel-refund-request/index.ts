@@ -32,6 +32,7 @@ export const cancelPurchaseRefundRequestSchemaInput = z.object({
 export const cancelPurchaseRefundRequestSchemaOutput =
   purchaseResponseSchema.omit({
     TransactionHistory: true,
+    ActionHistory: true,
   });
 
 export const cancelPurchaseRefundRequestPost =
@@ -92,6 +93,11 @@ export const cancelPurchaseRefundRequestPost =
       const result = await prisma.purchaseRequest.update({
         where: { id: purchase.id },
         data: {
+          ActionHistory: {
+            connect: {
+              id: purchase.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PurchasingAction.UnSetRefundRequestedRequested,

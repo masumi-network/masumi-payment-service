@@ -14,6 +14,12 @@ import {
 } from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
 import { ez } from 'express-zod-api';
+import { paymentResponseSchema } from '..';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import {
+  transformPaymentGetTimestamps,
+  transformPaymentGetAmounts,
+} from '@/utils/shared/transformers';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
   blockchainIdentifier: z
@@ -30,9 +36,12 @@ export const paymentErrorStateRecoverySchemaInput = z.object({
     ),
 });
 
-export const paymentErrorStateRecoverySchemaOutput = z.object({
-  id: z.string(),
-});
+export const paymentErrorStateRecoverySchemaOutput = paymentResponseSchema.omit(
+  {
+    TransactionHistory: true,
+    ActionHistory: true,
+  },
+);
 
 export const paymentErrorStateRecoveryPost =
   payAuthenticatedEndpointFactory.build({
@@ -153,7 +162,7 @@ export const paymentErrorStateRecoveryPost =
         transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
       });
 
-      await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx) => {
         for (const transaction of transactionsToFail) {
           await tx.transaction.update({
             where: { id: transaction.id },
@@ -175,9 +184,14 @@ export const paymentErrorStateRecoveryPost =
             ] as OnChainState[]
           ).includes(paymentRequest.onChainState);
 
-        await tx.paymentRequest.update({
+        const updatedPaymentRequest = await tx.paymentRequest.update({
           where: { id: paymentRequest.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: paymentRequest.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 requestedAction: isCompletedState
@@ -186,16 +200,77 @@ export const paymentErrorStateRecoveryPost =
               },
             },
           },
+          include: {
+            BuyerWallet: { select: { id: true, walletVkey: true } },
+            SmartContractWallet: {
+              where: { deletedAt: null },
+              select: { id: true, walletVkey: true, walletAddress: true },
+            },
+            RequestedFunds: { select: { id: true, amount: true, unit: true } },
+            NextAction: {
+              select: {
+                id: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+                resultHash: true,
+              },
+            },
+            PaymentSource: {
+              select: {
+                id: true,
+                network: true,
+                smartContractAddress: true,
+                policyId: true,
+              },
+            },
+            CurrentTransaction: {
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                fees: true,
+                blockHeight: true,
+                blockTime: true,
+                txHash: true,
+                status: true,
+                previousOnChainState: true,
+                newOnChainState: true,
+                confirmations: true,
+              },
+            },
+            WithdrawnForSeller: {
+              select: { id: true, amount: true, unit: true },
+            },
+            WithdrawnForBuyer: {
+              select: { id: true, amount: true, unit: true },
+            },
+          },
         });
+        return updatedPaymentRequest;
       });
 
       logger.info('Error state recovery completed successfully', {
         paymentRequestId: paymentRequest.id,
         failedTransactionsCount: transactionsToFail.length,
       });
+      const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 
       return {
-        id: paymentRequest.id,
+        ...result,
+        ...transformPaymentGetTimestamps(result),
+        ...transformPaymentGetAmounts(result),
+        totalBuyerCardanoFees:
+          Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees:
+          Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+        agentIdentifier: decoded?.agentIdentifier ?? null,
+        CurrentTransaction: result.CurrentTransaction
+          ? {
+              ...result.CurrentTransaction,
+              fees: result.CurrentTransaction.fees?.toString() ?? null,
+            }
+          : null,
       };
     },
   });

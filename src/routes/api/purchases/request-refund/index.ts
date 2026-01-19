@@ -31,6 +31,7 @@ export const requestPurchaseRefundSchemaInput = z.object({
 
 export const requestPurchaseRefundSchemaOutput = purchaseResponseSchema.omit({
   TransactionHistory: true,
+  ActionHistory: true,
 });
 
 export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
@@ -91,6 +92,11 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
     const newPurchase = await prisma.purchaseRequest.update({
       where: { id: purchase.id },
       data: {
+        ActionHistory: {
+          connect: {
+            id: purchase.nextActionId,
+          },
+        },
         NextAction: {
           create: {
             requestedAction: PurchasingAction.SetRefundRequestedRequested,

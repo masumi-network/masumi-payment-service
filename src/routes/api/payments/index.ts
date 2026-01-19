@@ -66,7 +66,7 @@ export const queryPaymentsSchemaInput = z.object({
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
     .describe(
-      'Whether to include the full transaction and status history of the payments',
+      'Whether to include the full transaction and action history of the payments',
     ),
 });
 
@@ -182,6 +182,45 @@ export const paymentResponseSchema = z
           ),
       })
       .describe('Next action required for this payment'),
+    ActionHistory: z
+      .array(
+        z
+          .object({
+            id: z.string().describe('Unique identifier for the action'),
+            createdAt: z
+              .date()
+              .describe('Timestamp when the action was created'),
+            updatedAt: z
+              .date()
+              .describe('Timestamp when the action was last updated'),
+            submittedTxHash: z
+              .string()
+              .nullable()
+              .describe('Cardano transaction hash'),
+            requestedAction: z
+              .nativeEnum(PaymentAction)
+              .describe('Next action required for this payment'),
+            errorType: z
+              .nativeEnum(PaymentErrorType)
+              .nullable()
+              .describe('Type of error that occurred, if any'),
+            errorNote: z
+              .string()
+              .nullable()
+              .describe('Additional details about the error, if any'),
+            resultHash: z
+              .string()
+              .nullable()
+              .describe(
+                'SHA256 hash of the result to be submitted (hex string). Null if not applicable',
+              ),
+          })
+          .describe('Next action required for this payment'),
+      )
+      .nullable()
+      .describe(
+        'Historical list of all actions for this payment. Null if includeHistory is false',
+      ),
     CurrentTransaction: z
       .object({
         id: z.string().describe('Unique identifier for the transaction'),
@@ -260,7 +299,7 @@ export const paymentResponseSchema = z
       )
       .nullable()
       .describe(
-        'Historical list of all transactions for this payment. Null or empty if includeHistory is false',
+        'Historical list of all transactions for this payment. Null if includeHistory is false',
       ),
     RequestedFunds: z.array(
       z.object({
@@ -459,6 +498,22 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
                 },
               }
             : undefined,
+        ActionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  submittedTxHash: true,
+                  requestedAction: true,
+                  errorType: true,
+                  errorNote: true,
+                  resultHash: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -488,6 +543,29 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
             ? payment.TransactionHistory.map((tx) => ({
                 ...tx,
                 fees: tx.fees?.toString() ?? null,
+              }))
+            : null,
+          ActionHistory: payment.ActionHistory
+            ? (
+                payment.ActionHistory as Array<{
+                  id: string;
+                  createdAt: Date;
+                  updatedAt: Date;
+                  submittedTxHash: string | null;
+                  requestedAction: PaymentAction;
+                  errorType: PaymentErrorType | null;
+                  errorNote: string | null;
+                  resultHash: string | null;
+                }>
+              ).map((action) => ({
+                id: action.id,
+                createdAt: action.createdAt,
+                updatedAt: action.updatedAt,
+                submittedTxHash: action.submittedTxHash,
+                requestedAction: action.requestedAction,
+                errorType: action.errorType,
+                errorNote: action.errorNote,
+                resultHash: action.resultHash,
               }))
             : null,
         };
@@ -572,6 +650,7 @@ export const createPaymentsSchemaInput = z.object({
 
 export const createPaymentSchemaOutput = paymentResponseSchema.omit({
   TransactionHistory: true,
+  ActionHistory: true,
 });
 
 export const paymentInitPost = readAuthenticatedEndpointFactory.build({

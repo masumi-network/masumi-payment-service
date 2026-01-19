@@ -1,7 +1,12 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { Network, Prisma } from '@prisma/client';
+import {
+  Network,
+  PaymentAction,
+  PaymentErrorType,
+  Prisma,
+} from '@prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,
@@ -220,6 +225,22 @@ async function queryPaymentDiffByMode({
       WithdrawnForBuyer: {
         select: { id: true, amount: true, unit: true },
       },
+      ActionHistory:
+        input.includeHistory == true
+          ? {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                submittedTxHash: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+                resultHash: true,
+              },
+            }
+          : undefined,
       TransactionHistory:
         input.includeHistory == true
           ? {
@@ -269,6 +290,29 @@ async function queryPaymentDiffByMode({
           ? payment.TransactionHistory.map((tx) => ({
               ...tx,
               fees: tx.fees?.toString() ?? null,
+            }))
+          : null,
+        ActionHistory: payment.ActionHistory
+          ? (
+              payment.ActionHistory as Array<{
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                requestedAction: PaymentAction;
+                errorType: PaymentErrorType | null;
+                errorNote: string | null;
+                resultHash: string | null;
+                submittedTxHash: string | null;
+              }>
+            ).map((action) => ({
+              id: action.id,
+              createdAt: action.createdAt,
+              updatedAt: action.updatedAt,
+              requestedAction: action.requestedAction,
+              errorType: action.errorType,
+              errorNote: action.errorNote,
+              resultHash: action.resultHash,
+              submittedTxHash: action.submittedTxHash,
             }))
           : null,
       };

@@ -288,7 +288,6 @@ const purchaseResponseSchemaExample = {
     errorNote: null,
   },
   CurrentTransaction: null,
-  TransactionHistory: [],
   PaidFunds: [
     {
       unit: '', // Empty string = ADA/lovelace
