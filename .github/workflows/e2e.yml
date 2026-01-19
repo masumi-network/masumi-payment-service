@@ -176,21 +176,3 @@ jobs:
             kill $(cat server.pid) || true
             rm server.pid
           fi
-
-      - name: Delete Database Branch
-        if: always()
-        run: |
-          echo "Deleting database branch: ${{ steps.create-branch.outputs.branch_name }}"
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE \
-            "https://console.neon.tech/api/v2/projects/${{ secrets.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}" \
-            -H "Authorization: Bearer ${{ secrets.NEON_API_KEY }}" \
-            -H "Accept: application/json")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-            echo "✅ Database branch deleted successfully"
-          else
-            echo "⚠️ Failed to delete branch (HTTP $HTTP_CODE), but will be auto-deleted after 24h"
-            echo "Response: $(echo "$RESPONSE" | sed '$d')"
-          fi
