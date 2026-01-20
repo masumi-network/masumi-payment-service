@@ -25,7 +25,6 @@ import { Spinner } from '../ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
-import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
@@ -49,7 +48,6 @@ export function SwapDialog({
   const { network, apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
-  const [nmkrBalance, setNmkrBalance] = useState<number>(0);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,22 +165,9 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
-      const nmkr =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === NMKR_CONFIG?.fullAssetId) {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
 
       setAdaBalance(lovelace / 1000000);
       setUsdmBalance(usdm / 1000000);
-      setNmkrBalance(nmkr / 1000000);
       setBalanceError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
@@ -279,8 +264,6 @@ export function SwapDialog({
         return adaBalance;
       case 'USDM':
         return usdmBalance;
-      case 'NMKR':
-        return nmkrBalance;
       default:
         return 0;
     }
