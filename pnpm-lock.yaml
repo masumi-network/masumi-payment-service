@@ -30,9 +30,18 @@ importers:
       '@meshsdk/core-cst':
         specifier: 1.9.0-beta.90
         version: 1.9.0-beta.90(@harmoniclabs/bytestring@1.0.0)(rxjs@7.8.2)
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
+      '@opentelemetry/api-logs':
+        specifier: ^0.210.0
+        version: 0.210.0
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.68.0
         version: 0.68.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.4.0(@opentelemetry/api@1.9.0))
+      '@opentelemetry/exporter-logs-otlp-http':
+        specifier: ^0.210.0
+        version: 0.210.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/exporter-metrics-otlp-http':
         specifier: ^0.210.0
         version: 0.210.0(@opentelemetry/api@1.9.0)
@@ -48,6 +57,9 @@ importers:
       '@opentelemetry/resources':
         specifier: ^2.4.0
         version: 2.4.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-logs':
+        specifier: ^0.210.0
+        version: 0.210.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics':
         specifier: ^2.4.0
         version: 2.4.0(@opentelemetry/api@1.9.0)
@@ -166,6 +178,9 @@ importers:
       jest:
         specifier: ^30.2.0
         version: 30.2.0(@types/node@25.0.9)(ts-node@10.9.2(@types/node@25.0.9)(typescript@5.9.3))
+      jest-mock:
+        specifier: ^30.2.0
+        version: 30.2.0
       knip:
         specifier: ^5.81.0
         version: 5.82.1(@types/node@25.0.9)(typescript@5.9.3)
