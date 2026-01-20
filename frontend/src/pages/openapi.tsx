@@ -3,9 +3,6 @@ import Head from 'next/head';
 import { ExternalLink } from 'lucide-react';
 
 export default function OpenAPI() {
-  const docsUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/docs` : '/docs';
-
   return (
     <MainLayout>
       <Head>
@@ -29,7 +26,7 @@ export default function OpenAPI() {
         </div>
         <div className="flex-1 border rounded-lg overflow-hidden">
           <iframe
-            src={docsUrl}
+            src={'/docs'}
             className="w-full h-full"
             title="OpenAPI Documentation"
           />
