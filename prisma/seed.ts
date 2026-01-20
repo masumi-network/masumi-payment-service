@@ -530,11 +530,13 @@ export const seed = async (prisma: PrismaClient) => {
   }
 };
 seed(prisma)
-  .then(() => {
-    prisma.$disconnect();
+  .then(async () => {
+    await prisma.$disconnect();
+    await pool.end();
     console.log('Seed completed');
   })
-  .catch((e) => {
-    prisma.$disconnect();
+  .catch(async (e) => {
+    await prisma.$disconnect();
+    await pool.end();
     console.error(e);
   });
