@@ -128,7 +128,7 @@ export async function deRegisterAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
+            const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
             const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
             const collateralUtxo = limitedFilteredUtxos[0];
@@ -136,7 +136,7 @@ export async function deRegisterAgentV1() {
               throw new Error('Collateral UTXO not found');
             }
 
-            const assetName = extractAssetName(request.agentIdentifier!);
+            const assetName = extractAssetName(request.agentIdentifier);
 
             const unsignedTx =
               await generateDeregisterAgentTransactionAutomaticFees(
