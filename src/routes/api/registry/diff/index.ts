@@ -2,7 +2,7 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from '@/utils/zod-openapi';
 import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
-import { Network, Prisma, PricingType } from '@prisma/client';
+import { Network, Prisma, PricingType } from '@/generated/prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,

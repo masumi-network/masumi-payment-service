@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testMiddleware } from 'express-zod-api';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
 import { generateSHA256Hash } from '@/utils/crypto';
 
 type AnyMock = Mock<(...args: any[]) => any>;

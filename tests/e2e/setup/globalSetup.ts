@@ -1,3 +1,5 @@
+// Register tsconfig paths FIRST to enable @/ aliases in globalSetup
+import 'tsconfig-paths/register';
 import dotenv from 'dotenv';
 import { ApiClient } from '../utils/apiClient';
 import { getTestEnvironment } from '../fixtures/testData';

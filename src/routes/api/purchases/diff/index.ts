@@ -6,7 +6,7 @@ import {
   Prisma,
   PurchaseErrorType,
   PurchasingAction,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,

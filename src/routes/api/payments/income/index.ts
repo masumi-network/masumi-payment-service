@@ -1,4 +1,4 @@
-import { Network, OnChainState } from '@prisma/client';
+import { Network, OnChainState } from '@/generated/prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import {

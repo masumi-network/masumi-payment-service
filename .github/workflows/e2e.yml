@@ -119,12 +119,12 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Run Database Migrations
-        run: pnpm exec prisma migrate deploy
+        run: pnpm exec prisma migrate deploy --config prisma/prisma.config.ts
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Seed Database
-        run: pnpm exec prisma db seed
+        run: npx prisma db seed --config prisma/prisma.config.ts
         env:
           DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
           PURCHASE_WALLET_PREPROD_MNEMONIC: "${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}"
@@ -136,7 +136,7 @@ jobs:
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          pnpm exec tsx ./src/index.ts > server.log 2>&1 &
+          npx tsx ./src/index.ts > server.log 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
           echo "$SERVER_PID" > server.pid
@@ -151,7 +151,7 @@ jobs:
         run: |
           echo "Waiting for server to start..."
           # Continuously poll health endpoint until ready or timeout
-          pnpm exec wait-on http://127.0.0.1:3001/api/v1/health -t 180000 --interval 2000 || {
+          npx wait-on http://127.0.0.1:3001/api/v1/health -t 180000 --interval 2000 || {
             echo "=== Server failed to become healthy ==="
             if [ -f server.pid ]; then
               echo "Process status:"

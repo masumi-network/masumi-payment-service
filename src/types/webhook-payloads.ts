@@ -1,4 +1,4 @@
-import { WebhookEventType } from '@prisma/client';
+import { WebhookEventType } from '@/generated/prisma/client';
 import { z } from 'zod';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
