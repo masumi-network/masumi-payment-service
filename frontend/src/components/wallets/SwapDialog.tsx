@@ -505,7 +505,7 @@ export function SwapDialog({
                       <div className="relative w-full">
                         <input
                           type="number"
-                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
+                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-hidden appearance-none text-[24px] font-bold mb-2 text-foreground ${
                             fromAmount > getMaxAmount(selectedFromToken.symbol)
                               ? 'text-red-500'
                               : ''
@@ -532,14 +532,14 @@ export function SwapDialog({
                     </div>
                   </div>
                   <div className="relative flex items-center">
-                    <div className="flex-grow border-t border-border"></div>
+                    <div className="grow border-t border-border"></div>
                     <Button
                       onClick={handleSwitch}
                       className="mx-4 p-2 w-10 h-10 flex items-center justify-center transform rotate-90"
                     >
                       <FaExchangeAlt className="w-5 h-5" />
                     </Button>
-                    <div className="flex-grow border-t border-border"></div>
+                    <div className="grow border-t border-border"></div>
                   </div>
                   <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
                     <div className="flex flex-col space-y-1">
@@ -575,7 +575,7 @@ export function SwapDialog({
                     <div className="flex flex-col items-end">
                       <input
                         type="text"
-                        className="w-24 text-right bg-transparent focus:outline-none appearance-none text-foreground"
+                        className="w-24 text-right bg-transparent focus:outline-hidden appearance-none text-foreground"
                         placeholder="0"
                         value={toAmount.toFixed(6)}
                         readOnly
