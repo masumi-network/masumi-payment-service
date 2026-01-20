@@ -7,12 +7,14 @@ import {
   PurchaseErrorType,
   OnChainState,
   PricingType,
-  $Enums,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
@@ -32,8 +34,8 @@ import {
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -55,11 +57,11 @@ export const queryPurchaseRequestSchemaInput = z.object({
 
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
-      'Whether to include the full transaction and status history of the purchases',
+      'Whether to include the full transaction and action history of the purchases',
     ),
 });
 
@@ -170,6 +172,28 @@ export const purchaseResponseSchema = z
           .describe('Additional details about the error, if any'),
       })
       .describe('Next action required for this purchase'),
+    ActionHistory: z
+      .array(
+        z
+          .object({
+            requestedAction: z
+              .nativeEnum(PurchasingAction)
+              .describe('Next action required for this purchase'),
+            errorType: z
+              .nativeEnum(PurchaseErrorType)
+              .nullable()
+              .describe('Type of error that occurred, if any'),
+            errorNote: z
+              .string()
+              .nullable()
+              .describe('Additional details about the error, if any'),
+          })
+          .describe('Next action required for this purchase'),
+      )
+      .nullable()
+      .describe(
+        'Historical list of all actions for this purchase. Null if includeHistory is false',
+      ),
     CurrentTransaction: z
       .object({
         id: z.string().describe('Unique identifier for the transaction'),
@@ -247,6 +271,7 @@ export const purchaseResponseSchema = z
             .describe('Number of block confirmations for this transaction'),
         }),
       )
+      .nullable()
       .describe('Historical list of all transactions for this purchase'),
     PaidFunds: z.array(
       z.object({
@@ -316,20 +341,15 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
   output: queryPurchaseRequestSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryPurchaseRequestSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.purchaseRequest.findMany({
@@ -405,6 +425,20 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                 },
               }
             : undefined,
+        ActionHistory:
+          input.includeHistory == true
+            ? {
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  requestedAction: true,
+                  errorType: true,
+                  errorNote: true,
+                },
+              }
+            : undefined,
       },
     });
     if (result == null) {
@@ -435,7 +469,26 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
                   ...tx,
                   fees: tx.fees?.toString() ?? null,
                 }))
-              : [],
+              : null,
+          ActionHistory: purchase.ActionHistory
+            ? (
+                purchase.ActionHistory as Array<{
+                  id: string;
+                  createdAt: Date;
+                  updatedAt: Date;
+                  requestedAction: PurchasingAction;
+                  errorType: PurchaseErrorType | null;
+                  errorNote: string | null;
+                }>
+              ).map((action) => ({
+                id: action.id,
+                createdAt: action.createdAt,
+                updatedAt: action.updatedAt,
+                requestedAction: action.requestedAction,
+                errorType: action.errorType,
+                errorNote: action.errorNote,
+              }))
+            : null,
         };
       }),
     };
@@ -518,7 +571,10 @@ export const createPurchaseInitSchemaInput = z.object({
     ),
 });
 
-export const createPurchaseInitSchemaOutput = purchaseResponseSchema;
+export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
+  TransactionHistory: true,
+  ActionHistory: true,
+});
 
 export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   method: 'post',
@@ -526,22 +582,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
   output: createPurchaseInitSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof createPurchaseInitSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
       const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
         where: {
@@ -979,7 +1030,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       const smartContractAddress = paymentSource.smartContractAddress;
 
       const initialPurchaseRequest = await handlePurchaseCreditInit({
-        id: options.id,
+        id: ctx.id,
         cost: Array.from(agentIdentifierAmountsMap.entries()).map(
           ([unit, amount]) => {
             if (unit.toLowerCase() == 'lovelace') {
@@ -1009,7 +1060,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         totalBuyerCardanoFees: 0,
         totalSellerCardanoFees: 0,
         agentIdentifier: input.agentIdentifier,
-        TransactionHistory: [],
         CurrentTransaction: null,
       };
     } catch (error: unknown) {
@@ -1028,7 +1078,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         errorInstance,
         {
           network: input.network,
-          user_id: options.id,
+          user_id: ctx.id,
           agent_identifier: input.agentIdentifier,
           duration: Date.now() - startTime,
           step: 'purchase_processing',

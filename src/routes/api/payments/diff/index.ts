@@ -1,8 +1,16 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { $Enums, Network, Prisma } from '@/generated/prisma/client';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  Network,
+  PaymentAction,
+  PaymentErrorType,
+  Prisma,
+} from '@/generated/prisma/client';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import createHttpError from 'http-errors';
 import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 import {
@@ -12,14 +20,16 @@ import {
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { ez } from 'express-zod-api';
 
+const paymentDiffLastUpdateSchema = ez.dateIn();
+
 type PaymentDiffMode =
   | 'nextActionLastChangedAt'
   | 'onChainStateOrResultLastChangedAt'
   | 'nextActionOrOnChainStateOrResultLastChangedAt';
 
 export const queryPaymentDiffSchemaInput = z.object({
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(10)
@@ -30,9 +40,8 @@ export const queryPaymentDiffSchemaInput = z.object({
     .describe(
       'Pagination cursor (payment id). Used as tie-breaker when lastUpdate equals a payment change timestamp',
     ),
-  lastUpdate: ez
-    .dateIn()
-    .default(new Date(0).toISOString())
+  lastUpdate: paymentDiffLastUpdateSchema
+    .default(() => paymentDiffLastUpdateSchema.parse(new Date(0).toISOString()))
     .describe(
       'Return payments whose selected status timestamp changed after this ISO timestamp',
     ),
@@ -46,9 +55,9 @@ export const queryPaymentDiffSchemaInput = z.object({
     .describe('The smart contract address of the payment source'),
   includeHistory: z
     .string()
+    .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .default('false')
     .describe(
       'Whether to include the full transaction and status history of the payments',
     ),
@@ -145,22 +154,17 @@ function buildPaymentDiffOrderBy(
 
 async function queryPaymentDiffByMode({
   input,
-  options,
+  ctx,
   mode,
 }: {
   input: z.infer<typeof queryPaymentDiffSchemaInput>;
-  options: {
-    id: string;
-    permission: $Enums.Permission;
-    networkLimit: $Enums.Network[];
-    usageLimited: boolean;
-  };
+  ctx: AuthContext;
   mode: PaymentDiffMode;
 }) {
   await checkIsAllowedNetworkOrThrowUnauthorized(
-    options.networkLimit,
+    ctx.networkLimit,
     input.network,
-    options.permission,
+    ctx.permission,
   );
 
   const since = input.lastUpdate;
@@ -221,6 +225,22 @@ async function queryPaymentDiffByMode({
       WithdrawnForBuyer: {
         select: { id: true, amount: true, unit: true },
       },
+      ActionHistory:
+        input.includeHistory == true
+          ? {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                createdAt: true,
+                updatedAt: true,
+                submittedTxHash: true,
+                requestedAction: true,
+                errorType: true,
+                errorNote: true,
+                resultHash: true,
+              },
+            }
+          : undefined,
       TransactionHistory:
         input.includeHistory == true
           ? {
@@ -272,6 +292,29 @@ async function queryPaymentDiffByMode({
               fees: tx.fees?.toString() ?? null,
             }))
           : null,
+        ActionHistory: payment.ActionHistory
+          ? (
+              payment.ActionHistory as Array<{
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                requestedAction: PaymentAction;
+                errorType: PaymentErrorType | null;
+                errorNote: string | null;
+                resultHash: string | null;
+                submittedTxHash: string | null;
+              }>
+            ).map((action) => ({
+              id: action.id,
+              createdAt: action.createdAt,
+              updatedAt: action.updatedAt,
+              requestedAction: action.requestedAction,
+              errorType: action.errorType,
+              errorNote: action.errorNote,
+              resultHash: action.resultHash,
+              submittedTxHash: action.submittedTxHash,
+            }))
+          : null,
       };
     }),
   };
@@ -282,10 +325,10 @@ export const queryPaymentDiffCombinedGet =
     method: 'get',
     input: queryPaymentDiffSchemaInput,
     output: queryPaymentsSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       queryPaymentDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
       }),
   });
@@ -295,10 +338,10 @@ export const queryPaymentDiffNextActionGet =
     method: 'get',
     input: queryPaymentDiffSchemaInput,
     output: queryPaymentsSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       queryPaymentDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'nextActionLastChangedAt',
       }),
   });
@@ -308,10 +351,10 @@ export const queryPaymentDiffOnChainStateOrResultGet =
     method: 'get',
     input: queryPaymentDiffSchemaInput,
     output: queryPaymentsSchemaOutput,
-    handler: async ({ input, options }) =>
+    handler: async ({ input, ctx }) =>
       await queryPaymentDiffByMode({
         input,
-        options,
+        ctx,
         mode: 'onChainStateOrResultLastChangedAt',
       }),
   });

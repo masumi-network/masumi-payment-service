@@ -1,7 +1,8 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
-import { $Enums, Network, RPCProvider } from '@/generated/prisma/client';
+import { Network, RPCProvider } from '@/generated/prisma/client';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
 
 export const getRpcProviderKeysSchemaInput = z.object({
   cursorId: z
@@ -10,8 +11,8 @@ export const getRpcProviderKeysSchemaInput = z.object({
     .max(250)
     .optional()
     .describe('Used to paginate through the rpc provider keys'),
-  limit: z
-    .number({ coerce: true })
+  limit: z.coerce
+    .number()
     .min(1)
     .max(100)
     .default(100)
@@ -48,15 +49,10 @@ export const queryRpcProviderKeysEndpointGet =
     output: getRpcProviderKeysSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof getRpcProviderKeysSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       const rpcProviderKeys = await prisma.paymentSourceConfig.findMany({
         cursor: input.cursorId ? { id: input.cursorId } : undefined,
@@ -65,7 +61,7 @@ export const queryRpcProviderKeysEndpointGet =
         where: {
           PaymentSource: {
             deletedAt: null,
-            network: { in: options.networkLimit },
+            network: { in: ctx.networkLimit },
           },
         },
         include: {

@@ -1,17 +1,15 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import {
-  $Enums,
-  HotWalletType,
-  Network,
-  PricingType,
-} from '@/generated/prisma/client';
+import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -74,7 +72,7 @@ export const metadataSchema = z.object({
       fixedPricing: z
         .array(
           z.object({
-            amount: z.number({ coerce: true }).int().min(1),
+            amount: z.coerce.number().int().min(1),
             unit: z
               .string()
               .min(1)
@@ -90,7 +88,7 @@ export const metadataSchema = z.object({
       }),
     ),
   image: z.string().or(z.array(z.string())),
-  metadata_version: z.number({ coerce: true }).int().min(1).max(1),
+  metadata_version: z.coerce.number().int().min(1).max(1),
 });
 
 export const queryAgentFromWalletSchemaInput = z.object({
@@ -281,8 +279,8 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                 .string()
                 .max(250)
                 .describe('URL to the agent image/logo'),
-              metadataVersion: z
-                .number({ coerce: true })
+              metadataVersion: z.coerce
+                .number()
                 .int()
                 .min(1)
                 .max(1)
@@ -303,20 +301,15 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
   output: queryAgentFromWalletSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryAgentFromWalletSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
     const smartContractAddress =
       input.smartContractAddress ??

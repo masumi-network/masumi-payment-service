@@ -1,12 +1,13 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { $Enums } from '@/generated/prisma/client';
+import { Permission } from '@/generated/prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { CONSTANTS } from '@/utils/config';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
 
 export const postVerifyDataRevealSchemaInput = z.object({
   signature: z
@@ -47,15 +48,10 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
   output: postRevealDataSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof postVerifyDataRevealSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
@@ -90,8 +86,8 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         throw createHttpError(404, 'Payment not found');
       }
       if (
-        options.permission !== 'Admin' &&
-        !options.networkLimit.includes(payment.PaymentSource.network)
+        ctx.permission !== Permission.Admin &&
+        !ctx.networkLimit.includes(payment.PaymentSource.network)
       ) {
         recordBusinessEndpointError(
           '/api/v1/reveal-data',
@@ -202,7 +198,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         statusCode,
         errorInstance,
         {
-          user_id: options.id,
+          user_id: ctx.id,
           wallet_id: input.walletAddress,
           blockchain_identifier: input.blockchainIdentifier,
           valid_until: input.validUntil,

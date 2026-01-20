@@ -1,25 +1,28 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { $Enums, Network } from '@/generated/prisma/client';
+import { Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { errorToString } from 'advanced-retry';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const getUTXOSchemaInput = z.object({
   address: z.string().max(150).describe('The address to get the UTXOs for'),
   network: z.nativeEnum(Network).describe('The Cardano network'),
-  count: z
-    .number({ coerce: true })
+  count: z.coerce
+    .number()
     .int()
     .min(1)
     .max(100)
     .default(10)
     .optional()
     .describe('The number of UTXOs to get'),
-  page: z
-    .number({ coerce: true })
+  page: z.coerce
+    .number()
     .int()
     .min(1)
     .max(100)
@@ -41,8 +44,8 @@ export const utxoAmountSchema = z
       .describe(
         'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
       ),
-    quantity: z
-      .number({ coerce: true })
+    quantity: z.coerce
+      .number()
       .int()
       .min(0)
       .max(100000000000000)
@@ -75,8 +78,8 @@ export const utxoOutputSchema = z
       .describe(
         'Hash of the reference script attached to this UTXO. Null if no reference script',
       ),
-    outputIndex: z
-      .number({ coerce: true })
+    outputIndex: z.coerce
+      .number()
       .int()
       .min(0)
       .max(1000000000)
@@ -96,20 +99,15 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
   output: getUTXOSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof getUTXOSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
     const paymentSource = await prisma.paymentSource.findFirst({
       where: { network: input.network, deletedAt: null },
