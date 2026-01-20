@@ -4,7 +4,7 @@ import {
   recordStateTransition,
   recordBlockchainJourney,
 } from '@/utils/metrics';
-import { PurchasingAction, PaymentAction } from '@prisma/client';
+import { PurchasingAction, PaymentAction } from '@/generated/prisma/client';
 import { webhookEventsService } from '@/services/webhook-handler/webhook-events.service';
 
 interface StateTransitionHistory {

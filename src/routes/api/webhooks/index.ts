@@ -2,7 +2,11 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { WebhookEventType, Permission, Network } from '@prisma/client';
+import {
+  WebhookEventType,
+  Permission,
+  Network,
+} from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 
 // Schema for registering a new webhook

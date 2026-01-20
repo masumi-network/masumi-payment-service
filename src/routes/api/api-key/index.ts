@@ -1,6 +1,6 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';

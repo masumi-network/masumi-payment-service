@@ -1,4 +1,8 @@
-import { HotWallet, HotWalletType, RegistrationState } from '@prisma/client';
+import {
+  HotWallet,
+  HotWalletType,
+  RegistrationState,
+} from '@/generated/prisma/client';
 import { prisma } from '../index.js';
 
 export async function lockAndQueryRegistryRequests({
