@@ -18,6 +18,7 @@ import {
   Bell,
   Search,
   NotebookPen,
+  Code,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -199,6 +200,12 @@ export function MainLayout({ children }: MainLayoutProps) {
           href: '/input-schema-validator',
           name: 'Input Schema Validator',
           icon: <NotebookPen className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/openapi',
+          name: 'OpenAPI',
+          icon: <Code className="h-4 w-4" />,
           badge: null,
         },
         {

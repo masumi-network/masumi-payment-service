@@ -11,7 +11,7 @@ import {
 } from '@meshsdk/core';
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
-import { Network as PrismaNetwork } from '@prisma/client';
+import { Network as PrismaNetwork } from '@/generated/prisma/client';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
   switch (network) {

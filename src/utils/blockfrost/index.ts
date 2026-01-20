@@ -1,7 +1,7 @@
 // Cache BlockFrostAPI instances to prevent memory leaks from repeated instantiation
 
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import { $Enums } from '@prisma/client';
+import { $Enums } from '@/generated/prisma/client';
 import { logger } from '@/utils/logger';
 
 // Key format: `${network}-${apiKey}`

@@ -6,7 +6,7 @@ import {
   PaymentAction,
   PaymentErrorType,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,

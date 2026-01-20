@@ -14,7 +14,7 @@
  * - Complete end-to-end early refund scenario
  */
 
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
   registerAndConfirmAgent,

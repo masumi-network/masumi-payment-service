@@ -1,4 +1,8 @@
-import { HotWallet, OnChainState, PurchasingAction } from '@prisma/client';
+import {
+  HotWallet,
+  OnChainState,
+  PurchasingAction,
+} from '@/generated/prisma/client';
 import { prisma } from '..';
 import { logger } from '@/utils/logger';
 
