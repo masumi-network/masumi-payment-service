@@ -9,7 +9,7 @@
  * Now uses helper functions for clean orchestration!
  */
 
-import { Network } from '../../../src/generated/prisma/enums';
+import { Network } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
   registerAndConfirmAgent,

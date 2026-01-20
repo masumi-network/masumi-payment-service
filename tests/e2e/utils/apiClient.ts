@@ -304,6 +304,49 @@ export interface QueryPurchasesResponse {
   Purchases: PurchaseResponse[];
 }
 
+export interface QueryPaymentSourcesParams {
+  take?: number;
+  cursorId?: string;
+}
+
+export interface PaymentSourceWallet {
+  id: string;
+  walletVkey: string;
+  walletAddress: string;
+  collectionAddress: string | null;
+  note: string | null;
+}
+
+export interface PaymentSourceResponse {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  network: Network;
+  policyId: string | null;
+  smartContractAddress: string;
+  PaymentSourceConfig: {
+    rpcProviderApiKey: string;
+    rpcProvider: string;
+  };
+  lastIdentifierChecked: string | null;
+  syncInProgress: boolean;
+  lastCheckedAt: string | null;
+  AdminWallets: Array<{
+    walletAddress: string;
+    order: number;
+  }>;
+  PurchasingWallets: PaymentSourceWallet[];
+  SellingWallets: PaymentSourceWallet[];
+  FeeReceiverNetworkWallet: {
+    walletAddress: string;
+  };
+  feeRatePermille: number;
+}
+
+export interface QueryPaymentSourcesResponse {
+  ExtendedPaymentSources: PaymentSourceResponse[];
+}
+
 export class ApiClient {
   private config: ApiClientConfig;
 
@@ -476,6 +519,22 @@ export class ApiClient {
     return this.makeRequest<QueryPurchasesResponse>(
       `/api/v1/purchase?${searchParams.toString()}`,
     );
+  }
+
+  async queryPaymentSources(
+    params?: QueryPaymentSourcesParams,
+  ): Promise<QueryPaymentSourcesResponse> {
+    const searchParams = new URLSearchParams();
+
+    if (params?.take) searchParams.set('take', params.take.toString());
+    if (params?.cursorId) searchParams.set('cursorId', params.cursorId);
+
+    const queryString = searchParams.toString();
+    const endpoint = queryString
+      ? `/api/v1/payment-source-extended?${queryString}`
+      : '/api/v1/payment-source-extended';
+
+    return this.makeRequest<QueryPaymentSourcesResponse>(endpoint);
   }
 }
 

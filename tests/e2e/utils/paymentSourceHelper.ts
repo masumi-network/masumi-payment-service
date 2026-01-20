@@ -1,48 +1,42 @@
-import { Pool } from 'pg';
 import { Network, HotWalletType } from '@/generated/prisma/enums';
+import { ApiClient } from './apiClient';
+import '../setup/globals';
 
 /**
  * Helper functions for querying PaymentSource data in E2E tests
  * 
- * Note: Uses raw pg queries instead of Prisma ORM because the Prisma-generated
- * client has ESM syntax that is incompatible with Jest's globalSetup execution
- * context (which runs in CommonJS mode). This is a Prisma v7 + Jest limitation.
+ * Uses the API client to query payment sources instead of direct database access.
  */
-
-function createPool(): Pool {
-  return new Pool({
-    connectionString: process.env.DATABASE_URL!,
-  });
-}
 
 /**
  * Get the active smart contract address for a given network
  */
 export async function getActiveSmartContractAddress(
   network: Network,
+  apiClient?: ApiClient,
 ): Promise<string> {
-  const pool = createPool();
+  const client = apiClient || global.testApiClient;
 
-  try {
-    const result = await pool.query(
-      `SELECT "smartContractAddress", "id" 
-       FROM "PaymentSource" 
-       WHERE "network" = $1 AND "deletedAt" IS NULL 
-       ORDER BY "createdAt" DESC 
-       LIMIT 1`,
-      [network],
+  if (!client) {
+    throw new Error(
+      'ApiClient not provided and global.testApiClient is not available',
     );
-
-    if (result.rows.length === 0) {
-      throw new Error(
-        `No active PaymentSource found for network ${network}. Please run database seeding first.`,
-      );
-    }
-
-    return result.rows[0].smartContractAddress;
-  } finally {
-    await pool.end();
   }
+
+  const response = await client.queryPaymentSources({ take: 100 });
+
+  // Filter by network and find the most recent (first in descending order)
+  const paymentSource = response.ExtendedPaymentSources.find(
+    (ps) => ps.network === network,
+  );
+
+  if (!paymentSource) {
+    throw new Error(
+      `No active PaymentSource found for network ${network}. Please run database seeding first.`,
+    );
+  }
+
+  return paymentSource.smartContractAddress;
 }
 
 /**
@@ -51,48 +45,58 @@ export async function getActiveSmartContractAddress(
 export async function getActiveWalletVKey(
   network: Network,
   walletType: HotWalletType = HotWalletType.Selling,
+  apiClient?: ApiClient,
 ): Promise<string> {
-  const pool = createPool();
+  const client = apiClient || global.testApiClient;
 
-  try {
-    const result = await pool.query(
-      `SELECT hw."walletVkey", hw."walletAddress", hw."type"
-       FROM "HotWallet" hw
-       INNER JOIN "PaymentSource" ps ON hw."paymentSourceId" = ps."id"
-       WHERE hw."type" = $1 
-         AND hw."deletedAt" IS NULL 
-         AND ps."network" = $2 
-         AND ps."deletedAt" IS NULL
-       ORDER BY hw."createdAt" DESC 
-       LIMIT 1`,
-      [walletType, network],
+  if (!client) {
+    throw new Error(
+      'ApiClient not provided and global.testApiClient is not available',
     );
-
-    if (result.rows.length === 0) {
-      throw new Error(
-        `No active ${walletType} wallet found for network ${network}. Please run database seeding first.`,
-      );
-    }
-
-    console.log(
-      `✅ Found active ${walletType} wallet for ${network}: ${result.rows[0].walletVkey}`,
-    );
-
-    return result.rows[0].walletVkey;
-  } catch (error) {
-    console.error('❌ Error querying active wallet VKey:', error);
-    throw error;
-  } finally {
-    await pool.end();
   }
+
+  const response = await client.queryPaymentSources({ take: 100 });
+
+  // Find the payment source for the given network
+  const paymentSource = response.ExtendedPaymentSources.find(
+    (ps) => ps.network === network,
+  );
+
+  if (!paymentSource) {
+    throw new Error(
+      `No active PaymentSource found for network ${network}. Please run database seeding first.`,
+    );
+  }
+
+  // Get wallets based on type
+  const wallets =
+    walletType === HotWalletType.Selling
+      ? paymentSource.SellingWallets
+      : paymentSource.PurchasingWallets;
+
+  if (wallets.length === 0) {
+    throw new Error(
+      `No active ${walletType} wallet found for network ${network}. Please run database seeding first.`,
+    );
+  }
+
+  // Get the first wallet (payment sources are returned in descending order by createdAt)
+  const wallet = wallets[0];
+
+  console.log(
+    `✅ Found active ${walletType} wallet for ${network}: ${wallet.walletVkey}`,
+  );
+
+  return wallet.walletVkey;
 }
 
 /**
- * Get test wallet configuration dynamically from database
+ * Get test wallet configuration dynamically from API
  */
 export async function getTestWalletFromDatabase(
   network: Network,
   role: 'seller' | 'buyer',
+  apiClient?: ApiClient,
 ): Promise<{
   name: string;
   vkey: string;
@@ -102,7 +106,7 @@ export async function getTestWalletFromDatabase(
     role === 'seller' ? HotWalletType.Selling : HotWalletType.Purchasing;
 
   try {
-    const vkey = await getActiveWalletVKey(network, walletType);
+    const vkey = await getActiveWalletVKey(network, walletType, apiClient);
 
     return {
       name: `Dynamic ${role} wallet (${network})`,

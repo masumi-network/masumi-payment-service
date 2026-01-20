@@ -1,5 +1,5 @@
 import type { ConfirmedAgent } from '../helperFunctions';
-import { Network } from '../../../src/generated/prisma/enums';
+import { Network } from '@/generated/prisma/enums';
 
 export type E2EGlobalState = {
   network: Network;

@@ -14,7 +14,7 @@
  * - End-to-end cancel refund request scenario
  */
 
-import { Network } from '../../../src/generated/prisma/enums';
+import { Network } from '@/generated/prisma/enums';
 import { validateTestWallets } from '../fixtures/testWallets';
 import {
   registerAndConfirmAgent,
