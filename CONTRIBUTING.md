@@ -29,8 +29,8 @@ As this project handles financial transactions:
 
 ### Code Style
 
-- Run `npm run lint` before committing
-- Run `npm run format` to format code
+- Run `pnpm run lint` before committing
+- Run `pnpm run format` to format code
 - Follow TypeScript best practices
 - Write clear, self-documenting code
 - Add comments for complex logic
@@ -38,7 +38,7 @@ As this project handles financial transactions:
 ### Testing
 
 - Add tests for new features
-- Run `npm run test` to ensure all tests pass
+- Run `pnpm run test` to ensure all tests pass
 - Aim for good test coverage
 - Include both happy and error paths
 

@@ -30,9 +30,9 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 1
 fi
 
-# Check if npm is available
-if ! command -v npm >/dev/null 2>&1; then
-    echo "${RED}❌ npm is not installed or not in PATH${NC}"
+# Check if pnpm is available
+if ! command -v pnpm >/dev/null 2>&1; then
+    echo "${RED}❌ pnpm is not installed or not in PATH${NC}"
     exit 2
 fi
 
@@ -66,7 +66,7 @@ done
 
 # Run ESLint only on staged files
 echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
-npm run lint -- || \
+pnpm run lint -- || \
 (
     echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
     exit 4
@@ -74,14 +74,14 @@ npm run lint -- || \
 
 # Generate Postman collection
 echo "${BLUE}🔍 Generating Swagger and Postman collection...${NC}"
-if ! npm run swagger-postman; then
+if ! pnpm run swagger-postman; then
     echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
     exit 7
 fi
 
 # Generate types
 echo "${BLUE}🔍 Generating frontend types...${NC}"
-cd frontend && npm run openapi-ts-latest && cd ..
+cd frontend && pnpm run openapi-ts-latest && cd ..
 if [ $? -ne 0 ]; then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
     exit 8
