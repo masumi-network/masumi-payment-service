@@ -24,9 +24,18 @@ RUN pnpm run swagger-json
 # Frontend build step
 FROM node:20-slim AS frontend-builder
 RUN npm install -g pnpm
-WORKDIR /usr/src/app/frontend
-COPY frontend/package.json ./
+WORKDIR /usr/src/app
+
+# Set up workspace structure for proper lockfile resolution
+COPY --from=backend-builder /usr/src/app/package.json ./
+COPY --from=backend-builder /usr/src/app/pnpm-workspace.yaml ./
 COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
+COPY frontend/package.json ./frontend/
+
+RUN pnpm install --frozen-lockfile
+
+# Copy frontend source files
+WORKDIR /usr/src/app/frontend
 COPY frontend/openapi-ts.config.ts ./openapi-ts.config.ts
 COPY frontend/src ./src
 COPY frontend/public ./public
@@ -38,7 +47,6 @@ COPY frontend/tsconfig.json ./
 COPY frontend/components.json ./
 COPY --from=backend-builder /usr/src/app/src/utils/generator/swagger-generator/openapi-docs.json ./openapi-docs.json
 
-RUN pnpm install --frozen-lockfile
 RUN pnpm run openapi-ts
 RUN pnpm run build
 
