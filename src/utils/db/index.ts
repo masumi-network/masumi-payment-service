@@ -1,5 +1,6 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import { logger } from '../logger';
 import { recordPrismaDataTransfer } from '../metrics';
 
@@ -22,6 +23,46 @@ const getDatabaseUrlWithTimeouts = () => {
   }
   return url.toString();
 };
+
+// Parse connection string to extract pool configuration
+const getPoolConfig = () => {
+  const connectionString = getDatabaseUrlWithTimeouts();
+  const url = new URL(connectionString);
+
+  // Extract connection_limit from URL params (default: 5)
+  const connectionLimit = parseInt(
+    url.searchParams.get('connection_limit') || '5',
+    10,
+  );
+
+  // Extract connect_timeout from URL params (default: 10 seconds = 10000ms)
+  const connectTimeout =
+    parseInt(url.searchParams.get('connect_timeout') || '10', 10) * 1000;
+
+  // Extract pool_timeout from URL params (default: 20 seconds = 20000ms)
+  const poolTimeout =
+    parseInt(url.searchParams.get('pool_timeout') || '20', 10) * 1000;
+
+  return {
+    connectionString,
+    max: connectionLimit, // Maximum number of clients in the pool
+    min: 1, // Minimum number of clients in the pool
+    idleTimeoutMillis: poolTimeout, // Close idle clients after this many milliseconds
+    connectionTimeoutMillis: connectTimeout, // Return an error after this many milliseconds if a connection cannot be established
+  };
+};
+
+// Create a connection pool with configured settings
+const pool = new Pool(getPoolConfig());
+
+// Set up pool error handling
+pool.on('error', (err) => {
+  logger.error('Unexpected error on idle database client', {
+    component: 'prisma',
+    error: err instanceof Error ? err.message : String(err),
+    stack: err instanceof Error ? err.stack : undefined,
+  });
+});
 
 // Helper function to calculate the size of data in bytes
 const calculateDataSize = (data: unknown): number => {
@@ -91,9 +132,7 @@ const countRows = (result: unknown): number => {
   return result !== null && result !== undefined ? 1 : 0;
 };
 
-const adapter = new PrismaPg({
-  connectionString: getDatabaseUrlWithTimeouts(),
-});
+const adapter = new PrismaPg(pool);
 
 // Create Prisma client with driver adapter
 const basePrisma = new PrismaClient({
@@ -158,6 +197,7 @@ export const prisma = basePrisma.$extends({
 
 export async function cleanupDB() {
   await prisma.$disconnect();
+  await pool.end();
 }
 
 export async function initDB() {
