@@ -1,7 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   HotWalletType,
   Network,
   PaymentType,
@@ -12,7 +11,10 @@ import {
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
@@ -210,20 +212,15 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
   output: queryRegistryRequestSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof queryRegistryRequestSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
-      options.networkLimit,
+      ctx.networkLimit,
       input.network,
-      options.permission,
+      ctx.permission,
     );
 
     const result = await prisma.registryRequest.findMany({
@@ -437,22 +434,17 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
   output: registerAgentSchemaOutput,
   handler: async ({
     input,
-    options,
+    ctx,
   }: {
     input: z.infer<typeof registerAgentSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    ctx: AuthContext;
   }) => {
     const startTime = Date.now();
     try {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const sellingWallet = await prisma.hotWallet.findUnique({
@@ -485,9 +477,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         );
       }
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       if (sellingWallet == null) {
@@ -658,7 +650,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
         errorInstance,
         {
           network: input.network,
-          user_id: options.id,
+          user_id: ctx.id,
           agent_name: input.name,
           operation: 'register_agent',
           duration: Date.now() - startTime,

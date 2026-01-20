@@ -203,6 +203,11 @@ async function processSinglePurchaseRequest(
   await prisma.purchaseRequest.update({
     where: { id: request.id },
     data: {
+      ActionHistory: {
+        connect: {
+          id: request.nextActionId,
+        },
+      },
       NextAction: {
         create: {
           requestedAction: PurchasingAction.SetRefundRequestedInitiated,
@@ -315,6 +320,11 @@ export async function requestRefundsV1() {
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,

@@ -73,6 +73,11 @@ async function handleInitializeAutoWithdrawPayments(
                 await prisma.paymentRequest.update({
                   where: { id: paymentRequest.id },
                   data: {
+                    ActionHistory: {
+                      connect: {
+                        id: paymentRequest.nextActionId,
+                      },
+                    },
                     NextAction: {
                       create: {
                         requestedAction: PaymentAction.WithdrawRequested,
@@ -132,6 +137,11 @@ async function handleInitializeAutoWithdrawRefunds(
                 await prisma.purchaseRequest.update({
                   where: { id: purchaseRequest.id },
                   data: {
+                    ActionHistory: {
+                      connect: {
+                        id: purchaseRequest.nextActionId,
+                      },
+                    },
                     NextAction: {
                       create: {
                         requestedAction:

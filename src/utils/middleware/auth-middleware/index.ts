@@ -5,14 +5,28 @@ import { z } from '@/utils/zod-openapi';
 import { Permission, ApiKeyStatus, Network } from '@/generated/prisma/enums';
 import { generateSHA256Hash } from '@/utils/crypto';
 
+export type AuthContext = {
+  id: string;
+  permission: Permission;
+  networkLimit: Network[];
+  usageLimited: boolean;
+};
+
+const authMiddlewareInputSchema = z.object({});
+
 export const authMiddleware = (minPermission: Permission) =>
-  new Middleware({
+  new Middleware<
+    Record<string, never>,
+    AuthContext,
+    string,
+    typeof authMiddlewareInputSchema
+  >({
     security: {
       // this information is optional and used for generating documentation
       type: 'header',
       name: 'api-key',
     },
-    input: z.object({}),
+    input: authMiddlewareInputSchema,
     handler: async ({ request, logger }) => {
       try {
         const sentKey = request.headers.token;

@@ -100,6 +100,11 @@ async function handlePaymentRequestResults(
       await prisma.paymentRequest.update({
         where: { id: request.id },
         data: {
+          ActionHistory: {
+            connect: {
+              id: request.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PaymentAction.WaitingForManualAction,
@@ -301,6 +306,11 @@ async function processSinglePaymentRequest(
   await prisma.paymentRequest.update({
     where: { id: request.id },
     data: {
+      ActionHistory: {
+        connect: {
+          id: request.nextActionId,
+        },
+      },
       NextAction: {
         create: {
           requestedAction: PaymentAction.SubmitResultInitiated,
@@ -351,6 +361,11 @@ async function processSinglePaymentRequest(
     await prisma.paymentRequest.update({
       where: { id: request.id },
       data: {
+        ActionHistory: {
+          connect: {
+            id: request.nextActionId,
+          },
+        },
         NextAction: {
           create: {
             requestedAction: PaymentAction.SubmitResultRequested,

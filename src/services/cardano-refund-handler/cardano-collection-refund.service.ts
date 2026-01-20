@@ -179,6 +179,11 @@ async function processSingleRefundCollection(
   await prisma.purchaseRequest.update({
     where: { id: request.id },
     data: {
+      ActionHistory: {
+        connect: {
+          id: request.nextActionId,
+        },
+      },
       NextAction: {
         create: {
           requestedAction: PurchasingAction.WithdrawRefundInitiated,
@@ -300,6 +305,11 @@ export async function collectRefundV1() {
             await prisma.purchaseRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,

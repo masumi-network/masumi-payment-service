@@ -5,7 +5,7 @@
     ]
   },
   "compilerOptions": {
-    "module": "CommonJS",
+    "module": "ES2022",
     "moduleResolution": "node",
     "esModuleInterop": true,
     "pretty": true,
@@ -17,6 +17,7 @@
     "baseUrl": ".",
     "experimentalDecorators": true,
     "strict": true,
+    "allowSyntheticDefaultImports": true,
     "paths": {
       "@/*": [
         "src/*"

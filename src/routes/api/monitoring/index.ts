@@ -51,7 +51,7 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
   output: monitoringStatusResponseSchema,
-  handler: async ({ options: _options }) => {
+  handler: async () => {
     const status = blockchainStateMonitorService.getStatus();
 
     return {
@@ -88,7 +88,7 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
   output: triggerMonitoringCycleResponseSchema,
-  handler: async ({ options: _options }) => {
+  handler: async () => {
     try {
       await blockchainStateMonitorService.forceMonitoringCycle();
       return {
@@ -159,7 +159,7 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: z.object({}),
   output: stopMonitoringResponseSchema,
-  handler: async ({ options: _options }) => {
+  handler: async () => {
     try {
       blockchainStateMonitorService.stopMonitoring();
       return {
@@ -188,7 +188,7 @@ export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: z.object({}),
   output: getDiagnosticsResponseSchema,
-  handler: async ({ options: _options }) => {
+  handler: async () => {
     const diagnostic = await checkRegistryData();
 
     if (!diagnostic) {

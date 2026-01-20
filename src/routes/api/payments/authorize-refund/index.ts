@@ -1,7 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   Network,
   OnChainState,
   PaymentAction,
@@ -9,7 +8,10 @@ import {
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import {
+  AuthContext,
+  checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@/utils/middleware/auth-middleware';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import {
@@ -29,6 +31,7 @@ export const authorizePaymentRefundSchemaInput = z.object({
 
 export const authorizePaymentRefundSchemaOutput = paymentResponseSchema.omit({
   TransactionHistory: true,
+  ActionHistory: true,
 });
 
 export const authorizePaymentRefundEndpointPost =
@@ -38,20 +41,15 @@ export const authorizePaymentRefundEndpointPost =
     output: authorizePaymentRefundSchemaOutput,
     handler: async ({
       input,
-      options,
+      ctx,
     }: {
       input: z.infer<typeof authorizePaymentRefundSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
+      ctx: AuthContext;
     }) => {
       await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
+        ctx.networkLimit,
         input.network,
-        options.permission,
+        ctx.permission,
       );
 
       const payment = await prisma.paymentRequest.findUnique({
@@ -83,8 +81,8 @@ export const authorizePaymentRefundEndpointPost =
       }
 
       if (
-        payment.requestedById != options.id &&
-        options.permission != Permission.Admin
+        payment.requestedById != ctx.id &&
+        ctx.permission != Permission.Admin
       ) {
         throw createHttpError(
           403,
@@ -94,6 +92,11 @@ export const authorizePaymentRefundEndpointPost =
       const result = await prisma.paymentRequest.update({
         where: { id: payment.id },
         data: {
+          ActionHistory: {
+            connect: {
+              id: payment.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PaymentAction.AuthorizeRefundRequested,

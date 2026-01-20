@@ -117,6 +117,11 @@ export async function handlePaymentTransactionCardanoV1(
         data: {
           totalBuyerCardanoFees: { increment: buyerCardanoFees },
           totalSellerCardanoFees: { increment: sellerCardanoFees },
+          ActionHistory: {
+            connect: {
+              id: paymentRequest.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: newAction.action,
@@ -273,6 +278,11 @@ export async function handlePurchasingTransactionCardanoV1(
           totalBuyerCardanoFees: { increment: buyerCardanoFees },
           totalSellerCardanoFees: { increment: sellerCardanoFees },
           inputHash: purchasingRequest.inputHash,
+          ActionHistory: {
+            connect: {
+              id: purchasingRequest.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: newAction.action,
@@ -428,6 +438,13 @@ export async function updateRolledBackTransaction(
               transaction.PaymentRequestHistory!.id,
           },
           data: {
+            ActionHistory: {
+              connect: transaction.PaymentRequestCurrent?.nextActionId
+                ? {
+                    id: transaction.PaymentRequestCurrent.nextActionId,
+                  }
+                : undefined,
+            },
             NextAction: {
               upsert: {
                 update: {
@@ -458,6 +475,13 @@ export async function updateRolledBackTransaction(
               transaction.PurchaseRequestHistory!.id,
           },
           data: {
+            ActionHistory: {
+              connect: transaction.PurchaseRequestCurrent?.nextActionId
+                ? {
+                    id: transaction.PurchaseRequestCurrent.nextActionId,
+                  }
+                : undefined,
+            },
             NextAction: {
               upsert: {
                 update: {
@@ -587,6 +611,11 @@ export async function updateInitialPurchaseTransaction(
         await prisma.purchaseRequest.update({
           where: { id: dbEntry.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: dbEntry.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 requestedAction: PurchasingAction.WaitingForManualAction,
@@ -608,6 +637,11 @@ export async function updateInitialPurchaseTransaction(
         await prisma.purchaseRequest.update({
           where: { id: dbEntry.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: dbEntry.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 requestedAction: PurchasingAction.WaitingForManualAction,
@@ -807,6 +841,11 @@ export async function updateInitialPurchaseTransaction(
         data: {
           totalBuyerCardanoFees: { increment: buyerCardanoFees },
           totalSellerCardanoFees: { increment: sellerCardanoFees },
+          ActionHistory: {
+            connect: {
+              id: dbEntry.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: PurchasingAction.WaitingForExternalAction,
@@ -928,6 +967,11 @@ export async function updateInitialPaymentTransaction(
         await prisma.paymentRequest.update({
           where: { id: dbEntry.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: dbEntry.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 requestedAction: PaymentAction.WaitingForManualAction,
@@ -948,6 +992,11 @@ export async function updateInitialPaymentTransaction(
         await prisma.paymentRequest.update({
           where: { id: dbEntry.id },
           data: {
+            ActionHistory: {
+              connect: {
+                id: dbEntry.nextActionId,
+              },
+            },
             NextAction: {
               create: {
                 requestedAction: PaymentAction.WaitingForManualAction,
@@ -1155,6 +1204,11 @@ export async function updateInitialPaymentTransaction(
           totalBuyerCardanoFees: { increment: buyerCardanoFees },
           totalSellerCardanoFees: { increment: sellerCardanoFees },
           collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
+          ActionHistory: {
+            connect: {
+              id: dbEntry.nextActionId,
+            },
+          },
           NextAction: {
             create: {
               requestedAction: newAction,

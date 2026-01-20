@@ -268,6 +268,11 @@ async function processSinglePaymentCollection(
   await prisma.paymentRequest.update({
     where: { id: request.id },
     data: {
+      ActionHistory: {
+        connect: {
+          id: request.nextActionId,
+        },
+      },
       NextAction: {
         create: {
           requestedAction: PaymentAction.WithdrawInitiated,
@@ -383,6 +388,11 @@ export async function collectOutstandingPaymentsV1() {
             await prisma.paymentRequest.update({
               where: { id: request.id },
               data: {
+                ActionHistory: {
+                  connect: {
+                    id: request.nextActionId,
+                  },
+                },
                 NextAction: {
                   create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
