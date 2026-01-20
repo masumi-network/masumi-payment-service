@@ -1,5 +1,9 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, PaymentAction, PaymentErrorType } from '@/generated/prisma/client';
+import {
+  Network,
+  PaymentAction,
+  PaymentErrorType,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import {
