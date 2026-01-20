@@ -128,6 +128,12 @@ export async function deRegisterAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
+            if (!request.agentIdentifier) {
+              throw new Error(
+                'Agent identifier is required for deregistration',
+              );
+            }
+
             const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
             const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
