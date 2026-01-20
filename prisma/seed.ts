@@ -186,9 +186,9 @@ export const seed = async (prisma: PrismaClient) => {
     ) {
       throw new Error(
         'Smart contract address is changed expected: ' +
-        DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
-        ' got: ' +
-        smartContractAddress,
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
+          ' got: ' +
+          smartContractAddress,
       );
     }
     const blockfrostApi = new BlockFrostAPI({
@@ -204,7 +204,7 @@ export const seed = async (prisma: PrismaClient) => {
       if (latestTx.length > 0) {
         console.log(
           'Smart contract address exists on preprod, syncing after tx: ' +
-          (latestTx[0]?.tx_hash ?? 'no tx hash'),
+            (latestTx[0]?.tx_hash ?? 'no tx hash'),
         );
       }
     } catch (error) {
@@ -245,9 +245,9 @@ export const seed = async (prisma: PrismaClient) => {
       if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
         throw new Error(
           'Registry policyId is changed expected: ' +
-          DEFAULTS.REGISTRY_POLICY_ID_PREPROD +
-          ' got: ' +
-          policyId,
+            DEFAULTS.REGISTRY_POLICY_ID_PREPROD +
+            ' got: ' +
+            policyId,
         );
       }
       await prisma.paymentSource.create({
@@ -311,9 +311,9 @@ export const seed = async (prisma: PrismaClient) => {
 
       console.log(
         'Contract seeded on preprod: ' +
-        smartContractAddress +
-        ' added. Registry policyId: ' +
-        policyId,
+          smartContractAddress +
+          ' added. Registry policyId: ' +
+          policyId,
       );
     } catch (error) {
       console.error(
@@ -391,9 +391,9 @@ export const seed = async (prisma: PrismaClient) => {
     ) {
       throw new Error(
         'Smart contract address is changed expected: ' +
-        DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
-        ' got: ' +
-        smartContractAddress,
+          DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
+          ' got: ' +
+          smartContractAddress,
       );
     }
     const blockfrostApi = new BlockFrostAPI({
@@ -408,7 +408,7 @@ export const seed = async (prisma: PrismaClient) => {
       if (latestTx.length > 0) {
         console.log(
           'Smart contract address exists on mainnet, syncing after tx: ' +
-          (latestTx[0]?.tx_hash ?? 'no tx hash'),
+            (latestTx[0]?.tx_hash ?? 'no tx hash'),
         );
       }
     } catch (error) {
@@ -447,9 +447,9 @@ export const seed = async (prisma: PrismaClient) => {
       if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
         throw new Error(
           'Registry policyId is changed expected: ' +
-          DEFAULTS.REGISTRY_POLICY_ID_MAINNET +
-          ' got: ' +
-          policyId,
+            DEFAULTS.REGISTRY_POLICY_ID_MAINNET +
+            ' got: ' +
+            policyId,
         );
       }
       await prisma.paymentSource.create({
@@ -513,9 +513,9 @@ export const seed = async (prisma: PrismaClient) => {
 
       console.log(
         'Contract seeded on mainnet: ' +
-        smartContractAddress +
-        ' added. Registry policyId: ' +
-        policyId,
+          smartContractAddress +
+          ' added. Registry policyId: ' +
+          policyId,
       );
     } catch (error) {
       console.error(
@@ -532,9 +532,11 @@ export const seed = async (prisma: PrismaClient) => {
 seed(prisma)
   .then(() => {
     prisma.$disconnect();
+    pool.end();
     console.log('Seed completed');
   })
   .catch((e) => {
     prisma.$disconnect();
+    pool.end();
     console.error(e);
   });
