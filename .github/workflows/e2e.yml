@@ -124,7 +124,7 @@ jobs:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Seed Database
-        run: npx prisma db seed --config prisma/prisma.config.ts
+        run: pnpm exec prisma db seed --config prisma/prisma.config.ts
         env:
           DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
           PURCHASE_WALLET_PREPROD_MNEMONIC: "${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}"
