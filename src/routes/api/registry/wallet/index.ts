@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PricingType } from '@prisma/client';
+import { HotWalletType, Network, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';

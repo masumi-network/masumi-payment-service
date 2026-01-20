@@ -1,4 +1,4 @@
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/client';
 
 export function convertNetwork(network: Network) {
   switch (network) {

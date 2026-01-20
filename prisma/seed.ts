@@ -5,7 +5,7 @@ import {
   Permission,
   PrismaClient,
   RPCProvider,
-} from '@prisma/client';
+} from '../src/generated/prisma/client';
 import dotenv from 'dotenv';
 import {
   resolvePaymentKeyHash,
@@ -21,8 +21,14 @@ import paymentPlutus from '../smart-contracts/payment/plutus.json';
 import { generateSHA256Hash } from '../src/utils/crypto';
 import { MeshWallet, PlutusScript } from '@meshsdk/core';
 
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+
 dotenv.config();
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 export const seed = async (prisma: PrismaClient) => {
   const seedOnlyIfEmpty = process.env.SEED_ONLY_IF_EMPTY;
 
@@ -526,9 +532,11 @@ export const seed = async (prisma: PrismaClient) => {
 seed(prisma)
   .then(() => {
     prisma.$disconnect();
+    pool.end();
     console.log('Seed completed');
   })
   .catch((e) => {
     prisma.$disconnect();
+    pool.end();
     console.error(e);
   });

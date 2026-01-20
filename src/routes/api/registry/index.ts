@@ -7,7 +7,7 @@ import {
   PricingType,
   RegistrationState,
   TransactionStatus,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';

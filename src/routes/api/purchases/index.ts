@@ -7,7 +7,7 @@ import {
   PurchaseErrorType,
   OnChainState,
   PricingType,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
