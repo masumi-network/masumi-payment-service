@@ -3,8 +3,7 @@ import Head from 'next/head';
 import { ExternalLink } from 'lucide-react';
 
 export default function OpenAPI() {
-  const docsUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/docs` : '/docs';
+  const docsUrl = '/docs';
 
   return (
     <MainLayout>
