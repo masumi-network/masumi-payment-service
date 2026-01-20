@@ -17,6 +17,7 @@ import {
 } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
@@ -457,6 +458,15 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
             network: input.network,
           },
         },
+        include: {
+          PaymentSource: {
+            include: {
+              PaymentSourceConfig: {
+                select: { rpcProviderApiKey: true },
+              },
+            },
+          },
+        },
       });
       if (sellingWallet == null) {
         recordBusinessEndpointError(
@@ -496,6 +506,66 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
         );
         throw createHttpError(404, 'Selling wallet not found');
+      }
+
+      // Validate pricing assets exist on-chain
+      if (
+        input.AgentPricing.pricingType === PricingType.Fixed &&
+        'Pricing' in input.AgentPricing
+      ) {
+        const blockfrost = getBlockfrostInstance(
+          input.network,
+          sellingWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+        );
+
+        const invalidAssets: string[] = [];
+
+        for (const pricing of input.AgentPricing.Pricing) {
+          const unit = pricing.unit.toLowerCase();
+
+          // Skip ADA/lovelace (empty string or "lovelace")
+          if (unit === '' || unit === 'lovelace') continue;
+
+          if (!/^[a-f0-9]{56,}$/i.test(pricing.unit)) {
+            invalidAssets.push(
+              `${pricing.unit} (invalid format - must be policyId + assetName in hex)`,
+            );
+            continue;
+          }
+
+          try {
+            await blockfrost.assetsById(pricing.unit);
+          } catch (error) {
+            if (error instanceof Error && error.message.includes('404')) {
+              invalidAssets.push(`${pricing.unit} (not found on-chain)`);
+            } else {
+              // Re-throw network/server errors - don't mask infrastructure issues
+              throw createHttpError(
+                500,
+                `Error validating asset ${pricing.unit}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              );
+            }
+          }
+        }
+
+        if (invalidAssets.length > 0) {
+          recordBusinessEndpointError(
+            '/api/v1/registry',
+            'POST',
+            400,
+            `Invalid assets in pricing: ${invalidAssets.join(', ')}`,
+            {
+              network: input.network,
+              operation: 'register_agent',
+              step: 'asset_validation',
+              invalid_assets: invalidAssets.join('; '),
+            },
+          );
+          throw createHttpError(
+            400,
+            `Invalid assets in pricing: ${invalidAssets.join(', ')}`,
+          );
+        }
       }
 
       const result = await prisma.registryRequest.create({
