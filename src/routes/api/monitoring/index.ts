@@ -19,9 +19,28 @@ export const monitoringStatusResponseSchema = z
               .describe(
                 'Number of entities being tracked by the monitoring service',
               ),
-            lastCheckTime: z
-              .string()
-              .describe('ISO timestamp of the last monitoring check'),
+            purchaseCursor: z
+              .object({
+                timestamp: z
+                  .string()
+                  .describe('Last processed purchase timestamp'),
+                lastId: z
+                  .string()
+                  .nullable()
+                  .describe('Last processed purchase ID'),
+              })
+              .describe('Cursor position for purchase diff tracking'),
+            paymentCursor: z
+              .object({
+                timestamp: z
+                  .string()
+                  .describe('Last processed payment timestamp'),
+                lastId: z
+                  .string()
+                  .nullable()
+                  .describe('Last processed payment ID'),
+              })
+              .describe('Cursor position for payment diff tracking'),
             memoryUsage: z
               .object({
                 heapUsed: z
@@ -60,7 +79,14 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
         stats: status.stats
           ? {
               trackedEntities: status.stats.trackedEntities,
-              lastCheckTime: status.stats.lastCheckTime.toISOString(),
+              purchaseCursor: {
+                timestamp: status.stats.purchaseCursor.timestamp.toISOString(),
+                lastId: status.stats.purchaseCursor.lastId ?? null,
+              },
+              paymentCursor: {
+                timestamp: status.stats.paymentCursor.timestamp.toISOString(),
+                lastId: status.stats.paymentCursor.lastId ?? null,
+              },
               memoryUsage: {
                 heapUsed: `${Math.round(status.stats.memoryUsage.heapUsed / 1024 / 1024)}MB`,
                 heapTotal: `${Math.round(status.stats.memoryUsage.heapTotal / 1024 / 1024)}MB`,
