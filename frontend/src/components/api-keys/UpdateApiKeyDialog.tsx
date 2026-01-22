@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, getPermissionLabel } from '@/lib/utils';
 import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -89,19 +89,6 @@ const updateApiKeySchema = z
   });
 
 type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
-
-/**
- * Get a human-readable permission label from flags.
- */
-function getPermissionLabel(
-  canRead: boolean,
-  canPay: boolean,
-  canAdmin: boolean,
-): string {
-  if (canAdmin) return 'Admin';
-  if (canPay) return 'Read and Pay';
-  return 'Read Only';
-}
 
 export function UpdateApiKeyDialog({
   open,
@@ -196,7 +183,7 @@ export function UpdateApiKeyDialog({
           <div className="space-y-2">
             <label className="text-sm font-medium">Permission Level</label>
             <div className="p-2 bg-muted rounded-md text-sm">
-              {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
+              {getPermissionLabel(apiKey.canPay, apiKey.canAdmin)}
             </div>
             <p className="text-xs text-muted-foreground">
               Permission level cannot be changed after creation

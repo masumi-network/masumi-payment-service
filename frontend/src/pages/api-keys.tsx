@@ -10,7 +10,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, getPermissionLabel } from '@/lib/utils';
 import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -29,15 +29,6 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { ApiKey } from '@/lib/api/generated';
-
-/**
- * Get a human-readable permission label from flags.
- */
-function getPermissionLabel(apiKey: ApiKey): string {
-  if (apiKey.canAdmin) return 'Admin';
-  if (apiKey.canPay) return 'Read and Pay';
-  return 'Read Only';
-}
 
 /**
  * Check if an API key matches a permission tab filter.
@@ -94,7 +85,7 @@ export default function ApiKeys() {
         const nameMatch = key.id?.toLowerCase().includes(query) || false;
         const tokenMatch = key.token?.toLowerCase().includes(query) || false;
         const permissionMatch =
-          getPermissionLabel(key).toLowerCase().includes(query) || false;
+          getPermissionLabel(key.canPay, key.canAdmin).toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
           key.networkLimit?.some((network) =>
@@ -292,7 +283,7 @@ export default function ApiKeys() {
                           <CopyButton value={key.token} />
                         </div>
                       </td>
-                      <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
+                      <td className="p-4 text-sm">{getPermissionLabel(key.canPay, key.canAdmin)}</td>
                       <td className="p-4 text-sm">
                         <div className="flex gap-1">
                           {key.networkLimit.map((network) => (

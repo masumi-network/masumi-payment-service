@@ -276,6 +276,19 @@ export function hexToAscii(hex: string) {
 }
 
 /**
+ * Get a human-readable permission label from permission flags.
+ *
+ * @param canPay - Whether the API key has pay permission
+ * @param canAdmin - Whether the API key has admin permission
+ * @returns Human-readable permission label ('Admin', 'Read and Pay', or 'Read Only')
+ */
+export function getPermissionLabel(canPay: boolean, canAdmin: boolean): string {
+  if (canAdmin) return 'Admin';
+  if (canPay) return 'Read and Pay';
+  return 'Read Only';
+}
+
+/**
  * Format fund unit for display
  * Converts unit identifiers (lovelace, USDM, tUSDM, policy IDs) to user-friendly display names
  *
