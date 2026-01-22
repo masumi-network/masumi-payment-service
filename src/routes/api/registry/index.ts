@@ -224,7 +224,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
     await checkIsAllowedNetworkOrThrowUnauthorized(
       ctx.networkLimit,
       input.network,
-      ctx.permission,
+      ctx.canAdmin,
     );
 
     const result = await prisma.registryRequest.findMany({
@@ -448,7 +448,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       const sellingWallet = await prisma.hotWallet.findUnique({
@@ -492,7 +492,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       if (sellingWallet == null) {

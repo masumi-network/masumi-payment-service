@@ -55,7 +55,7 @@ export const purchaseErrorStateRecoveryPost =
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       // Find purchase request

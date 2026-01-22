@@ -30,6 +30,32 @@ import { shortenAddress } from '@/lib/utils';
 import { useApiKey } from '@/lib/hooks/useApiKey';
 import { ApiKey } from '@/lib/api/generated';
 
+/**
+ * Get a human-readable permission label from flags.
+ */
+function getPermissionLabel(apiKey: ApiKey): string {
+  if (apiKey.canAdmin) return 'Admin';
+  if (apiKey.canPay) return 'Read and Pay';
+  return 'Read Only';
+}
+
+/**
+ * Check if an API key matches a permission tab filter.
+ */
+function matchesPermissionTab(apiKey: ApiKey, tab: string): boolean {
+  switch (tab) {
+    case 'Read':
+      return apiKey.canRead && !apiKey.canPay && !apiKey.canAdmin;
+    case 'ReadAndPay':
+      return apiKey.canPay && !apiKey.canAdmin;
+    case 'Admin':
+      return apiKey.canAdmin;
+    case 'All':
+    default:
+      return true;
+  }
+}
+
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
@@ -53,19 +79,13 @@ export default function ApiKeys() {
   const filterApiKeys = useCallback(() => {
     let filtered = [...allApiKeys];
 
-    // Filter by network first
+    // Filter by network first (admin keys have access to all networks)
     filtered = filtered.filter(
-      (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
+      (key) => key.networkLimit.includes(network) || key.canAdmin,
     );
 
-    // Then filter by permission tab
-    if (activeTab === 'Read') {
-      filtered = filtered.filter((key) => key.permission === 'Read');
-    } else if (activeTab === 'ReadAndPay') {
-      filtered = filtered.filter((key) => key.permission === 'ReadAndPay');
-    } else if (activeTab === 'Admin') {
-      filtered = filtered.filter((key) => key.permission === 'Admin');
-    }
+    // Then filter by permission tab using flag-based logic
+    filtered = filtered.filter((key) => matchesPermissionTab(key, activeTab));
 
     // Then filter by search query
     if (searchQuery) {
@@ -74,7 +94,7 @@ export default function ApiKeys() {
         const nameMatch = key.id?.toLowerCase().includes(query) || false;
         const tokenMatch = key.token?.toLowerCase().includes(query) || false;
         const permissionMatch =
-          key.permission?.toLowerCase().includes(query) || false;
+          getPermissionLabel(key).toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
           key.networkLimit?.some((network) =>
@@ -272,7 +292,7 @@ export default function ApiKeys() {
                           <CopyButton value={key.token} />
                         </div>
                       </td>
-                      <td className="p-4 text-sm">{key.permission}</td>
+                      <td className="p-4 text-sm">{getPermissionLabel(key)}</td>
                       <td className="p-4 text-sm">
                         <div className="flex gap-1">
                           {key.networkLimit.map((network) => (

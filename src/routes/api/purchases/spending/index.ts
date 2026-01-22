@@ -159,7 +159,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       const { periodStart, periodEnd } = parseDateRange(

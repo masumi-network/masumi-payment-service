@@ -326,7 +326,7 @@ export const paymentSourceExtendedEndpointPost =
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
       const sellingWalletsMesh = input.SellingWallets.map((sellingWallet) => {
         return {

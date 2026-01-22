@@ -166,7 +166,7 @@ async function queryPurchaseDiffByMode({
   await checkIsAllowedNetworkOrThrowUnauthorized(
     ctx.networkLimit,
     input.network,
-    ctx.permission,
+    ctx.canAdmin,
   );
 
   const since = input.lastUpdate;

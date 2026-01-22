@@ -416,7 +416,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     await checkIsAllowedNetworkOrThrowUnauthorized(
       ctx.networkLimit,
       input.network,
-      ctx.permission,
+      ctx.canAdmin,
     );
 
     const result = await prisma.paymentRequest.findMany({
@@ -667,7 +667,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     await checkIsAllowedNetworkOrThrowUnauthorized(
       ctx.networkLimit,
       input.network,
-      ctx.permission,
+      ctx.canAdmin,
     );
     const policyId = extractPolicyId(input.agentIdentifier);
 
@@ -692,7 +692,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     await checkIsAllowedNetworkOrThrowUnauthorized(
       ctx.networkLimit,
       input.network,
-      ctx.permission,
+      ctx.canAdmin,
     );
     const purchaserId = input.identifierFromPurchaser;
     if (validateHexString(purchaserId) == false) {

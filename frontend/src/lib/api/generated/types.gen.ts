@@ -14,7 +14,19 @@ export type ApiKey = {
      */
     token: string;
     /**
-     * Permission level of the API key
+     * Whether this API key can access read endpoints
+     */
+    canRead: boolean;
+    /**
+     * Whether this API key can access payment/purchase endpoints
+     */
+    canPay: boolean;
+    /**
+     * Whether this API key has admin access
+     */
+    canAdmin: boolean;
+    /**
+     * Permission level of the API key (computed from flags for backward compatibility)
      */
     permission: 'Read' | 'ReadAndPay' | 'Admin';
     /**
@@ -1650,6 +1662,18 @@ export type PatchApiKeyData = {
          * The networks the API key is allowed to use
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Whether this API key can access read endpoints
+         */
+        canRead?: boolean;
+        /**
+         * Whether this API key can access payment/purchase endpoints
+         */
+        canPay?: boolean;
+        /**
+         * Whether this API key has admin access
+         */
+        canAdmin?: boolean;
     };
     path?: never;
     query?: never;
@@ -1707,7 +1731,19 @@ export type PostApiKeyData = {
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * The permission of the API key
+         * Whether this API key can access read endpoints
+         */
+        canRead?: boolean;
+        /**
+         * Whether this API key can access payment/purchase endpoints
+         */
+        canPay?: boolean;
+        /**
+         * Whether this API key has admin access
+         */
+        canAdmin?: boolean;
+        /**
+         * Legacy permission field (use canRead/canPay/canAdmin instead)
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
     };

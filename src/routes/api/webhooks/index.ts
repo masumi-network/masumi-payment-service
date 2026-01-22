@@ -2,11 +2,7 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import {
-  WebhookEventType,
-  Permission,
-  Network,
-} from '@/generated/prisma/client';
+import { WebhookEventType, Network } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 
 // Schema for registering a new webhook
@@ -64,14 +60,14 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         paymentSource.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
     } else {
       for (const network of Object.values(Network)) {
         await checkIsAllowedNetworkOrThrowUnauthorized(
           ctx.networkLimit,
           network,
-          ctx.permission,
+          ctx.canAdmin,
         );
       }
     }
@@ -167,17 +163,12 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
         PaymentSource: {
-          network:
-            ctx.permission === Permission.Admin
-              ? undefined
-              : { in: ctx.networkLimit },
+          network: ctx.canAdmin ? undefined : { in: ctx.networkLimit },
           deletedAt: null,
           ...(input.paymentSourceId ? { id: input.paymentSourceId } : {}),
         },
         // Only show webhooks created by this API key, unless user is admin
-        ...(ctx.permission === Permission.Admin
-          ? {}
-          : { createdByApiKeyId: ctx.id }),
+        ...(ctx.canAdmin ? {} : { createdByApiKeyId: ctx.id }),
       },
       include: {
         CreatedByApiKey: {
@@ -250,7 +241,7 @@ export const deleteWebhookDelete = payAuthenticatedEndpointFactory.build({
 
     // Authorization check: Only creator or admin can delete
     const isCreator = webhook.createdByApiKeyId === ctx.id;
-    const isAdmin = ctx.permission === Permission.Admin;
+    const isAdmin = ctx.canAdmin;
 
     if (!isCreator && !isAdmin) {
       throw createHttpError(

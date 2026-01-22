@@ -32,6 +32,11 @@ interface UpdateApiKeyDialogProps {
   apiKey: {
     id: string;
     token: string;
+    // Flag-based permissions
+    canRead: boolean;
+    canPay: boolean;
+    canAdmin: boolean;
+    // Legacy permission (for display)
     permission: 'Read' | 'ReadAndPay' | 'Admin';
     networkLimit: Array<'Preprod' | 'Mainnet'>;
     usageLimited: boolean;
@@ -84,6 +89,19 @@ const updateApiKeySchema = z
   });
 
 type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
+
+/**
+ * Get a human-readable permission label from flags.
+ */
+function getPermissionLabel(
+  canRead: boolean,
+  canPay: boolean,
+  canAdmin: boolean,
+): string {
+  if (canAdmin) return 'Admin';
+  if (canPay) return 'Read and Pay';
+  return 'Read Only';
+}
 
 export function UpdateApiKeyDialog({
   open,
@@ -174,6 +192,17 @@ export function UpdateApiKeyDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Display current permission level */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Permission Level</label>
+            <div className="p-2 bg-muted rounded-md text-sm">
+              {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Permission level cannot be changed after creation
+            </p>
+          </div>
+
           <div className="space-y-2">
             <label className="text-sm font-medium">New Token (Optional)</label>
             <Input

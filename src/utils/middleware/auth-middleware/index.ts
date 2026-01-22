@@ -2,19 +2,43 @@ import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 import { prisma } from '@/utils/db';
 import { z } from '@/utils/zod-openapi';
-import { Permission, ApiKeyStatus, Network } from '@/generated/prisma/enums';
+import { ApiKeyStatus, Network } from '@/generated/prisma/enums';
 import { generateSHA256Hash } from '@/utils/crypto';
+import {
+  RequiredPermission,
+  hasPermission,
+  getPermissionName,
+} from '@/utils/permissions';
 
+/**
+ * Authentication context passed to endpoint handlers.
+ * Contains the authenticated user's permissions and limits.
+ */
 export type AuthContext = {
+  /** Unique identifier of the API key */
   id: string;
-  permission: Permission;
+  /** Whether the user can access read endpoints */
+  canRead: boolean;
+  /** Whether the user can access pay/purchase endpoints */
+  canPay: boolean;
+  /** Whether the user has admin access (bypasses network/usage limits) */
+  canAdmin: boolean;
+  /** Networks this API key is allowed to access (ignored if canAdmin=true) */
   networkLimit: Network[];
+  /** Whether this API key has usage credit limits (ignored if canAdmin=true) */
   usageLimited: boolean;
 };
 
 const authMiddlewareInputSchema = z.object({});
 
-export const authMiddleware = (minPermission: Permission) =>
+/**
+ * Authentication middleware factory.
+ * Creates middleware that validates API key and checks permission level.
+ *
+ * @param minPermission - Minimum permission level required for the endpoint
+ * @returns Express-zod-api middleware
+ */
+export const authMiddleware = (minPermission: RequiredPermission) =>
   new Middleware<
     Record<string, never>,
     AuthContext,
@@ -54,41 +78,36 @@ export const authMiddleware = (minPermission: Permission) =>
           throw createHttpError(401, 'Unauthorized, API key is revoked');
         }
 
+        // Check if user has required permission using flag-based system
         if (
-          minPermission == Permission.Admin &&
-          apiKey.permission != Permission.Admin
+          !hasPermission(
+            minPermission,
+            apiKey.canRead,
+            apiKey.canPay,
+            apiKey.canAdmin,
+          )
         ) {
-          throw createHttpError(401, 'Unauthorized, admin access required');
+          const permissionName = getPermissionName(minPermission);
+          throw createHttpError(
+            401,
+            `Unauthorized, ${permissionName} access required`,
+          );
         }
 
-        if (
-          minPermission == Permission.ReadAndPay &&
-          apiKey.permission != Permission.ReadAndPay &&
-          apiKey.permission != Permission.Admin
-        ) {
-          throw createHttpError(401, 'Unauthorized, payment access required');
-        }
-
-        if (
-          minPermission == Permission.Read &&
-          apiKey.permission != Permission.Read &&
-          apiKey.permission != Permission.Admin &&
-          apiKey.permission != Permission.ReadAndPay
-        ) {
-          throw createHttpError(401, 'Unauthorized, read access required');
-        }
+        // Admin special handling: bypass network and usage limits
         let networkLimit = apiKey.networkLimit;
-        if (apiKey.permission == Permission.Admin) {
-          networkLimit = [Network.Mainnet, Network.Preprod];
-        }
         let usageLimited = apiKey.usageLimited;
-        if (apiKey.permission == Permission.Admin) {
+
+        if (apiKey.canAdmin) {
+          networkLimit = [Network.Mainnet, Network.Preprod];
           usageLimited = false;
         }
 
         return {
           id: apiKey.id,
-          permission: apiKey.permission,
+          canRead: apiKey.canRead,
+          canPay: apiKey.canPay,
+          canAdmin: apiKey.canAdmin,
           networkLimit: networkLimit,
           usageLimited: usageLimited,
         }; // provides endpoints with options.user
@@ -103,12 +122,22 @@ export const authMiddleware = (minPermission: Permission) =>
     },
   });
 
+/**
+ * Checks if the user is allowed to access the specified network.
+ * Admin users bypass this check.
+ *
+ * @param networkLimit - Networks the user is allowed to access
+ * @param network - The network being accessed
+ * @param canAdmin - Whether the user has admin access
+ * @throws 401 Unauthorized if network is not allowed
+ */
 export async function checkIsAllowedNetworkOrThrowUnauthorized(
   networkLimit: Network[],
   network: Network,
-  permission: Permission,
+  canAdmin: boolean,
 ) {
-  if (permission == Permission.Admin) {
+  // Admin bypasses network restrictions
+  if (canAdmin) {
     return;
   }
 

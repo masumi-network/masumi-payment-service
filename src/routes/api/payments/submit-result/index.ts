@@ -4,7 +4,6 @@ import {
   Network,
   OnChainState,
   PaymentAction,
-  Permission,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -55,7 +54,7 @@ export const submitPaymentResultEndpointPost =
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       const payment = await prisma.paymentRequest.findUnique({
@@ -89,10 +88,7 @@ export const submitPaymentResultEndpointPost =
         throw createHttpError(404, 'Payment not found or in invalid state');
       }
 
-      if (
-        payment.requestedById != ctx.id &&
-        ctx.permission != Permission.Admin
-      ) {
+      if (payment.requestedById != ctx.id && !ctx.canAdmin) {
         throw createHttpError(
           403,
           'You are not authorized to submit results for this payment',

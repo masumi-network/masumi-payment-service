@@ -195,6 +195,11 @@ const paymentSourceExtendedExample = {
 const apiKeyExample = {
   id: 'api_key_id',
   token: 'masumi_payment_api_key_secret',
+  // Flag-based permissions
+  canRead: true,
+  canPay: true,
+  canAdmin: true,
+  // Legacy permission
   permission: Permission.Admin,
   usageLimited: true,
   networkLimit: [Network.Preprod],

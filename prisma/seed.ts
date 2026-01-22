@@ -62,12 +62,22 @@ export const seed = async (prisma: PrismaClient) => {
     create: {
       token: adminKey,
       tokenHash: generateSHA256Hash(adminKey),
+      // Flag-based permissions (new system)
+      canRead: true,
+      canPay: true,
+      canAdmin: true,
+      // Legacy permission (for backward compatibility)
       permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },
     update: {
       token: adminKey,
       tokenHash: generateSHA256Hash(adminKey),
+      // Flag-based permissions (new system)
+      canRead: true,
+      canPay: true,
+      canAdmin: true,
+      // Legacy permission (for backward compatibility)
       permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },

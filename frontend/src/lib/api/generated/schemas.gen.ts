@@ -11,6 +11,18 @@ export const APIKeySchema = {
             type: 'string',
             description: 'The API key token'
         },
+        canRead: {
+            type: 'boolean',
+            description: 'Whether this API key can access read endpoints'
+        },
+        canPay: {
+            type: 'boolean',
+            description: 'Whether this API key can access payment/purchase endpoints'
+        },
+        canAdmin: {
+            type: 'boolean',
+            description: 'Whether this API key has admin access'
+        },
         permission: {
             type: 'string',
             enum: [
@@ -18,7 +30,7 @@ export const APIKeySchema = {
                 'ReadAndPay',
                 'Admin'
             ],
-            description: 'Permission level of the API key'
+            description: 'Permission level of the API key (computed from flags for backward compatibility)'
         },
         usageLimited: {
             type: 'boolean',
@@ -68,6 +80,9 @@ export const APIKeySchema = {
     required: [
         'id',
         'token',
+        'canRead',
+        'canPay',
+        'canAdmin',
         'permission',
         'usageLimited',
         'networkLimit',
