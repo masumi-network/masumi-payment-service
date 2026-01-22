@@ -32,13 +32,19 @@ export const apiKeyOutputSchema = z
     id: z.string().describe('Unique identifier for the API key'),
     token: z.string().describe('The API key token'),
     // Flag-based permissions (new system)
-    canRead: z.boolean().describe('Whether this API key can access read endpoints'),
-    canPay: z.boolean().describe('Whether this API key can access payment/purchase endpoints'),
+    canRead: z
+      .boolean()
+      .describe('Whether this API key can access read endpoints'),
+    canPay: z
+      .boolean()
+      .describe('Whether this API key can access payment/purchase endpoints'),
     canAdmin: z.boolean().describe('Whether this API key has admin access'),
     // Legacy permission (for backward compatibility)
     permission: z
       .nativeEnum(Permission)
-      .describe('Permission level of the API key (computed from flags for backward compatibility)'),
+      .describe(
+        'Permission level of the API key (computed from flags for backward compatibility)',
+      ),
     usageLimited: z.boolean().describe('Whether the API key has usage limits'),
     networkLimit: z
       .array(z.nativeEnum(Network))
@@ -89,7 +95,11 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
       ApiKeys: result.map((data) => ({
         ...data,
         // Compute legacy permission from flags for backward compatibility
-        permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin) as Permission,
+        permission: computePermissionFromFlags(
+          data.canRead,
+          data.canPay,
+          data.canAdmin,
+        ) as Permission,
         RemainingUsageCredits: transformBigIntAmounts(
           data.RemainingUsageCredits,
         ),
@@ -166,14 +176,20 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     let canPay: boolean;
     let canAdmin: boolean;
 
-    if (input.canRead !== undefined || input.canPay !== undefined || input.canAdmin !== undefined) {
+    if (
+      input.canRead !== undefined ||
+      input.canPay !== undefined ||
+      input.canAdmin !== undefined
+    ) {
       // New flag-based input - use flags directly
       canRead = input.canRead ?? true;
       canPay = input.canPay ?? false;
       canAdmin = input.canAdmin ?? false;
     } else if (input.permission) {
       // Legacy permission input - convert to flags
-      const flags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+      const flags = flagsFromLegacyPermission(
+        input.permission as LegacyPermission,
+      );
       canRead = flags.canRead;
       canPay = flags.canPay;
       canAdmin = flags.canAdmin;
@@ -187,7 +203,11 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     const apiKey = 'masumi-payment-' + (canAdmin ? 'admin-' : '') + createId();
 
     // Compute legacy permission for storage
-    const legacyPermission = computePermissionFromFlags(canRead, canPay, canAdmin) as Permission;
+    const legacyPermission = computePermissionFromFlags(
+      canRead,
+      canPay,
+      canAdmin,
+    ) as Permission;
 
     const result = await prisma.apiKey.create({
       data: {
@@ -355,12 +375,19 @@ export const updateAPIKeyEndpointPatch =
           }
 
           // Determine new flag values
-          const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
-          const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
-          const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
+          const newCanRead =
+            input.canRead !== undefined ? input.canRead : apiKey.canRead;
+          const newCanPay =
+            input.canPay !== undefined ? input.canPay : apiKey.canPay;
+          const newCanAdmin =
+            input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
 
           // Compute legacy permission for storage
-          const legacyPermission = computePermissionFromFlags(newCanRead, newCanPay, newCanAdmin) as Permission;
+          const legacyPermission = computePermissionFromFlags(
+            newCanRead,
+            newCanPay,
+            newCanAdmin,
+          ) as Permission;
 
           const result = await prisma.apiKey.update({
             where: { id: input.id },
@@ -388,7 +415,11 @@ export const updateAPIKeyEndpointPatch =
       );
       return {
         ...apiKey,
-        permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin) as Permission,
+        permission: computePermissionFromFlags(
+          apiKey.canRead,
+          apiKey.canPay,
+          apiKey.canAdmin,
+        ) as Permission,
         RemainingUsageCredits: transformBigIntAmounts(
           apiKey.RemainingUsageCredits,
         ),
@@ -424,7 +455,11 @@ export const deleteAPIKeyEndpointDelete =
       });
       return {
         ...apiKey,
-        permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin) as Permission,
+        permission: computePermissionFromFlags(
+          apiKey.canRead,
+          apiKey.canPay,
+          apiKey.canAdmin,
+        ) as Permission,
         RemainingUsageCredits: transformBigIntAmounts(
           apiKey.RemainingUsageCredits,
         ),
