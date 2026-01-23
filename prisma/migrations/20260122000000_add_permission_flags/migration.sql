@@ -1,5 +1,5 @@
 -- Migration: Add permission flags to ApiKey model
--- This migration introduces a flag-based permission system while maintaining backward compatibility
+-- This migration converts the legacy permission enum to flag-based permissions and removes the enum
 
 -- Step 1: Add new boolean columns with safe defaults
 ALTER TABLE "ApiKey" ADD COLUMN "canRead" BOOLEAN NOT NULL DEFAULT true;
@@ -16,5 +16,8 @@ UPDATE "ApiKey" SET
   "canPay" = CASE WHEN "permission" IN ('ReadAndPay', 'Admin') THEN true ELSE false END,
   "canAdmin" = CASE WHEN "permission" = 'Admin' THEN true ELSE false END;
 
--- Note: The 'permission' column is kept for backward compatibility during the transition period.
--- It will be removed in a future migration after all code has been updated to use flags.
+-- Step 3: Drop the legacy permission column (data has been converted to flags)
+ALTER TABLE "ApiKey" DROP COLUMN "permission";
+
+-- Step 4: Drop the Permission enum type (no longer needed)
+DROP TYPE "Permission";

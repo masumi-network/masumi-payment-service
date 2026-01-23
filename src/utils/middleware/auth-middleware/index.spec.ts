@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testMiddleware } from 'express-zod-api';
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { generateSHA256Hash } from '@/utils/crypto';
 
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -29,7 +29,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -126,7 +125,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: false,
       canAdmin: false,
-      permission: Permission.Read,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -148,7 +146,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: false,
-      permission: Permission.ReadAndPay,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -170,7 +167,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      permission: Permission.Admin,
       status: ApiKeyStatus.Revoked,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -192,7 +188,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: false,
       canAdmin: false,
-      permission: Permission.Read,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -222,7 +217,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: false,
-      permission: Permission.ReadAndPay,
       status: ApiKeyStatus.Active,
       usageLimited: true,
       networkLimit: [],
@@ -250,7 +244,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [],
@@ -278,7 +271,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: false,
-      permission: Permission.ReadAndPay,
       status: ApiKeyStatus.Active,
       usageLimited: false,
       networkLimit: [Network.Preprod, Network.Mainnet],
@@ -308,7 +300,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -330,7 +321,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',
@@ -352,7 +342,6 @@ describe('authMiddleware', () => {
       canRead: true,
       canPay: true,
       canAdmin: false,
-      permission: Permission.ReadAndPay,
       status: ApiKeyStatus.Active,
       tokenHash: generateSHA256Hash('valid'),
       token: 'valid',

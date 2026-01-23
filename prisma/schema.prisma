@@ -15,13 +15,10 @@ model ApiKey {
   tokenHash             String            @unique
   status                ApiKeyStatus
 
-  // Flag-based permissions (new system)
+  // Flag-based permissions
   canRead               Boolean           @default(true)
   canPay                Boolean           @default(false)
   canAdmin              Boolean           @default(false)
-
-  // Legacy permission field (deprecated - kept for backward compatibility during migration)
-  permission            Permission
 
   networkLimit          Network[]
   usageLimited          Boolean           @default(false)
@@ -378,12 +375,6 @@ model PaymentSourceConfig {
 enum ApiKeyStatus {
   Active
   Revoked
-}
-
-enum Permission {
-  Read
-  ReadAndPay
-  Admin
 }
 
 enum HotWalletType {
