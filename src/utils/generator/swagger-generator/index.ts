@@ -365,6 +365,13 @@ import {
   deleteWebhookSchemaInput,
   deleteWebhookSchemaOutput,
 } from '@/routes/api/webhooks';
+import {
+  monitoringStatusResponseSchema,
+  triggerMonitoringCycleResponseSchema,
+  startMonitoringSchemaInput,
+  startMonitoringResponseSchema,
+  stopMonitoringResponseSchema,
+} from '@/routes/api/monitoring';
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -3413,6 +3420,161 @@ export function generateOpenAPI() {
       },
       500: {
         description: 'Internal Server Error',
+      },
+    },
+  });
+
+  /********************* MONITORING *****************************/
+  registry.registerPath({
+    method: 'get',
+    path: '/monitoring/',
+    description:
+      'Gets the current status of the blockchain state monitoring service',
+    summary: 'Get monitoring service status. (admin access required)',
+    tags: ['monitoring'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Monitoring service status',
+        content: {
+          'application/json': {
+            schema: monitoringStatusResponseSchema.openapi({
+              example: {
+                monitoringStatus: {
+                  isMonitoring: true,
+                  stats: {
+                    trackedEntities: 42,
+                    purchaseCursor: {
+                      timestamp: '2024-01-01T00:00:00.000Z',
+                      lastId: 'cuid_v2_auto_generated',
+                    },
+                    paymentCursor: {
+                      timestamp: '2024-01-01T00:00:00.000Z',
+                      lastId: 'cuid_v2_auto_generated',
+                    },
+                    memoryUsage: {
+                      heapUsed: '50MB',
+                      heapTotal: '100MB',
+                      external: '10MB',
+                    },
+                  },
+                },
+              },
+            }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (admin access required)',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/monitoring/trigger-cycle/',
+    description:
+      'Manually triggers a monitoring cycle to check blockchain state',
+    summary: 'Trigger a manual monitoring cycle. (admin access required)',
+    tags: ['monitoring'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Monitoring cycle trigger result',
+        content: {
+          'application/json': {
+            schema: triggerMonitoringCycleResponseSchema.openapi({
+              example: {
+                message: 'Manual monitoring cycle completed successfully',
+                triggered: true,
+              },
+            }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (admin access required)',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/monitoring/start/',
+    description:
+      'Starts the blockchain state monitoring service with a specified interval',
+    summary: 'Start the monitoring service. (admin access required)',
+    tags: ['monitoring'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    request: {
+      body: {
+        description: 'Monitoring start configuration',
+        content: {
+          'application/json': {
+            schema: startMonitoringSchemaInput.openapi({
+              example: {
+                intervalMs: 30000,
+              },
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: 'Monitoring service start result',
+        content: {
+          'application/json': {
+            schema: startMonitoringResponseSchema.openapi({
+              example: {
+                message: 'Monitoring service started with 30000ms interval',
+                started: true,
+              },
+            }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (admin access required)',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/monitoring/stop/',
+    description: 'Stops the blockchain state monitoring service',
+    summary: 'Stop the monitoring service. (admin access required)',
+    tags: ['monitoring'],
+    security: [{ [apiKeyAuth.name]: [] }],
+    responses: {
+      200: {
+        description: 'Monitoring service stop result',
+        content: {
+          'application/json': {
+            schema: stopMonitoringResponseSchema.openapi({
+              example: {
+                message: 'Monitoring service stopped successfully',
+                stopped: true,
+              },
+            }),
+          },
+        },
+      },
+      401: {
+        description: 'Unauthorized',
+      },
+      403: {
+        description: 'Forbidden (admin access required)',
       },
     },
   });

@@ -236,6 +236,8 @@ model PaymentRequest {
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
   @@index([onChainStateOrResultLastChangedAt, id])
+  @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PaymentRequest_combinedLastChangedAt_idx")
+  @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PaymentRequest_combinedLastChangedAt_id_idx")
 }
 
 model PaymentActionData {
@@ -296,6 +298,8 @@ model PurchaseRequest {
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
   @@index([onChainStateOrResultLastChangedAt, id])
+  @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PurchaseRequest_combinedLastChangedAt_idx")
+  @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PurchaseRequest_combinedLastChangedAt_id_idx")
 }
 
 model PurchaseActionData {

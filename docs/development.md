@@ -41,9 +41,9 @@ The Masumi Payment Service is built using a hexagonal architecture pattern, sepa
 
 This project uses Jest as the testing framework. Here's how you can run tests:
 
-- Run `npm run test` to execute all tests.
-- Run `npm run test:watch` to run tests in watch mode, which will re-run tests on file changes.
-- Run `npm run test:coverage` to see the test coverage report.
+- Run `pnpm run test` to execute all tests.
+- Run `pnpm run test:watch` to run tests in watch mode, which will re-run tests on file changes.
+- Run `pnpm run test:coverage` to see the test coverage report.
 
 ### Writing Tests
 

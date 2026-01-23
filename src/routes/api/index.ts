@@ -57,6 +57,12 @@ import {
   queryPurchaseDiffNextActionGet,
   queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
+import {
+  getMonitoringStatus,
+  triggerMonitoringCycle,
+  startMonitoring,
+  stopMonitoring,
+} from './monitoring';
 
 export const apiRouter: Routing = {
   v1: {
@@ -167,6 +173,18 @@ export const apiRouter: Routing = {
       get: listWebhooksGet,
       post: registerWebhookPost,
       delete: deleteWebhookDelete,
+    },
+    monitoring: {
+      get: getMonitoringStatus,
+      'trigger-cycle': {
+        post: triggerMonitoringCycle,
+      },
+      start: {
+        post: startMonitoring,
+      },
+      stop: {
+        post: stopMonitoring,
+      },
     },
   },
 };

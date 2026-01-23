@@ -502,8 +502,8 @@ export default function WalletsPage() {
                             <FaExchangeAlt className="h-4 w-4" />
                           </Button>*/}
                           <Button
-                            variant="muted"
                             className="h-8"
+                            variant="muted"
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedWalletForTopup(wallet);

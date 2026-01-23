@@ -2506,3 +2506,191 @@ export const RpcProviderKeySchema = {
         'network'
     ]
 } as const;
+
+export const MonitoringStatusSchema = {
+    type: 'object',
+    properties: {
+        monitoringStatus: {
+            type: 'object',
+            properties: {
+                isMonitoring: {
+                    type: 'boolean',
+                    description: 'Whether the blockchain state monitoring service is currently running'
+                },
+                stats: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        trackedEntities: {
+                            type: 'number',
+                            description: 'Number of entities being tracked by the monitoring service'
+                        },
+                        purchaseCursor: {
+                            type: 'object',
+                            properties: {
+                                timestamp: {
+                                    type: 'string',
+                                    description: 'Last processed purchase timestamp'
+                                },
+                                lastId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Last processed purchase ID'
+                                }
+                            },
+                            required: [
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for purchase diff tracking'
+                        },
+                        paymentCursor: {
+                            type: 'object',
+                            properties: {
+                                timestamp: {
+                                    type: 'string',
+                                    description: 'Last processed payment timestamp'
+                                },
+                                lastId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Last processed payment ID'
+                                }
+                            },
+                            required: [
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for payment diff tracking'
+                        },
+                        memoryUsage: {
+                            type: 'object',
+                            properties: {
+                                heapUsed: {
+                                    type: 'string',
+                                    description: 'Heap memory currently used by the monitoring service '
+                                },
+                                heapTotal: {
+                                    type: 'string',
+                                    description: 'Total heap memory allocated for the monitoring service '
+                                },
+                                external: {
+                                    type: 'string',
+                                    description: 'External memory used by the monitoring service '
+                                }
+                            },
+                            required: [
+                                'heapUsed',
+                                'heapTotal',
+                                'external'
+                            ],
+                            description: 'Memory usage statistics for the monitoring service'
+                        }
+                    },
+                    required: [
+                        'trackedEntities',
+                        'purchaseCursor',
+                        'paymentCursor',
+                        'memoryUsage'
+                    ],
+                    description: 'Monitoring statistics. Null if monitoring is not active'
+                }
+            },
+            required: [
+                'isMonitoring',
+                'stats'
+            ],
+            description: 'Current status of the blockchain state monitoring service'
+        }
+    },
+    required: [
+        'monitoringStatus'
+    ],
+    example: {
+        monitoringStatus: {
+            isMonitoring: true,
+            stats: {
+                trackedEntities: 42,
+                purchaseCursor: {
+                    timestamp: '2024-01-01T00:00:00.000Z',
+                    lastId: 'cuid_v2_auto_generated'
+                },
+                paymentCursor: {
+                    timestamp: '2024-01-01T00:00:00.000Z',
+                    lastId: 'cuid_v2_auto_generated'
+                },
+                memoryUsage: {
+                    heapUsed: '50MB',
+                    heapTotal: '100MB',
+                    external: '10MB'
+                }
+            }
+        }
+    }
+} as const;
+
+export const TriggeredMonitoringCycleSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about the monitoring cycle trigger'
+        },
+        triggered: {
+            type: 'boolean',
+            description: 'Whether the monitoring cycle was successfully triggered'
+        }
+    },
+    required: [
+        'message',
+        'triggered'
+    ],
+    example: {
+        message: 'Manual monitoring cycle completed successfully',
+        triggered: true
+    }
+} as const;
+
+export const StartedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about starting the monitoring service'
+        },
+        started: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully started'
+        }
+    },
+    required: [
+        'message',
+        'started'
+    ],
+    example: {
+        message: 'Monitoring service started with 30000ms interval',
+        started: true
+    }
+} as const;
+
+export const StoppedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about stopping the monitoring service'
+        },
+        stopped: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully stopped'
+        }
+    },
+    required: [
+        'message',
+        'stopped'
+    ],
+    example: {
+        message: 'Monitoring service stopped successfully',
+        stopped: true
+    }
+} as const;
