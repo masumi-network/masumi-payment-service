@@ -2496,6 +2496,190 @@
                     "updatedAt",
                     "network"
                 ]
+            },
+            "MonitoringStatus": {
+                "type": "object",
+                "properties": {
+                    "monitoringStatus": {
+                        "type": "object",
+                        "properties": {
+                            "isMonitoring": {
+                                "type": "boolean",
+                                "description": "Whether the blockchain state monitoring service is currently running"
+                            },
+                            "stats": {
+                                "type": "object",
+                                "nullable": true,
+                                "properties": {
+                                    "trackedEntities": {
+                                        "type": "number",
+                                        "description": "Number of entities being tracked by the monitoring service"
+                                    },
+                                    "purchaseCursor": {
+                                        "type": "object",
+                                        "properties": {
+                                            "timestamp": {
+                                                "type": "string",
+                                                "description": "Last processed purchase timestamp"
+                                            },
+                                            "lastId": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "description": "Last processed purchase ID"
+                                            }
+                                        },
+                                        "required": [
+                                            "timestamp",
+                                            "lastId"
+                                        ],
+                                        "description": "Cursor position for purchase diff tracking"
+                                    },
+                                    "paymentCursor": {
+                                        "type": "object",
+                                        "properties": {
+                                            "timestamp": {
+                                                "type": "string",
+                                                "description": "Last processed payment timestamp"
+                                            },
+                                            "lastId": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "description": "Last processed payment ID"
+                                            }
+                                        },
+                                        "required": [
+                                            "timestamp",
+                                            "lastId"
+                                        ],
+                                        "description": "Cursor position for payment diff tracking"
+                                    },
+                                    "memoryUsage": {
+                                        "type": "object",
+                                        "properties": {
+                                            "heapUsed": {
+                                                "type": "string",
+                                                "description": "Heap memory currently used by the monitoring service "
+                                            },
+                                            "heapTotal": {
+                                                "type": "string",
+                                                "description": "Total heap memory allocated for the monitoring service "
+                                            },
+                                            "external": {
+                                                "type": "string",
+                                                "description": "External memory used by the monitoring service "
+                                            }
+                                        },
+                                        "required": [
+                                            "heapUsed",
+                                            "heapTotal",
+                                            "external"
+                                        ],
+                                        "description": "Memory usage statistics for the monitoring service"
+                                    }
+                                },
+                                "required": [
+                                    "trackedEntities",
+                                    "purchaseCursor",
+                                    "paymentCursor",
+                                    "memoryUsage"
+                                ],
+                                "description": "Monitoring statistics. Null if monitoring is not active"
+                            }
+                        },
+                        "required": [
+                            "isMonitoring",
+                            "stats"
+                        ],
+                        "description": "Current status of the blockchain state monitoring service"
+                    }
+                },
+                "required": [
+                    "monitoringStatus"
+                ],
+                "example": {
+                    "monitoringStatus": {
+                        "isMonitoring": true,
+                        "stats": {
+                            "trackedEntities": 42,
+                            "purchaseCursor": {
+                                "timestamp": "2024-01-01T00:00:00.000Z",
+                                "lastId": "cuid_v2_auto_generated"
+                            },
+                            "paymentCursor": {
+                                "timestamp": "2024-01-01T00:00:00.000Z",
+                                "lastId": "cuid_v2_auto_generated"
+                            },
+                            "memoryUsage": {
+                                "heapUsed": "50MB",
+                                "heapTotal": "100MB",
+                                "external": "10MB"
+                            }
+                        }
+                    }
+                }
+            },
+            "TriggeredMonitoringCycle": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Status message about the monitoring cycle trigger"
+                    },
+                    "triggered": {
+                        "type": "boolean",
+                        "description": "Whether the monitoring cycle was successfully triggered"
+                    }
+                },
+                "required": [
+                    "message",
+                    "triggered"
+                ],
+                "example": {
+                    "message": "Manual monitoring cycle completed successfully",
+                    "triggered": true
+                }
+            },
+            "StartedMonitoring": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Status message about starting the monitoring service"
+                    },
+                    "started": {
+                        "type": "boolean",
+                        "description": "Whether the monitoring service was successfully started"
+                    }
+                },
+                "required": [
+                    "message",
+                    "started"
+                ],
+                "example": {
+                    "message": "Monitoring service started with 30000ms interval",
+                    "started": true
+                }
+            },
+            "StoppedMonitoring": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Status message about stopping the monitoring service"
+                    },
+                    "stopped": {
+                        "type": "boolean",
+                        "description": "Whether the monitoring service was successfully stopped"
+                    }
+                },
+                "required": [
+                    "message",
+                    "stopped"
+                ],
+                "example": {
+                    "message": "Monitoring service stopped successfully",
+                    "stopped": true
+                }
             }
         },
         "parameters": {}
@@ -14001,6 +14185,156 @@
                     },
                     "500": {
                         "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/monitoring/": {
+            "get": {
+                "description": "Gets the current status of the blockchain state monitoring service",
+                "summary": "Get monitoring service status. (admin access required)",
+                "tags": [
+                    "monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Monitoring service status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MonitoringStatus"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (admin access required)"
+                    }
+                }
+            }
+        },
+        "/monitoring/trigger-cycle/": {
+            "post": {
+                "description": "Manually triggers a monitoring cycle to check blockchain state",
+                "summary": "Trigger a manual monitoring cycle. (admin access required)",
+                "tags": [
+                    "monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Monitoring cycle trigger result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TriggeredMonitoringCycle"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (admin access required)"
+                    }
+                }
+            }
+        },
+        "/monitoring/start/": {
+            "post": {
+                "description": "Starts the blockchain state monitoring service with a specified interval",
+                "summary": "Start the monitoring service. (admin access required)",
+                "tags": [
+                    "monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Monitoring start configuration",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "intervalMs": {
+                                        "type": "number",
+                                        "minimum": 5000,
+                                        "maximum": 300000,
+                                        "default": 30000,
+                                        "description": "Monitoring interval in milliseconds"
+                                    }
+                                },
+                                "example": {
+                                    "intervalMs": 30000
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Monitoring service start result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StartedMonitoring"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (admin access required)"
+                    }
+                }
+            }
+        },
+        "/monitoring/stop/": {
+            "post": {
+                "description": "Stops the blockchain state monitoring service",
+                "summary": "Stop the monitoring service. (admin access required)",
+                "tags": [
+                    "monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Monitoring service stop result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StoppedMonitoring"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden (admin access required)"
                     }
                 }
             }

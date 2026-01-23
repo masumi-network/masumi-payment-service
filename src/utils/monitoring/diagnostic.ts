@@ -1,5 +1,6 @@
 import { prisma } from '@/utils/db';
 import { logInfo, logError } from '@/utils/logs';
+import { fileURLToPath } from 'node:url';
 
 export async function checkRegistryData() {
   try {
@@ -74,7 +75,8 @@ export async function checkRegistryData() {
   }
 }
 
-if (require.main === module) {
+// Check if this file is being run directly (ES module equivalent of require.main === module)
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   void checkRegistryData().then(() => {
     process.exit(0);
   });
