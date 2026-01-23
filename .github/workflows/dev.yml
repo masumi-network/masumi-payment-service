@@ -52,7 +52,7 @@ jobs:
       - name: Generate Postman Collection
         if: steps.check_json_changed.outputs.changed == 'true'
         run: |
-          pnpm exec openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p
+          npx openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p
 
       - name: Run ESLint for issues
         id: lint_fix_remaining
