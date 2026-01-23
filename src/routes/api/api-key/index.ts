@@ -185,6 +185,14 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
       canRead = input.canRead ?? true;
       canPay = input.canPay ?? false;
       canAdmin = input.canAdmin ?? false;
+
+      // Validate: at least canRead must be true (all keys need read access)
+      if (!canRead && !canPay && !canAdmin) {
+        throw createHttpError(
+          400,
+          'API key must have at least one permission. canRead must be true.',
+        );
+      }
     } else if (input.permission) {
       // Legacy permission input - convert to flags
       const flags = flagsFromLegacyPermission(
@@ -293,19 +301,7 @@ export const updateAPIKeySchemaInput = z.object({
     .default([Network.Mainnet, Network.Preprod])
     .optional()
     .describe('The networks the API key is allowed to use'),
-  // Flag-based permissions (new system - optional for updates)
-  canRead: z
-    .boolean()
-    .optional()
-    .describe('Whether this API key can access read endpoints'),
-  canPay: z
-    .boolean()
-    .optional()
-    .describe('Whether this API key can access payment/purchase endpoints'),
-  canAdmin: z
-    .boolean()
-    .optional()
-    .describe('Whether this API key has admin access'),
+  // Note: Permission flags (canRead, canPay, canAdmin) cannot be changed after creation
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -371,14 +367,7 @@ export const updateAPIKeyEndpointPatch =
             }
           }
 
-          // Determine new flag values
-          const newCanRead =
-            input.canRead !== undefined ? input.canRead : apiKey.canRead;
-          const newCanPay =
-            input.canPay !== undefined ? input.canPay : apiKey.canPay;
-          const newCanAdmin =
-            input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
-
+          // Note: Permission flags (canRead, canPay, canAdmin) cannot be changed after creation
           const result = await prisma.apiKey.update({
             where: { id: input.id },
             data: {
@@ -386,9 +375,6 @@ export const updateAPIKeyEndpointPatch =
               usageLimited: input.usageLimited,
               status: input.status,
               networkLimit: input.networkLimit,
-              canRead: newCanRead,
-              canPay: newCanPay,
-              canAdmin: newCanAdmin,
             },
             include: {
               RemainingUsageCredits: { select: { amount: true, unit: true } },
