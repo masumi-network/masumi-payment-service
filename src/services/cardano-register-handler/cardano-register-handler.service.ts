@@ -87,12 +87,12 @@ function buildAgentMetadata(request: {
   Pricing: {
     pricingType: PricingType;
     FixedPricing?: {
-      Amounts: Array<{ unit: string; amount: bigint; [key: string]: unknown }>;
+      Amounts: Array<{ unit: string; amount: bigint;[key: string]: unknown }>;
     } | null;
   };
   metadataVersion: number;
 }): AgentMetadata {
-  return {
+  const metadata = {
     name: stringToMetadata(request.name),
     description: stringToMetadata(request.description),
     api_base_url: stringToMetadata(request.apiBaseUrl),
@@ -104,9 +104,9 @@ function buildAgentMetadata(request: {
     capability:
       request.capabilityName && request.capabilityVersion
         ? {
-            name: stringToMetadata(request.capabilityName),
-            version: stringToMetadata(request.capabilityVersion),
-          }
+          name: stringToMetadata(request.capabilityName),
+          version: stringToMetadata(request.capabilityVersion),
+        }
         : undefined,
     author: {
       name: stringToMetadata(request.authorName),
@@ -123,19 +123,41 @@ function buildAgentMetadata(request: {
     agentPricing:
       request.Pricing.pricingType == PricingType.Fixed
         ? {
-            pricingType: PricingType.Fixed,
-            fixedPricing:
-              request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
-                unit: stringToMetadata(pricing.unit),
-                amount: pricing.amount.toString(),
-              })) ?? [],
-          }
+          pricingType: PricingType.Fixed,
+          fixedPricing:
+            request.Pricing.FixedPricing?.Amounts.map((pricing) => ({
+              unit: stringToMetadata(pricing.unit),
+              amount: pricing.amount.toString(),
+            })) ?? [],
+        }
         : {
-            pricingType: PricingType.Free,
-          },
+          pricingType: PricingType.Free,
+        },
     image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
     metadata_version: request.metadataVersion.toString(),
   };
+  // Clean undefined values from metadata - MeshSDK cannot serialize undefined
+  return cleanMetadata(metadata) as AgentMetadata;
+}
+
+
+function cleanMetadata(obj: unknown): unknown {
+  if (obj === undefined || obj === null) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanMetadata);
+  }
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanMetadata(value);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
 }
 
 export async function registerAgentV1() {
@@ -263,9 +285,8 @@ export async function registerAgentV1() {
 
             logger.debug(`Created withdrawal transaction:
                   Tx ID: ${newTxHash}
-                  View (after a bit) on https://${
-                    network === 'preprod' ? 'preprod.' : ''
-                  }cardanoscan.io/transaction/${newTxHash}
+                  View (after a bit) on https://${network === 'preprod' ? 'preprod.' : ''
+              }cardanoscan.io/transaction/${newTxHash}
               `);
             return true;
           }),
@@ -304,11 +325,11 @@ export async function registerAgentV1() {
 
 type AgentMetadata = {
   [key: string]:
-    | string
-    | string[]
-    | AgentMetadata
-    | AgentMetadata[]
-    | undefined;
+  | string
+  | string[]
+  | AgentMetadata
+  | AgentMetadata[]
+  | undefined;
 };
 
 async function generateRegisterAgentTransaction(
