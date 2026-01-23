@@ -12,7 +12,7 @@ export class BlockchainStateMonitorService {
   async startMonitoring(intervalMs: number = 30000) {
     if (this.isMonitoring) {
       logger.warn('Blockchain state monitoring is already running');
-      return;
+      throw new Error('Blockchain state monitoring is already running');
     }
 
     logger.info('Starting blockchain state monitoring service', {
