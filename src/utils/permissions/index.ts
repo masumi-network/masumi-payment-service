@@ -49,7 +49,11 @@ export function computePermissionFromFlags(
 ): LegacyPermission {
   if (canAdmin) return 'Admin';
   if (canPay) return 'ReadAndPay';
-  return 'Read';
+  if (canRead) return 'Read';
+  // All flags are false - this is an invalid state
+  throw new Error(
+    'Invalid permission flags: at least one permission must be enabled',
+  );
 }
 
 /**

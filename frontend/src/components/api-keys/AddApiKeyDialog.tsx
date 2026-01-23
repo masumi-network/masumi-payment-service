@@ -118,6 +118,7 @@ export function AddApiKeyDialog({
   });
 
   const permissionPreset = watch('permissionPreset');
+  const canRead = watch('canRead');
   const canAdmin = watch('canAdmin');
   const canPay = watch('canPay');
   const usageLimited = watch('usageLimited');
@@ -139,7 +140,7 @@ export function AddApiKeyDialog({
   }, [permissionPreset, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    const isReadOnly = !data.canPay && !data.canAdmin;
+    const isReadOnly = data.canRead && !data.canPay && !data.canAdmin;
     const defaultCredits = [
       {
         unit: 'lovelace',
@@ -202,7 +203,7 @@ export function AddApiKeyDialog({
     onClose();
   };
 
-  const isReadOnly = !canPay && !canAdmin;
+  const isReadOnly = canRead && !canPay && !canAdmin;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
