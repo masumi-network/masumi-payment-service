@@ -151,8 +151,15 @@ function cleanMetadata(obj: unknown): unknown {
     const cleaned: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
       if (value !== undefined) {
-        cleaned[key] = cleanMetadata(value);
+        const cleanedValue = cleanMetadata(value);
+        if (cleanedValue !== undefined) {
+          cleaned[key] = cleanedValue;
+        }
       }
+    }
+    // Return undefined for empty objects so they get removed at parent level
+    if (Object.keys(cleaned).length === 0) {
+      return undefined;
     }
     return cleaned;
   }
