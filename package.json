@@ -17,12 +17,12 @@
         "test:e2e": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.e2e.config.ts --bail --forceExit",
         "test:e2e:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.e2e.config.ts --watch",
         "test:e2e:verbose": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config jest.e2e.config.ts --verbose",
-        "prisma:generate": "npx prisma generate --config prisma/prisma.config.ts",
-        "prisma:migrate": "npx prisma migrate deploy",
-        "prisma:migrate:dev": "npx prisma migrate dev",
-        "prisma:seed": "npx prisma db seed",
+        "prisma:generate": "pnpm exec prisma generate --config prisma/prisma.config.ts",
+        "prisma:migrate": "pnpm exec prisma migrate deploy",
+        "prisma:migrate:dev": "pnpm exec prisma migrate dev",
+        "prisma:seed": "pnpm exec prisma db seed",
         "dev": "tsx watch ./src/index.ts",
-        "build": "npx prisma generate && tsc --noEmit && pkgroll",
+        "build": "pnpm exec prisma generate && tsc --noEmit && pkgroll",
         "start": "cross-env NODE_ENV=production node ./dist/index.js",
         "swagger-json": "cross-env DATABASE_URL=postgresql://test@localhost:5432/masumi_payment_service ENCRYPTION_KEY=set-mock-enc-key-for-generation tsx ./src/utils/generator/swagger-generator/cli.ts",
         "swagger-postman": "pnpm run swagger-json && openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p",
@@ -115,7 +115,20 @@
         "overrides": {
             "libsodium-wrappers-sumo": "0.7.15",
             "libsodium-sumo": "0.7.15"
-        }
+        },
+        "ignoredBuiltDependencies": [
+            "@parcel/watcher",
+            "@scarf/scarf",
+            "chacha-native",
+            "esbuild",
+            "unrs-resolver"
+        ],
+        "onlyBuiltDependencies": [
+            "@prisma/engines",
+            "prisma",
+            "protobufjs",
+            "sharp"
+        ]
     },
     "lint-staged": {
         "*.{js,ts}": [
