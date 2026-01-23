@@ -1,7 +1,4 @@
-import {
-  TransactionStatus,
-  RegistrationState,
-} from '@/generated/prisma/client';
+import { TransactionStatus, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -25,9 +22,7 @@ import { sortAndLimitUtxos } from '@/utils/utxo';
 
 const mutex = new Mutex();
 
-function validateDeregistrationRequest(request: {
-  agentIdentifier: string | null;
-}): void {
+function validateDeregistrationRequest(request: { agentIdentifier: string | null }): void {
   if (!request.agentIdentifier) {
     throw new Error('Agent identifier is not set');
   }
@@ -125,13 +120,10 @@ export async function deRegisterAgentV1() {
             if (utxos.length === 0) {
               throw new Error('No UTXOs found for the wallet');
             }
-            const { script, policyId } =
-              await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+            const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
             if (!request.agentIdentifier) {
-              throw new Error(
-                'Agent identifier is required for deregistration',
-              );
+              throw new Error('Agent identifier is required for deregistration');
             }
 
             const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
@@ -144,18 +136,17 @@ export async function deRegisterAgentV1() {
 
             const assetName = extractAssetName(request.agentIdentifier);
 
-            const unsignedTx =
-              await generateDeregisterAgentTransactionAutomaticFees(
-                blockchainProvider,
-                network,
-                script,
-                address,
-                policyId,
-                assetName,
-                tokenUtxo,
-                collateralUtxo,
-                limitedFilteredUtxos,
-              );
+            const unsignedTx = await generateDeregisterAgentTransactionAutomaticFees(
+              blockchainProvider,
+              network,
+              script,
+              address,
+              policyId,
+              assetName,
+              tokenUtxo,
+              collateralUtxo,
+              limitedFilteredUtxos,
+            );
 
             const signedTx = await wallet.signTx(unsignedTx);
 
@@ -199,10 +190,7 @@ export async function deRegisterAgentV1() {
             return true;
           },
         });
-        await handlePotentialDeregistrationFailure(
-          result,
-          deregistrationRequest,
-        );
+        await handlePotentialDeregistrationFailure(result, deregistrationRequest);
       }),
     );
   } catch (error) {
@@ -237,9 +225,9 @@ async function generateDeregisterAgentTransactionAutomaticFees(
     collateralUtxo,
     utxos,
   );
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
+  const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+    budget: { mem: number; steps: number };
+  }>;
   return await generateDeregisterAgentTransaction(
     blockchainProvider,
     network,
@@ -287,10 +275,7 @@ async function generateDeregisterAgentTransaction(
     .mintingScript(script.code)
     .mintRedeemerValue({ alternative: 1, fields: [] }, 'Mesh', exUnits)
     .txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-    .txInCollateral(
-      collateralUtxo.input.txHash,
-      collateralUtxo.input.outputIndex,
-    )
+    .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
     .setTotalCollateral('3000000');
   for (const utxo of utxos) {
     txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);

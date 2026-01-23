@@ -2,35 +2,19 @@ import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authe
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import {
-  WebhookEventType,
-  Permission,
-  Network,
-} from '@/generated/prisma/client';
+import { WebhookEventType, Permission, Network } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 
 // Schema for registering a new webhook
 export const registerWebhookSchemaInput = z.object({
-  url: z
-    .string()
-    .url()
-    .max(500)
-    .describe('The webhook URL to receive notifications'),
-  authToken: z
-    .string()
-    .min(10)
-    .max(200)
-    .describe('Authentication token for webhook requests'),
+  url: z.string().url().max(500).describe('The webhook URL to receive notifications'),
+  authToken: z.string().min(10).max(200).describe('Authentication token for webhook requests'),
   events: z
     .array(z.nativeEnum(WebhookEventType))
     .min(1)
     .max(10)
     .describe('Array of event types to subscribe to'),
-  name: z
-    .string()
-    .max(100)
-    .optional()
-    .describe('Human-readable name for the webhook'),
+  name: z.string().max(100).optional().describe('Human-readable name for the webhook'),
   paymentSourceId: z
     .string()
     .optional()
@@ -68,11 +52,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
       );
     } else {
       for (const network of Object.values(Network)) {
-        await checkIsAllowedNetworkOrThrowUnauthorized(
-          ctx.networkLimit,
-          network,
-          ctx.permission,
-        );
+        await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, network, ctx.permission);
       }
     }
 
@@ -85,10 +65,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
     });
 
     if (existingWebhook) {
-      throw createHttpError(
-        409,
-        'Webhook URL already registered for this payment source',
-      );
+      throw createHttpError(409, 'Webhook URL already registered for this payment source');
     }
 
     // Create webhook endpoint with creator tracking
@@ -118,21 +95,9 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 
 // Schema for listing webhooks
 export const listWebhooksSchemaInput = z.object({
-  paymentSourceId: z
-    .string()
-    .optional()
-    .nullable()
-    .describe('Filter by payment source ID'),
-  cursorId: z
-    .string()
-    .optional()
-    .describe('Cursor ID to paginate through the results'),
-  limit: z.coerce
-    .number()
-    .min(1)
-    .max(50)
-    .default(10)
-    .describe('Number of webhooks to return'),
+  paymentSourceId: z.string().optional().nullable().describe('Filter by payment source ID'),
+  cursorId: z.string().optional().describe('Cursor ID to paginate through the results'),
+  limit: z.coerce.number().min(1).max(50).default(10).describe('Number of webhooks to return'),
 });
 
 export const listWebhooksSchemaOutput = z.object({
@@ -167,17 +132,12 @@ export const listWebhooksGet = payAuthenticatedEndpointFactory.build({
     const webhooks = await prisma.webhookEndpoint.findMany({
       where: {
         PaymentSource: {
-          network:
-            ctx.permission === Permission.Admin
-              ? undefined
-              : { in: ctx.networkLimit },
+          network: ctx.permission === Permission.Admin ? undefined : { in: ctx.networkLimit },
           deletedAt: null,
           ...(input.paymentSourceId ? { id: input.paymentSourceId } : {}),
         },
         // Only show webhooks created by this API key, unless user is admin
-        ...(ctx.permission === Permission.Admin
-          ? {}
-          : { createdByApiKeyId: ctx.id }),
+        ...(ctx.permission === Permission.Admin ? {} : { createdByApiKeyId: ctx.id }),
       },
       include: {
         CreatedByApiKey: {

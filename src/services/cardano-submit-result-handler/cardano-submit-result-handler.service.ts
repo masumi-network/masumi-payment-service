@@ -56,8 +56,7 @@ type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
   };
 }>;
 
-type PaymentRequestWithRelations =
-  PaymentSourceWithRelations['PaymentRequests'][number];
+type PaymentRequestWithRelations = PaymentSourceWithRelations['PaymentRequests'][number];
 
 type MatchingUtxoResult = {
   utxo: UTxO;
@@ -69,9 +68,7 @@ const mutex = new Mutex();
 /**
  * Determines the new contract state based on current state
  */
-function determineNewContractState(
-  currentState: SmartContractState,
-): SmartContractState {
+function determineNewContractState(currentState: SmartContractState): SmartContractState {
   if (
     currentState === SmartContractState.Disputed ||
     currentState === SmartContractState.RefundRequested
@@ -109,8 +106,7 @@ async function handlePaymentRequestResults(
             create: {
               requestedAction: PaymentAction.WaitingForManualAction,
               errorType: PaymentErrorType.Unknown,
-              errorNote:
-                'Submitting result failed: ' + errorToString(result.error),
+              errorNote: 'Submitting result failed: ' + errorToString(result.error),
             },
           },
           SmartContractWallet: {
@@ -149,29 +145,19 @@ async function findMatchingUtxoAndDecodeContract(
       continue;
     }
 
-    if (
-      !smartContractStateEqualsOnChainState(
-        decodedContract.state,
-        request.onChainState,
-      )
-    ) {
+    if (!smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState)) {
       continue;
     }
     if (decodedContract.buyerVkey !== request.BuyerWallet!.walletVkey) {
       continue;
     }
-    if (
-      decodedContract.sellerVkey !== request.SmartContractWallet!.walletVkey
-    ) {
+    if (decodedContract.sellerVkey !== request.SmartContractWallet!.walletVkey) {
       continue;
     }
     if (decodedContract.buyerAddress !== request.BuyerWallet!.walletAddress) {
       continue;
     }
-    if (
-      decodedContract.sellerAddress !==
-      request.SmartContractWallet!.walletAddress
-    ) {
+    if (decodedContract.sellerAddress !== request.SmartContractWallet!.walletAddress) {
       continue;
     }
     if (decodedContract.blockchainIdentifier !== request.blockchainIdentifier) {
@@ -180,9 +166,7 @@ async function findMatchingUtxoAndDecodeContract(
     if (decodedContract.inputHash !== request.inputHash) {
       continue;
     }
-    if (
-      BigInt(decodedContract.resultTime) !== BigInt(request.submitResultTime)
-    ) {
+    if (BigInt(decodedContract.resultTime) !== BigInt(request.submitResultTime)) {
       continue;
     }
     if (BigInt(decodedContract.unlockTime) !== BigInt(request.unlockTime)) {
@@ -195,8 +179,7 @@ async function findMatchingUtxoAndDecodeContract(
       continue;
     }
     if (
-      BigInt(decodedContract.collateralReturnLovelace) !==
-      BigInt(request.collateralReturnLovelace!)
+      BigInt(decodedContract.collateralReturnLovelace) !== BigInt(request.collateralReturnLovelace!)
     ) {
       continue;
     }
@@ -264,20 +247,16 @@ async function processSinglePaymentRequest(
     resultTime: decodedContract.resultTime,
     unlockTime: decodedContract.unlockTime,
     externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
-    newCooldownTimeSeller: newCooldownTime(
-      BigInt(paymentContract.cooldownTime),
-    ),
+    newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
     newCooldownTimeBuyer: BigInt(0),
     state: determineNewContractState(decodedContract.state),
   });
 
   const invalidBefore =
-    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) -
-    1;
+    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) - 1;
 
   const invalidAfter = Math.min(
-    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
-      5,
+    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) + 5,
     unixTimeToEnclosingSlot(
       Number(decodedContract.resultTime) + 150000,
       SLOT_CONFIG_NETWORK[network],
@@ -286,20 +265,19 @@ async function processSinglePaymentRequest(
 
   const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
 
-  const unsignedTx =
-    await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-      'SubmitResult',
-      blockchainProvider,
-      network,
-      script,
-      address,
-      utxo,
-      limitedUtxos[0],
-      limitedUtxos,
-      datum.value,
-      invalidBefore,
-      invalidAfter,
-    );
+  const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+    'SubmitResult',
+    blockchainProvider,
+    network,
+    script,
+    address,
+    utxo,
+    limitedUtxos[0],
+    limitedUtxos,
+    datum.value,
+    invalidBefore,
+    invalidAfter,
+  );
 
   const signedTx = await wallet.signTx(unsignedTx);
 
@@ -434,12 +412,7 @@ export async function submitResultV1() {
           ],
           operations: paymentRequests.map(
             (request) => async () =>
-              processSinglePaymentRequest(
-                request,
-                paymentContract,
-                blockchainProvider,
-                network,
-              ),
+              processSinglePaymentRequest(request, paymentContract, blockchainProvider, network),
           ),
         });
         await handlePaymentRequestResults(results, paymentRequests);

@@ -39,15 +39,11 @@ export class WebhookEventsService {
   }
 
   private formatPurchaseForWebhook(
-    purchase: NonNullable<
-      Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>
-    >,
+    purchase: NonNullable<Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>>,
   ) {
     return {
       ...purchase,
-      PaidFunds: (
-        purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
+      PaidFunds: (purchase.PaidFunds as Array<{ unit: string; amount: bigint }>).map((amount) => ({
         ...amount,
         amount: amount.amount.toString(),
       })),
@@ -63,8 +59,7 @@ export class WebhookEventsService {
         unit: amount.unit,
         amount: amount.amount.toString(),
       })),
-      collateralReturnLovelace:
-        purchase.collateralReturnLovelace?.toString() ?? null,
+      collateralReturnLovelace: purchase.collateralReturnLovelace?.toString() ?? null,
       payByTime: purchase.payByTime?.toString() ?? null,
       submitResultTime: purchase.submitResultTime.toString(),
       unlockTime: purchase.unlockTime.toString(),
@@ -75,9 +70,7 @@ export class WebhookEventsService {
   }
 
   private formatPaymentForWebhook(
-    payment: NonNullable<
-      Awaited<ReturnType<typeof this.queryPaymentForWebhook>>
-    >,
+    payment: NonNullable<Awaited<ReturnType<typeof this.queryPaymentForWebhook>>>,
   ) {
     return {
       ...payment,
@@ -87,26 +80,25 @@ export class WebhookEventsService {
       payByTime: payment.payByTime?.toString() ?? null,
       unlockTime: payment.unlockTime.toString(),
       externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-      collateralReturnLovelace:
-        payment.collateralReturnLovelace?.toString() ?? null,
-      RequestedFunds: (
-        payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        ...amount,
-        amount: amount.amount.toString(),
-      })),
+      collateralReturnLovelace: payment.collateralReturnLovelace?.toString() ?? null,
+      RequestedFunds: (payment.RequestedFunds as Array<{ unit: string; amount: bigint }>).map(
+        (amount) => ({
+          ...amount,
+          amount: amount.amount.toString(),
+        }),
+      ),
       WithdrawnForSeller: (
         payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
       ).map((amount) => ({
         unit: amount.unit,
         amount: amount.amount.toString(),
       })),
-      WithdrawnForBuyer: (
-        payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-      ).map((amount) => ({
-        unit: amount.unit,
-        amount: amount.amount.toString(),
-      })),
+      WithdrawnForBuyer: (payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>).map(
+        (amount) => ({
+          unit: amount.unit,
+          amount: amount.amount.toString(),
+        }),
+      ),
     };
   }
 

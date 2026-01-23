@@ -57,9 +57,7 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       throw new Error('Test API client not initialized.');
     }
 
-    console.log(
-      `✅ Early Refund Complete Flow environment validated for ${testNetwork}`,
-    );
+    console.log(`✅ Early Refund Complete Flow environment validated for ${testNetwork}`);
   });
 
   afterAll(async () => {
@@ -141,31 +139,22 @@ describe(`Early Refund Complete Flow E2E Tests (${testNetwork})`, () => {
       // ============================
       // STEP 5: REQUEST REFUND (EARLY - WHILE FUNDS LOCKED) (Using Helper Function)
       // ============================
-      console.log(
-        '💸 Step 5: Requesting refund while funds are locked (EARLY REFUND)...',
-      );
+      console.log('💸 Step 5: Requesting refund while funds are locked (EARLY REFUND)...');
       await requestRefund(payment.blockchainIdentifier, testNetwork);
 
-      console.log(
-        '✅ Early refund request submitted while funds were still locked',
-      );
+      console.log('✅ Early refund request submitted while funds were still locked');
 
       // ============================
       // WAIT FOR REFUND REQUESTED STATE (Using Helper Function)
       // ============================
-      console.log(
-        '⏳ Waiting for refund request to be processed on blockchain...',
-      );
+      console.log('⏳ Waiting for refund request to be processed on blockchain...');
       await waitForRefundRequested(payment.blockchainIdentifier, testNetwork);
 
       // ============================
       // STEP 6: SUBMIT RESULT (Using Helper Function)
       // ============================
       console.log('📋 Step 6: Submitting result after refund request...');
-      const result = await submitResult(
-        payment.blockchainIdentifier,
-        testNetwork,
-      );
+      const result = await submitResult(payment.blockchainIdentifier, testNetwork);
 
       console.log(`✅ Result submitted after early refund request:
         - Result Hash: ${result.resultHash}

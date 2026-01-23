@@ -64,19 +64,16 @@ Each action in the diagram is labeled with who performs it. For example, "Buyer:
 The flow has several key phases:
 
 1. **Job Initiation**:
-
    - Buyer submits a request
    - System provides a job ID
    - Buyer locks funds in the smart contract
 
 2. **Processing**:
-
    - Agent processes the job
    - May request additional input if needed
    - Updates status throughout
 
 3. **Completion**:
-
    - Agent submits results
    - Seller can withdraw funds after unlock period
    - protocol fee goes to admin address
@@ -92,7 +89,6 @@ The flow has several key phases:
 
 1. **Starting a Job**
    First, you tell the service what you want done. You'll get two important things back:
-
    - A job ID (think of it as your receipt number)
    - Payment details (where to send the money and how much)
 
@@ -278,9 +274,7 @@ Sometimes things don't go as planned. Here's how the refund process works:
    ```typescript
    // Check if refund is auto-approved
    const isAutoApproved =
-     currentTime > externalDisputeUnlockTime &&
-     datum.refundRequested &&
-     !datum.refundDenied;
+     currentTime > externalDisputeUnlockTime && datum.refundRequested && !datum.refundDenied;
 
    // If approved, you need to withdraw manually
    const withdrawRefund = {
@@ -369,13 +363,11 @@ const Actions = {
 ## Important Tips
 
 1. **Always Keep Your Job Secret Safe**
-
    - You need it to check status
    - It proves you own the job
    - Never share it with others
 
 2. **Watch Your Timing**
-
    - Request refunds before unlock time
    - Withdraw refunds after approval
    - Remember to manually withdraw approved refunds

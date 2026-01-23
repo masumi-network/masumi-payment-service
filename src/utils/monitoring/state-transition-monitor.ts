@@ -1,14 +1,7 @@
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
-import {
-  recordStateTransition,
-  recordBlockchainJourney,
-} from '@/utils/metrics';
-import {
-  PurchasingAction,
-  PaymentAction,
-  Prisma,
-} from '@/generated/prisma/client';
+import { recordStateTransition, recordBlockchainJourney } from '@/utils/metrics';
+import { PurchasingAction, PaymentAction, Prisma } from '@/generated/prisma/client';
 import { webhookEventsService } from '@/services/webhook-handler/webhook-events.service';
 
 interface EntityStateCache {
@@ -34,17 +27,16 @@ export class StateTransitionMonitor {
   private purchaseCursor: DiffCursor = { timestamp: new Date(0) };
   private paymentCursor: DiffCursor = { timestamp: new Date(0) };
 
-  private static readonly MONITORED_PURCHASE_ACTIONS =
-    new Set<PurchasingAction>([
-      PurchasingAction.FundsLockingRequested,
-      PurchasingAction.FundsLockingInitiated,
-      PurchasingAction.WaitingForExternalAction,
-      PurchasingAction.WaitingForManualAction,
-      PurchasingAction.SetRefundRequestedRequested,
-      PurchasingAction.SetRefundRequestedInitiated,
-      PurchasingAction.WithdrawRefundRequested,
-      PurchasingAction.WithdrawRefundInitiated,
-    ]);
+  private static readonly MONITORED_PURCHASE_ACTIONS = new Set<PurchasingAction>([
+    PurchasingAction.FundsLockingRequested,
+    PurchasingAction.FundsLockingInitiated,
+    PurchasingAction.WaitingForExternalAction,
+    PurchasingAction.WaitingForManualAction,
+    PurchasingAction.SetRefundRequestedRequested,
+    PurchasingAction.SetRefundRequestedInitiated,
+    PurchasingAction.WithdrawRefundRequested,
+    PurchasingAction.WithdrawRefundInitiated,
+  ]);
 
   private static readonly MONITORED_PAYMENT_ACTIONS = new Set<PaymentAction>([
     PaymentAction.WithdrawRequested,
@@ -61,10 +53,7 @@ export class StateTransitionMonitor {
     try {
       logger.info('Starting state transition monitoring cycle');
 
-      await Promise.all([
-        this.monitorPurchaseStates(),
-        this.monitorPaymentStates(),
-      ]);
+      await Promise.all([this.monitorPurchaseStates(), this.monitorPaymentStates()]);
 
       logger.info('Completed state transition monitoring cycle');
     } catch (error) {
@@ -72,9 +61,7 @@ export class StateTransitionMonitor {
     }
   }
 
-  private buildPurchaseDiffWhere(
-    cursor: DiffCursor,
-  ): Prisma.PurchaseRequestWhereInput {
+  private buildPurchaseDiffWhere(cursor: DiffCursor): Prisma.PurchaseRequestWhereInput {
     const { timestamp: since, lastId: sinceId } = cursor;
 
     return sinceId != null
@@ -90,9 +77,7 @@ export class StateTransitionMonitor {
       : { nextActionOrOnChainStateOrResultLastChangedAt: { gt: since } };
   }
 
-  private buildPaymentDiffWhere(
-    cursor: DiffCursor,
-  ): Prisma.PaymentRequestWhereInput {
+  private buildPaymentDiffWhere(cursor: DiffCursor): Prisma.PaymentRequestWhereInput {
     const { timestamp: since, lastId: sinceId } = cursor;
 
     return sinceId != null
@@ -117,10 +102,7 @@ export class StateTransitionMonitor {
       while (hasMore) {
         const purchases = await prisma.purchaseRequest.findMany({
           where: this.buildPurchaseDiffWhere(this.purchaseCursor),
-          orderBy: [
-            { nextActionOrOnChainStateOrResultLastChangedAt: 'asc' },
-            { id: 'asc' },
-          ],
+          orderBy: [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }],
           take: StateTransitionMonitor.BATCH_SIZE,
           include: {
             PaymentSource: { select: { network: true, id: true } },
@@ -167,10 +149,7 @@ export class StateTransitionMonitor {
       while (hasMore) {
         const payments = await prisma.paymentRequest.findMany({
           where: this.buildPaymentDiffWhere(this.paymentCursor),
-          orderBy: [
-            { nextActionOrOnChainStateOrResultLastChangedAt: 'asc' },
-            { id: 'asc' },
-          ],
+          orderBy: [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }],
           take: StateTransitionMonitor.BATCH_SIZE,
           include: {
             PaymentSource: { select: { network: true, id: true } },
@@ -217,8 +196,7 @@ export class StateTransitionMonitor {
     const cacheKey = purchase.id;
     const cached = this.purchaseStateCache.get(cacheKey);
     const currentState = purchase.NextAction.requestedAction;
-    const currentTimestamp =
-      purchase.nextActionOrOnChainStateOrResultLastChangedAt;
+    const currentTimestamp = purchase.nextActionOrOnChainStateOrResultLastChangedAt;
 
     if (cached && cached.currentState === currentState) {
       return;
@@ -236,20 +214,12 @@ export class StateTransitionMonitor {
     this.purchaseStateCache.set(cacheKey, newCache);
 
     if (cached) {
-      const duration =
-        currentTimestamp.getTime() - cached.currentTimestamp.getTime();
+      const duration = currentTimestamp.getTime() - cached.currentTimestamp.getTime();
 
-      recordStateTransition(
-        'purchase',
-        cached.currentState,
-        currentState,
-        duration,
-        purchase.id,
-        {
-          network: newCache.network || 'unknown',
-          payment_source_id: newCache.paymentSourceId || 'unknown',
-        },
-      );
+      recordStateTransition('purchase', cached.currentState, currentState, duration, purchase.id, {
+        network: newCache.network || 'unknown',
+        payment_source_id: newCache.paymentSourceId || 'unknown',
+      });
 
       logger.info('Recorded purchase state transition', {
         purchaseId: purchase.id,
@@ -260,9 +230,7 @@ export class StateTransitionMonitor {
 
       // Trigger webhook for purchase state change
       try {
-        await webhookEventsService.triggerPurchaseOnChainStatusChanged(
-          purchase.id,
-        );
+        await webhookEventsService.triggerPurchaseOnChainStatusChanged(purchase.id);
       } catch (error) {
         logger.error('Failed to trigger purchase webhook', {
           purchaseId: purchase.id,
@@ -271,24 +239,14 @@ export class StateTransitionMonitor {
       }
     }
 
-    if (
-      this.isSignificantPurchaseState(currentState) &&
-      newCache.transitionCount > 0
-    ) {
-      const totalDuration =
-        currentTimestamp.getTime() - newCache.firstSeenTimestamp.getTime();
+    if (this.isSignificantPurchaseState(currentState) && newCache.transitionCount > 0) {
+      const totalDuration = currentTimestamp.getTime() - newCache.firstSeenTimestamp.getTime();
 
-      recordBlockchainJourney(
-        'purchase',
-        totalDuration,
-        currentState,
-        purchase.id,
-        {
-          network: newCache.network || 'unknown',
-          payment_source_id: newCache.paymentSourceId || 'unknown',
-          total_transitions: newCache.transitionCount,
-        },
-      );
+      recordBlockchainJourney('purchase', totalDuration, currentState, purchase.id, {
+        network: newCache.network || 'unknown',
+        payment_source_id: newCache.paymentSourceId || 'unknown',
+        total_transitions: newCache.transitionCount,
+      });
     }
   }
 
@@ -301,8 +259,7 @@ export class StateTransitionMonitor {
     const cacheKey = payment.id;
     const cached = this.paymentStateCache.get(cacheKey);
     const currentState = payment.NextAction.requestedAction;
-    const currentTimestamp =
-      payment.nextActionOrOnChainStateOrResultLastChangedAt;
+    const currentTimestamp = payment.nextActionOrOnChainStateOrResultLastChangedAt;
 
     if (cached && cached.currentState === currentState) {
       return;
@@ -320,20 +277,12 @@ export class StateTransitionMonitor {
     this.paymentStateCache.set(cacheKey, newCache);
 
     if (cached) {
-      const duration =
-        currentTimestamp.getTime() - cached.currentTimestamp.getTime();
+      const duration = currentTimestamp.getTime() - cached.currentTimestamp.getTime();
 
-      recordStateTransition(
-        'payment',
-        cached.currentState,
-        currentState,
-        duration,
-        payment.id,
-        {
-          network: newCache.network || 'unknown',
-          payment_source_id: newCache.paymentSourceId || 'unknown',
-        },
-      );
+      recordStateTransition('payment', cached.currentState, currentState, duration, payment.id, {
+        network: newCache.network || 'unknown',
+        payment_source_id: newCache.paymentSourceId || 'unknown',
+      });
 
       logger.info('Recorded payment state transition', {
         paymentId: payment.id,
@@ -344,9 +293,7 @@ export class StateTransitionMonitor {
 
       // Trigger webhook for payment state change
       try {
-        await webhookEventsService.triggerPaymentOnChainStatusChanged(
-          payment.id,
-        );
+        await webhookEventsService.triggerPaymentOnChainStatusChanged(payment.id);
       } catch (error) {
         logger.error('Failed to trigger payment webhook', {
           paymentId: payment.id,
@@ -383,8 +330,7 @@ export class StateTransitionMonitor {
 
   getMonitoringStats() {
     return {
-      trackedEntities:
-        this.purchaseStateCache.size + this.paymentStateCache.size,
+      trackedEntities: this.purchaseStateCache.size + this.paymentStateCache.size,
       purchaseCursor: this.purchaseCursor,
       paymentCursor: this.paymentCursor,
       memoryUsage: process.memoryUsage(),

@@ -49,9 +49,7 @@ export const postPurchaseSpendingSchemaInput = z.object({
     .describe(
       'The time zone to use for the spendings calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
     ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network to query spending from'),
+  network: z.nativeEnum(Network).describe('The Cardano network to query spending from'),
 });
 
 const unitAmountSchema = z
@@ -162,10 +160,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
         ctx.permission,
       );
 
-      const { periodStart, periodEnd } = parseDateRange(
-        input.startDate,
-        input.endDate,
-      );
+      const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
       const allPurchases = await prisma.purchaseRequest.findMany({
         where: {
@@ -195,10 +190,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
         },
       });
 
-      const allPurchasesFiltered = filterByAgentIdentifier(
-        allPurchases,
-        input.agentIdentifier,
-      );
+      const allPurchasesFiltered = filterByAgentIdentifier(allPurchases, input.agentIdentifier);
 
       const totalRefundedMap = {
         units: new Map<string, number>(),
@@ -272,9 +264,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
               dayDateLocal,
               monthDateLocal,
               purchase.WithdrawnForSeller,
-              purchase.WithdrawnForBuyer.length === 0
-                ? purchase.totalBuyerCardanoFees
-                : 0n,
+              purchase.WithdrawnForBuyer.length === 0 ? purchase.totalBuyerCardanoFees : 0n,
             );
           }
         } else {
@@ -306,28 +296,20 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
         monthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
       };
     } catch (error: unknown) {
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
 
-      recordBusinessEndpointError(
-        '/api/v1/purchase/spending',
-        'POST',
-        statusCode,
-        errorInstance,
-        {
-          agent_identifier: input.agentIdentifier ?? 'all',
-          start_date: input.startDate?.toISOString() || 'null',
-          end_date: input.endDate?.toISOString() || 'null',
-          network: input.network,
-          user_id: ctx.id,
-          duration: Date.now() - startTime,
-        },
-      );
+      recordBusinessEndpointError('/api/v1/purchase/spending', 'POST', statusCode, errorInstance, {
+        agent_identifier: input.agentIdentifier ?? 'all',
+        start_date: input.startDate?.toISOString() || 'null',
+        end_date: input.endDate?.toISOString() || 'null',
+        network: input.network,
+        user_id: ctx.id,
+        duration: Date.now() - startTime,
+      });
 
       throw error;
     }

@@ -310,10 +310,7 @@ export default function InputSchemaValidatorPage() {
   };
 
   // Memoize validation for performance
-  const validation = useMemo(
-    () => validateSchemaWithZod(jsonInput),
-    [jsonInput],
-  );
+  const validation = useMemo(() => validateSchemaWithZod(jsonInput), [jsonInput]);
 
   const handleSelectExample = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -387,9 +384,7 @@ export default function InputSchemaValidatorPage() {
                   Schema is valid! ✓
                 </div>
                 <div className="flex-1 overflow-auto">
-                  <JobInputsFormRenderer
-                    jobInputSchemas={validation.parsedSchemas || []}
-                  />
+                  <JobInputsFormRenderer jobInputSchemas={validation.parsedSchemas || []} />
                 </div>
               </div>
             ) : (

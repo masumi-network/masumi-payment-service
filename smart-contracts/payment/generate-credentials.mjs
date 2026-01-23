@@ -33,9 +33,7 @@ if (!fs.existsSync('wallet_2.sk')) {
   });
 
   fs.writeFileSync('wallet_2.addr', (await wallet2.getUnusedAddresses())[0]);
-  console.log(
-    `Other Wallet address generated: ${(await wallet2.getUnusedAddresses())[0]}`,
-  );
+  console.log(`Other Wallet address generated: ${(await wallet2.getUnusedAddresses())[0]}`);
 } else {
   console.log('Wallet_2 does exist, skipped...');
 }
@@ -53,9 +51,7 @@ if (!fs.existsSync('wallet_3.sk')) {
   });
 
   fs.writeFileSync('wallet_3.addr', wallet3.getUnusedAddresses()[0]);
-  console.log(
-    `Other Wallet address generated: ${wallet3.getUnusedAddresses()[0]}`,
-  );
+  console.log(`Other Wallet address generated: ${wallet3.getUnusedAddresses()[0]}`);
 } else {
   console.log('Wallet_3 does exist, skipped...');
 }
@@ -74,9 +70,7 @@ if (!fs.existsSync('wallet_4.sk')) {
   });
 
   fs.writeFileSync('wallet_4.addr', wallet4.getUnusedAddresses()[0]);
-  console.log(
-    `Other Wallet address generated: ${wallet4.getUnusedAddresses()[0]}`,
-  );
+  console.log(`Other Wallet address generated: ${wallet4.getUnusedAddresses()[0]}`);
 } else {
   console.log('Wallet_4 does exist, skipped...');
 }
@@ -95,9 +89,7 @@ if (!fs.existsSync('wallet_5.sk')) {
   });
 
   fs.writeFileSync('wallet_5.addr', wallet5.getUnusedAddresses()[0]);
-  console.log(
-    `Other Wallet address generated: ${wallet5.getUnusedAddresses()[0]}`,
-  );
+  console.log(`Other Wallet address generated: ${wallet5.getUnusedAddresses()[0]}`);
 } else {
   console.log('Wallet_5 does exist, skipped...');
 }

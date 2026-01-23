@@ -50,8 +50,7 @@ type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
   };
 }>;
 
-type PaymentRequestWithRelations =
-  PaymentSourceWithRelations['PaymentRequests'][number];
+type PaymentRequestWithRelations = PaymentSourceWithRelations['PaymentRequests'][number];
 
 const mutex = new Mutex();
 
@@ -67,8 +66,7 @@ async function processSinglePaymentCollection(
   if (request.collateralReturnLovelace == null) {
     throw new Error('Collateral return lovelace is null, this is deprecated');
   }
-  if (request.SmartContractWallet == null)
-    throw new Error('Smart contract wallet not found');
+  if (request.SmartContractWallet == null) throw new Error('Smart contract wallet not found');
 
   const { wallet, utxos, address } = await generateWalletExtended(
     paymentContract.network,
@@ -107,13 +105,9 @@ async function processSinglePaymentCollection(
     }
 
     return (
-      smartContractStateEqualsOnChainState(
-        decodedContract.state,
-        request.onChainState,
-      ) &&
+      smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
       decodedContract.buyerAddress == request.BuyerWallet!.walletAddress &&
-      decodedContract.sellerAddress ==
-        request.SmartContractWallet!.walletAddress &&
+      decodedContract.sellerAddress == request.SmartContractWallet!.walletAddress &&
       decodedContract.buyerVkey == request.BuyerWallet!.walletVkey &&
       decodedContract.sellerVkey == request.SmartContractWallet!.walletVkey &&
       decodedContract.blockchainIdentifier == request.blockchainIdentifier &&
@@ -143,10 +137,7 @@ async function processSinglePaymentCollection(
     throw new Error('Invalid datum');
   }
 
-  if (
-    BigInt(decodedContract.collateralReturnLovelace) !=
-    request.collateralReturnLovelace
-  ) {
+  if (BigInt(decodedContract.collateralReturnLovelace) != request.collateralReturnLovelace) {
     logger.error(
       'Collateral return lovelace does not match collateral return lovelace in db. This likely is a spoofing attempt.',
       {
@@ -160,12 +151,10 @@ async function processSinglePaymentCollection(
   }
 
   const invalidBefore =
-    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) -
-    1;
+    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) - 1;
 
   const invalidAfter =
-    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
-    5;
+    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) + 5;
 
   const buyerAddress = request.BuyerWallet?.walletAddress;
   if (buyerAddress == null) {
@@ -179,12 +168,8 @@ async function processSinglePaymentCollection(
   if (collateralReturnLovelace == null) {
     throw new Error('Collateral return lovelace not found');
   }
-  if (
-    BigInt(decodedContract.collateralReturnLovelace) != collateralReturnLovelace
-  ) {
-    throw new Error(
-      'Collateral return lovelace does not match collateral return lovelace in db.',
-    );
+  if (BigInt(decodedContract.collateralReturnLovelace) != collateralReturnLovelace) {
+    throw new Error('Collateral return lovelace does not match collateral return lovelace in db.');
   }
 
   const remainingAssets: { [key: string]: Asset } = {};
@@ -197,10 +182,7 @@ async function processSinglePaymentCollection(
     }
     const value = BigInt(assetValue.quantity);
     const feeValue = BigInt(
-      Math.max(
-        minFee,
-        (Number(value) * paymentContract.feeRatePermille) / 1000,
-      ),
+      Math.max(minFee, (Number(value) * paymentContract.feeRatePermille) / 1000),
     );
     const remainingValue = value - feeValue;
     const remainingValueAsset: Asset = {
@@ -234,35 +216,34 @@ async function processSinglePaymentCollection(
     throw new Error('Collateral UTXO not found');
   }
 
-  const unsignedTx =
-    await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
-      'CollectCompleted',
-      blockchainProvider,
-      network,
-      script,
-      address,
-      utxo,
-      collateralUtxo,
-      limitedFilteredUtxos,
-      {
-        collectAssets: Object.values(remainingAssets),
-        collectionAddress: collectionAddress,
-      },
-      {
-        feeAssets: Object.values(feeAssets),
-        feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
-        txHash: utxo.input.txHash,
-        outputIndex: utxo.input.outputIndex,
-      },
-      {
-        lovelace: collateralReturnLovelace,
-        address: buyerAddress,
-        txHash: utxo.input.txHash,
-        outputIndex: utxo.input.outputIndex,
-      },
-      invalidBefore,
-      invalidAfter,
-    );
+  const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+    'CollectCompleted',
+    blockchainProvider,
+    network,
+    script,
+    address,
+    utxo,
+    collateralUtxo,
+    limitedFilteredUtxos,
+    {
+      collectAssets: Object.values(remainingAssets),
+      collectionAddress: collectionAddress,
+    },
+    {
+      feeAssets: Object.values(feeAssets),
+      feeAddress: paymentContract.FeeReceiverNetworkWallet.walletAddress,
+      txHash: utxo.input.txHash,
+      outputIndex: utxo.input.outputIndex,
+    },
+    {
+      lovelace: collateralReturnLovelace,
+      address: buyerAddress,
+      txHash: utxo.input.txHash,
+      outputIndex: utxo.input.outputIndex,
+    },
+    invalidBefore,
+    invalidAfter,
+  );
 
   const signedTx = await wallet.signTx(unsignedTx);
   await prisma.paymentRequest.update({
@@ -369,12 +350,7 @@ export async function collectOutstandingPaymentsV1() {
           ],
           operations: paymentRequests.map(
             (request) => async () =>
-              processSinglePaymentCollection(
-                request,
-                paymentContract,
-                blockchainProvider,
-                network,
-              ),
+              processSinglePaymentCollection(request, paymentContract, blockchainProvider, network),
           ),
         });
         let index = 0;
@@ -397,8 +373,7 @@ export async function collectOutstandingPaymentsV1() {
                   create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
-                    errorNote:
-                      'Collecting payments failed: ' + errorToString(error),
+                    errorNote: 'Collecting payments failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

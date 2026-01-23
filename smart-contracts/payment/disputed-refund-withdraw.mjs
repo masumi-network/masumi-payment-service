@@ -56,11 +56,7 @@ const admin3 = fs.readFileSync('wallet_5.addr').toString();
 const script = {
   code: applyParamsToScript(blueprint.validators[0].compiledCode, [
     2,
-    [
-      resolvePaymentKeyHash(admin1),
-      resolvePaymentKeyHash(admin2),
-      resolvePaymentKeyHash(admin3),
-    ],
+    [resolvePaymentKeyHash(admin1), resolvePaymentKeyHash(admin2), resolvePaymentKeyHash(admin3)],
     //yes I love meshJs
     {
       alternative: 0,
@@ -111,9 +107,7 @@ async function fetchUtxo(txHash) {
     return utxo.input.txHash == txHash;
   });
 }
-const utxo = await fetchUtxo(
-  '6978053d83551f7ab9571401a6a07a418579de56877eeb93fab650d4eb47094c',
-);
+const utxo = await fetchUtxo('6978053d83551f7ab9571401a6a07a418579de56877eeb93fab650d4eb47094c');
 
 if (!utxo) {
   throw new Error('UTXO not found');
@@ -132,11 +126,9 @@ const redeemer = {
   },
 };
 
-const invalidBefore =
-  unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
+const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
 
-const invalidAfter =
-  unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
+const invalidAfter = unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
 
 const unsignedTx = await new Transaction({
   initiator: wallet1,

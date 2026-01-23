@@ -29,13 +29,10 @@ const address = (await wallet.getUnusedAddresses())[0];
 
 const blueprint = JSON.parse(fs.readFileSync('./plutus.json'));
 
-const paymentContractAddress =
-  'addr_test1wrm4l7k9qgw9878ymvw223u45fje48tnhqsxk2tewe47z7se03mca';
+const paymentContractAddress = 'addr_test1wrm4l7k9qgw9878ymvw223u45fje48tnhqsxk2tewe47z7se03mca';
 
 const script = {
-  code: applyParamsToScript(blueprint.validators[0].compiledCode, [
-    paymentContractAddress,
-  ]),
+  code: applyParamsToScript(blueprint.validators[0].compiledCode, [paymentContractAddress]),
   version: 'V3',
 };
 
@@ -45,16 +42,13 @@ if (utxos.length === 0) {
 }
 
 //configure the asset to be burned here
-let assetName =
-  '0754980f1942dd9a4fce18392eb792b009f78f7150a459d29fdc2e526ac5373c';
+let assetName = '0754980f1942dd9a4fce18392eb792b009f78f7150a459d29fdc2e526ac5373c';
 
 const redeemer = {
   data: { alternative: 1, fields: [] },
   tag: 'BURN',
 };
-const policyId = deserializePlutusScript(script.code, script.version)
-  .hash()
-  .toString();
+const policyId = deserializePlutusScript(script.code, script.version).hash().toString();
 const tx = new Transaction({ initiator: wallet }).setTxInputs(utxos);
 
 tx.isCollateralNeeded = true;

@@ -26,9 +26,7 @@ export default async function globalSetup() {
     const config = getTestEnvironment();
 
     const requiredEnvVars = ['TEST_API_KEY'];
-    const missingVars = requiredEnvVars.filter(
-      (varName) => !process.env[varName],
-    );
+    const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
     if (missingVars.length > 0) {
       console.error('❌ Missing required environment variables:', missingVars);
       console.error(`
@@ -103,11 +101,7 @@ And accessible at: ${config.apiUrl}
   const timeoutPromise = new Promise<never>((_, reject) => {
     const t = setTimeout(() => {
       clearTimeout(t);
-      reject(
-        new Error(
-          `[globalSetup] Timed out after ${GLOBAL_TIMEOUT_MS}ms (10 minutes)`,
-        ),
-      );
+      reject(new Error(`[globalSetup] Timed out after ${GLOBAL_TIMEOUT_MS}ms (10 minutes)`));
     }, GLOBAL_TIMEOUT_MS);
   });
 

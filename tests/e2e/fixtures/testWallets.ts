@@ -54,8 +54,7 @@ export const TEST_WALLETS: TestWalletConfig = {
         vkey: '1f9d349ec66fb28920e0f093edce415792ce0281a8825015ce3e16bf',
         address:
           'addr_test1qq0e6dy7cehm9zfqurcf8mwwg9te9nszsx5gy5q4eclpd0czhmdlpagxe5n8ppnrf6424tt8gwweumrtg2q7234x2p2qzjenfx',
-        description:
-          'Primary test seller wallet for preprod e2e tests (updated wallet)',
+        description: 'Primary test seller wallet for preprod e2e tests (updated wallet)',
       },
     ],
     buyers: [
@@ -64,8 +63,7 @@ export const TEST_WALLETS: TestWalletConfig = {
         vkey: '2d1386da18f97d7a5ed42998c2528f319d58678a8b640505e6ee13da',
         address:
           'addr_test1qqk38pk6rruh67j76s5e3sjj3uce6kr8329kgpg9umhp8k50t3yt4hw3u4fg4f4xtfh630g5fvg6fkr4p2svzyug4nsq40tdna',
-        description:
-          'Primary test buyer wallet for preprod e2e tests (updated wallet)',
+        description: 'Primary test buyer wallet for preprod e2e tests (updated wallet)',
       },
     ],
   },

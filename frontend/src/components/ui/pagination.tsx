@@ -8,20 +8,10 @@ interface PaginationProps {
   className?: string;
 }
 
-export function Pagination({
-  hasMore,
-  isLoading,
-  onLoadMore,
-  className = '',
-}: PaginationProps) {
+export function Pagination({ hasMore, isLoading, onLoadMore, className = '' }: PaginationProps) {
   return (
     <div className={`flex justify-center space-x-2 ${className}`}>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onLoadMore}
-        disabled={!hasMore || isLoading}
-      >
+      <Button variant="outline" size="sm" onClick={onLoadMore} disabled={!hasMore || isLoading}>
         {isLoading ? (
           <div className="flex items-center gap-2">
             <Spinner size={14} />

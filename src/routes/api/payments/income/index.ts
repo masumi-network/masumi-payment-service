@@ -49,9 +49,7 @@ export const postPaymentIncomeSchemaInput = z.object({
     .describe(
       'The time zone to use for the income calculation. If not provided, will use the UTC time zone. Must be a valid IANA time zone name, see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones',
     ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network to query income from'),
+  network: z.nativeEnum(Network).describe('The Cardano network to query income from'),
 });
 
 const unitAmountSchema = z
@@ -162,10 +160,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         ctx.permission,
       );
 
-      const { periodStart, periodEnd } = parseDateRange(
-        input.startDate,
-        input.endDate,
-      );
+      const { periodStart, periodEnd } = parseDateRange(input.startDate, input.endDate);
 
       const allPayments = await prisma.paymentRequest.findMany({
         where: {
@@ -195,10 +190,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         },
       });
 
-      const allPaymentsFiltered = filterByAgentIdentifier(
-        allPayments,
-        input.agentIdentifier,
-      );
+      const allPaymentsFiltered = filterByAgentIdentifier(allPayments, input.agentIdentifier);
 
       const totalRefundedMap = {
         units: new Map<string, number>(),
@@ -272,9 +264,7 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
               dayDateLocal,
               monthDateLocal,
               payment.WithdrawnForBuyer,
-              payment.WithdrawnForSeller.length === 0
-                ? payment.totalSellerCardanoFees
-                : 0n,
+              payment.WithdrawnForSeller.length === 0 ? payment.totalSellerCardanoFees : 0n,
             );
           }
         } else if (payment.onChainState !== OnChainState.FundsOrDatumInvalid) {
@@ -306,28 +296,20 @@ export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
         monthlyPending: mapMonthlyFundsOutput(monthlyPendingMap),
       };
     } catch (error: unknown) {
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
 
-      recordBusinessEndpointError(
-        '/api/v1/payment/income',
-        'POST',
-        statusCode,
-        errorInstance,
-        {
-          agent_identifier: input.agentIdentifier ?? 'all',
-          start_date: input.startDate?.toISOString() || 'null',
-          end_date: input.endDate?.toISOString() || 'null',
-          network: input.network,
-          user_id: ctx.id,
-          duration: Date.now() - startTime,
-        },
-      );
+      recordBusinessEndpointError('/api/v1/payment/income', 'POST', statusCode, errorInstance, {
+        agent_identifier: input.agentIdentifier ?? 'all',
+        start_date: input.startDate?.toISOString() || 'null',
+        end_date: input.endDate?.toISOString() || 'null',
+        network: input.network,
+        user_id: ctx.id,
+        duration: Date.now() - startTime,
+      });
 
       throw error;
     }

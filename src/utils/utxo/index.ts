@@ -8,31 +8,24 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
   const utxosWithLovelace = utxos.map((utxo) => ({
     utxo,
     lovelace: parseInt(
-      utxo.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      )?.quantity ?? '0',
+      utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')
+        ?.quantity ?? '0',
     ),
   }));
 
   // Sort by lovelace amount (descending)
-  return utxosWithLovelace
-    .sort((a, b) => b.lovelace - a.lovelace)
-    .map((item) => item.utxo);
+  return utxosWithLovelace.sort((a, b) => b.lovelace - a.lovelace).map((item) => item.utxo);
 }
 
 function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
   return utxos.sort((a, b) => a.output.amount.length - b.output.amount.length);
 }
 
-function filterUtxosByRequiredLovelace(
-  utxos: UTxO[],
-  requiredLovelace: number,
-): UTxO[] {
+function filterUtxosByRequiredLovelace(utxos: UTxO[], requiredLovelace: number): UTxO[] {
   return utxos.filter((utxo) => {
     const lovelace = parseInt(
-      utxo.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      )?.quantity ?? '0',
+      utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')
+        ?.quantity ?? '0',
     );
     return lovelace >= requiredLovelace;
   });
@@ -52,9 +45,8 @@ export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
       break;
     }
     const utxoLovelace = parseInt(
-      utxo.output.amount.find(
-        (asset) => asset.unit === 'lovelace' || asset.unit === '',
-      )?.quantity ?? '0',
+      utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')
+        ?.quantity ?? '0',
     );
     accumulatedLovelace += utxoLovelace;
     selectedUtxos.push(utxo);
@@ -65,10 +57,7 @@ export function limitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
 /**
  * Combined function: sort and limit UTXOs in one operation
  */
-export function sortAndLimitUtxos(
-  utxos: UTxO[],
-  requiredLovelace: number,
-): UTxO[] {
+export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number): UTxO[] {
   const sortedUtxos = sortUtxosByBloatAsc(utxos);
 
   const limitedUtxos = limitUtxos(sortedUtxos, requiredLovelace);

@@ -27,23 +27,17 @@ async function initialize() {
     },
   });
   if (defaultKey) {
-    logger.warn(
-      '*****************************************************************',
-    );
+    logger.warn('*****************************************************************');
     logger.warn(
       '*  WARNING: The default insecure ADMIN_KEY "' +
         DEFAULTS.DEFAULT_ADMIN_KEY +
         '" is in use.           *',
     );
-    logger.warn(
-      '*  This is a security risk. For production environments, please *',
-    );
+    logger.warn('*  This is a security risk. For production environments, please *');
     logger.warn(
       '*  set a secure ADMIN_KEY in .env before seeding or change it in the admin tool now   *',
     );
-    logger.warn(
-      '*****************************************************************',
-    );
+    logger.warn('*****************************************************************');
   }
   await initJobs();
 
@@ -106,10 +100,7 @@ initialize()
         );
 
         // Serve static assets
-        app.use(
-          '/assets',
-          express.static(path.join(__dirname, 'public/assets')),
-        );
+        app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
 
         app.use(
           '/docs',
@@ -156,11 +147,7 @@ initialize()
     });
 
     void createServer(serverConfig, router);
-    logger.info(
-      'Web server started successfully',
-      { component: 'server' },
-      { port: PORT },
-    );
+    logger.info('Web server started successfully', { component: 'server' }, { port: PORT });
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
@@ -179,11 +166,6 @@ initialize()
     process.on('SIGTERM', () => void shutdown('SIGTERM'));
   })
   .catch((e) => {
-    logger.error(
-      'Application startup failed',
-      { component: 'main' },
-      undefined,
-      e as Error,
-    );
+    logger.error('Application startup failed', { component: 'main' }, undefined, e as Error);
     throw e;
   });

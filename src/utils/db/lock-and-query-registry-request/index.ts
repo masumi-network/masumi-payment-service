@@ -1,15 +1,7 @@
-import {
-  HotWallet,
-  HotWalletType,
-  RegistrationState,
-} from '@/generated/prisma/client';
+import { HotWallet, HotWalletType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '../index.js';
 
-export async function lockAndQueryRegistryRequests({
-  state,
-}: {
-  state: RegistrationState;
-}) {
+export async function lockAndQueryRegistryRequests({ state }: { state: RegistrationState }) {
   return await prisma.$transaction(
     async (prisma) => {
       const paymentSources = await prisma.paymentSource.findMany({

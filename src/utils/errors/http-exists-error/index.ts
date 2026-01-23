@@ -3,11 +3,7 @@ import { z } from '@/utils/zod-openapi';
 export type allowedFormat = string | number | boolean | null | undefined | Date;
 
 export type allowedObject = {
-  [key: string]:
-    | allowedFormat
-    | allowedObject
-    | allowedObject[]
-    | allowedFormat[];
+  [key: string]: allowedFormat | allowedObject | allowedObject[] | allowedFormat[];
 };
 
 export const allowedFormatSchemaBase = z.union([
@@ -25,9 +21,7 @@ export const allowedObjectSchemaBase = z.record(
 );
 export const allowedObjectSchema = z.record(
   z.string(),
-  allowedObjectSchemaBase
-    .or(allowedFormatSchemaBase)
-    .or(z.array(allowedFormatSchemaBase)),
+  allowedObjectSchemaBase.or(allowedFormatSchemaBase).or(z.array(allowedFormatSchemaBase)),
 );
 
 export class HttpExistsError extends Error {

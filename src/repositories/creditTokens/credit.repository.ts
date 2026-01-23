@@ -71,10 +71,7 @@ async function handlePurchaseCreditInit({
       if (!result) {
         throw Error('Invalid id: ' + id);
       }
-      if (
-        result.permission != Permission.Admin &&
-        !result.networkLimit.includes(network)
-      ) {
+      if (result.permission != Permission.Admin && !result.networkLimit.includes(network)) {
         throw Error('No permission for network: ' + network + ' for id: ' + id);
       }
 
@@ -89,10 +86,7 @@ async function handlePurchaseCreditInit({
         });
       }
 
-      const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<
-        string,
-        bigint
-      >();
+      const remainingAccumulatedUsageCredits: Map<string, bigint> = new Map<string, bigint>();
 
       // Sum up all purchase amounts
       result.RemainingUsageCredits.forEach((request) => {
@@ -112,39 +106,30 @@ async function handlePurchaseCreditInit({
         }
         totalCost.set(amount.unit, totalCost.get(amount.unit)! + amount.amount);
       });
-      const newRemainingUsageCredits: Map<string, bigint> =
-        remainingAccumulatedUsageCredits;
+      const newRemainingUsageCredits: Map<string, bigint> = remainingAccumulatedUsageCredits;
 
       if (result.usageLimited) {
         for (const [unit, amount] of totalCost) {
           if (!newRemainingUsageCredits.has(unit)) {
-            throw new InsufficientFundsError(
-              'Credit unit not found: ' + unit + ' for id: ' + id,
-            );
+            throw new InsufficientFundsError('Credit unit not found: ' + unit + ' for id: ' + id);
           }
-          newRemainingUsageCredits.set(
-            unit,
-            newRemainingUsageCredits.get(unit)! - amount,
-          );
+          newRemainingUsageCredits.set(unit, newRemainingUsageCredits.get(unit)! - amount);
           if (newRemainingUsageCredits.get(unit)! < 0) {
             throw new InsufficientFundsError(
-              'Not enough ' +
-                unit +
-                ' tokens to handleCreditUsage for id: ' +
-                id,
+              'Not enough ' + unit + ' tokens to handleCreditUsage for id: ' + id,
             );
           }
         }
       }
 
       // Create new usage amount records with unique IDs
-      const updatedUsageAmounts = Array.from(
-        newRemainingUsageCredits.entries(),
-      ).map(([unit, amount]) => ({
-        id: `${id}-${unit}`, // Create a unique ID
-        amount: amount,
-        unit: unit,
-      }));
+      const updatedUsageAmounts = Array.from(newRemainingUsageCredits.entries()).map(
+        ([unit, amount]) => ({
+          id: `${id}-${unit}`, // Create a unique ID
+          amount: amount,
+          unit: unit,
+        }),
+      );
       if (result.usageLimited) {
         await prisma.apiKey.update({
           where: { id: id },

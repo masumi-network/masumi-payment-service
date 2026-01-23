@@ -1,63 +1,40 @@
 import dotenv from 'dotenv';
 dotenv.config();
-if (process.env.DATABASE_URL == null)
-  throw new Error('Undefined DATABASE_URL ENV variable');
+if (process.env.DATABASE_URL == null) throw new Error('Undefined DATABASE_URL ENV variable');
 if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length <= 20)
-  throw new Error(
-    'Undefined or unsecure ENCRYPTION_KEY ENV variable. Require min 20 char',
-  );
+  throw new Error('Undefined or unsecure ENCRYPTION_KEY ENV variable. Require min 20 char');
 
 const batchPaymentInterval = Number(process.env.BATCH_PAYMENT_INTERVAL ?? '30');
-if (batchPaymentInterval < 5)
-  throw new Error('BATCH_PAYMENT_INTERVAL must be at least 5 seconds');
+if (batchPaymentInterval < 5) throw new Error('BATCH_PAYMENT_INTERVAL must be at least 5 seconds');
 const checkTxInterval = Number(process.env.CHECK_TX_INTERVAL ?? '20');
-if (checkTxInterval < 15)
-  throw new Error('CHECK_TX_INTERVAL must be at least 15 seconds');
-const checkCollectionInterval = Number(
-  process.env.CHECK_COLLECTION_INTERVAL ?? '15',
-);
+if (checkTxInterval < 15) throw new Error('CHECK_TX_INTERVAL must be at least 15 seconds');
+const checkCollectionInterval = Number(process.env.CHECK_COLLECTION_INTERVAL ?? '15');
 if (checkCollectionInterval < 5)
   throw new Error('CHECK_COLLECTION_INTERVAL must be at least 5 seconds');
-const checkCollectRefundInterval = Number(
-  process.env.CHECK_COLLECT_REFUND_INTERVAL ?? '15',
-);
+const checkCollectRefundInterval = Number(process.env.CHECK_COLLECT_REFUND_INTERVAL ?? '15');
 if (checkCollectRefundInterval < 5)
   throw new Error('CHECK_COLLECT_REFUND_INTERVAL must be at least 5 seconds');
-const checkSetRefundInterval = Number(
-  process.env.CHECK_SET_REFUND_INTERVAL ?? '15',
-);
+const checkSetRefundInterval = Number(process.env.CHECK_SET_REFUND_INTERVAL ?? '15');
 if (checkSetRefundInterval < 5)
   throw new Error('CHECK_SET_REFUND_INTERVAL must be at least 5 seconds');
-const checkUnsetRefundInterval = Number(
-  process.env.CHECK_UNSET_REFUND_INTERVAL ?? '15',
-);
+const checkUnsetRefundInterval = Number(process.env.CHECK_UNSET_REFUND_INTERVAL ?? '15');
 if (checkUnsetRefundInterval < 5)
   throw new Error('CHECK_UNSET_REFUND_INTERVAL must be at least 5 seconds');
 const checkWalletTransactionHashInterval = Number(
   process.env.CHECK_WALLET_TRANSACTION_HASH_INTERVAL ?? '20',
 );
 if (checkWalletTransactionHashInterval < 5)
-  throw new Error(
-    'CHECK_WALLET_TRANSACTION_HASH_INTERVAL must be at least 5 seconds',
-  );
-const checkAuthorizeRefundInterval = Number(
-  process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '15',
-);
+  throw new Error('CHECK_WALLET_TRANSACTION_HASH_INTERVAL must be at least 5 seconds');
+const checkAuthorizeRefundInterval = Number(process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '15');
 if (checkAuthorizeRefundInterval < 5)
   throw new Error('CHECK_AUTHORIZE_REFUND_INTERVAL must be at least 5 seconds');
-const checkSubmitResultInterval = Number(
-  process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '15',
-);
+const checkSubmitResultInterval = Number(process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '15');
 if (checkSubmitResultInterval < 5)
   throw new Error('CHECK_SUBMIT_RESULT_INTERVAL must be at least 5 seconds');
-const registerAgentInterval = Number(
-  process.env.REGISTER_AGENT_INTERVAL ?? '15',
-);
+const registerAgentInterval = Number(process.env.REGISTER_AGENT_INTERVAL ?? '15');
 if (registerAgentInterval < 5)
   throw new Error('REGISTER_AGENT_INTERVAL must be at least 5 seconds');
-const deregisterAgentInterval = Number(
-  process.env.DEREGISTER_AGENT_INTERVAL ?? '15',
-);
+const deregisterAgentInterval = Number(process.env.DEREGISTER_AGENT_INTERVAL ?? '15');
 if (deregisterAgentInterval < 5)
   throw new Error('DEREGISTER_AGENT_INTERVAL must be at least 5 seconds');
 
@@ -74,35 +51,24 @@ const checkRegistryTransactionsInterval = Number(
   process.env.CHECK_REGISTRY_TRANSACTIONS_INTERVAL ?? '15',
 );
 if (checkRegistryTransactionsInterval < 5)
-  throw new Error(
-    'CHECK_REGISTRY_TRANSACTIONS_INTERVAL must be at least 5 seconds',
-  );
+  throw new Error('CHECK_REGISTRY_TRANSACTIONS_INTERVAL must be at least 5 seconds');
 
 const autoDecisionInterval = Number(process.env.AUTO_DECISION_INTERVAL ?? '30');
-if (autoDecisionInterval < 5)
-  throw new Error('AUTO_DECISION_INTERVAL must be at least 5 seconds');
+if (autoDecisionInterval < 5) throw new Error('AUTO_DECISION_INTERVAL must be at least 5 seconds');
 
-const webhookDeliveryInterval = Number(
-  process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10',
-);
+const webhookDeliveryInterval = Number(process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10');
 if (webhookDeliveryInterval < 5)
   throw new Error('WEBHOOK_DELIVERY_INTERVAL must be at least 5 seconds');
 
-const blockConfirmationsThreshold = Number(
-  process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1',
-);
+const blockConfirmationsThreshold = Number(process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1');
 if (blockConfirmationsThreshold < 0)
   throw new Error('BLOCK_CONFIRMATIONS_THRESHOLD must be at least 0');
 
-const syncLockTimeoutInterval = Number(
-  process.env.SYNC_LOCK_TIMEOUT_INTERVAL ?? '300',
-);
+const syncLockTimeoutInterval = Number(process.env.SYNC_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (syncLockTimeoutInterval < 5)
   throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
-const walletLockTimeoutInterval = Number(
-  process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300',
-);
+const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
 if (walletLockTimeoutInterval < 5)
   throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
 
@@ -133,12 +99,9 @@ export const CONFIG = {
   OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME ?? 'masumi-payment-service',
   OTEL_SERVICE_VERSION: process.env.OTEL_SERVICE_VERSION ?? '0.1.0',
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
-    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT:
-    process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
-  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:
-    process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+  OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
   SIGNOZ_INGESTION_KEY: process.env.SIGNOZ_INGESTION_KEY,
 };
 
@@ -228,11 +191,9 @@ export const DEFAULTS = {
 
   PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD:
     'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
-  REGISTRY_POLICY_ID_PREPROD:
-    '7e8bdaf2b2b919a3a4b94002cafb50086c0c845fe535d07a77ab7f77',
+  REGISTRY_POLICY_ID_PREPROD: '7e8bdaf2b2b919a3a4b94002cafb50086c0c845fe535d07a77ab7f77',
   PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET:
     'addr1wx7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsq87ujx7',
-  REGISTRY_POLICY_ID_MAINNET:
-    'ad6424e3ce9e47bbd8364984bd731b41de591f1d11f6d7d43d0da9b9',
+  REGISTRY_POLICY_ID_MAINNET: 'ad6424e3ce9e47bbd8364984bd731b41de591f1d11f6d7d43d0da9b9',
   COOLDOWN_TIME_MAINNET: 1000 * 60 * 7,
 };

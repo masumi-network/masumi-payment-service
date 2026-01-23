@@ -1,11 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import {
-  HotWalletType,
-  Network,
-  PricingType,
-  RegistrationState,
-} from '@/generated/prisma/client';
+import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -25,9 +20,7 @@ export const unregisterAgentSchemaInput = z.object({
     .min(57)
     .max(250)
     .describe('The identifier of the registration (asset) to be deregistered'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the registration was made on'),
+  network: z.nativeEnum(Network).describe('The network the registration was made on'),
   smartContractAddress: z
     .string()
     .max(250)
@@ -50,11 +43,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
     input: z.infer<typeof unregisterAgentSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
     const smartContractAddress =
       input.smartContractAddress ??
       (input.network == Network.Mainnet
@@ -77,10 +66,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       },
     });
     if (paymentSource == null) {
-      throw createHttpError(
-        404,
-        'Network and Address combination not supported',
-      );
+      throw createHttpError(404, 'Network and Address combination not supported');
     }
 
     const blockfrost = getBlockfrostInstance(
@@ -88,25 +74,20 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
       paymentSource.PaymentSourceConfig.rpcProviderApiKey,
     );
 
-    const { policyId } =
-      await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+    const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
     const assetName = extractAssetName(input.agentIdentifier);
-    const holderWallet = await blockfrost.assetsAddresses(
-      policyId + assetName,
-      {
-        order: 'desc',
-        count: 1,
-      },
-    );
+    const holderWallet = await blockfrost.assetsAddresses(policyId + assetName, {
+      order: 'desc',
+      count: 1,
+    });
     if (holderWallet.length == 0) {
       throw createHttpError(404, 'Asset not found');
     }
     const vkey = resolvePaymentKeyHash(holderWallet[0].address);
 
     const sellingWallet = paymentSource.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == vkey && wallet.type == HotWalletType.Selling,
+      (wallet) => wallet.walletVkey == vkey && wallet.type == HotWalletType.Selling,
     );
     if (sellingWallet == null) {
       throw createHttpError(404, 'Registered Wallet not found');

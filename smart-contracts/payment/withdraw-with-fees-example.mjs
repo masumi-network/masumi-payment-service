@@ -41,11 +41,7 @@ const admin3 = fs.readFileSync('wallet_5.addr').toString();
 const script = {
   code: applyParamsToScript(blueprint.validators[0].compiledCode, [
     2,
-    [
-      resolvePaymentKeyHash(admin1),
-      resolvePaymentKeyHash(admin2),
-      resolvePaymentKeyHash(admin3),
-    ],
+    [resolvePaymentKeyHash(admin1), resolvePaymentKeyHash(admin2), resolvePaymentKeyHash(admin3)],
     //yes I love meshJs
     {
       alternative: 0,
@@ -82,17 +78,13 @@ if (utxos.length === 0) {
   throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 }
 async function fetchUtxo(txHash) {
-  const utxos = await blockchainProvider.fetchAddressUTxOs(
-    resolvePlutusScriptAddress(script, 0),
-  );
+  const utxos = await blockchainProvider.fetchAddressUTxOs(resolvePlutusScriptAddress(script, 0));
   return utxos.find((utxo) => {
     return utxo.input.txHash == txHash;
   });
 }
 
-const utxo = await fetchUtxo(
-  '56e32326caa6ff4fac96a33c576120a061bfac94c7d47cba90100992618946ca',
-);
+const utxo = await fetchUtxo('56e32326caa6ff4fac96a33c576120a061bfac94c7d47cba90100992618946ca');
 
 if (!utxo) {
   throw new Error('UTXO not found');
@@ -115,11 +107,9 @@ const redeemer = {
     fields: [],
   },
 };
-const invalidBefore =
-  unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
+const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
 
-const invalidAfter =
-  unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
+const invalidAfter = unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
 
 const outputReference1 = mOutputReference(
   '56e32326caa6ff4fac96a33c576120a061bfac94c7d47cba90100992618946ca',

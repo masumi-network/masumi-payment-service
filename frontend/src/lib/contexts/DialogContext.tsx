@@ -14,9 +14,7 @@ type Position = { x: number; y: number };
 interface DialogContextType {
   position: Position;
   style: any;
-  setActiveDialog: React.Dispatch<
-    React.SetStateAction<{ width: number; height: number }>
-  >;
+  setActiveDialog: React.Dispatch<React.SetStateAction<{ width: number; height: number }>>;
 }
 
 const DEFAULT_DIALOG_WIDTH = 600;
@@ -108,9 +106,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setActiveDialog,
   };
 
-  return (
-    <DialogContext.Provider value={value}>{children}</DialogContext.Provider>
-  );
+  return <DialogContext.Provider value={value}>{children}</DialogContext.Provider>;
 }
 
 export function useDialogContext() {

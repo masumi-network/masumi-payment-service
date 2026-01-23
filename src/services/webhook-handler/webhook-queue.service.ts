@@ -1,7 +1,4 @@
-import {
-  WebhookDeliveryStatus,
-  WebhookEventType,
-} from '@/generated/prisma/client';
+import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { webhookSenderService } from './webhook-sender.service';
@@ -35,10 +32,7 @@ export class WebhookQueueService {
           },
           ...(paymentSourceId
             ? {
-                OR: [
-                  { paymentSourceId: paymentSourceId },
-                  { paymentSourceId: null },
-                ],
+                OR: [{ paymentSourceId: paymentSourceId }, { paymentSourceId: null }],
               }
             : {}),
         },
@@ -48,8 +42,7 @@ export class WebhookQueueService {
       });
 
       if (webhookEndpoints.length != 0) {
-        const lastEndpoint: { id: string } =
-          webhookEndpoints[webhookEndpoints.length - 1];
+        const lastEndpoint: { id: string } = webhookEndpoints[webhookEndpoints.length - 1];
         cursorId = lastEndpoint.id;
         totalQueued += webhookEndpoints.length;
       }

@@ -84,9 +84,7 @@ export async function updateWalletTransactionHash() {
             new Date(paymentRequest.SmartContractWallet.lockedAt) <
               new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
-            unlockedSellingWalletIds.push(
-              paymentRequest.SmartContractWallet?.id,
-            );
+            unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
 
           await prisma.paymentRequest.update({
             where: { id: paymentRequest.id },
@@ -98,15 +96,10 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          paymentRequest.SmartContractWallet
-                            .pendingTransactionId == null &&
+                          paymentRequest.SmartContractWallet.pendingTransactionId == null &&
                           paymentRequest.SmartContractWallet.lockedAt &&
-                          new Date(
-                            paymentRequest.SmartContractWallet.lockedAt,
-                          ) <
-                            new Date(
-                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-                            )
+                          new Date(paymentRequest.SmartContractWallet.lockedAt) <
+                            new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
                             ? null
                             : undefined,
                       },
@@ -134,9 +127,7 @@ export async function updateWalletTransactionHash() {
               new Date(paymentRequest.SmartContractWallet.lockedAt) <
                 new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
           )
-            unlockedSellingWalletIds.push(
-              paymentRequest.SmartContractWallet?.id,
-            );
+            unlockedSellingWalletIds.push(paymentRequest.SmartContractWallet?.id);
 
           await prisma.paymentRequest.update({
             where: { id: paymentRequest.id },
@@ -148,33 +139,21 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          (paymentRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            paymentRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            paymentRequest.SmartContractWallet?.pendingTransactionId ==
                               paymentRequest.currentTransactionId) ||
                           (paymentRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              paymentRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(paymentRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                         pendingTransactionId:
-                          (paymentRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            paymentRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            paymentRequest.SmartContractWallet?.pendingTransactionId ==
                               paymentRequest.currentTransactionId) ||
                           (paymentRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              paymentRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(paymentRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                       },
@@ -253,9 +232,7 @@ export async function updateWalletTransactionHash() {
             new Date(purchaseRequest.SmartContractWallet.lockedAt) <
               new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
-            unlockedPurchasingWalletIds.push(
-              purchaseRequest.SmartContractWallet?.id,
-            );
+            unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
 
           await prisma.purchaseRequest.update({
             where: { id: purchaseRequest.id },
@@ -267,15 +244,10 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          purchaseRequest.SmartContractWallet
-                            .pendingTransactionId == null &&
+                          purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
                           purchaseRequest.SmartContractWallet.lockedAt &&
-                          new Date(
-                            purchaseRequest.SmartContractWallet.lockedAt,
-                          ) <
-                            new Date(
-                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-                            )
+                          new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+                            new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
                             ? null
                             : undefined,
                       },
@@ -296,17 +268,14 @@ export async function updateWalletTransactionHash() {
           });
         } else {
           if (
-            (purchaseRequest.SmartContractWallet?.pendingTransactionId !=
-              null &&
+            (purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
               purchaseRequest.SmartContractWallet?.pendingTransactionId ==
                 purchaseRequest.currentTransactionId) ||
             (purchaseRequest.SmartContractWallet?.lockedAt &&
               new Date(purchaseRequest.SmartContractWallet.lockedAt) <
                 new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
           )
-            unlockedPurchasingWalletIds.push(
-              purchaseRequest.SmartContractWallet?.id,
-            );
+            unlockedPurchasingWalletIds.push(purchaseRequest.SmartContractWallet?.id);
 
           await prisma.purchaseRequest.update({
             where: { id: purchaseRequest.id },
@@ -318,33 +287,21 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          (purchaseRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            purchaseRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            purchaseRequest.SmartContractWallet?.pendingTransactionId ==
                               purchaseRequest.currentTransactionId) ||
                           (purchaseRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              purchaseRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                         pendingTransactionId:
-                          (purchaseRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            purchaseRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            purchaseRequest.SmartContractWallet?.pendingTransactionId ==
                               purchaseRequest.currentTransactionId) ||
                           (purchaseRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              purchaseRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(purchaseRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                       },
@@ -423,9 +380,7 @@ export async function updateWalletTransactionHash() {
             new Date(registryRequest.SmartContractWallet.lockedAt) <
               new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
           )
-            unlockedSellingWalletIds.push(
-              registryRequest.SmartContractWallet?.id,
-            );
+            unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
 
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
@@ -437,15 +392,10 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          registryRequest.SmartContractWallet
-                            .pendingTransactionId == null &&
+                          registryRequest.SmartContractWallet.pendingTransactionId == null &&
                           registryRequest.SmartContractWallet.lockedAt &&
-                          new Date(
-                            registryRequest.SmartContractWallet.lockedAt,
-                          ) <
-                            new Date(
-                              Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL,
-                            )
+                          new Date(registryRequest.SmartContractWallet.lockedAt) <
+                            new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
                             ? null
                             : undefined,
                       },
@@ -459,17 +409,14 @@ export async function updateWalletTransactionHash() {
           });
         } else {
           if (
-            (registryRequest.SmartContractWallet?.pendingTransactionId !=
-              null &&
+            (registryRequest.SmartContractWallet?.pendingTransactionId != null &&
               registryRequest.SmartContractWallet?.pendingTransactionId ==
                 registryRequest.currentTransactionId) ||
             (registryRequest.SmartContractWallet?.lockedAt &&
               new Date(registryRequest.SmartContractWallet.lockedAt) <
                 new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
           )
-            unlockedSellingWalletIds.push(
-              registryRequest.SmartContractWallet?.id,
-            );
+            unlockedSellingWalletIds.push(registryRequest.SmartContractWallet?.id);
 
           await prisma.registryRequest.update({
             where: { id: registryRequest.id },
@@ -481,33 +428,21 @@ export async function updateWalletTransactionHash() {
                       update: {
                         //we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
                         lockedAt:
-                          (registryRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            registryRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (registryRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            registryRequest.SmartContractWallet?.pendingTransactionId ==
                               registryRequest.currentTransactionId) ||
                           (registryRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              registryRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(registryRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                         pendingTransactionId:
-                          (registryRequest.SmartContractWallet
-                            ?.pendingTransactionId != null &&
-                            registryRequest.SmartContractWallet
-                              ?.pendingTransactionId ==
+                          (registryRequest.SmartContractWallet?.pendingTransactionId != null &&
+                            registryRequest.SmartContractWallet?.pendingTransactionId ==
                               registryRequest.currentTransactionId) ||
                           (registryRequest.SmartContractWallet?.lockedAt &&
-                            new Date(
-                              registryRequest.SmartContractWallet.lockedAt,
-                            ) <
-                              new Date(
-                                Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL,
-                              ))
+                            new Date(registryRequest.SmartContractWallet.lockedAt) <
+                              new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
                             ? null
                             : undefined,
                       },
@@ -584,8 +519,7 @@ export async function updateWalletTransactionHash() {
             return;
           }
 
-          const blockfrostKey =
-            wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+          const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
           const provider = new BlockfrostProvider(blockfrostKey);
           const txInfo = await provider.fetchTxInfo(txHash);
           if (txInfo) {
@@ -608,9 +542,7 @@ export async function updateWalletTransactionHash() {
             });
           }
         } catch (error) {
-          logger.error(
-            `Error updating wallet transaction hash: ${errorToString(error)}`,
-          );
+          logger.error(`Error updating wallet transaction hash: ${errorToString(error)}`);
         }
       }),
     );
@@ -643,18 +575,16 @@ export async function updateWalletTransactionHash() {
             unlockedPurchasingWalletIds.push(wallet.id);
           }
         } catch (error) {
-          logger.error(
-            `Error updating timed out wallet: ${errorToString(error)}`,
-          );
+          logger.error(`Error updating timed out wallet: ${errorToString(error)}`);
         }
       }),
     );
-    const uniqueUnlockedSellingWalletIds = [
-      ...new Set(unlockedSellingWalletIds),
-    ].filter((id) => id != null);
-    const uniqueUnlockedPurchasingWalletIds = [
-      ...new Set(unlockedPurchasingWalletIds),
-    ].filter((id) => id != null);
+    const uniqueUnlockedSellingWalletIds = [...new Set(unlockedSellingWalletIds)].filter(
+      (id) => id != null,
+    );
+    const uniqueUnlockedPurchasingWalletIds = [...new Set(unlockedPurchasingWalletIds)].filter(
+      (id) => id != null,
+    );
     //TODO: reset initialized actions
     if (uniqueUnlockedSellingWalletIds.length > 0) {
       try {
@@ -670,46 +600,34 @@ export async function updateWalletTransactionHash() {
       try {
         await collectOutstandingPaymentsV1();
       } catch (error) {
-        logger.error(
-          `Error initiating collect outstanding payments: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating collect outstanding payments: ${errorToString(error)}`);
       }
       try {
         await registerAgentV1();
       } catch (error) {
-        logger.error(
-          `Error initiating register agent: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating register agent: ${errorToString(error)}`);
       }
       try {
         await deRegisterAgentV1();
       } catch (error) {
-        logger.error(
-          `Error initiating deregister agent: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating deregister agent: ${errorToString(error)}`);
       }
       try {
         await authorizeRefundV1();
       } catch (error) {
-        logger.error(
-          `Error initiating authorize refund: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating authorize refund: ${errorToString(error)}`);
       }
     }
     if (uniqueUnlockedPurchasingWalletIds.length > 0) {
       try {
         await collectRefundV1();
       } catch (error) {
-        logger.error(
-          `Error initiating collect refund: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating collect refund: ${errorToString(error)}`);
       }
       try {
         await requestRefundsV1();
       } catch (error) {
-        logger.error(
-          `Error initiating request refund: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating request refund: ${errorToString(error)}`);
       }
       try {
         await cancelRefundsV1();
@@ -719,9 +637,7 @@ export async function updateWalletTransactionHash() {
       try {
         await batchLatestPaymentEntriesV1();
       } catch (error) {
-        logger.error(
-          `Error initiating batch latest payment entries: ${errorToString(error)}`,
-        );
+        logger.error(`Error initiating batch latest payment entries: ${errorToString(error)}`);
       }
     }
     try {

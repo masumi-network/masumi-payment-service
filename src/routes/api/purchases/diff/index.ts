@@ -1,12 +1,7 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
-import {
-  Network,
-  Prisma,
-  PurchaseErrorType,
-  PurchasingAction,
-} from '@/generated/prisma/client';
+import { Network, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,
@@ -45,12 +40,8 @@ export const queryPurchaseDiffSchemaInput = z.object({
     .refine((d) => !Number.isNaN(d.getTime()), {
       message: 'lastUpdate must be a valid ISO date string',
     })
-    .describe(
-      'Return purchases whose selected status timestamp changed after this ISO timestamp',
-    ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the purchases were made on'),
+    .describe('Return purchases whose selected status timestamp changed after this ISO timestamp'),
+  network: z.nativeEnum(Network).describe('The network the purchases were made on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -61,9 +52,7 @@ export const queryPurchaseDiffSchemaInput = z.object({
     .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .describe(
-      'Whether to include the full transaction and status history of the purchases',
-    ),
+    .describe('Whether to include the full transaction and status history of the purchases'),
 });
 
 function buildPurchaseDiffWhere({
@@ -143,10 +132,7 @@ function buildPurchaseDiffOrderBy(
     case 'onChainStateOrResultLastChangedAt':
       return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
     case 'nextActionOrOnChainStateOrResultLastChangedAt':
-      return [
-        { nextActionOrOnChainStateOrResultLastChangedAt: 'asc' },
-        { id: 'asc' },
-      ];
+      return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
     default: {
       const _never: never = mode;
       return [{ id: 'asc' }];
@@ -163,11 +149,7 @@ async function queryPurchaseDiffByMode({
   ctx: AuthContext;
   mode: PurchaseDiffMode;
 }) {
-  await checkIsAllowedNetworkOrThrowUnauthorized(
-    ctx.networkLimit,
-    input.network,
-    ctx.permission,
-  );
+  await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
   const since = input.lastUpdate;
   const sinceId = input.cursorId;
@@ -270,13 +252,10 @@ async function queryPurchaseDiffByMode({
         ...purchase,
         ...transformPurchaseGetTimestamps(purchase),
         ...transformPurchaseGetAmounts(purchase),
-        totalBuyerCardanoFees:
-          Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-        totalSellerCardanoFees:
-          Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+        totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier:
-          decodeBlockchainIdentifier(purchase.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
+          decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
         CurrentTransaction: purchase.CurrentTransaction
           ? {
               ...purchase.CurrentTransaction,
@@ -314,41 +293,38 @@ async function queryPurchaseDiffByMode({
   };
 }
 
-export const queryPurchaseDiffCombinedGet =
-  payAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPurchaseDiffSchemaInput,
-    output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      queryPurchaseDiffByMode({
-        input,
-        ctx,
-        mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
-      }),
-  });
+export const queryPurchaseDiffCombinedGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPurchaseDiffSchemaInput,
+  output: queryPurchaseRequestSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    queryPurchaseDiffByMode({
+      input,
+      ctx,
+      mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
+    }),
+});
 
-export const queryPurchaseDiffNextActionGet =
-  payAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPurchaseDiffSchemaInput,
-    output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      queryPurchaseDiffByMode({
-        input,
-        ctx,
-        mode: 'nextActionLastChangedAt',
-      }),
-  });
+export const queryPurchaseDiffNextActionGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPurchaseDiffSchemaInput,
+  output: queryPurchaseRequestSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    queryPurchaseDiffByMode({
+      input,
+      ctx,
+      mode: 'nextActionLastChangedAt',
+    }),
+});
 
-export const queryPurchaseDiffOnChainStateOrResultGet =
-  payAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPurchaseDiffSchemaInput,
-    output: queryPurchaseRequestSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      queryPurchaseDiffByMode({
-        input,
-        ctx,
-        mode: 'onChainStateOrResultLastChangedAt',
-      }),
-  });
+export const queryPurchaseDiffOnChainStateOrResultGet = payAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPurchaseDiffSchemaInput,
+  output: queryPurchaseRequestSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    queryPurchaseDiffByMode({
+      input,
+      ctx,
+      mode: 'onChainStateOrResultLastChangedAt',
+    }),
+});

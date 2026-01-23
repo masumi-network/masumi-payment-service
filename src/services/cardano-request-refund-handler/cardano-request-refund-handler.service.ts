@@ -20,10 +20,7 @@ import {
 } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
-import {
-  decodeV1ContractDatum,
-  newCooldownTime,
-} from '@/utils/converter/string-datum-convert';
+import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -53,8 +50,7 @@ type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 }>;
 
 // Extract PurchaseRequest type from PaymentSource
-type PurchaseRequestWithRelations =
-  PaymentSourceWithPurchaseRelations['PurchaseRequests'][number];
+type PurchaseRequestWithRelations = PaymentSourceWithPurchaseRelations['PurchaseRequests'][number];
 
 const mutex = new Mutex();
 
@@ -109,14 +105,10 @@ async function processSinglePurchaseRequest(
     }
 
     return (
-      smartContractStateEqualsOnChainState(
-        decodedContract.state,
-        request.onChainState,
-      ) &&
+      smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
       decodedContract.buyerVkey == request.SmartContractWallet!.walletVkey &&
       decodedContract.sellerVkey == request.SellerWallet.walletVkey &&
-      decodedContract.buyerAddress ==
-        request.SmartContractWallet!.walletAddress &&
+      decodedContract.buyerAddress == request.SmartContractWallet!.walletAddress &&
       decodedContract.sellerAddress == request.SellerWallet.walletAddress &&
       decodedContract.blockchainIdentifier == request.blockchainIdentifier &&
       decodedContract.inputHash == request.inputHash &&
@@ -164,12 +156,10 @@ async function processSinglePurchaseRequest(
   });
 
   const invalidBefore =
-    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) -
-    1;
+    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) - 1;
 
   const initialInvalid =
-    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
-    5;
+    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) + 5;
   const secondaryInvalid =
     unixTimeToEnclosingSlot(
       Number(decodedContract.unlockTime) + 150000,
@@ -183,20 +173,19 @@ async function processSinglePurchaseRequest(
     throw new Error('Collateral UTXO not found');
   }
 
-  const unsignedTx =
-    await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-      'RequestRefund',
-      blockchainProvider,
-      network,
-      script,
-      address,
-      utxo,
-      limitedFilteredUtxos[0],
-      limitedFilteredUtxos,
-      datum.value,
-      invalidBefore,
-      invalidAfter,
-    );
+  const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+    'RequestRefund',
+    blockchainProvider,
+    network,
+    script,
+    address,
+    utxo,
+    limitedFilteredUtxos[0],
+    limitedFilteredUtxos,
+    datum.value,
+    invalidBefore,
+    invalidAfter,
+  );
 
   const signedTx = await wallet.signTx(unsignedTx);
 
@@ -300,12 +289,7 @@ export async function requestRefundsV1() {
           ],
           operations: purchaseRequests.map(
             (request) => async () =>
-              processSinglePurchaseRequest(
-                request,
-                paymentContract,
-                blockchainProvider,
-                network,
-              ),
+              processSinglePurchaseRequest(request, paymentContract, blockchainProvider, network),
           ),
         });
 
@@ -329,8 +313,7 @@ export async function requestRefundsV1() {
                   create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
-                    errorNote:
-                      'Requesting refund failed: ' + errorToString(error),
+                    errorNote: 'Requesting refund failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

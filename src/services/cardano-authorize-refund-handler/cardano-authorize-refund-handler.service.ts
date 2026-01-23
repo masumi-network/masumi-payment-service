@@ -20,10 +20,7 @@ import {
 } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
-import {
-  decodeV1ContractDatum,
-  newCooldownTime,
-} from '@/utils/converter/string-datum-convert';
+import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
@@ -49,17 +46,14 @@ function validatePaymentRequestFields(request: {
     throw new Error('No transaction hash found');
   }
 }
-function calculateTransactionTimeWindow(
-  network: 'mainnet' | 'preprod' | 'testnet' | 'preview',
-): {
+function calculateTransactionTimeWindow(network: 'mainnet' | 'preprod' | 'testnet' | 'preview'): {
   invalidBefore: number;
   invalidAfter: number;
 } {
   const now = Date.now();
   const timeBuffer = SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 
-  const invalidBefore =
-    unixTimeToEnclosingSlot(now - timeBuffer, SLOT_CONFIG_NETWORK[network]) - 1;
+  const invalidBefore = unixTimeToEnclosingSlot(now - timeBuffer, SLOT_CONFIG_NETWORK[network]) - 1;
 
   const invalidAfter =
     unixTimeToEnclosingSlot(now + timeBuffer, SLOT_CONFIG_NETWORK[network]) +
@@ -138,39 +132,26 @@ export async function authorizeRefundV1() {
               }
 
               const decodedDatum: unknown = deserializeDatum(utxoDatum);
-              const decodedContract = decodeV1ContractDatum(
-                decodedDatum,
-                network,
-              );
+              const decodedContract = decodeV1ContractDatum(decodedDatum, network);
               if (decodedContract == null) {
                 return false;
               }
 
               return (
-                smartContractStateEqualsOnChainState(
-                  decodedContract.state,
-                  request.onChainState,
-                ) &&
+                smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
                 decodedContract.buyerVkey == request.BuyerWallet!.walletVkey &&
-                decodedContract.sellerVkey ==
-                  request.SmartContractWallet!.walletVkey &&
-                decodedContract.buyerAddress ==
-                  request.BuyerWallet!.walletAddress &&
-                decodedContract.sellerAddress ==
-                  request.SmartContractWallet!.walletAddress &&
-                decodedContract.blockchainIdentifier ==
-                  request.blockchainIdentifier &&
+                decodedContract.sellerVkey == request.SmartContractWallet!.walletVkey &&
+                decodedContract.buyerAddress == request.BuyerWallet!.walletAddress &&
+                decodedContract.sellerAddress == request.SmartContractWallet!.walletAddress &&
+                decodedContract.blockchainIdentifier == request.blockchainIdentifier &&
                 decodedContract.inputHash == request.inputHash &&
-                BigInt(decodedContract.resultTime) ==
-                  BigInt(request.submitResultTime) &&
-                BigInt(decodedContract.unlockTime) ==
-                  BigInt(request.unlockTime) &&
+                BigInt(decodedContract.resultTime) == BigInt(request.submitResultTime) &&
+                BigInt(decodedContract.unlockTime) == BigInt(request.unlockTime) &&
                 BigInt(decodedContract.externalDisputeUnlockTime) ==
                   BigInt(request.externalDisputeUnlockTime) &&
                 BigInt(decodedContract.collateralReturnLovelace) ==
                   BigInt(request.collateralReturnLovelace ?? 0) &&
-                BigInt(decodedContract.payByTime) ==
-                  BigInt(request.payByTime ?? 0)
+                BigInt(decodedContract.payByTime) == BigInt(request.payByTime ?? 0)
               );
             });
 
@@ -187,10 +168,7 @@ export async function authorizeRefundV1() {
             }
 
             const decodedDatum: unknown = deserializeDatum(utxoDatum);
-            const decodedContract = decodeV1ContractDatum(
-              decodedDatum,
-              network,
-            );
+            const decodedContract = decodeV1ContractDatum(decodedDatum, network);
             if (decodedContract == null) {
               throw new Error('Invalid datum');
             }
@@ -201,38 +179,32 @@ export async function authorizeRefundV1() {
               inputHash: decodedContract.inputHash,
               resultHash: null,
               payByTime: decodedContract.payByTime,
-              collateralReturnLovelace:
-                decodedContract.collateralReturnLovelace,
+              collateralReturnLovelace: decodedContract.collateralReturnLovelace,
               resultTime: decodedContract.resultTime,
               unlockTime: decodedContract.unlockTime,
-              externalDisputeUnlockTime:
-                decodedContract.externalDisputeUnlockTime,
-              newCooldownTimeSeller: newCooldownTime(
-                BigInt(paymentContract.cooldownTime),
-              ),
+              externalDisputeUnlockTime: decodedContract.externalDisputeUnlockTime,
+              newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
               newCooldownTimeBuyer: BigInt(0),
               state: SmartContractState.RefundRequested,
             });
 
-            const { invalidBefore, invalidAfter } =
-              calculateTransactionTimeWindow(network);
+            const { invalidBefore, invalidAfter } = calculateTransactionTimeWindow(network);
 
             const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 
-            const unsignedTx =
-              await generateMasumiSmartContractInteractionTransactionAutomaticFees(
-                'AuthorizeRefund',
-                blockchainProvider,
-                network,
-                script,
-                address,
-                utxo,
-                limitedFilteredUtxos[0],
-                limitedFilteredUtxos,
-                datum.value,
-                invalidBefore,
-                invalidAfter,
-              );
+            const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+              'AuthorizeRefund',
+              blockchainProvider,
+              network,
+              script,
+              address,
+              utxo,
+              limitedFilteredUtxos[0],
+              limitedFilteredUtxos,
+              datum.value,
+              invalidBefore,
+              invalidAfter,
+            );
 
             const signedTx = await wallet.signTx(unsignedTx);
 
@@ -310,8 +282,7 @@ export async function authorizeRefundV1() {
                   create: {
                     requestedAction: PaymentAction.WaitingForManualAction,
                     errorType: PaymentErrorType.Unknown,
-                    errorNote:
-                      'Authorizing refund failed: ' + errorToString(error),
+                    errorNote: 'Authorizing refund failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

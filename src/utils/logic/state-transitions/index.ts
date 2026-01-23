@@ -17,8 +17,7 @@ const ERROR_MESSAGES = {
   AMOUNT_MISMATCH: 'Amount mismatch detected. Unexpected state change detected',
   AMOUNT_MISMATCH_END:
     'Amount mismatch detected. Invalid state detected. Purchase request was in end state before. This indicates a database error or a bug',
-  MANUAL_ACTION_STATE_CHANGE:
-    'State change detected after manual action was required',
+  MANUAL_ACTION_STATE_CHANGE: 'State change detected after manual action was required',
   AMOUNT_MISMATCH_MANUAL:
     'Amount mismatch detected. State change detected after manual action was required',
 };
@@ -87,9 +86,7 @@ export function convertNewPurchasingActionAndError(
             ERROR_MESSAGES.INVALID_STATE_EXTERNAL,
           );
         case OnChainState.FundsLocked:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.FundsOrDatumInvalid:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
@@ -208,9 +205,7 @@ export function convertNewPurchasingActionAndError(
     case PurchasingAction.SetRefundRequestedInitiated:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.DisputedWithdrawn:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
@@ -226,9 +221,7 @@ export function convertNewPurchasingActionAndError(
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.RefundWithdrawn:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
@@ -297,9 +290,7 @@ export function convertNewPurchasingActionAndError(
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.FundsLocked:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.FundsOrDatumInvalid:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
@@ -315,9 +306,7 @@ export function convertNewPurchasingActionAndError(
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.ResultSubmitted:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.Withdrawn:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
@@ -370,30 +359,22 @@ export function convertNewPurchasingActionAndError(
     case PurchasingAction.WaitingForExternalAction:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.DisputedWithdrawn:
           return generatePurchasingActionAndErrorResult(PurchasingAction.None);
         case OnChainState.FundsLocked:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.FundsOrDatumInvalid:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.RefundWithdrawn:
           return generatePurchasingActionAndErrorResult(PurchasingAction.None);
         case OnChainState.ResultSubmitted:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WaitingForExternalAction,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WaitingForExternalAction);
         case OnChainState.Withdrawn:
           return generatePurchasingActionAndErrorResult(PurchasingAction.None);
       }
@@ -445,27 +426,21 @@ export function convertNewPurchasingActionAndError(
     case PurchasingAction.WithdrawRefundInitiated:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE,
           );
         case OnChainState.FundsLocked:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.FundsOrDatumInvalid:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.RefundWithdrawn:
           return generatePurchasingActionAndErrorResult(PurchasingAction.None);
         case OnChainState.ResultSubmitted:
@@ -483,27 +458,21 @@ export function convertNewPurchasingActionAndError(
     case PurchasingAction.WithdrawRefundRequested:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE,
           );
         case OnChainState.FundsLocked:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.FundsOrDatumInvalid:
           return generatePurchasingActionAndErrorResult(
             PurchasingAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePurchasingActionAndErrorResult(
-            PurchasingAction.WithdrawRefundRequested,
-          );
+          return generatePurchasingActionAndErrorResult(PurchasingAction.WithdrawRefundRequested);
         case OnChainState.RefundWithdrawn:
           return generatePurchasingActionAndErrorResult(PurchasingAction.None);
         case OnChainState.ResultSubmitted:
@@ -519,9 +488,7 @@ export function convertNewPurchasingActionAndError(
       }
       break;
   }
-  throw new Error(
-    `Invalid state transition for ${currentAction} and ${newState}`,
-  );
+  throw new Error(`Invalid state transition for ${currentAction} and ${newState}`);
 }
 
 export function convertNewPaymentActionAndError(
@@ -538,9 +505,7 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.AuthorizeRefundInitiated:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.AuthorizeRefundRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.AuthorizeRefundRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -557,9 +522,7 @@ export function convertNewPaymentActionAndError(
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.RefundWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -580,9 +543,7 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.AuthorizeRefundRequested:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.AuthorizeRefundRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.AuthorizeRefundRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -609,9 +570,7 @@ export function convertNewPaymentActionAndError(
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.ResultSubmitted:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.AuthorizeRefundRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.AuthorizeRefundRequested);
         case OnChainState.Withdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -666,36 +625,28 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.SubmitResultInitiated:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.FundsLocked:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.FundsOrDatumInvalid:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.RefundWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.ResultSubmitted:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.Withdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -706,36 +657,28 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.SubmitResultRequested:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.FundsLocked:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.FundsOrDatumInvalid:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.RefundWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.UNEXPECTED_STATE_CHANGE_TIMEOUT,
           );
         case OnChainState.ResultSubmitted:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.SubmitResultRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.SubmitResultRequested);
         case OnChainState.Withdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -746,30 +689,22 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.WaitingForExternalAction:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(PaymentAction.None);
         case OnChainState.FundsLocked:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.FundsOrDatumInvalid:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
             ERROR_MESSAGES.AMOUNT_MISMATCH_MANUAL,
           );
         case OnChainState.RefundRequested:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.RefundWithdrawn:
           return generatePaymentActionAndErrorResult(PaymentAction.None);
         case OnChainState.ResultSubmitted:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WaitingForExternalAction,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WaitingForExternalAction);
         case OnChainState.Withdrawn:
           return generatePaymentActionAndErrorResult(PaymentAction.None);
       }
@@ -821,9 +756,7 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.WithdrawInitiated:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WithdrawRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WithdrawRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -861,9 +794,7 @@ export function convertNewPaymentActionAndError(
     case PaymentAction.WithdrawRequested:
       switch (newState) {
         case OnChainState.Disputed:
-          return generatePaymentActionAndErrorResult(
-            PaymentAction.WithdrawRequested,
-          );
+          return generatePaymentActionAndErrorResult(PaymentAction.WithdrawRequested);
         case OnChainState.DisputedWithdrawn:
           return generatePaymentActionAndErrorResult(
             PaymentAction.WaitingForManualAction,
@@ -902,7 +833,5 @@ export function convertNewPaymentActionAndError(
       }
       break;
   }
-  throw new Error(
-    `Invalid state transition for ${currentAction} and ${newState}`,
-  );
+  throw new Error(`Invalid state transition for ${currentAction} and ${newState}`);
 }

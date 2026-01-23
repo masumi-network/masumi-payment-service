@@ -54,11 +54,7 @@ interface WalletDetailsDialogProps {
   wallet: WalletWithBalance | null;
 }
 
-export function WalletDetailsDialog({
-  isOpen,
-  onClose,
-  wallet,
-}: WalletDetailsDialogProps) {
+export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDialogProps) {
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
@@ -66,12 +62,12 @@ export function WalletDetailsDialog({
   const { rate } = useRate();
   //const [selectedWalletForSwap, setSelectedWalletForSwap] =
   //  useState<WalletWithBalance | null>(null);
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isEditingCollectionAddress, setIsEditingCollectionAddress] =
-    useState(false);
+  const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
 
   const fetchTokenBalances = async () => {
@@ -103,10 +99,7 @@ export function WalletDetailsDialog({
             response.data.data.Utxos.forEach((utxo: any) => {
               utxo.Amounts.forEach((amount: any) => {
                 const currentAmount = balanceMap.get(amount.unit) || 0;
-                balanceMap.set(
-                  amount.unit,
-                  currentAmount + (amount.quantity || 0),
-                );
+                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
               });
             });
 
@@ -166,8 +159,7 @@ export function WalletDetailsDialog({
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
       const ada = token.quantity / 1000000;
-      const formattedAmount =
-        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
+      const formattedAmount = ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
@@ -181,8 +173,7 @@ export function WalletDetailsDialog({
       token.assetName === hexToAscii(usdmConfig.assetName);
     if (isUSDM) {
       const usdm = token.quantity / 1000000;
-      const formattedAmount =
-        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
+      const formattedAmount = usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
       return {
         amount: formattedAmount,
         usdValue: `≈ $${usdm.toFixed(2)}`,
@@ -191,8 +182,7 @@ export function WalletDetailsDialog({
 
     // For other tokens, divide by 10^6 as a default
     const amount = token.quantity / 1000000;
-    const formattedAmount =
-      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
+    const formattedAmount = amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
     return {
       amount: formattedAmount,
       usdValue: undefined,
@@ -263,10 +253,7 @@ export function WalletDetailsDialog({
 
     // Validate the address if provided
     if (newCollectionAddress.trim()) {
-      const validation = validateCardanoAddress(
-        newCollectionAddress.trim(),
-        network,
-      );
+      const validation = validateCardanoAddress(newCollectionAddress.trim(), network);
       if (!validation.isValid) {
         toast.error('Invalid collection address: ' + validation.error);
         return;
@@ -363,9 +350,7 @@ export function WalletDetailsDialog({
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">vKey</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-xs break-all">
-                  {wallet.walletVkey}
-                </span>
+                <span className="font-mono text-xs break-all">{wallet.walletVkey}</span>
                 <CopyButton value={wallet.walletVkey} />
               </div>
             </div>
@@ -446,19 +431,10 @@ export function WalletDetailsDialog({
                       placeholder="Enter collection wallet address"
                       className="flex-1"
                     />
-                    <Button
-                      size="sm"
-                      onClick={handleSaveCollection}
-                      className="h-8"
-                    >
+                    <Button size="sm" onClick={handleSaveCollection} className="h-8">
                       Done
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCancelEdit}
-                      className="h-8"
-                    >
+                    <Button variant="outline" size="sm" onClick={handleCancelEdit} className="h-8">
                       Cancel
                     </Button>
                   </div>
@@ -467,10 +443,7 @@ export function WalletDetailsDialog({
                     {wallet.collectionAddress ? (
                       <>
                         <a
-                          href={getExplorerUrl(
-                            wallet.collectionAddress,
-                            network,
-                          )}
+                          href={getExplorerUrl(wallet.collectionAddress, network)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="font-mono text-sm hover:underline text-primary"
@@ -489,9 +462,7 @@ export function WalletDetailsDialog({
                       </>
                     ) : (
                       <>
-                        <span className="font-mono text-sm italic text-muted-foreground">
-                          none
-                        </span>
+                        <span className="font-mono text-sm italic text-muted-foreground">none</span>
                         <Button
                           variant="outline"
                           size="sm"
@@ -529,15 +500,11 @@ export function WalletDetailsDialog({
               ) : (
                 <div className="space-y-2">
                   {tokenBalances.length === 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      No tokens found
-                    </div>
+                    <div className="text-xs text-muted-foreground">No tokens found</div>
                   )}
                   {/* Sort tokens: ADA first, then USDM, then others */}
                   {(() => {
-                    const adaToken = tokenBalances.find(
-                      (t) => t.unit === 'lovelace',
-                    );
+                    const adaToken = tokenBalances.find((t) => t.unit === 'lovelace');
                     const usdmConfig = getUsdmConfig(network);
                     const usdmToken = tokenBalances.find(
                       (t) =>
@@ -553,11 +520,9 @@ export function WalletDetailsDialog({
                         ),
                     );
                     // Filter out undefined tokens before mapping
-                    const sortedTokens = [
-                      adaToken,
-                      usdmToken,
-                      ...otherTokens,
-                    ].filter((t): t is TokenBalance => Boolean(t));
+                    const sortedTokens = [adaToken, usdmToken, ...otherTokens].filter(
+                      (t): t is TokenBalance => Boolean(t),
+                    );
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
                       const isUSDM =
@@ -584,9 +549,7 @@ export function WalletDetailsDialog({
                             <div>{amount}</div>
                             {/* Only show USD value for non-USDM tokens */}
                             {usdValue && !isUSDM && (
-                              <div className="text-xs text-muted-foreground">
-                                {usdValue}
-                              </div>
+                              <div className="text-xs text-muted-foreground">{usdValue}</div>
                             )}
                           </div>
                         </div>

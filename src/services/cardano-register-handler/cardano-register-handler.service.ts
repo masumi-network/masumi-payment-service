@@ -1,8 +1,4 @@
-import {
-  TransactionStatus,
-  RegistrationState,
-  PricingType,
-} from '@/generated/prisma/client';
+import { TransactionStatus, RegistrationState, PricingType } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -42,16 +38,12 @@ function validateRegistrationPricing(request: {
 
   if (
     request.Pricing.pricingType == PricingType.Fixed &&
-    (request.Pricing.FixedPricing == null ||
-      request.Pricing.FixedPricing.Amounts.length == 0)
+    (request.Pricing.FixedPricing == null || request.Pricing.FixedPricing.Amounts.length == 0)
   ) {
     throw new Error('No fixed pricing found, this is likely a bug');
   }
 
-  if (
-    request.Pricing.pricingType == PricingType.Free &&
-    request.Pricing.FixedPricing != null
-  ) {
+  if (request.Pricing.pricingType == PricingType.Free && request.Pricing.FixedPricing != null) {
     throw new Error('Free pricing requires no fixed pricing to be set');
   }
 }
@@ -188,8 +180,7 @@ export async function registerAgentV1() {
             if (utxos.length === 0) {
               throw new Error('No UTXOs found for the wallet');
             }
-            const { script, policyId } =
-              await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+            const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
             const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
 
@@ -210,9 +201,9 @@ export async function registerAgentV1() {
               limitedFilteredUtxos,
               metadata,
             );
-            const estimatedFee = (await blockchainProvider.evaluateTx(
-              evaluationTx,
-            )) as Array<{ budget: { mem: number; steps: number } }>;
+            const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+              budget: { mem: number; steps: number };
+            }>;
 
             const unsignedTx = await generateRegisterAgentTransaction(
               blockchainProvider,
@@ -303,12 +294,7 @@ export async function registerAgentV1() {
 }
 
 type AgentMetadata = {
-  [key: string]:
-    | string
-    | string[]
-    | AgentMetadata
-    | AgentMetadata[]
-    | undefined;
+  [key: string]: string | string[] | AgentMetadata | AgentMetadata[] | undefined;
 };
 
 async function generateRegisterAgentTransaction(
@@ -349,10 +335,7 @@ async function generateRegisterAgentTransaction(
       version: '1',
     })
     .txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-    .txInCollateral(
-      collateralUtxo.input.txHash,
-      collateralUtxo.input.outputIndex,
-    )
+    .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
     .setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
     .txOut(walletAddress, [
       {

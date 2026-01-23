@@ -103,14 +103,10 @@ export async function handlePaymentTransactionCardanoV1(
         return;
       }
 
-      const newAction = convertNewPaymentActionAndError(
-        currentAction,
-        newState,
-      );
+      const newAction = convertNewPaymentActionAndError(currentAction, newState);
 
       const isConfirmationTransaction =
-        paymentRequest.currentTransactionId &&
-        paymentRequest.CurrentTransaction?.txHash == tx_hash;
+        paymentRequest.currentTransactionId && paymentRequest.CurrentTransaction?.txHash == tx_hash;
 
       await prisma.paymentRequest.update({
         where: { id: paymentRequest.id },
@@ -264,10 +260,7 @@ export async function handlePurchasingTransactionCardanoV1(
         //transaction is not registered with us as a purchasing transaction
         return;
       }
-      const newAction = convertNewPurchasingActionAndError(
-        currentAction,
-        newStatus,
-      );
+      const newAction = convertNewPurchasingActionAndError(currentAction, newStatus);
       const isConfirmationTransaction =
         purchasingRequest.currentTransactionId &&
         purchasingRequest.CurrentTransaction?.txHash == tx_hash;
@@ -391,9 +384,7 @@ export async function handlePurchasingTransactionCardanoV1(
   );
 }
 
-export async function updateRolledBackTransaction(
-  rolledBackTx: Array<{ tx_hash: string }>,
-) {
+export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash: string }>) {
   for (const tx of rolledBackTx) {
     const foundTransaction = await prisma.transaction.findMany({
       where: {
@@ -412,9 +403,7 @@ export async function updateRolledBackTransaction(
         where: { id: transaction.id },
         data: {
           status: TransactionStatus.RolledBack,
-          BlocksWallet: transaction.BlocksWallet
-            ? { disconnect: true }
-            : undefined,
+          BlocksWallet: transaction.BlocksWallet ? { disconnect: true } : undefined,
         },
       });
       if (transaction.BlocksWallet != null) {
@@ -427,15 +416,10 @@ export async function updateRolledBackTransaction(
       }
 
       //TODO: automatically resync the transaction
-      if (
-        transaction.PaymentRequestCurrent ||
-        transaction.PaymentRequestHistory
-      ) {
+      if (transaction.PaymentRequestCurrent || transaction.PaymentRequestHistory) {
         await prisma.paymentRequest.update({
           where: {
-            id:
-              transaction.PaymentRequestCurrent?.id ??
-              transaction.PaymentRequestHistory!.id,
+            id: transaction.PaymentRequestCurrent?.id ?? transaction.PaymentRequestHistory!.id,
           },
           data: {
             ActionHistory: {
@@ -464,15 +448,10 @@ export async function updateRolledBackTransaction(
           },
         });
       }
-      if (
-        transaction.PurchaseRequestCurrent ||
-        transaction.PurchaseRequestHistory
-      ) {
+      if (transaction.PurchaseRequestCurrent || transaction.PurchaseRequestHistory) {
         await prisma.purchaseRequest.update({
           where: {
-            id:
-              transaction.PurchaseRequestCurrent?.id ??
-              transaction.PurchaseRequestHistory!.id,
+            id: transaction.PurchaseRequestCurrent?.id ?? transaction.PurchaseRequestHistory!.id,
           },
           data: {
             ActionHistory: {
@@ -505,10 +484,7 @@ export async function updateRolledBackTransaction(
   }
 }
 export async function updateInitialTransactions(
-  valueOutputs: Extract<
-    ExtractOnChainTransactionDataOutput,
-    { type: 'Initial' }
-  >['valueOutputs'],
+  valueOutputs: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'],
   paymentContract: {
     id: string;
     network: Network;
@@ -558,10 +534,7 @@ export async function updateInitialTransactions(
 export async function updateInitialPurchaseTransaction(
   paymentContract: { id: string; network: Network },
   decodedNewContract: DecodedV1ContractDatum,
-  output: Extract<
-    ExtractOnChainTransactionDataOutput,
-    { type: 'Initial' }
-  >['valueOutputs'][number],
+  output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
   tx: UpdateTransactionInput,
   metadata: TransactionMetadata,
   buyerCardanoFees: bigint,
@@ -604,10 +577,9 @@ export async function updateInitialPurchaseTransaction(
         return;
       }
       if (dbEntry.SmartContractWallet == null) {
-        logger.error(
-          'No smart contract wallet set for purchase request in db',
-          { purchaseRequest: dbEntry },
-        );
+        logger.error('No smart contract wallet set for purchase request in db', {
+          purchaseRequest: dbEntry,
+        });
         await prisma.purchaseRequest.update({
           where: { id: dbEntry.id },
           data: {
@@ -656,10 +628,9 @@ export async function updateInitialPurchaseTransaction(
       }
       if (output.reference_script_hash != null) {
         //no reference script allowed
-        logger.warn(
-          'Reference script hash is not null, this should not be set',
-          { tx: tx.tx.tx_hash },
-        );
+        logger.warn('Reference script hash is not null, this should not be set', {
+          tx: tx.tx.tx_hash,
+        });
         return;
       }
       if (dbEntry.inputHash !== decodedNewContract.inputHash) {
@@ -679,43 +650,29 @@ export async function updateInitialPurchaseTransaction(
         decodedNewContract.sellerVkey != dbEntry.SellerWallet.walletVkey ||
         decodedNewContract.sellerAddress != dbEntry.SellerWallet.walletAddress
       ) {
-        logger.warn(
-          'Seller does not match seller in db. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            sender: decodedNewContract.sellerVkey,
-            senderAddress: decodedNewContract.sellerAddress,
-            senderDb: dbEntry.SmartContractWallet?.walletVkey,
-            senderDbAddress: dbEntry.SmartContractWallet?.walletAddress,
-          },
-        );
+        logger.warn('Seller does not match seller in db. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          sender: decodedNewContract.sellerVkey,
+          senderAddress: decodedNewContract.sellerAddress,
+          senderDb: dbEntry.SmartContractWallet?.walletVkey,
+          senderDbAddress: dbEntry.SmartContractWallet?.walletAddress,
+        });
         return;
       }
-      if (
-        tx.utxos.inputs.find(
-          (x) => x.address == decodedNewContract.buyerAddress,
-        ) == null
-      ) {
-        logger.warn(
-          'Buyer address not found in inputs, this likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            buyerAddress: decodedNewContract.buyerAddress,
-          },
-        );
+      if (tx.utxos.inputs.find((x) => x.address == decodedNewContract.buyerAddress) == null) {
+        logger.warn('Buyer address not found in inputs, this likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          buyerAddress: decodedNewContract.buyerAddress,
+        });
         return;
       }
 
-      if (
-        BigInt(decodedNewContract.collateralReturnLovelace) !=
-        dbEntry.collateralReturnLovelace
-      ) {
+      if (BigInt(decodedNewContract.collateralReturnLovelace) != dbEntry.collateralReturnLovelace) {
         logger.warn(
           'Collateral return lovelace does not match collateral return lovelace in db. This likely is a spoofing attempt.',
           {
             purchaseRequest: dbEntry,
-            collateralReturnLovelace:
-              decodedNewContract.collateralReturnLovelace,
+            collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
             collateralReturnLovelaceDb: dbEntry.collateralReturnLovelace,
           },
         );
@@ -732,43 +689,32 @@ export async function updateInitialPurchaseTransaction(
 
       const blockTime = tx.blockTime;
       if (blockTime * 1000 > decodedNewContract.payByTime) {
-        logger.warn(
-          'Block time is after pay by time. This is a timed out purchase.',
-          {
-            purchaseRequest: dbEntry,
-            blockTime: blockTime * 1000,
-            payByTime: decodedNewContract.payByTime,
-          },
-        );
+        logger.warn('Block time is after pay by time. This is a timed out purchase.', {
+          purchaseRequest: dbEntry,
+          blockTime: blockTime * 1000,
+          payByTime: decodedNewContract.payByTime,
+        });
         return;
       }
 
       if (
-        decodedNewContract.buyerVkey !=
-          dbEntry.SmartContractWallet.walletVkey ||
-        decodedNewContract.buyerAddress !=
-          dbEntry.SmartContractWallet.walletAddress
+        decodedNewContract.buyerVkey != dbEntry.SmartContractWallet.walletVkey ||
+        decodedNewContract.buyerAddress != dbEntry.SmartContractWallet.walletAddress
       ) {
-        logger.warn(
-          'Buyer does not match buyer in db. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            buyer: decodedNewContract.buyerVkey,
-            buyerAddress: decodedNewContract.buyerAddress,
-            buyerDb: dbEntry.SmartContractWallet?.walletVkey,
-            buyerDbAddress: dbEntry.SmartContractWallet?.walletAddress,
-          },
-        );
+        logger.warn('Buyer does not match buyer in db. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          buyer: decodedNewContract.buyerVkey,
+          buyerAddress: decodedNewContract.buyerAddress,
+          buyerDb: dbEntry.SmartContractWallet?.walletVkey,
+          buyerDbAddress: dbEntry.SmartContractWallet?.walletAddress,
+        });
         return;
       }
       if (decodedNewContract.state != SmartContractState.FundsLocked) {
-        logger.warn(
-          'State is not funds locked. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            state: decodedNewContract.state,
-          },
-        );
+        logger.warn('State is not funds locked. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          state: decodedNewContract.state,
+        });
         return;
       }
       if (decodedNewContract.resultHash != null) {
@@ -779,14 +725,11 @@ export async function updateInitialPurchaseTransaction(
         return;
       }
       if (BigInt(decodedNewContract.resultTime) != dbEntry.submitResultTime) {
-        logger.warn(
-          'Result time is not the agreed upon time. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            resultTime: decodedNewContract.resultTime,
-            resultTimeDb: dbEntry.submitResultTime,
-          },
-        );
+        logger.warn('Result time is not the agreed upon time. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          resultTime: decodedNewContract.resultTime,
+          resultTimeDb: dbEntry.submitResultTime,
+        });
         return;
       }
       if (decodedNewContract.unlockTime < dbEntry.unlockTime) {
@@ -801,38 +744,30 @@ export async function updateInitialPurchaseTransaction(
         return;
       }
       if (
-        BigInt(decodedNewContract.externalDisputeUnlockTime) !=
-        dbEntry.externalDisputeUnlockTime
+        BigInt(decodedNewContract.externalDisputeUnlockTime) != dbEntry.externalDisputeUnlockTime
       ) {
         logger.warn(
           'External dispute unlock time is not the agreed upon time. This likely is a spoofing attempt.',
           {
             purchaseRequest: dbEntry,
-            externalDisputeUnlockTime:
-              decodedNewContract.externalDisputeUnlockTime,
+            externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
             externalDisputeUnlockTimeDb: dbEntry.externalDisputeUnlockTime,
           },
         );
         return;
       }
       if (BigInt(decodedNewContract.buyerCooldownTime) != BigInt(0)) {
-        logger.warn(
-          'Buyer cooldown time is not 0. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            buyerCooldownTime: decodedNewContract.buyerCooldownTime,
-          },
-        );
+        logger.warn('Buyer cooldown time is not 0. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          buyerCooldownTime: decodedNewContract.buyerCooldownTime,
+        });
         return;
       }
       if (BigInt(decodedNewContract.sellerCooldownTime) != BigInt(0)) {
-        logger.warn(
-          'Seller cooldown time is not 0. This likely is a spoofing attempt.',
-          {
-            purchaseRequest: dbEntry,
-            sellerCooldownTime: decodedNewContract.sellerCooldownTime,
-          },
-        );
+        logger.warn('Seller cooldown time is not 0. This likely is a spoofing attempt.', {
+          purchaseRequest: dbEntry,
+          sellerCooldownTime: decodedNewContract.sellerCooldownTime,
+        });
         return;
       }
       //TODO: optional check amounts
@@ -927,10 +862,7 @@ export async function updateInitialPaymentTransaction(
   decodedNewContract: DecodedV1ContractDatum,
   paymentContract: { id: string; network: Network },
   tx: UpdateTransactionInput,
-  output: Extract<
-    ExtractOnChainTransactionDataOutput,
-    { type: 'Initial' }
-  >['valueOutputs'][number],
+  output: Extract<ExtractOnChainTransactionDataOutput, { type: 'Initial' }>['valueOutputs'][number],
   metadata: TransactionMetadata,
   buyerCardanoFees: bigint,
   sellerCardanoFees: bigint,
@@ -1013,18 +945,11 @@ export async function updateInitialPaymentTransaction(
       let newAction: PaymentAction = PaymentAction.WaitingForExternalAction;
       let newState: OnChainState = OnChainState.FundsLocked;
       const errorNote: string[] = [];
-      if (
-        tx.utxos.inputs.find(
-          (x) => x.address == decodedNewContract.buyerAddress,
-        ) == null
-      ) {
-        logger.warn(
-          'Buyer address not found in inputs, this likely is a spoofing attempt.',
-          {
-            paymentRequest: dbEntry,
-            buyerAddress: decodedNewContract.buyerAddress,
-          },
-        );
+      if (tx.utxos.inputs.find((x) => x.address == decodedNewContract.buyerAddress) == null) {
+        logger.warn('Buyer address not found in inputs, this likely is a spoofing attempt.', {
+          paymentRequest: dbEntry,
+          buyerAddress: decodedNewContract.buyerAddress,
+        });
         return;
       }
       if (BigInt(decodedNewContract.payByTime) != dbEntry.payByTime) {
@@ -1041,8 +966,7 @@ export async function updateInitialPaymentTransaction(
       }
       const blockTime = tx.blockTime;
       if (blockTime * 1000 > decodedNewContract.payByTime) {
-        const errorMessage =
-          'Block time is after pay by time. This is a timed out purchase.';
+        const errorMessage = 'Block time is after pay by time. This is a timed out purchase.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           blockTime: blockTime * 1000,
@@ -1062,10 +986,8 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (
-        decodedNewContract.sellerVkey !=
-          dbEntry.SmartContractWallet.walletVkey ||
-        decodedNewContract.sellerAddress !=
-          dbEntry.SmartContractWallet.walletAddress
+        decodedNewContract.sellerVkey != dbEntry.SmartContractWallet.walletVkey ||
+        decodedNewContract.sellerAddress != dbEntry.SmartContractWallet.walletAddress
       ) {
         const errorMessage =
           'Seller does not match seller in db. This likely is a spoofing attempt.';
@@ -1081,8 +1003,7 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (decodedNewContract.state != SmartContractState.FundsLocked) {
-        const errorMessage =
-          'State is not funds locked. This likely is a spoofing attempt.';
+        const errorMessage = 'State is not funds locked. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           state: decodedNewContract.state,
@@ -1092,8 +1013,7 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (decodedNewContract.resultHash != null) {
-        const errorMessage =
-          'Result hash was set. This likely is a spoofing attempt.';
+        const errorMessage = 'Result hash was set. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           resultHash: decodedNewContract.resultHash,
@@ -1127,15 +1047,13 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (
-        BigInt(decodedNewContract.externalDisputeUnlockTime) !=
-        dbEntry.externalDisputeUnlockTime
+        BigInt(decodedNewContract.externalDisputeUnlockTime) != dbEntry.externalDisputeUnlockTime
       ) {
         const errorMessage =
           'External dispute unlock time is not the agreed upon time. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
-          externalDisputeUnlockTime:
-            decodedNewContract.externalDisputeUnlockTime,
+          externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
           externalDisputeUnlockTimeDb: dbEntry.externalDisputeUnlockTime,
         });
         newAction = PaymentAction.WaitingForManualAction;
@@ -1143,8 +1061,7 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (BigInt(decodedNewContract.buyerCooldownTime) != BigInt(0)) {
-        const errorMessage =
-          'Buyer cooldown time is not 0. This likely is a spoofing attempt.';
+        const errorMessage = 'Buyer cooldown time is not 0. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           buyerCooldownTime: decodedNewContract.buyerCooldownTime,
@@ -1154,8 +1071,7 @@ export async function updateInitialPaymentTransaction(
         errorNote.push(errorMessage);
       }
       if (BigInt(decodedNewContract.sellerCooldownTime) != BigInt(0)) {
-        const errorMessage =
-          'Seller cooldown time is not 0. This likely is a spoofing attempt.';
+        const errorMessage = 'Seller cooldown time is not 0. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           sellerCooldownTime: decodedNewContract.sellerCooldownTime,
@@ -1171,8 +1087,7 @@ export async function updateInitialPaymentTransaction(
         decodedNewContract.collateralReturnLovelace,
       );
       if (valueMatches == false) {
-        const errorMessage =
-          'Payment amounts do not match. This likely is a spoofing attempt.';
+        const errorMessage = 'Payment amounts do not match. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           amounts: output.amount,
@@ -1186,8 +1101,7 @@ export async function updateInitialPaymentTransaction(
         dbEntry.RequestedFunds.filter((x) => x.unit != '').length ==
         output.amount.filter((x) => x.unit != '').length;
       if (paymentCountMatches == false) {
-        const errorMessage =
-          'Token counts do not match. This likely is a spoofing attempt.';
+        const errorMessage = 'Token counts do not match. This likely is a spoofing attempt.';
         logger.warn(errorMessage, {
           paymentRequest: dbEntry,
           amounts: output.amount,
@@ -1212,8 +1126,7 @@ export async function updateInitialPaymentTransaction(
           NextAction: {
             create: {
               requestedAction: newAction,
-              errorNote:
-                errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
+              errorNote: errorNote.length > 0 ? errorNote.join(';\n ') : undefined,
             },
           },
           CurrentTransaction: dbEntry.currentTransactionId
@@ -1289,23 +1202,18 @@ export async function updateInitialPaymentTransaction(
 
 export async function updateTransaction(
   paymentContract: PaymentSource,
-  extractedData: Extract<
-    ExtractOnChainTransactionDataOutput,
-    { type: 'Transaction' }
-  >,
+  extractedData: Extract<ExtractOnChainTransactionDataOutput, { type: 'Transaction' }>,
   blockfrost: BlockFrostAPI,
   tx: UpdateTransactionInput,
 ) {
   const paymentRequest = await prisma.paymentRequest.findUnique({
     where: {
       paymentSourceId: paymentContract.id,
-      blockchainIdentifier:
-        extractedData.decodedOldContract.blockchainIdentifier,
+      blockchainIdentifier: extractedData.decodedOldContract.blockchainIdentifier,
       payByTime: extractedData.decodedOldContract.payByTime,
       submitResultTime: extractedData.decodedOldContract.resultTime,
       unlockTime: extractedData.decodedOldContract.unlockTime,
-      externalDisputeUnlockTime:
-        extractedData.decodedOldContract.externalDisputeUnlockTime,
+      externalDisputeUnlockTime: extractedData.decodedOldContract.externalDisputeUnlockTime,
       BuyerWallet: {
         walletVkey: extractedData.decodedOldContract.buyerVkey,
         walletAddress: extractedData.decodedOldContract.buyerAddress,
@@ -1327,13 +1235,11 @@ export async function updateTransaction(
   const purchasingRequest = await prisma.purchaseRequest.findUnique({
     where: {
       paymentSourceId: paymentContract.id,
-      blockchainIdentifier:
-        extractedData.decodedOldContract.blockchainIdentifier,
+      blockchainIdentifier: extractedData.decodedOldContract.blockchainIdentifier,
       payByTime: extractedData.decodedOldContract.payByTime,
       submitResultTime: extractedData.decodedOldContract.resultTime,
       unlockTime: extractedData.decodedOldContract.unlockTime,
-      externalDisputeUnlockTime:
-        extractedData.decodedOldContract.externalDisputeUnlockTime,
+      externalDisputeUnlockTime: extractedData.decodedOldContract.externalDisputeUnlockTime,
       SellerWallet: {
         walletVkey: extractedData.decodedOldContract.sellerVkey,
         walletAddress: extractedData.decodedOldContract.sellerAddress,
@@ -1406,14 +1312,8 @@ export async function updateTransaction(
     extractedData.decodedOldContract.collateralReturnLovelace,
   );
 
-  const buyerCardanoFees = getCardanoFeesBuyer(
-    extractedData.redeemerVersion,
-    tx.metadata,
-  );
-  const sellerCardanoFees = getCardanoFeesSeller(
-    extractedData.redeemerVersion,
-    tx.metadata,
-  );
+  const buyerCardanoFees = getCardanoFeesBuyer(extractedData.redeemerVersion, tx.metadata);
+  const sellerCardanoFees = getCardanoFeesSeller(extractedData.redeemerVersion, tx.metadata);
 
   const newState: OnChainState | null = redeemerToOnChainState(
     extractedData.redeemerVersion,
@@ -1450,8 +1350,7 @@ export async function updateTransaction(
         newState,
         paymentContract.id,
         extractedData.decodedOldContract.blockchainIdentifier,
-        extractedData.decodedNewContract?.resultHash ??
-          extractedData.decodedOldContract.resultHash,
+        extractedData.decodedNewContract?.resultHash ?? extractedData.decodedOldContract.resultHash,
         paymentRequest?.NextAction?.requestedAction ?? PurchasingAction.None,
         Number(extractedData.decodedNewContract?.buyerCooldownTime ?? 0),
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),
@@ -1475,8 +1374,7 @@ export async function updateTransaction(
         newState,
         paymentContract.id,
         extractedData.decodedOldContract.blockchainIdentifier,
-        extractedData.decodedNewContract?.resultHash ??
-          extractedData.decodedOldContract.resultHash,
+        extractedData.decodedNewContract?.resultHash ?? extractedData.decodedOldContract.resultHash,
         purchasingRequest?.NextAction?.requestedAction ?? PurchasingAction.None,
         Number(extractedData.decodedNewContract?.buyerCooldownTime ?? 0),
         Number(extractedData.decodedNewContract?.sellerCooldownTime ?? 0),

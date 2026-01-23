@@ -92,20 +92,13 @@ export const metadataSchema = z.object({
 });
 
 export const queryAgentFromWalletSchemaInput = z.object({
-  walletVKey: z
-    .string()
-    .max(250)
-    .describe('The payment key of the wallet to be queried'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network used to register the agent on'),
+  walletVKey: z.string().max(250).describe('The payment key of the wallet to be queried'),
+  network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
   smartContractAddress: z
     .string()
     .max(250)
     .optional()
-    .describe(
-      'The smart contract address of the payment source to which the registration belongs',
-    ),
+    .describe('The smart contract address of the payment source to which the registration belongs'),
 });
 
 export const queryAgentFromWalletSchemaOutput = z.object({
@@ -114,12 +107,8 @@ export const queryAgentFromWalletSchemaOutput = z.object({
       z
         .object({
           policyId: z.string().describe('Policy ID of the agent registry NFT'),
-          assetName: z
-            .string()
-            .describe('Asset name of the agent registry NFT'),
-          agentIdentifier: z
-            .string()
-            .describe('Full agent identifier (policy ID + asset name)'),
+          assetName: z.string().describe('Asset name of the agent registry NFT'),
+          agentIdentifier: z.string().describe('Full agent identifier (policy ID + asset name)'),
           Metadata: z
             .object({
               name: z.string().max(250).describe('Name of the agent'),
@@ -136,27 +125,17 @@ export const queryAgentFromWalletSchemaOutput = z.object({
               ExampleOutputs: z
                 .array(
                   z.object({
-                    name: z
-                      .string()
-                      .max(60)
-                      .describe('Name of the example output'),
+                    name: z.string().max(60).describe('Name of the example output'),
                     mimeType: z
                       .string()
                       .max(60)
-                      .describe(
-                        'MIME type of the example output (e.g., image/png, text/plain)',
-                      ),
-                    url: z
-                      .string()
-                      .max(250)
-                      .describe('URL to the example output'),
+                      .describe('MIME type of the example output (e.g., image/png, text/plain)'),
+                    url: z.string().max(250).describe('URL to the example output'),
                   }),
                 )
                 .max(25)
                 .describe('List of example outputs from the agent'),
-              Tags: z
-                .array(z.string().max(250))
-                .describe('List of tags categorizing the agent'),
+              Tags: z.array(z.string().max(250)).describe('List of tags categorizing the agent'),
               Capability: z
                 .object({
                   name: z
@@ -164,17 +143,13 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'Name of the AI model/capability. Null if not provided',
-                    ),
+                    .describe('Name of the AI model/capability. Null if not provided'),
                   version: z
                     .string()
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'Version of the AI model/capability. Null if not provided',
-                    ),
+                    .describe('Version of the AI model/capability. Null if not provided'),
                 })
                 .nullable()
                 .optional()
@@ -183,34 +158,25 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                 ),
               Author: z
                 .object({
-                  name: z
-                    .string()
-                    .max(250)
-                    .describe('Name of the agent author'),
+                  name: z.string().max(250).describe('Name of the agent author'),
                   contactEmail: z
                     .string()
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'Contact email of the author. Null if not provided',
-                    ),
+                    .describe('Contact email of the author. Null if not provided'),
                   contactOther: z
                     .string()
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'Other contact information for the author. Null if not provided',
-                    ),
+                    .describe('Other contact information for the author. Null if not provided'),
                   organization: z
                     .string()
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'Organization of the author. Null if not provided',
-                    ),
+                    .describe('Organization of the author. Null if not provided'),
                 })
                 .describe('Author information for the agent'),
               Legal: z
@@ -220,17 +186,13 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'URL to the privacy policy. Null if not provided',
-                    ),
+                    .describe('URL to the privacy policy. Null if not provided'),
                   terms: z
                     .string()
                     .max(250)
                     .nullable()
                     .optional()
-                    .describe(
-                      'URL to the terms of service. Null if not provided',
-                    ),
+                    .describe('URL to the terms of service. Null if not provided'),
                   other: z
                     .string()
                     .max(250)
@@ -240,9 +202,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                 })
                 .nullable()
                 .optional()
-                .describe(
-                  'Legal information about the agent. Null if not provided',
-                ),
+                .describe('Legal information about the agent. Null if not provided'),
               AgentPricing: z
                 .object({
                   pricingType: z
@@ -275,18 +235,13 @@ export const queryAgentFromWalletSchemaOutput = z.object({
                   }),
                 )
                 .describe('Pricing information for the agent'),
-              image: z
-                .string()
-                .max(250)
-                .describe('URL to the agent image/logo'),
+              image: z.string().max(250).describe('URL to the agent image/logo'),
               metadataVersion: z.coerce
                 .number()
                 .int()
                 .min(1)
                 .max(1)
-                .describe(
-                  'Version of the metadata schema (currently only version 1 is supported)',
-                ),
+                .describe('Version of the metadata schema (currently only version 1 is supported)'),
             })
             .describe('On-chain metadata for the agent'),
         })
@@ -306,11 +261,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     input: z.infer<typeof queryAgentFromWalletSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
     const smartContractAddress =
       input.smartContractAddress ??
       (input.network == Network.Mainnet
@@ -338,10 +289,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
       },
     });
     if (paymentSource == null) {
-      throw createHttpError(
-        404,
-        'Network and Address combination not supported',
-      );
+      throw createHttpError(404, 'Network and Address combination not supported');
     }
 
     const blockfrost = getBlockfrostInstance(
@@ -349,15 +297,12 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
       paymentSource.PaymentSourceConfig.rpcProviderApiKey,
     );
     const wallet = paymentSource.HotWallets.find(
-      (wallet) =>
-        wallet.walletVkey == input.walletVKey &&
-        wallet.type == HotWalletType.Selling,
+      (wallet) => wallet.walletVkey == input.walletVKey && wallet.type == HotWalletType.Selling,
     );
     if (wallet == null) {
       throw createHttpError(404, 'Wallet not found');
     }
-    const { policyId } =
-      await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+    const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
     const addressInfo = await blockfrost.addresses(wallet.walletAddress);
     if (addressInfo.stake_address == null) {
@@ -365,27 +310,20 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
     }
     const stakeAddress = addressInfo.stake_address;
 
-    const holderWallet =
-      await blockfrost.accountsAddressesAssetsAll(stakeAddress);
+    const holderWallet = await blockfrost.accountsAddressesAssetsAll(stakeAddress);
     if (!holderWallet || holderWallet.length == 0) {
       throw createHttpError(404, 'Asset not found');
     }
-    const assets = holderWallet.filter((asset) =>
-      asset.unit.startsWith(policyId),
-    );
+    const assets = holderWallet.filter((asset) => asset.unit.startsWith(policyId));
     const detailedAssets: Array<{
       unit: string;
-      Metadata: z.infer<
-        typeof queryAgentFromWalletSchemaOutput
-      >['Assets'][0]['Metadata'];
+      Metadata: z.infer<typeof queryAgentFromWalletSchemaOutput>['Assets'][0]['Metadata'];
     }> = [];
 
     await Promise.all(
       assets.map(async (asset) => {
         const assetInfo = await blockfrost.assetsById(asset.unit);
-        const parsedMetadata = metadataSchema.safeParse(
-          assetInfo.onchain_metadata,
-        );
+        const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
         if (!parsedMetadata.success) {
           const error = parsedMetadata.error;
           logger.error('Error parsing metadata', { error });
@@ -406,28 +344,18 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
             Capability: parsedMetadata.data.capability
               ? {
                   name: metadataToString(parsedMetadata.data.capability.name)!,
-                  version: metadataToString(
-                    parsedMetadata.data.capability.version,
-                  )!,
+                  version: metadataToString(parsedMetadata.data.capability.version)!,
                 }
               : undefined,
             Author: {
               name: metadataToString(parsedMetadata.data.author.name)!,
-              contactEmail: metadataToString(
-                parsedMetadata.data.author.contact_email,
-              ),
-              contactOther: metadataToString(
-                parsedMetadata.data.author.contact_other,
-              ),
-              organization: metadataToString(
-                parsedMetadata.data.author.organization,
-              ),
+              contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
+              contactOther: metadataToString(parsedMetadata.data.author.contact_other),
+              organization: metadataToString(parsedMetadata.data.author.organization),
             },
             Legal: parsedMetadata.data.legal
               ? {
-                  privacyPolicy: metadataToString(
-                    parsedMetadata.data.legal.privacy_policy,
-                  ),
+                  privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
                   terms: metadataToString(parsedMetadata.data.legal.terms),
                   other: metadataToString(parsedMetadata.data.legal.other),
                 }
@@ -437,12 +365,10 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
               parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
                 ? {
                     pricingType: parsedMetadata.data.agentPricing.pricingType,
-                    Pricing: parsedMetadata.data.agentPricing.fixedPricing.map(
-                      (price) => ({
-                        amount: price.amount.toString(),
-                        unit: metadataToString(price.unit)!,
-                      }),
-                    ),
+                    Pricing: parsedMetadata.data.agentPricing.fixedPricing.map((price) => ({
+                      amount: price.amount.toString(),
+                      unit: metadataToString(price.unit)!,
+                    })),
                   }
                 : {
                     pricingType: parsedMetadata.data.agentPricing.pricingType,

@@ -25,13 +25,9 @@ let activePaymentGauge: UpDownCounter | null = null;
 
 const getBusinessEndpointErrorCounter = (): Counter => {
   if (!businessEndpointErrorCounter) {
-    businessEndpointErrorCounter = getMeter().createCounter(
-      'business_endpoint_errors_total',
-      {
-        description:
-          'Total number of errors for business endpoints with detailed error information',
-      },
-    );
+    businessEndpointErrorCounter = getMeter().createCounter('business_endpoint_errors_total', {
+      description: 'Total number of errors for business endpoints with detailed error information',
+    });
   }
   return businessEndpointErrorCounter;
 };
@@ -39,8 +35,7 @@ const getBusinessEndpointErrorCounter = (): Counter => {
 const getApiRequestDuration = (): Histogram => {
   if (!apiRequestDuration) {
     apiRequestDuration = getMeter().createHistogram('api_request_duration_ms', {
-      description:
-        'Time taken for API requests from start to finish in milliseconds',
+      description: 'Time taken for API requests from start to finish in milliseconds',
       unit: 'ms',
     });
   }
@@ -58,26 +53,19 @@ const getApiErrorCounter = (): Counter => {
 
 const getBusinessEndpointDuration = (): Histogram => {
   if (!businessEndpointDuration) {
-    businessEndpointDuration = getMeter().createHistogram(
-      'business_endpoint_duration_ms',
-      {
-        description:
-          'Time taken to process business endpoint requests from start to completion',
-        unit: 'ms',
-      },
-    );
+    businessEndpointDuration = getMeter().createHistogram('business_endpoint_duration_ms', {
+      description: 'Time taken to process business endpoint requests from start to completion',
+      unit: 'ms',
+    });
   }
   return businessEndpointDuration;
 };
 
 const getBusinessEndpointSuccessCounter = (): Counter => {
   if (!businessEndpointSuccessCounter) {
-    businessEndpointSuccessCounter = getMeter().createCounter(
-      'business_endpoint_success_total',
-      {
-        description: 'Total number of successful business endpoint requests',
-      },
-    );
+    businessEndpointSuccessCounter = getMeter().createCounter('business_endpoint_success_total', {
+      description: 'Total number of successful business endpoint requests',
+    });
   }
   return businessEndpointSuccessCounter;
 };
@@ -97,14 +85,10 @@ const getBlockchainStateTransitionDuration = (): Histogram => {
 
 const getBlockchainJourneyDuration = (): Histogram => {
   if (!blockchainJourneyDuration) {
-    blockchainJourneyDuration = getMeter().createHistogram(
-      'blockchain_journey_duration_ms',
-      {
-        description:
-          'Complete blockchain operation duration from request to confirmation',
-        unit: 'ms',
-      },
-    );
+    blockchainJourneyDuration = getMeter().createHistogram('blockchain_journey_duration_ms', {
+      description: 'Complete blockchain operation duration from request to confirmation',
+      unit: 'ms',
+    });
   }
   return blockchainJourneyDuration;
 };
@@ -142,10 +126,7 @@ const getBusinessEndpoint = (url: string): BusinessEndpoint => {
 };
 
 // Helper function to extract business error details from error messages
-const extractBusinessErrorDetails = (
-  error: Error | string,
-  endpoint: BusinessEndpoint,
-) => {
+const extractBusinessErrorDetails = (error: Error | string, endpoint: BusinessEndpoint) => {
   const errorMessage = typeof error === 'string' ? error : error.message;
   const lowerMessage = errorMessage.toLowerCase();
 
@@ -176,10 +157,7 @@ const extractBusinessErrorDetails = (
         error_code: 'INVALID_BLOCKCHAIN_IDENTIFIER',
         error_category: 'validation',
       };
-    if (
-      lowerMessage.includes('input hash') &&
-      lowerMessage.includes('valid hex')
-    )
+    if (lowerMessage.includes('input hash') && lowerMessage.includes('valid hex'))
       return { error_code: 'INVALID_INPUT_HASH', error_category: 'validation' };
   }
 
@@ -324,38 +302,18 @@ export const measureBusinessEndpoint = <T>(
     .then((result) => {
       const duration = Date.now() - start;
       recordBusinessEndpointSuccess(endpoint, method, duration, attributes);
-      recordBusinessEndpointDuration(
-        endpoint,
-        method,
-        duration,
-        statusCode,
-        attributes,
-      );
+      recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
       return result;
     })
     .catch((error: unknown) => {
       const duration = Date.now() - start;
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
-      recordBusinessEndpointError(
-        endpoint,
-        method,
-        statusCode,
-        errorInstance,
-        attributes,
-      );
-      recordBusinessEndpointDuration(
-        endpoint,
-        method,
-        duration,
-        statusCode,
-        attributes,
-      );
+      recordBusinessEndpointError(endpoint, method, statusCode, errorInstance, attributes);
+      recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
       throw error;
     });
 };
@@ -399,13 +357,7 @@ export const recordApiRequestDuration = (
   // Also record business endpoint duration if it's a business endpoint
   const businessEndpoint = getBusinessEndpoint(endpoint);
   if (businessEndpoint !== 'unknown') {
-    recordBusinessEndpointDuration(
-      endpoint,
-      method,
-      duration,
-      statusCode,
-      attributes,
-    );
+    recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
   }
 };
 
@@ -457,9 +409,7 @@ export const recordBlockchainJourney = (
     entity_id: entityId,
     final_state: finalState,
     status:
-      finalState.includes('Confirmed') || finalState.includes('Completed')
-        ? 'success'
-        : 'failed',
+      finalState.includes('Confirmed') || finalState.includes('Completed') ? 'success' : 'failed',
   });
 };
 
@@ -473,13 +423,10 @@ const getPrismaMetrics = (): {
 } => {
   if (!prismaDataTransferSize || !prismaQueryCounter) {
     const prismaMeter = metrics.getMeter('masumi-payment-metrics', '1.0.0');
-    prismaDataTransferSize = prismaMeter.createHistogram(
-      'prisma_data_transfer_size_bytes',
-      {
-        description: 'Size of data transferred from Prisma queries in bytes',
-        unit: 'bytes',
-      },
-    );
+    prismaDataTransferSize = prismaMeter.createHistogram('prisma_data_transfer_size_bytes', {
+      description: 'Size of data transferred from Prisma queries in bytes',
+      unit: 'bytes',
+    });
 
     prismaQueryCounter = prismaMeter.createCounter('prisma_queries_total', {
       description: 'Total number of Prisma queries executed',

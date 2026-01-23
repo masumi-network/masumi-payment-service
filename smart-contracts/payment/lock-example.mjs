@@ -19,13 +19,7 @@ import {
 } from '@meshsdk/core';
 import fs from 'node:fs';
 import 'dotenv/config';
-import {
-  Address,
-  BaseAddress,
-  Credential,
-  PlutusData,
-  toPlutusData,
-} from '@meshsdk/core-cst';
+import { Address, BaseAddress, Credential, PlutusData, toPlutusData } from '@meshsdk/core-cst';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 
 console.log('Locking funds as example');
@@ -53,11 +47,7 @@ const admin3 = fs.readFileSync('wallet_5.addr').toString();
 const script = {
   code: applyParamsToScript(blueprint.validators[0].compiledCode, [
     2,
-    [
-      resolvePaymentKeyHash(admin1),
-      resolvePaymentKeyHash(admin2),
-      resolvePaymentKeyHash(admin3),
-    ],
+    [resolvePaymentKeyHash(admin1), resolvePaymentKeyHash(admin2), resolvePaymentKeyHash(admin3)],
     //yes I love meshJs
     {
       alternative: 0,
@@ -134,10 +124,7 @@ const datum = {
     alternative: 0,
     fields: [
       mPubKeyAddress(buyerVerificationKeyHash, resolveStakeKeyHash(buyer)),
-      mPubKeyAddress(
-        sellerVerificationKeyHash,
-        resolveStakeKeyHash(sellerAddress),
-      ),
+      mPubKeyAddress(sellerVerificationKeyHash, resolveStakeKeyHash(sellerAddress)),
       /*buyerVerificationKeyHash,
       sellerVerificationKeyHash,
       */

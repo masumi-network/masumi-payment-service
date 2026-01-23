@@ -59,9 +59,7 @@ export const utxoOutputSchema = z
   .object({
     txHash: z.string().describe('Transaction hash containing this UTXO'),
     address: z.string().describe('Cardano address holding this UTXO'),
-    Amounts: z
-      .array(utxoAmountSchema)
-      .describe('List of assets and amounts in this UTXO'),
+    Amounts: z.array(utxoAmountSchema).describe('List of assets and amounts in this UTXO'),
     dataHash: z
       .string()
       .nullable()
@@ -69,15 +67,11 @@ export const utxoOutputSchema = z
     inlineDatum: z
       .string()
       .nullable()
-      .describe(
-        'Inline datum data in CBOR hex format. Null if no inline datum',
-      ),
+      .describe('Inline datum data in CBOR hex format. Null if no inline datum'),
     referenceScriptHash: z
       .string()
       .nullable()
-      .describe(
-        'Hash of the reference script attached to this UTXO. Null if no reference script',
-      ),
+      .describe('Hash of the reference script attached to this UTXO. Null if no reference script'),
     outputIndex: z.coerce
       .number()
       .int()
@@ -88,9 +82,7 @@ export const utxoOutputSchema = z
   })
   .openapi('Utxo');
 export const getUTXOSchemaOutput = z.object({
-  Utxos: z
-    .array(utxoOutputSchema)
-    .describe('List of UTXOs for the specified address'),
+  Utxos: z.array(utxoOutputSchema).describe('List of UTXOs for the specified address'),
 });
 
 export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
@@ -104,11 +96,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
     input: z.infer<typeof getUTXOSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
     const paymentSource = await prisma.paymentSource.findFirst({
       where: { network: input.network, deletedAt: null },
       include: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
@@ -146,8 +134,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
         errorToString(error).includes('ValueNotConservedUTxO') ||
         (errorToString(error).toLowerCase().includes('not') &&
           errorToString(error).toLowerCase().includes('found')) ||
-        ((error as { statusCode?: number | string })
-          .statusCode as unknown as number) == 404
+        ((error as { statusCode?: number | string }).statusCode as unknown as number) == 404
       ) {
         throw createHttpError(404, 'Address not found');
       }

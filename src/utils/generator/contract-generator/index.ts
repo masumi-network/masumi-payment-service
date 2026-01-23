@@ -8,11 +8,7 @@ import {
 } from '@meshsdk/core-cst';
 import paymentPlutus from '@smart-contracts/payment/plutus.json';
 import registryPlutus from '@smart-contracts/registry/plutus.json';
-import {
-  Network,
-  OnChainState,
-  PaymentSource,
-} from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSource } from '@/generated/prisma/client';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { validateHexString } from '@/utils/validator/hex';
@@ -42,13 +38,8 @@ export async function getPaymentScriptFromPaymentSourceV1(
   );
 }
 
-export async function getRegistryScriptFromNetworkHandlerV1(
-  paymentSource: PaymentSource,
-) {
-  return await getRegistryScriptV1(
-    paymentSource.smartContractAddress,
-    paymentSource.network,
-  );
+export async function getRegistryScriptFromNetworkHandlerV1(paymentSource: PaymentSource) {
+  return await getRegistryScriptV1(paymentSource.smartContractAddress, paymentSource.network);
 }
 
 export async function getPaymentScriptV1(
@@ -101,10 +92,7 @@ export async function getPaymentScriptV1(
     version: 'V3',
   };
   const networkId = convertNetworkToId(network);
-  const smartContractAddress: unknown = resolvePlutusScriptAddress(
-    script,
-    networkId,
-  );
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(script, networkId);
   if (typeof smartContractAddress !== 'string') {
     throw new TypeError(
       `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
@@ -113,21 +101,13 @@ export async function getPaymentScriptV1(
   return { script, smartContractAddress };
 }
 
-export async function getRegistryScriptV1(
-  contractAddress: string,
-  network: Network,
-) {
+export async function getRegistryScriptV1(contractAddress: string, network: Network) {
   const script: PlutusScript = {
-    code: applyParamsToScript(registryPlutus.validators[0].compiledCode, [
-      contractAddress,
-    ]),
+    code: applyParamsToScript(registryPlutus.validators[0].compiledCode, [contractAddress]),
     version: 'V3',
   };
 
-  const plutusScriptRegistry = deserializePlutusScript(
-    script.code,
-    script.version,
-  );
+  const plutusScriptRegistry = deserializePlutusScript(script.code, script.version);
 
   const policyAny: unknown = plutusScriptRegistry.hash();
   if (
@@ -138,8 +118,7 @@ export async function getRegistryScriptV1(
     typeof policyAny !== 'string'
   ) {
     throw new TypeError(
-      'Expected PlutusScript.hash() to return an object with toString() got: ' +
-        typeof policyAny,
+      'Expected PlutusScript.hash() to return an object with toString() got: ' + typeof policyAny,
     );
   }
   const policyId =
@@ -149,10 +128,7 @@ export async function getRegistryScriptV1(
 
   const networkId = convertNetworkToId(network);
 
-  const smartContractAddress: unknown = resolvePlutusScriptAddress(
-    script,
-    networkId,
-  );
+  const smartContractAddress: unknown = resolvePlutusScriptAddress(script, networkId);
   if (typeof smartContractAddress !== 'string') {
     throw new TypeError(
       `Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`,
@@ -327,11 +303,7 @@ export function getDatum({
   if (inputHash != null && !validateHexString(inputHash)) {
     throw new Error('Input hash is not a valid hex string');
   }
-  if (
-    resultHash != null &&
-    resultHash.length > 0 &&
-    !validateHexString(resultHash)
-  ) {
+  if (resultHash != null && resultHash.length > 0 && !validateHexString(resultHash)) {
     throw new Error('Result hash is not a valid hex string');
   }
 

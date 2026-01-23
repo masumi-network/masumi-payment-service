@@ -41,10 +41,10 @@ export async function checkRegistryData() {
         });
       });
     } else {
-      logInfo(
-        'No recent registry requests found. Try creating a registration first.',
-        { component: 'diagnostic', operation: 'registry_check' },
-      );
+      logInfo('No recent registry requests found. Try creating a registration first.', {
+        component: 'diagnostic',
+        operation: 'registry_check',
+      });
     }
 
     logInfo('\n=== All Registry States ===', {

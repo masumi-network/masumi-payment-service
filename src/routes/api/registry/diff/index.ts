@@ -26,15 +26,11 @@ export const queryRegistryDiffSchemaInput = z.object({
       'Pagination cursor (registry request id). Used as tie-breaker when lastUpdate equals a state-change timestamp',
     ),
   lastUpdate: registryDiffLastUpdateSchema
-    .default(() =>
-      registryDiffLastUpdateSchema.parse(new Date(0).toISOString()),
-    )
+    .default(() => registryDiffLastUpdateSchema.parse(new Date(0).toISOString()))
     .describe(
       'Return registry entries whose registration state changed at/after this ISO timestamp',
     ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network used to register the agent on'),
+  network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -84,11 +80,7 @@ export const queryRegistryDiffGet = payAuthenticatedEndpointFactory.build({
     input: z.infer<typeof queryRegistryDiffSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
     const result = await prisma.registryRequest.findMany({
       where: buildRegistryDiffWhere({

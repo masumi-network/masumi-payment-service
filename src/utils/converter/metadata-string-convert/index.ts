@@ -5,10 +5,7 @@ export function metadataToString(value: string | string[] | undefined) {
   if (typeof value === 'string') return value;
   return value.join('');
 }
-export function stringToMetadata(
-  s: string | undefined | null,
-  forceArray: boolean = true,
-) {
+export function stringToMetadata(s: string | undefined | null, forceArray: boolean = true) {
   if (s == undefined || s == null) {
     return '';
   }

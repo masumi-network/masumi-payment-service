@@ -14,15 +14,9 @@
     "strict": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@/*": [
-        "src/*"
-      ],
-      "@smart-contracts/*": [
-        "smart-contracts/*"
-      ],
-      "@prisma/client": [
-        "src/generated/prisma/client"
-      ]
+      "@/*": ["src/*"],
+      "@smart-contracts/*": ["smart-contracts/*"],
+      "@prisma/client": ["src/generated/prisma/client"]
     }
   },
   "include": [
@@ -31,7 +25,5 @@
     "tests/**/*.ts",
     "jest.e2e.config.ts"
   ],
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules"]
 }

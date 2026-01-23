@@ -35,20 +35,19 @@ async function detectRollbackForTxPage(
       },
     });
     if (exists != null) {
-      const newerThanRollbackTxs =
-        await prisma.paymentSourceIdentifiers.findMany({
-          where: {
-            createdAt: {
-              gte: exists.createdAt,
-            },
-            PaymentSource: {
-              smartContractAddress: paymentContractAddress,
-            },
+      const newerThanRollbackTxs = await prisma.paymentSourceIdentifiers.findMany({
+        where: {
+          createdAt: {
+            gte: exists.createdAt,
           },
-          select: {
-            txHash: true,
+          PaymentSource: {
+            smartContractAddress: paymentContractAddress,
           },
-        });
+        },
+        select: {
+          txHash: true,
+        },
+      });
       rolledBackTx = [
         ...newerThanRollbackTxs.map((x) => {
           return {
@@ -71,9 +70,7 @@ export async function getExtendedTxInformation(
   blockfrost: BlockFrostAPI,
   maxTransactionToProcessInParallel: number,
 ) {
-  const batchCount = Math.ceil(
-    latestTxs.length / maxTransactionToProcessInParallel,
-  );
+  const batchCount = Math.ceil(latestTxs.length / maxTransactionToProcessInParallel);
   const txData: Array<{
     blockTime: number;
     tx: { tx_hash: string };
@@ -110,10 +107,7 @@ export async function getExtendedTxInformation(
       i * maxTransactionToProcessInParallel,
       Math.min((i + 1) * maxTransactionToProcessInParallel, latestTxs.length),
     );
-    logger.info(
-      'Processing tx batch ' + i.toString() + ' of ' + batchCount.toString(),
-      {},
-    );
+    logger.info('Processing tx batch ' + i.toString() + ' of ' + batchCount.toString(), {});
 
     const txDataBatch = await advancedRetryAll({
       operations: txBatch.map((tx) => async () => {
@@ -126,9 +120,7 @@ export async function getExtendedTxInformation(
         const cbor = await blockfrost.txsCbor(tx.tx_hash);
         const utxos = await blockfrost.txsUtxos(tx.tx_hash);
 
-        const transaction = Transaction.from_bytes(
-          Buffer.from(cbor.cbor, 'hex'),
-        );
+        const transaction = Transaction.from_bytes(Buffer.from(cbor.cbor, 'hex'));
 
         const metadata: TransactionMetadata = {
           fees: BigInt(txDetails.fees),
@@ -196,10 +188,10 @@ export async function getTxsFromCardanoAfterSpecificTx(
   let rolledBackTx: Array<{ tx_hash: string }> = [];
   do {
     index++;
-    const txs = await blockfrost.addressesTransactions(
-      paymentContract.smartContractAddress,
-      { page: index, order: 'desc' },
-    );
+    const txs = await blockfrost.addressesTransactions(paymentContract.smartContractAddress, {
+      page: index,
+      order: 'desc',
+    });
     if (txs.length == 0) {
       //we reached the last page of all smart contract transactions
       if (latestTx.length == 0) {
@@ -213,9 +205,7 @@ export async function getTxsFromCardanoAfterSpecificTx(
     latestTx.push(...txs);
     foundTx = txs.findIndex((tx) => tx.tx_hash == latestIdentifier);
     if (foundTx != -1) {
-      const latestTxIndex = latestTx.findIndex(
-        (tx) => tx.tx_hash == latestIdentifier,
-      );
+      const latestTxIndex = latestTx.findIndex((tx) => tx.tx_hash == latestIdentifier);
       latestTx = latestTx.slice(0, latestTxIndex);
     } else if (latestIdentifier != null) {
       // if not found we assume a rollback happened and need to check all previous txs
@@ -231,12 +221,9 @@ export async function getTxsFromCardanoAfterSpecificTx(
         latestTx = latestTx.slice(0, rollbackInfo.foundIndex);
       }
     } else if (index % 10 == 0) {
-      logger.info(
-        'Full sync in progress, processing tx page ' + index.toString(),
-        {
-          tx: txs[0],
-        },
-      );
+      logger.info('Full sync in progress, processing tx page ' + index.toString(), {
+        tx: txs[0],
+      });
     }
   } while (foundTx == -1);
 
@@ -258,12 +245,8 @@ export async function getSmartContractInteractionTxHistoryList(
   const txHashes = [];
   while (remainingLevels > 0) {
     const tx = await blockfrost.txsUtxos(hashToCheck);
-    const inputUtxos = tx.inputs.filter((x) =>
-      x.address.startsWith(scriptAddress),
-    );
-    const outputUtxos = tx.outputs.filter((x) =>
-      x.address.startsWith(scriptAddress),
-    );
+    const inputUtxos = tx.inputs.filter((x) => x.address.startsWith(scriptAddress));
+    const outputUtxos = tx.outputs.filter((x) => x.address.startsWith(scriptAddress));
     if (inputUtxos.length != 1) {
       if (inputUtxos.find((x) => x.tx_hash == lastTxHash) != null) {
         txHashes.push(lastTxHash);

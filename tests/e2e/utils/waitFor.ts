@@ -29,9 +29,7 @@ export async function waitFor<T>(
   let attempts = 0;
   let lastError: Error | undefined;
 
-  console.log(
-    `⏳ Waiting for ${description} (timeout: ${timeout}ms, interval: ${interval}ms)`,
-  );
+  console.log(`⏳ Waiting for ${description} (timeout: ${timeout}ms, interval: ${interval}ms)`);
 
   while (Date.now() - startTime < timeout) {
     attempts++;
@@ -42,9 +40,7 @@ export async function waitFor<T>(
 
       if (result) {
         const elapsed = Date.now() - startTime;
-        console.log(
-          `✅ Success after ${attempts} attempts (${elapsed}ms): ${description}`,
-        );
+        console.log(`✅ Success after ${attempts} attempts (${elapsed}ms): ${description}`);
         return {
           success: true,
           result: result as T,
@@ -62,9 +58,7 @@ export async function waitFor<T>(
   }
 
   const elapsed = Date.now() - startTime;
-  console.log(
-    `⏰ Timeout after ${attempts} attempts (${elapsed}ms): ${description}`,
-  );
+  console.log(`⏰ Timeout after ${attempts} attempts (${elapsed}ms): ${description}`);
 
   return {
     success: false,

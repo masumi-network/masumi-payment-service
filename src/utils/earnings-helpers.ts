@@ -31,18 +31,17 @@ export function parseDateRange(
   return { periodStart, periodEnd };
 }
 
-export function filterByAgentIdentifier<
-  T extends { blockchainIdentifier: string },
->(transactions: T[], agentIdentifier: string | null): T[] {
+export function filterByAgentIdentifier<T extends { blockchainIdentifier: string }>(
+  transactions: T[],
+  agentIdentifier: string | null,
+): T[] {
   if (!agentIdentifier) {
     return transactions;
   }
   const filtered: T[] = [];
   for (const transaction of transactions) {
     try {
-      const decoded = decodeBlockchainIdentifier(
-        transaction.blockchainIdentifier,
-      );
+      const decoded = decodeBlockchainIdentifier(transaction.blockchainIdentifier);
       if (decoded && decoded.agentIdentifier === agentIdentifier) {
         filtered.push(transaction);
       }
@@ -62,16 +61,9 @@ export type Fund = {
   blockchainFees: number;
 };
 
-export function addToFundsMap(
-  paymentFunds: Fund,
-  unit: string,
-  amount: bigint,
-): void {
+export function addToFundsMap(paymentFunds: Fund, unit: string, amount: bigint): void {
   if (paymentFunds.units.has(unit)) {
-    paymentFunds.units.set(
-      unit,
-      paymentFunds.units.get(unit)! + Number(amount),
-    );
+    paymentFunds.units.set(unit, paymentFunds.units.get(unit)! + Number(amount));
   } else {
     paymentFunds.units.set(unit, Number(amount));
   }

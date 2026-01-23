@@ -10,11 +10,7 @@ import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
 import { postPurchaseSpending } from './purchases/spending';
 import { paymentInitPost, queryPaymentEntryGet } from './payments';
 import { getPaymentIncome } from './payments/income';
-import {
-  deleteAgentRegistration,
-  queryRegistryRequestGet,
-  registerAgentPost,
-} from './registry';
+import { deleteAgentRegistration, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
   paymentSourceExtendedEndpointDelete,
   paymentSourceExtendedEndpointGet,
@@ -22,11 +18,7 @@ import {
   paymentSourceExtendedEndpointPost,
 } from './payment-source-extended';
 import { queryAPIKeyStatusEndpointGet } from './api-key-status';
-import {
-  patchWalletEndpointPatch,
-  postWalletEndpointPost,
-  queryWalletEndpointGet,
-} from './wallet';
+import { patchWalletEndpointPatch, postWalletEndpointPost, queryWalletEndpointGet } from './wallet';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
 import { paymentSourceEndpointGet } from './payment-source';
@@ -42,11 +34,7 @@ import { revealDataEndpointPost } from './reveal-data';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
 import { queryRegistryDiffGet } from './registry/diff';
-import {
-  registerWebhookPost,
-  listWebhooksGet,
-  deleteWebhookDelete,
-} from './webhooks';
+import { registerWebhookPost, listWebhooksGet, deleteWebhookDelete } from './webhooks';
 import {
   queryPaymentDiffCombinedGet,
   queryPaymentDiffNextActionGet,

@@ -5,24 +5,14 @@ import { queryPaymentsSchemaOutput } from '@/routes/api/payments';
 
 // Base webhook payload schema
 export const baseWebhookPayloadSchema = z.object({
-  event_type: z
-    .nativeEnum(WebhookEventType)
-    .describe('The type of webhook event that occurred'),
-  timestamp: z
-    .string()
-    .datetime()
-    .describe('ISO 8601 timestamp when the webhook was triggered'),
-  webhook_id: z
-    .string()
-    .describe('Unique identifier for this webhook delivery'),
-  data: z
-    .record(z.string(), z.unknown())
-    .describe('The actual data payload for the webhook event'),
+  event_type: z.nativeEnum(WebhookEventType).describe('The type of webhook event that occurred'),
+  timestamp: z.string().datetime().describe('ISO 8601 timestamp when the webhook was triggered'),
+  webhook_id: z.string().describe('Unique identifier for this webhook delivery'),
+  data: z.record(z.string(), z.unknown()).describe('The actual data payload for the webhook event'),
 });
 
 // Extract individual purchase/payment item schemas from existing API schemas
-const purchaseItemSchema =
-  queryPurchaseRequestSchemaOutput.shape.Purchases.element;
+const purchaseItemSchema = queryPurchaseRequestSchemaOutput.shape.Purchases.element;
 const paymentItemSchema = queryPaymentsSchemaOutput.shape.Payments.element;
 
 // Generic webhook payload schema factory
@@ -33,23 +23,17 @@ const createWebhookPayloadSchema = <T extends z.ZodLiteral<WebhookEventType>>(
 ) =>
   z.object({
     event_type: eventType.describe('The type of webhook event that occurred'),
-    timestamp: z
-      .string()
-      .datetime()
-      .describe('ISO 8601 timestamp when the webhook was triggered'),
-    webhook_id: z
-      .string()
-      .describe('Unique identifier for this webhook delivery'),
+    timestamp: z.string().datetime().describe('ISO 8601 timestamp when the webhook was triggered'),
+    webhook_id: z.string().describe('Unique identifier for this webhook delivery'),
     data: dataSchema.describe(description),
   });
 
 // PURCHASE webhook schemas
-export const purchaseOnChainStatusChangedPayloadSchema =
-  createWebhookPayloadSchema(
-    z.literal('PURCHASE_ON_CHAIN_STATUS_CHANGED'),
-    purchaseItemSchema,
-    'Complete purchase data matching the GET /purchases endpoint structure when purchase on-chain status changes',
-  );
+export const purchaseOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
+  z.literal('PURCHASE_ON_CHAIN_STATUS_CHANGED'),
+  purchaseItemSchema,
+  'Complete purchase data matching the GET /purchases endpoint structure when purchase on-chain status changes',
+);
 
 export const purchaseOnErrorPayloadSchema = createWebhookPayloadSchema(
   z.literal('PURCHASE_ON_ERROR'),
@@ -58,12 +42,11 @@ export const purchaseOnErrorPayloadSchema = createWebhookPayloadSchema(
 );
 
 // PAYMENT webhook schemas
-export const paymentOnChainStatusChangedPayloadSchema =
-  createWebhookPayloadSchema(
-    z.literal('PAYMENT_ON_CHAIN_STATUS_CHANGED'),
-    paymentItemSchema,
-    'Complete payment data matching the GET /payments endpoint structure when payment on-chain status changes',
-  );
+export const paymentOnChainStatusChangedPayloadSchema = createWebhookPayloadSchema(
+  z.literal('PAYMENT_ON_CHAIN_STATUS_CHANGED'),
+  paymentItemSchema,
+  'Complete payment data matching the GET /payments endpoint structure when payment on-chain status changes',
+);
 
 export const paymentOnErrorPayloadSchema = createWebhookPayloadSchema(
   z.literal('PAYMENT_ON_ERROR'),
@@ -84,9 +67,7 @@ export type BaseWebhookPayload = z.infer<typeof baseWebhookPayloadSchema>;
 export type PurchaseOnChainStatusChangedPayload = z.infer<
   typeof purchaseOnChainStatusChangedPayloadSchema
 >;
-export type PurchaseOnErrorPayload = z.infer<
-  typeof purchaseOnErrorPayloadSchema
->;
+export type PurchaseOnErrorPayload = z.infer<typeof purchaseOnErrorPayloadSchema>;
 export type PaymentOnChainStatusChangedPayload = z.infer<
   typeof paymentOnChainStatusChangedPayloadSchema
 >;

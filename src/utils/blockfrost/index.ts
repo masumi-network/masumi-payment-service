@@ -12,10 +12,7 @@ export type InvalidAsset = {
   errorMessage: string;
 };
 
-export function getBlockfrostInstance(
-  network: $Enums.Network,
-  apiKey: string,
-): BlockFrostAPI {
+export function getBlockfrostInstance(network: $Enums.Network, apiKey: string): BlockFrostAPI {
   const cacheKey = `${network}-${apiKey}`;
   let instance = blockfrostInstanceCache.get(cacheKey);
 
@@ -86,8 +83,7 @@ export async function validateAssetsOnChain(
           };
         }
         // Treat network/server errors as invalid assets
-        const errorMessage =
-          error instanceof Error ? error.message : 'Unknown error';
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         return {
           unit,
           valid: false,
@@ -108,9 +104,7 @@ export async function validateAssetsOnChain(
         continue; // Skip if unit is somehow undefined
       }
       const errorMessage =
-        result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason);
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
       invalidAssets.push({
         asset: unit,
         errorMessage: `validation error: ${errorMessage}`,

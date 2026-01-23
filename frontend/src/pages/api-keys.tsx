@@ -73,21 +73,12 @@ export default function ApiKeys() {
       filtered = filtered.filter((key) => {
         const nameMatch = key.id?.toLowerCase().includes(query) || false;
         const tokenMatch = key.token?.toLowerCase().includes(query) || false;
-        const permissionMatch =
-          key.permission?.toLowerCase().includes(query) || false;
+        const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((network) =>
-            network.toLowerCase().includes(query),
-          ) || false;
+          key.networkLimit?.some((network) => network.toLowerCase().includes(query)) || false;
 
-        return (
-          nameMatch ||
-          tokenMatch ||
-          permissionMatch ||
-          statusMatch ||
-          networkMatch
-        );
+        return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
     }
 
@@ -119,9 +110,7 @@ export default function ApiKeys() {
 
   const handleSelectAll = () => {
     setSelectedKeys(
-      selectedKeys.length === allApiKeys.length
-        ? []
-        : allApiKeys.map((key) => key.token),
+      selectedKeys.length === allApiKeys.length ? [] : allApiKeys.map((key) => key.token),
     );
   };
 
@@ -219,24 +208,15 @@ export default function ApiKeys() {
                 <tr className="border-b">
                   <th className="w-12 p-4">
                     <Checkbox
-                      checked={
-                        allApiKeys.length > 0 &&
-                        selectedKeys.length === allApiKeys.length
-                      }
+                      checked={allApiKeys.length > 0 && selectedKeys.length === allApiKeys.length}
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Permission
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Networks
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Usage Limits
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium">Permission</th>
+                  <th className="p-4 text-left text-sm font-medium">Networks</th>
+                  <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
                   <th className="w-12 p-4"></th>
                 </tr>
@@ -247,9 +227,7 @@ export default function ApiKeys() {
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
-                      {searchQuery
-                        ? 'No API keys found matching your search'
-                        : 'No API keys found'}
+                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
                     </td>
                   </tr>
                 ) : (
@@ -332,9 +310,7 @@ export default function ApiKeys() {
                               value="delete"
                               className="text-red-600"
                             >
-                              {key.token === apiKey
-                                ? 'Cannot delete current API key'
-                                : 'Delete'}
+                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -348,11 +324,7 @@ export default function ApiKeys() {
 
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (
-              <Pagination
-                hasMore={hasMore}
-                isLoading={isLoading}
-                onLoadMore={handleLoadMore}
-              />
+              <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
             )}
           </div>
         </div>

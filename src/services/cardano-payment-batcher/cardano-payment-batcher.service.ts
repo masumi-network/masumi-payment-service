@@ -24,13 +24,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { errorToString } from '@/utils/converter/error-string-convert';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import cbor from 'cbor';
-import {
-  Address,
-  Datum,
-  toPlutusData,
-  toValue,
-  TransactionOutput,
-} from '@meshsdk/core-cst';
+import { Address, Datum, toPlutusData, toValue, TransactionOutput } from '@meshsdk/core-cst';
 import { CONSTANTS } from '@/utils/config';
 
 type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
@@ -53,8 +47,7 @@ type PaymentSourceWithWallets = Prisma.PaymentSourceGetPayload<{
   };
 }>;
 
-type PurchaseRequestWithRelations =
-  PaymentSourceWithWallets['PurchaseRequests'][number];
+type PurchaseRequestWithRelations = PaymentSourceWithWallets['PurchaseRequests'][number];
 
 type BatchedRequest = {
   paymentRequest: PurchaseRequestWithRelations;
@@ -92,8 +85,7 @@ async function executeSpecificBatchPayment(
     const sellerAddress = data.paymentRequest.SellerWallet.walletAddress;
     const submitResultTime = data.paymentRequest.submitResultTime;
     const unlockTime = data.paymentRequest.unlockTime;
-    const externalDisputeUnlockTime =
-      data.paymentRequest.externalDisputeUnlockTime;
+    const externalDisputeUnlockTime = data.paymentRequest.externalDisputeUnlockTime;
 
     if (data.paymentRequest.payByTime == null) {
       throw new Error('Pay by time is null, this is deprecated');
@@ -313,10 +305,9 @@ export async function batchLatestPaymentEntriesV1() {
               });
               continue;
             } else if (purchaseRequest.submitResultTime < maxSubmitResultTime) {
-              logger.info(
-                'Purchase request times out in less than 5 minutes, ignoring',
-                { purchaseRequest: purchaseRequest },
-              );
+              logger.info('Purchase request times out in less than 5 minutes, ignoring', {
+                purchaseRequest: purchaseRequest,
+              });
               await prisma.purchaseRequest.update({
                 where: { id: purchaseRequest.id },
                 data: {
@@ -393,8 +384,7 @@ export async function batchLatestPaymentEntriesV1() {
                 walletId: wallet.id,
                 scriptAddress: paymentContract.smartContractAddress,
                 amounts: amounts.map((amount) => ({
-                  unit:
-                    amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit,
+                  unit: amount.unit.toLowerCase() == 'lovelace' ? '' : amount.unit,
                   quantity: BigInt(amount.quantity),
                 })),
               };
@@ -409,26 +399,20 @@ export async function batchLatestPaymentEntriesV1() {
             paymentContract.PaymentSourceConfig.rpcProviderApiKey,
           );
 
-          const protocolParameter =
-            await blockchainProvider.fetchProtocolParameters();
+          const protocolParameter = await blockchainProvider.fetchProtocolParameters();
 
           for (const walletData of walletAmounts) {
             const wallet = walletData.wallet;
             const amounts = walletData.amounts;
             const potentialAddresses = await wallet.getUsedAddresses();
             if (potentialAddresses.length == 0) {
-              logger.warn(
-                'No addresses found for wallet ' + walletData.walletId,
-              );
+              logger.warn('No addresses found for wallet ' + walletData.walletId);
               continue;
             }
             const batchedPaymentRequests = [];
 
             let index = 0;
-            while (
-              paymentRequestsRemaining.length > 0 &&
-              index < paymentRequestsRemaining.length
-            ) {
+            while (paymentRequestsRemaining.length > 0 && index < paymentRequestsRemaining.length) {
               if (batchedPaymentRequests.length >= maxBatchSize) {
                 maxBatchSizeReached = true;
                 break;
@@ -441,15 +425,12 @@ export async function batchLatestPaymentEntriesV1() {
                 sellerAddress: sellerAddress,
                 blockchainIdentifier: paymentRequest.blockchainIdentifier,
                 inputHash: paymentRequest.inputHash,
-                resultHash:
-                  'd4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35',
+                resultHash: 'd4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35',
                 payByTime: BigInt(Date.now()),
                 collateralReturnLovelace: 1000000000n,
                 resultTime: BigInt(paymentRequest.submitResultTime),
                 unlockTime: BigInt(paymentRequest.unlockTime),
-                externalDisputeUnlockTime: BigInt(
-                  paymentRequest.externalDisputeUnlockTime,
-                ),
+                externalDisputeUnlockTime: BigInt(paymentRequest.externalDisputeUnlockTime),
                 newCooldownTimeSeller: BigInt(0),
                 newCooldownTimeBuyer: BigInt(Date.now()),
                 state: SmartContractState.FundsLocked,
@@ -464,8 +445,7 @@ export async function batchLatestPaymentEntriesV1() {
 
               const otherUnits = paymentRequest.PaidFunds.filter(
                 (amount) =>
-                  amount.unit.toLowerCase() != '' &&
-                  amount.unit.toLowerCase() != 'lovelace',
+                  amount.unit.toLowerCase() != '' && amount.unit.toLowerCase() != 'lovelace',
               ).length;
 
               const totalLength =
@@ -500,21 +480,16 @@ export async function batchLatestPaymentEntriesV1() {
                   },
                 ]),
               );
-              dummyOutput.setDatum(
-                Datum.newInlineData(toPlutusData(tmpDatum.value)),
-              );
+              dummyOutput.setDatum(Datum.newInlineData(toPlutusData(tmpDatum.value)));
               const dummyCbor: unknown = dummyOutput.toCbor();
               if (typeof dummyCbor !== 'string') {
                 throw new TypeError(
-                  'Expected dummyOutput.toCbor() to return a string, got: ' +
-                    typeof dummyCbor,
+                  'Expected dummyOutput.toCbor() to return a string, got: ' + typeof dummyCbor,
                 );
               }
               overestimatedMinUtxoCost =
                 BigInt(
-                  defaultOverheadSize +
-                    bufferSizeCooldownTime +
-                    Math.ceil(dummyCbor.length / 2),
+                  defaultOverheadSize + bufferSizeCooldownTime + Math.ceil(dummyCbor.length / 2),
                 ) * BigInt(protocolParameter.coinsPerUtxoSize);
 
               //set min ada required;
@@ -540,12 +515,10 @@ export async function batchLatestPaymentEntriesV1() {
                   sellerWithdrawnPurchaseRequestId: null,
                 });
               } else if (
-                paymentRequest.PaidFunds[lovelaceRequired].amount <
-                overestimatedMinUtxoCost
+                paymentRequest.PaidFunds[lovelaceRequired].amount < overestimatedMinUtxoCost
               ) {
                 overpaidLovelace =
-                  overestimatedMinUtxoCost -
-                  paymentRequest.PaidFunds[lovelaceRequired].amount;
+                  overestimatedMinUtxoCost - paymentRequest.PaidFunds[lovelaceRequired].amount;
                 if (overpaidLovelace < 0n) {
                   overpaidLovelace = 0n;
                 }
@@ -555,12 +528,8 @@ export async function batchLatestPaymentEntriesV1() {
                 //overpaidLovelace 0.5 ada
                 //we want to be overpaid lovelace to be 1.43523 ada
                 //so we need to add 1.43523 ada - 0.5 ada = 0.93523 ada
-                if (
-                  overpaidLovelace > 0n &&
-                  overpaidLovelace < CONSTANTS.MIN_COLLATERAL_LOVELACE
-                ) {
-                  overestimatedMinUtxoCost +=
-                    CONSTANTS.MIN_COLLATERAL_LOVELACE - overpaidLovelace;
+                if (overpaidLovelace > 0n && overpaidLovelace < CONSTANTS.MIN_COLLATERAL_LOVELACE) {
+                  overestimatedMinUtxoCost += CONSTANTS.MIN_COLLATERAL_LOVELACE - overpaidLovelace;
                   overpaidLovelace = CONSTANTS.MIN_COLLATERAL_LOVELACE;
                 }
 
@@ -583,13 +552,8 @@ export async function batchLatestPaymentEntriesV1() {
               }
               let isFulfilled = true;
               for (const paymentAmount of paymentRequest.PaidFunds) {
-                const walletAmount = amounts.find(
-                  (amount) => amount.unit == paymentAmount.unit,
-                );
-                if (
-                  walletAmount == null ||
-                  paymentAmount.amount > walletAmount.quantity
-                ) {
+                const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
+                if (walletAmount == null || paymentAmount.amount > walletAmount.quantity) {
                   isFulfilled = false;
                   break;
                 }
@@ -601,9 +565,7 @@ export async function batchLatestPaymentEntriesV1() {
                 });
                 //deduct amounts from wallet
                 for (const paymentAmount of paymentRequest.PaidFunds) {
-                  const walletAmount = amounts.find(
-                    (amount) => amount.unit == paymentAmount.unit,
-                  );
+                  const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
                   walletAmount!.quantity -= paymentAmount.amount;
                 }
                 paymentRequestsRemaining.splice(index, 1);
@@ -626,10 +588,7 @@ export async function batchLatestPaymentEntriesV1() {
             }
           }
           //only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
-          if (
-            paymentRequestsRemaining.length > 0 &&
-            maxBatchSizeReached == false
-          ) {
+          if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
             const allWalletCount = await prisma.hotWallet.count({
               where: {
                 deletedAt: null,
@@ -642,14 +601,9 @@ export async function batchLatestPaymentEntriesV1() {
             });
             //only go into error state if all wallets were unlocked, otherwise we might have enough funds in other wallets
             if (allWalletCount == potentialWallets.length) {
-              logger.warn(
-                'No wallets with funds found, going into error state for',
-                {
-                  paymentRequestsRemaining: paymentRequestsRemaining.map(
-                    (x) => x.id,
-                  ),
-                },
-              );
+              logger.warn('No wallets with funds found, going into error state for', {
+                paymentRequestsRemaining: paymentRequestsRemaining.map((x) => x.id),
+              });
               for (const paymentRequest of paymentRequestsRemaining) {
                 await prisma.purchaseRequest.update({
                   where: { id: paymentRequest.id },
@@ -661,8 +615,7 @@ export async function batchLatestPaymentEntriesV1() {
                     },
                     NextAction: {
                       create: {
-                        requestedAction:
-                          PurchasingAction.WaitingForManualAction,
+                        requestedAction: PurchasingAction.WaitingForManualAction,
                         errorType: PurchaseErrorType.InsufficientFunds,
                         errorNote:
                           paymentRequest.inputHash == null
@@ -698,11 +651,7 @@ export async function batchLatestPaymentEntriesV1() {
                       30000,
                     );
                   }),
-                  executeSpecificBatchPayment(
-                    walletPairing,
-                    paymentContract,
-                    blockchainProvider,
-                  ),
+                  executeSpecificBatchPayment(walletPairing, paymentContract, blockchainProvider),
                 ]);
               } catch (error) {
                 logger.error('Error batching payments', {
@@ -721,11 +670,9 @@ export async function batchLatestPaymentEntriesV1() {
                       },
                       NextAction: {
                         create: {
-                          requestedAction:
-                            PurchasingAction.WaitingForManualAction,
+                          requestedAction: PurchasingAction.WaitingForManualAction,
                           errorType: PurchaseErrorType.Unknown,
-                          errorNote:
-                            'Batching payments failed: ' + errorToString(error),
+                          errorNote: 'Batching payments failed: ' + errorToString(error),
                         },
                       },
                     },
@@ -747,8 +694,7 @@ export async function batchLatestPaymentEntriesV1() {
         } catch (error) {
           logger.error('Error batching payments outer', { error: error });
 
-          const potentiallyFailedPurchaseRequests =
-            paymentContract.PurchaseRequests;
+          const potentiallyFailedPurchaseRequests = paymentContract.PurchaseRequests;
           const failedPurchaseRequests = await prisma.purchaseRequest.findMany({
             where: {
               id: { in: potentiallyFailedPurchaseRequests.map((x) => x.id) },
@@ -787,9 +733,7 @@ export async function batchLatestPaymentEntriesV1() {
                     create: {
                       requestedAction: PurchasingAction.WaitingForManualAction,
                       errorType: PurchaseErrorType.Unknown,
-                      errorNote:
-                        'Outer error: Batching payments failed: ' +
-                        errorToString(error),
+                      errorNote: 'Outer error: Batching payments failed: ' + errorToString(error),
                     },
                   },
                 },

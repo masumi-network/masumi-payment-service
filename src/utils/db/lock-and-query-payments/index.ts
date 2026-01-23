@@ -1,8 +1,4 @@
-import {
-  HotWallet,
-  OnChainState,
-  PaymentAction,
-} from '@/generated/prisma/client';
+import { HotWallet, OnChainState, PaymentAction } from '@/generated/prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({
@@ -80,18 +76,12 @@ export async function lockAndQueryPayments({
         const paymentRequests = [];
         const minCooldownTime = paymentSource.cooldownTime;
         for (const paymentRequest of paymentSource.PaymentRequests) {
-          if (
-            paymentRequest.sellerCoolDownTime >
-            Date.now() - minCooldownTime
-          ) {
+          if (paymentRequest.sellerCoolDownTime > Date.now() - minCooldownTime) {
             continue;
           }
 
           const wallet = paymentRequest.SmartContractWallet;
-          if (
-            wallet != null &&
-            !sellingWallets.some((w) => w.id === wallet.id)
-          ) {
+          if (wallet != null && !sellingWallets.some((w) => w.id === wallet.id)) {
             const result = await prisma.hotWallet.update({
               where: { id: wallet.id, deletedAt: null },
               data: { lockedAt: new Date() },

@@ -20,10 +20,7 @@ export class AsyncInterval {
     return () => instance.stop();
   }
 
-  private async run(
-    callback: () => Promise<void>,
-    intervalMs: number,
-  ): Promise<void> {
+  private async run(callback: () => Promise<void>, intervalMs: number): Promise<void> {
     if (this.isRunning) {
       return;
     }

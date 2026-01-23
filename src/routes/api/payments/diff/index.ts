@@ -1,12 +1,7 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import {
-  Network,
-  PaymentAction,
-  PaymentErrorType,
-  Prisma,
-} from '@/generated/prisma/client';
+import { Network, PaymentAction, PaymentErrorType, Prisma } from '@/generated/prisma/client';
 import {
   AuthContext,
   checkIsAllowedNetworkOrThrowUnauthorized,
@@ -28,12 +23,7 @@ type PaymentDiffMode =
   | 'nextActionOrOnChainStateOrResultLastChangedAt';
 
 export const queryPaymentDiffSchemaInput = z.object({
-  limit: z.coerce
-    .number()
-    .min(1)
-    .max(100)
-    .default(10)
-    .describe('The number of payments to return'),
+  limit: z.coerce.number().min(1).max(100).default(10).describe('The number of payments to return'),
   cursorId: z
     .string()
     .optional()
@@ -42,12 +32,8 @@ export const queryPaymentDiffSchemaInput = z.object({
     ),
   lastUpdate: paymentDiffLastUpdateSchema
     .default(() => paymentDiffLastUpdateSchema.parse(new Date(0).toISOString()))
-    .describe(
-      'Return payments whose selected status timestamp changed after this ISO timestamp',
-    ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the payments were made on'),
+    .describe('Return payments whose selected status timestamp changed after this ISO timestamp'),
+  network: z.nativeEnum(Network).describe('The network the payments were made on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -58,9 +44,7 @@ export const queryPaymentDiffSchemaInput = z.object({
     .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .describe(
-      'Whether to include the full transaction and status history of the payments',
-    ),
+    .describe('Whether to include the full transaction and status history of the payments'),
 });
 
 function buildPaymentDiffWhere({
@@ -141,10 +125,7 @@ function buildPaymentDiffOrderBy(
     case 'onChainStateOrResultLastChangedAt':
       return [{ onChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
     case 'nextActionOrOnChainStateOrResultLastChangedAt':
-      return [
-        { nextActionOrOnChainStateOrResultLastChangedAt: 'asc' },
-        { id: 'asc' },
-      ];
+      return [{ nextActionOrOnChainStateOrResultLastChangedAt: 'asc' }, { id: 'asc' }];
     default: {
       const _never: never = mode;
       return [{ id: 'asc' }];
@@ -161,11 +142,7 @@ async function queryPaymentDiffByMode({
   ctx: AuthContext;
   mode: PaymentDiffMode;
 }) {
-  await checkIsAllowedNetworkOrThrowUnauthorized(
-    ctx.networkLimit,
-    input.network,
-    ctx.permission,
-  );
+  await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
   const since = input.lastUpdate;
   const sinceId = input.cursorId;
@@ -273,13 +250,10 @@ async function queryPaymentDiffByMode({
         ...payment,
         ...transformPaymentGetTimestamps(payment),
         ...transformPaymentGetAmounts(payment),
-        totalBuyerCardanoFees:
-          Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-        totalSellerCardanoFees:
-          Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+        totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+        totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
         agentIdentifier:
-          decodeBlockchainIdentifier(payment.blockchainIdentifier)
-            ?.agentIdentifier ?? null,
+          decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
         CurrentTransaction: payment.CurrentTransaction
           ? {
               ...payment.CurrentTransaction,
@@ -320,41 +294,38 @@ async function queryPaymentDiffByMode({
   };
 }
 
-export const queryPaymentDiffCombinedGet =
-  readAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPaymentDiffSchemaInput,
-    output: queryPaymentsSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      queryPaymentDiffByMode({
-        input,
-        ctx,
-        mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
-      }),
-  });
+export const queryPaymentDiffCombinedGet = readAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPaymentDiffSchemaInput,
+  output: queryPaymentsSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    queryPaymentDiffByMode({
+      input,
+      ctx,
+      mode: 'nextActionOrOnChainStateOrResultLastChangedAt',
+    }),
+});
 
-export const queryPaymentDiffNextActionGet =
-  readAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPaymentDiffSchemaInput,
-    output: queryPaymentsSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      queryPaymentDiffByMode({
-        input,
-        ctx,
-        mode: 'nextActionLastChangedAt',
-      }),
-  });
+export const queryPaymentDiffNextActionGet = readAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPaymentDiffSchemaInput,
+  output: queryPaymentsSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    queryPaymentDiffByMode({
+      input,
+      ctx,
+      mode: 'nextActionLastChangedAt',
+    }),
+});
 
-export const queryPaymentDiffOnChainStateOrResultGet =
-  readAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: queryPaymentDiffSchemaInput,
-    output: queryPaymentsSchemaOutput,
-    handler: async ({ input, ctx }) =>
-      await queryPaymentDiffByMode({
-        input,
-        ctx,
-        mode: 'onChainStateOrResultLastChangedAt',
-      }),
-  });
+export const queryPaymentDiffOnChainStateOrResultGet = readAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: queryPaymentDiffSchemaInput,
+  output: queryPaymentsSchemaOutput,
+  handler: async ({ input, ctx }) =>
+    await queryPaymentDiffByMode({
+      input,
+      ctx,
+      mode: 'onChainStateOrResultLastChangedAt',
+    }),
+});

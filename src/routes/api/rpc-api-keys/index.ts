@@ -24,60 +24,51 @@ export const rpcProviderKeyOutputSchema = z
     id: z.string().describe('Unique identifier for the RPC provider key'),
     rpcProviderApiKey: z.string().describe('The RPC provider API key '),
     rpcProvider: z.nativeEnum(RPCProvider).describe('The RPC provider type '),
-    createdAt: z
-      .date()
-      .describe('Timestamp when the RPC provider key was created'),
-    updatedAt: z
-      .date()
-      .describe('Timestamp when the RPC provider key was last updated'),
-    network: z
-      .nativeEnum(Network)
-      .describe('The Cardano network this RPC provider key is for'),
+    createdAt: z.date().describe('Timestamp when the RPC provider key was created'),
+    updatedAt: z.date().describe('Timestamp when the RPC provider key was last updated'),
+    network: z.nativeEnum(Network).describe('The Cardano network this RPC provider key is for'),
   })
   .openapi('RpcProviderKey');
 
 export const getRpcProviderKeysSchemaOutput = z.object({
-  RpcProviderKeys: z
-    .array(rpcProviderKeyOutputSchema)
-    .describe('List of RPC provider keys'),
+  RpcProviderKeys: z.array(rpcProviderKeyOutputSchema).describe('List of RPC provider keys'),
 });
 
-export const queryRpcProviderKeysEndpointGet =
-  adminAuthenticatedEndpointFactory.build({
-    method: 'get',
-    input: getRpcProviderKeysSchemaInput,
-    output: getRpcProviderKeysSchemaOutput,
-    handler: async ({
-      input,
-      ctx,
-    }: {
-      input: z.infer<typeof getRpcProviderKeysSchemaInput>;
-      ctx: AuthContext;
-    }) => {
-      const rpcProviderKeys = await prisma.paymentSourceConfig.findMany({
-        cursor: input.cursorId ? { id: input.cursorId } : undefined,
-        take: input.limit,
-        orderBy: { createdAt: 'asc' },
-        where: {
-          PaymentSource: {
-            deletedAt: null,
-            network: { in: ctx.networkLimit },
-          },
+export const queryRpcProviderKeysEndpointGet = adminAuthenticatedEndpointFactory.build({
+  method: 'get',
+  input: getRpcProviderKeysSchemaInput,
+  output: getRpcProviderKeysSchemaOutput,
+  handler: async ({
+    input,
+    ctx,
+  }: {
+    input: z.infer<typeof getRpcProviderKeysSchemaInput>;
+    ctx: AuthContext;
+  }) => {
+    const rpcProviderKeys = await prisma.paymentSourceConfig.findMany({
+      cursor: input.cursorId ? { id: input.cursorId } : undefined,
+      take: input.limit,
+      orderBy: { createdAt: 'asc' },
+      where: {
+        PaymentSource: {
+          deletedAt: null,
+          network: { in: ctx.networkLimit },
         },
-        include: {
-          PaymentSource: { select: { network: true } },
-        },
-      });
+      },
+      include: {
+        PaymentSource: { select: { network: true } },
+      },
+    });
 
-      return {
-        RpcProviderKeys: rpcProviderKeys.map((rpcProviderKey) => ({
-          id: rpcProviderKey.id,
-          rpcProviderApiKey: rpcProviderKey.rpcProviderApiKey,
-          rpcProvider: rpcProviderKey.rpcProvider,
-          createdAt: rpcProviderKey.createdAt,
-          updatedAt: rpcProviderKey.updatedAt,
-          network: rpcProviderKey.PaymentSource!.network,
-        })),
-      };
-    },
-  });
+    return {
+      RpcProviderKeys: rpcProviderKeys.map((rpcProviderKey) => ({
+        id: rpcProviderKey.id,
+        rpcProviderApiKey: rpcProviderKey.rpcProviderApiKey,
+        rpcProvider: rpcProviderKey.rpcProvider,
+        createdAt: rpcProviderKey.createdAt,
+        updatedAt: rpcProviderKey.updatedAt,
+        network: rpcProviderKey.PaymentSource!.network,
+      })),
+    };
+  },
+});

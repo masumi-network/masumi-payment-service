@@ -30,18 +30,13 @@ const getPoolConfig = () => {
   const url = new URL(connectionString);
 
   // Extract connection_limit from URL params (default: 5)
-  const connectionLimit = parseInt(
-    url.searchParams.get('connection_limit') || '5',
-    10,
-  );
+  const connectionLimit = parseInt(url.searchParams.get('connection_limit') || '5', 10);
 
   // Extract connect_timeout from URL params (default: 10 seconds = 10000ms)
-  const connectTimeout =
-    parseInt(url.searchParams.get('connect_timeout') || '10', 10) * 1000;
+  const connectTimeout = parseInt(url.searchParams.get('connect_timeout') || '10', 10) * 1000;
 
   // Extract pool_timeout from URL params (default: 20 seconds = 20000ms)
-  const poolTimeout =
-    parseInt(url.searchParams.get('pool_timeout') || '20', 10) * 1000;
+  const poolTimeout = parseInt(url.searchParams.get('pool_timeout') || '20', 10) * 1000;
 
   return {
     connectionString,
@@ -72,10 +67,7 @@ const calculateDataSize = (data: unknown): number => {
 
   // For arrays, calculate size of each element
   if (Array.isArray(data)) {
-    return (data as unknown[]).reduce<number>(
-      (sum, item) => sum + calculateDataSize(item),
-      0,
-    );
+    return (data as unknown[]).reduce<number>((sum, item) => sum + calculateDataSize(item), 0);
   }
 
   // For objects, calculate size of all properties

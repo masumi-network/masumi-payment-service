@@ -39,21 +39,12 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 const paymentTimeSchema = ez.dateIn();
 
 export const queryPaymentsSchemaInput = z.object({
-  limit: z.coerce
-    .number()
-    .min(1)
-    .max(100)
-    .default(10)
-    .describe('The number of payments to return'),
+  limit: z.coerce.number().min(1).max(100).default(10).describe('The number of payments to return'),
   cursorId: z
     .string()
     .optional()
-    .describe(
-      'Used to paginate through the payments. If this is provided, cursorId is required',
-    ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the payments were made on'),
+    .describe('Used to paginate through the payments. If this is provided, cursorId is required'),
+  network: z.nativeEnum(Network).describe('The network the payments were made on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -65,9 +56,7 @@ export const queryPaymentsSchemaInput = z.object({
     .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .describe(
-      'Whether to include the full transaction and action history of the payments',
-    ),
+    .describe('Whether to include the full transaction and action history of the payments'),
 });
 
 export const paymentResponseSchema = z
@@ -75,19 +64,12 @@ export const paymentResponseSchema = z
     id: z.string().describe('Unique identifier for the payment'),
     createdAt: z.date().describe('Timestamp when the payment was created'),
     updatedAt: z.date().describe('Timestamp when the payment was last updated'),
-    blockchainIdentifier: z
-      .string()
-      .describe('Unique blockchain identifier for the payment'),
-    agentIdentifier: z
-      .string()
-      .nullable()
-      .describe('Identifier of the agent that is being paid'),
+    blockchainIdentifier: z.string().describe('Unique blockchain identifier for the payment'),
+    agentIdentifier: z.string().nullable().describe('Identifier of the agent that is being paid'),
     lastCheckedAt: z
       .date()
       .nullable()
-      .describe(
-        'Timestamp when the payment was last checked on-chain. Null if never checked',
-      ),
+      .describe('Timestamp when the payment was last checked on-chain. Null if never checked'),
     payByTime: z
       .string()
       .nullable()
@@ -96,9 +78,7 @@ export const paymentResponseSchema = z
       ),
     submitResultTime: z
       .string()
-      .describe(
-        'Unix timestamp (in milliseconds) by which the seller must submit the result',
-      ),
+      .describe('Unix timestamp (in milliseconds) by which the seller must submit the result'),
     unlockTime: z
       .string()
       .describe(
@@ -107,34 +87,24 @@ export const paymentResponseSchema = z
     collateralReturnLovelace: z
       .string()
       .nullable()
-      .describe(
-        'Amount of collateral to return in lovelace. Null if no collateral',
-      ),
+      .describe('Amount of collateral to return in lovelace. Null if no collateral'),
     externalDisputeUnlockTime: z
       .string()
       .describe(
         'Unix timestamp (in milliseconds) after which external dispute resolution can occur',
       ),
-    requestedById: z
-      .string()
-      .describe('ID of the API key that created this payment'),
+    requestedById: z.string().describe('ID of the API key that created this payment'),
     resultHash: z
       .string()
       .nullable()
-      .describe(
-        'SHA256 hash of the result submitted by the seller (hex string)',
-      ),
-    nextActionLastChangedAt: z
-      .date()
-      .describe('Timestamp when the next action was last changed'),
+      .describe('SHA256 hash of the result submitted by the seller (hex string)'),
+    nextActionLastChangedAt: z.date().describe('Timestamp when the next action was last changed'),
     onChainStateOrResultLastChangedAt: z
       .date()
       .describe('Timestamp when the on-chain state or result was last changed'),
     nextActionOrOnChainStateOrResultLastChangedAt: z
       .date()
-      .describe(
-        'Timestamp when the next action or on-chain state or result was last changed',
-      ),
+      .describe('Timestamp when the next action or on-chain state or result was last changed'),
     inputHash: z
       .string()
       .nullable()
@@ -149,18 +119,14 @@ export const paymentResponseSchema = z
       .describe(
         'Total Cardano transaction fees paid by the seller in ADA (sum of all confirmed transactions initiated by seller)',
       ),
-    cooldownTime: z
-      .number()
-      .describe('Cooldown period in milliseconds for the seller to dispute'),
+    cooldownTime: z.number().describe('Cooldown period in milliseconds for the seller to dispute'),
     cooldownTimeOtherParty: z
       .number()
       .describe('Cooldown period in milliseconds for the buyer to dispute'),
     onChainState: z
       .nativeEnum(OnChainState)
       .nullable()
-      .describe(
-        'Current state of the payment on the blockchain. Null if not yet on-chain',
-      ),
+      .describe('Current state of the payment on the blockchain. Null if not yet on-chain'),
     NextAction: z
       .object({
         requestedAction: z
@@ -170,10 +136,7 @@ export const paymentResponseSchema = z
           .nativeEnum(PaymentErrorType)
           .nullable()
           .describe('Type of error that occurred, if any'),
-        errorNote: z
-          .string()
-          .nullable()
-          .describe('Additional details about the error, if any'),
+        errorNote: z.string().nullable().describe('Additional details about the error, if any'),
         resultHash: z
           .string()
           .nullable()
@@ -187,16 +150,9 @@ export const paymentResponseSchema = z
         z
           .object({
             id: z.string().describe('Unique identifier for the action'),
-            createdAt: z
-              .date()
-              .describe('Timestamp when the action was created'),
-            updatedAt: z
-              .date()
-              .describe('Timestamp when the action was last updated'),
-            submittedTxHash: z
-              .string()
-              .nullable()
-              .describe('Cardano transaction hash'),
+            createdAt: z.date().describe('Timestamp when the action was created'),
+            updatedAt: z.date().describe('Timestamp when the action was last updated'),
+            submittedTxHash: z.string().nullable().describe('Cardano transaction hash'),
             requestedAction: z
               .nativeEnum(PaymentAction)
               .describe('Next action required for this payment'),
@@ -204,10 +160,7 @@ export const paymentResponseSchema = z
               .nativeEnum(PaymentErrorType)
               .nullable()
               .describe('Type of error that occurred, if any'),
-            errorNote: z
-              .string()
-              .nullable()
-              .describe('Additional details about the error, if any'),
+            errorNote: z.string().nullable().describe('Additional details about the error, if any'),
             resultHash: z
               .string()
               .nullable()
@@ -218,31 +171,17 @@ export const paymentResponseSchema = z
           .describe('Next action required for this payment'),
       )
       .nullable()
-      .describe(
-        'Historical list of all actions for this payment. Null if includeHistory is false',
-      ),
+      .describe('Historical list of all actions for this payment. Null if includeHistory is false'),
     CurrentTransaction: z
       .object({
         id: z.string().describe('Unique identifier for the transaction'),
-        createdAt: z
-          .date()
-          .describe('Timestamp when the transaction was created'),
-        updatedAt: z
-          .date()
-          .describe('Timestamp when the transaction was last updated'),
+        createdAt: z.date().describe('Timestamp when the transaction was created'),
+        updatedAt: z.date().describe('Timestamp when the transaction was last updated'),
         fees: z.string().nullable(),
-        blockHeight: z
-          .number()
-          .nullable()
-          .describe('Block height of the transaction'),
-        blockTime: z
-          .number()
-          .nullable()
-          .describe('Block time of the transaction'),
+        blockHeight: z.number().nullable().describe('Block height of the transaction'),
+        blockTime: z.number().nullable().describe('Block time of the transaction'),
         txHash: z.string().nullable().describe('Cardano transaction hash'),
-        status: z
-          .nativeEnum(TransactionStatus)
-          .describe('Current status of the transaction'),
+        status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
         previousOnChainState: z
           .nativeEnum(OnChainState)
           .nullable()
@@ -257,32 +196,18 @@ export const paymentResponseSchema = z
           .describe('Number of block confirmations for this transaction'),
       })
       .nullable()
-      .describe(
-        'Current active transaction for this payment. Null if no transaction in progress',
-      ),
+      .describe('Current active transaction for this payment. Null if no transaction in progress'),
     TransactionHistory: z
       .array(
         z.object({
           id: z.string().describe('Unique identifier for the transaction'),
-          createdAt: z
-            .date()
-            .describe('Timestamp when the transaction was created'),
-          updatedAt: z
-            .date()
-            .describe('Timestamp when the transaction was last updated'),
+          createdAt: z.date().describe('Timestamp when the transaction was created'),
+          updatedAt: z.date().describe('Timestamp when the transaction was last updated'),
           txHash: z.string().nullable().describe('Cardano transaction hash'),
-          status: z
-            .nativeEnum(TransactionStatus)
-            .describe('Current status of the transaction'),
+          status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
           fees: z.string().nullable().describe('Fees of the transaction'),
-          blockHeight: z
-            .number()
-            .nullable()
-            .describe('Block height of the transaction'),
-          blockTime: z
-            .number()
-            .nullable()
-            .describe('Block time of the transaction'),
+          blockHeight: z.number().nullable().describe('Block height of the transaction'),
+          blockTime: z.number().nullable().describe('Block time of the transaction'),
           previousOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
@@ -320,14 +245,10 @@ export const paymentResponseSchema = z
         z.object({
           amount: z
             .string()
-            .describe(
-              'Amount of the asset withdrawn (as string to handle large numbers)',
-            ),
+            .describe('Amount of the asset withdrawn (as string to handle large numbers)'),
           unit: z
             .string()
-            .describe(
-              'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-            ),
+            .describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
         }),
       )
       .describe('List of assets and amounts withdrawn for the seller'),
@@ -336,14 +257,10 @@ export const paymentResponseSchema = z
         z.object({
           amount: z
             .string()
-            .describe(
-              'Amount of the asset withdrawn (as string to handle large numbers)',
-            ),
+            .describe('Amount of the asset withdrawn (as string to handle large numbers)'),
           unit: z
             .string()
-            .describe(
-              'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-            ),
+            .describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
         }),
       )
       .describe('List of assets and amounts withdrawn for the buyer (refunds)'),
@@ -359,9 +276,7 @@ export const paymentResponseSchema = z
         policyId: z
           .string()
           .nullable()
-          .describe(
-            'Policy ID for the agent registry NFTs. Null if not applicable',
-          ),
+          .describe('Policy ID for the agent registry NFTs. Null if not applicable'),
       })
       .describe('Payment source configuration for this payment'),
     BuyerWallet: z
@@ -370,25 +285,15 @@ export const paymentResponseSchema = z
         walletVkey: z.string().describe('Payment key hash of the buyer wallet'),
       })
       .nullable()
-      .describe(
-        'Buyer wallet information. Null if buyer has not yet submitted payment',
-      ),
+      .describe('Buyer wallet information. Null if buyer has not yet submitted payment'),
     SmartContractWallet: z
       .object({
-        id: z
-          .string()
-          .describe('Unique identifier for the smart contract wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the smart contract wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the smart contract wallet'),
+        id: z.string().describe('Unique identifier for the smart contract wallet'),
+        walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
+        walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
       })
       .nullable()
-      .describe(
-        'Smart contract wallet (seller wallet) managing this payment. Null if not set',
-      ),
+      .describe('Smart contract wallet (seller wallet) managing this payment. Null if not set'),
     metadata: z
       .string()
       .nullable()
@@ -413,11 +318,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
     input: z.infer<typeof queryPaymentsSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
     const result = await prisma.paymentRequest.findMany({
       where: {
@@ -526,13 +427,10 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
           ...payment,
           ...transformPaymentGetTimestamps(payment),
           ...transformPaymentGetAmounts(payment),
-          totalBuyerCardanoFees:
-            Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-          totalSellerCardanoFees:
-            Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+          totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
           agentIdentifier:
-            decodeBlockchainIdentifier(payment.blockchainIdentifier)
-              ?.agentIdentifier ?? null,
+            decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
           CurrentTransaction: payment.CurrentTransaction
             ? {
                 ...payment.CurrentTransaction,
@@ -581,9 +479,7 @@ export const createPaymentsSchemaInput = z.object({
     .describe(
       'The hash of the input data of the payment, should be sha256 hash of the input data, therefore needs to be in hex string format',
     ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the payment will be received on'),
+  network: z.nativeEnum(Network).describe('The network the payment will be received on'),
   agentIdentifier: z
     .string()
     .min(57)
@@ -595,15 +491,11 @@ export const createPaymentsSchemaInput = z.object({
         amount: z
           .string()
           .max(25)
-          .describe(
-            'Amount of the asset in smallest unit (e.g., lovelace for ADA)',
-          ),
+          .describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
         unit: z
           .string()
           .max(150)
-          .describe(
-            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-          ),
+          .describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
       }),
     )
     .max(7)
@@ -611,41 +503,23 @@ export const createPaymentsSchemaInput = z.object({
     .describe('The amounts of the payment, should be null for fixed amount'),
   payByTime: ez
     .dateIn()
-    .default(() =>
-      paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()),
-    )
-    .describe(
-      'The time after which the payment has to be submitted to the smart contract',
-    ),
+    .default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
+    .describe('The time after which the payment has to be submitted to the smart contract'),
   submitResultTime: ez
     .dateIn()
-    .default(() =>
-      paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()),
-    )
-    .describe(
-      'The time after which the payment has to be submitted to the smart contract',
-    ),
-  unlockTime: ez
-    .dateIn()
-    .optional()
-    .describe('The time after which the payment will be unlocked'),
+    .default(() => paymentTimeSchema.parse(new Date(1000 * 60 * 60 * 12).toISOString()))
+    .describe('The time after which the payment has to be submitted to the smart contract'),
+  unlockTime: ez.dateIn().optional().describe('The time after which the payment will be unlocked'),
   externalDisputeUnlockTime: ez
     .dateIn()
     .optional()
-    .describe(
-      'The time after which the payment will be unlocked for external dispute',
-    ),
-  metadata: z
-    .string()
-    .optional()
-    .describe('Metadata to be stored with the payment request'),
+    .describe('The time after which the payment will be unlocked for external dispute'),
+  metadata: z.string().optional().describe('Metadata to be stored with the payment request'),
   identifierFromPurchaser: z
     .string()
     .min(14)
     .max(26)
-    .describe(
-      'The a unique nonce from the purchaser. Required to be in hex format',
-    ),
+    .describe('The a unique nonce from the purchaser. Required to be in hex format'),
 });
 
 export const createPaymentSchemaOutput = paymentResponseSchema.omit({
@@ -664,11 +538,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     input: z.infer<typeof createPaymentsSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
     const policyId = extractPolicyId(input.agentIdentifier);
 
     const specifiedPaymentContract = await prisma.paymentSource.findFirst({
@@ -684,22 +554,12 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       },
     });
     if (specifiedPaymentContract == null) {
-      throw createHttpError(
-        404,
-        'Network and policyId combination not supported',
-      );
+      throw createHttpError(404, 'Network and policyId combination not supported');
     }
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
     const purchaserId = input.identifierFromPurchaser;
     if (validateHexString(purchaserId) == false) {
-      throw createHttpError(
-        400,
-        'Purchaser identifier is not a valid hex string',
-      );
+      throw createHttpError(400, 'Purchaser identifier is not a valid hex string');
     }
     const inputHash = input.inputHash;
     if (validateHexString(inputHash) == false) {
@@ -712,47 +572,31 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     const unlockTime =
       input.unlockTime != undefined
         ? input.unlockTime.getTime()
-        : new Date(
-            input.submitResultTime.getTime() + 1000 * 60 * 60 * 6,
-          ).getTime(); // default +6h
+        : new Date(input.submitResultTime.getTime() + 1000 * 60 * 60 * 6).getTime(); // default +6h
 
     const externalDisputeUnlockTime =
       input.externalDisputeUnlockTime != undefined
         ? input.externalDisputeUnlockTime.getTime()
-        : new Date(
-            input.submitResultTime.getTime() + 1000 * 60 * 60 * 12,
-          ).getTime(); // default +12h
+        : new Date(input.submitResultTime.getTime() + 1000 * 60 * 60 * 12).getTime(); // default +12h
 
     //require at least 3 hours between unlock time and the submit result time
     const additionalExternalDisputeUnlockTime = BigInt(1000 * 60 * 15);
 
     if (payByTime > submitResultTime - BigInt(1000 * 60 * 5)) {
-      throw createHttpError(
-        400,
-        'Pay by time must be before submit result time (min. 5 minutes)',
-      );
+      throw createHttpError(400, 'Pay by time must be before submit result time (min. 5 minutes)');
     }
     if (payByTime < BigInt(Date.now() - 1000 * 60 * 5)) {
-      throw createHttpError(
-        400,
-        'Pay by time must be in the future (max. 5 minutes)',
-      );
+      throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
     }
 
-    if (
-      externalDisputeUnlockTime <
-      BigInt(unlockTime) + additionalExternalDisputeUnlockTime
-    ) {
+    if (externalDisputeUnlockTime < BigInt(unlockTime) + additionalExternalDisputeUnlockTime) {
       throw createHttpError(
         400,
         'External dispute unlock time must be after unlock time (min. 15 minutes difference)',
       );
     }
     if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
-      throw createHttpError(
-        400,
-        'Submit result time must be in the future (min. 15 minutes)',
-      );
+      throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
     }
     const offset = BigInt(1000 * 60 * 15);
     if (submitResultTime > BigInt(unlockTime) - offset) {
@@ -768,10 +612,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     );
 
     if (input.agentIdentifier.startsWith(policyId) == false) {
-      throw createHttpError(
-        404,
-        'The agentIdentifier is not of the specified payment source',
-      );
+      throw createHttpError(404, 'The agentIdentifier is not of the specified payment source');
     }
     let assetInWallet = [];
     try {
@@ -794,21 +635,13 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
     if (!assetMetadata || !assetMetadata.onchain_metadata) {
       throw createHttpError(404, 'Agent registry metadata not found');
     }
-    const parsedMetadata = metadataSchema.safeParse(
-      assetMetadata.onchain_metadata,
-    );
+    const parsedMetadata = metadataSchema.safeParse(assetMetadata.onchain_metadata);
     if (!parsedMetadata.success) {
       throw createHttpError(404, 'Agent registry metadata not valid');
     }
     const pricing = parsedMetadata.data.agentPricing;
-    if (
-      pricing.pricingType == PricingType.Fixed &&
-      input.RequestedFunds != null
-    ) {
-      throw createHttpError(
-        400,
-        'For fixed pricing, RequestedFunds must be null',
-      );
+    if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
+      throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
     } else if (pricing.pricingType != PricingType.Fixed) {
       throw createHttpError(400, 'Non fixed price not supported yet');
     }
@@ -863,9 +696,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       },
     });
 
-    const hashedBlockchainIdentifier = generateSHA256Hash(
-      stringify(blockchainIdentifier),
-    );
+    const hashedBlockchainIdentifier = generateSHA256Hash(stringify(blockchainIdentifier));
     const signedBlockchainIdentifier = await meshWallet.signData(
       hashedBlockchainIdentifier,
       sellingWallet.walletAddress,
@@ -965,13 +796,10 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
       ...payment,
       ...transformPaymentGetTimestamps(payment),
       ...transformPaymentGetAmounts(payment),
-      totalBuyerCardanoFees:
-        Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
-      totalSellerCardanoFees:
-        Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
+      totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
+      totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
       agentIdentifier:
-        decodeBlockchainIdentifier(payment.blockchainIdentifier)
-          ?.agentIdentifier ?? null,
+        decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
       CurrentTransaction: payment.CurrentTransaction
         ? {
             ...payment.CurrentTransaction,

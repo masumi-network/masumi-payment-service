@@ -37,9 +37,7 @@ export function generateTestRegistrationData(
     network,
     sellingWalletVkey,
     name: config.name || `Test Agent ${uniqueId}`,
-    description:
-      config.description ||
-      `Test AI agent created for e2e testing - ${timestamp}`,
+    description: config.description || `Test AI agent created for e2e testing - ${timestamp}`,
     apiBaseUrl: config.apiBaseUrl || `https://api.testagent-${uniqueId}.com`,
     Tags: config.tags || ['test', 'ai-agent', 'e2e', 'automated'],
     ExampleOutputs: [
@@ -69,8 +67,7 @@ export function generateTestRegistrationData(
     },
     Author: {
       name: config.author?.name || 'E2E Test Suite',
-      contactEmail:
-        config.author?.contactEmail || `test-${uniqueId}@example.com`,
+      contactEmail: config.author?.contactEmail || `test-${uniqueId}@example.com`,
       organization: config.author?.organization || 'Masumi E2E Tests',
     },
     Legal: {
@@ -136,9 +133,7 @@ function generatePaymentTiming(): PaymentTimingConfig {
   const unlockTime = new Date(submitResultTime.getTime() + 6 * 60 * 60 * 1000);
 
   // externalDisputeUnlockTime: 12 hours after submitResultTime
-  const externalDisputeUnlockTime = new Date(
-    submitResultTime.getTime() + 12 * 60 * 60 * 1000,
-  );
+  const externalDisputeUnlockTime = new Date(submitResultTime.getTime() + 12 * 60 * 60 * 1000);
 
   return {
     payByTime,
@@ -209,8 +204,7 @@ export function generateTestPaymentData(
   };
 
   // Generate unique input data if not provided
-  const inputData =
-    options.inputData || `test-payment-input-${Date.now()}-${Math.random()}`;
+  const inputData = options.inputData || `test-payment-input-${Date.now()}-${Math.random()}`;
   const inputHash = generateSHA256Hash(inputData);
 
   // Generate unique purchaser identifier (14-26 chars hex)
@@ -236,8 +230,7 @@ export function generateTestPaymentData(
     unlockTime: timing.unlockTime?.toISOString(),
     externalDisputeUnlockTime: timing.externalDisputeUnlockTime?.toISOString(),
     identifierFromPurchaser,
-    metadata:
-      options.metadata || `E2E test payment - ${new Date().toISOString()}`,
+    metadata: options.metadata || `E2E test payment - ${new Date().toISOString()}`,
   };
 }
 

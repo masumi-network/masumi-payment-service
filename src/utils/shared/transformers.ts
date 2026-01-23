@@ -1,28 +1,22 @@
 import { HotWalletType } from '@/generated/prisma/client';
 
-export function splitWalletsByType<T extends { type: HotWalletType }>(
-  wallets: T[],
-) {
+export function splitWalletsByType<T extends { type: HotWalletType }>(wallets: T[]) {
   return {
     SellingWallets: wallets.filter((w) => w.type === HotWalletType.Selling),
-    PurchasingWallets: wallets.filter(
-      (w) => w.type === HotWalletType.Purchasing,
-    ),
+    PurchasingWallets: wallets.filter((w) => w.type === HotWalletType.Purchasing),
   };
 }
 
-export function transformBigIntAmounts<
-  T extends { unit: string; amount: bigint },
->(amounts: T[]): Array<{ unit: string; amount: string }> {
+export function transformBigIntAmounts<T extends { unit: string; amount: bigint }>(
+  amounts: T[],
+): Array<{ unit: string; amount: string }> {
   return amounts.map((amount) => ({
     unit: amount.unit,
     amount: amount.amount.toString(),
   }));
 }
 
-export function transformNullableBigInt(
-  value: bigint | null | undefined,
-): string | null {
+export function transformNullableBigInt(value: bigint | null | undefined): string | null {
   return value != null ? value.toString() : null;
 }
 
@@ -32,24 +26,24 @@ export function transformPaymentGetAmounts(payment: {
   WithdrawnForBuyer: Array<{ unit: string; amount: bigint }>;
 }) {
   return {
-    RequestedFunds: (
-      payment.RequestedFunds as Array<{ unit: string; amount: bigint }>
-    ).map((amount) => ({
-      ...amount,
-      amount: amount.amount.toString(),
-    })),
-    WithdrawnForSeller: (
-      payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-    ).map((amount) => ({
-      unit: amount.unit,
-      amount: amount.amount.toString(),
-    })),
-    WithdrawnForBuyer: (
-      payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-    ).map((amount) => ({
-      unit: amount.unit,
-      amount: amount.amount.toString(),
-    })),
+    RequestedFunds: (payment.RequestedFunds as Array<{ unit: string; amount: bigint }>).map(
+      (amount) => ({
+        ...amount,
+        amount: amount.amount.toString(),
+      }),
+    ),
+    WithdrawnForSeller: (payment.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>).map(
+      (amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      }),
+    ),
+    WithdrawnForBuyer: (payment.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>).map(
+      (amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      }),
+    ),
   };
 }
 
@@ -59,9 +53,7 @@ export function transformPurchaseGetAmounts(purchase: {
   WithdrawnForBuyer: Array<{ unit: string; amount: bigint }>;
 }) {
   return {
-    PaidFunds: (
-      purchase.PaidFunds as Array<{ unit: string; amount: bigint }>
-    ).map((amount) => ({
+    PaidFunds: (purchase.PaidFunds as Array<{ unit: string; amount: bigint }>).map((amount) => ({
       ...amount,
       amount: amount.amount.toString(),
     })),
@@ -71,12 +63,12 @@ export function transformPurchaseGetAmounts(purchase: {
       unit: amount.unit,
       amount: amount.amount.toString(),
     })),
-    WithdrawnForBuyer: (
-      purchase.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-    ).map((amount) => ({
-      unit: amount.unit,
-      amount: amount.amount.toString(),
-    })),
+    WithdrawnForBuyer: (purchase.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>).map(
+      (amount) => ({
+        unit: amount.unit,
+        amount: amount.amount.toString(),
+      }),
+    ),
   };
 }
 
@@ -94,8 +86,7 @@ export function transformPaymentGetTimestamps(payment: {
     payByTime: payment.payByTime?.toString() ?? null,
     unlockTime: payment.unlockTime.toString(),
     externalDisputeUnlockTime: payment.externalDisputeUnlockTime.toString(),
-    collateralReturnLovelace:
-      payment.collateralReturnLovelace?.toString() ?? null,
+    collateralReturnLovelace: payment.collateralReturnLovelace?.toString() ?? null,
     cooldownTime: Number(payment.sellerCoolDownTime),
     cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
   };
@@ -115,8 +106,7 @@ export function transformPurchaseGetTimestamps(purchase: {
     payByTime: purchase.payByTime?.toString() ?? null,
     unlockTime: purchase.unlockTime.toString(),
     externalDisputeUnlockTime: purchase.externalDisputeUnlockTime.toString(),
-    collateralReturnLovelace:
-      purchase.collateralReturnLovelace?.toString() ?? null,
+    collateralReturnLovelace: purchase.collateralReturnLovelace?.toString() ?? null,
     cooldownTime: Number(purchase.buyerCoolDownTime),
     cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
   };

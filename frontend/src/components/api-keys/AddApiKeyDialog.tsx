@@ -1,11 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -34,9 +29,7 @@ interface AddApiKeyDialogProps {
 const apiKeySchema = z
   .object({
     permission: z.enum(['Read', 'ReadAndPay', 'Admin']),
-    networks: z
-      .array(z.enum(['Preprod', 'Mainnet']))
-      .min(1, 'Select at least one network'),
+    networks: z.array(z.enum(['Preprod', 'Mainnet'])).min(1, 'Select at least one network'),
     usageLimited: z.boolean(),
     credits: z.object({
       lovelace: z.string().optional(),
@@ -60,11 +53,7 @@ const apiKeySchema = z
 
 type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
 
-export function AddApiKeyDialog({
-  open,
-  onClose,
-  onSuccess,
-}: AddApiKeyDialogProps) {
+export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient } = useAppContext();
 
@@ -121,9 +110,7 @@ export function AddApiKeyDialog({
                       ? [
                           {
                             unit: 'lovelace',
-                            amount: (
-                              parseFloat(data.credits.lovelace) * 1000000
-                            ).toString(),
+                            amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
                           },
                         ]
                       : []),
@@ -185,9 +172,7 @@ export function AddApiKeyDialog({
               )}
             />
             {errors.permission && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.permission.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.permission.message}</p>
             )}
           </div>
 
@@ -203,9 +188,7 @@ export function AddApiKeyDialog({
                       checked={field.value.includes('Preprod')}
                       onCheckedChange={() => {
                         if (field.value.includes('Preprod')) {
-                          field.onChange(
-                            field.value.filter((n: string) => n !== 'Preprod'),
-                          );
+                          field.onChange(field.value.filter((n: string) => n !== 'Preprod'));
                         } else {
                           field.onChange([...field.value, 'Preprod']);
                         }
@@ -224,9 +207,7 @@ export function AddApiKeyDialog({
                       checked={field.value.includes('Mainnet')}
                       onCheckedChange={() => {
                         if (field.value.includes('Mainnet')) {
-                          field.onChange(
-                            field.value.filter((n: string) => n !== 'Mainnet'),
-                          );
+                          field.onChange(field.value.filter((n: string) => n !== 'Mainnet'));
                         } else {
                           field.onChange([...field.value, 'Mainnet']);
                         }
@@ -238,9 +219,7 @@ export function AddApiKeyDialog({
               </div>
             </div>
             {errors.networks && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.networks.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.networks.message}</p>
             )}
           </div>
 
@@ -265,37 +244,25 @@ export function AddApiKeyDialog({
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ADA Limit</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.lovelace')}
-                />
+                <Input type="number" placeholder="0.00" {...register('credits.lovelace')} />
                 <p className="text-xs text-muted-foreground">
                   Amount in ADA (will be converted to lovelace)
                 </p>
-                {errors.credits &&
-                  'lovelace' in errors.credits &&
-                  errors.credits.lovelace && (
-                    <p className="text-xs text-destructive mt-1">
-                      {(errors.credits.lovelace as any).message}
-                    </p>
-                  )}
+                {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.lovelace as any).message}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">USDM Limit</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.usdm')}
-                />
-                {errors.credits &&
-                  'usdm' in errors.credits &&
-                  errors.credits.usdm && (
-                    <p className="text-xs text-destructive mt-1">
-                      {(errors.credits.usdm as any).message}
-                    </p>
-                  )}
+                <Input type="number" placeholder="0.00" {...register('credits.usdm')} />
+                {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.usdm as any).message}
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -305,11 +272,7 @@ export function AddApiKeyDialog({
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            onClick={handleSubmit(onSubmit)}
-          >
+          <Button type="submit" disabled={isLoading} onClick={handleSubmit(onSubmit)}>
             {isLoading ? 'Creating...' : 'Create'}
           </Button>
         </div>

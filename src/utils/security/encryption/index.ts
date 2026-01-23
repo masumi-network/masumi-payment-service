@@ -17,10 +17,7 @@ function decrypt(secretEncrypted: string) {
   const encryptedData = secret.subarray(32);
 
   const decryptionCipher = createDecipheriv('aes-256-cbc', key, iv);
-  return (
-    decryptionCipher.update(encryptedData, undefined, 'utf8') +
-    decryptionCipher.final('utf8')
-  );
+  return decryptionCipher.update(encryptedData, undefined, 'utf8') + decryptionCipher.final('utf8');
 }
 
 function encrypt(secret: string) {

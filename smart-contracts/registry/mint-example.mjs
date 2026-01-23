@@ -28,13 +28,10 @@ const wallet = new MeshWallet({
 const address = (await wallet.getUnusedAddresses())[0];
 
 const blueprint = JSON.parse(fs.readFileSync('./plutus.json'));
-const paymentContractAddress =
-  'addr_test1wzlwhustapq9ck0zdz8dahhwd350nzlpg785nz7hs0tqjtgdy4230';
+const paymentContractAddress = 'addr_test1wzlwhustapq9ck0zdz8dahhwd350nzlpg785nz7hs0tqjtgdy4230';
 
 const script = {
-  code: applyParamsToScript(blueprint.validators[0].compiledCode, [
-    paymentContractAddress,
-  ]),
+  code: applyParamsToScript(blueprint.validators[0].compiledCode, [paymentContractAddress]),
   version: 'V3',
 };
 
@@ -60,9 +57,7 @@ const redeemer = {
   data: { alternative: 0, fields: [] },
   tag: 'MINT',
 };
-const policyId = deserializePlutusScript(script.code, script.version)
-  .hash()
-  .toString();
+const policyId = deserializePlutusScript(script.code, script.version).hash().toString();
 
 const tx = new Transaction({ initiator: wallet }).setTxInputs([
   //ensure our first utxo hash (serializedOutput) is used as first input
@@ -74,8 +69,7 @@ tx.isCollateralNeeded = true;
 const ctxbuilder = new MeshTxBuilder({
   fetcher: blockchainProvider,
 });
-const deserializedAddress =
-  ctxbuilder.serializer.deserializer.key.deserializeAddress(address);
+const deserializedAddress = ctxbuilder.serializer.deserializer.key.deserializeAddress(address);
 //setup minting data separately as the minting function does not work well with hex encoded strings without some magic
 const mintingData = await ctxbuilder
   .txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)

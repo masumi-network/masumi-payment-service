@@ -41,11 +41,7 @@ const admin3 = fs.readFileSync('wallet_5.addr').toString();
 const script = {
   code: applyParamsToScript(blueprint.validators[0].compiledCode, [
     2,
-    [
-      resolvePaymentKeyHash(admin1),
-      resolvePaymentKeyHash(admin2),
-      resolvePaymentKeyHash(admin3),
-    ],
+    [resolvePaymentKeyHash(admin1), resolvePaymentKeyHash(admin2), resolvePaymentKeyHash(admin3)],
     //yes I love meshJs
     {
       alternative: 0,
@@ -82,17 +78,13 @@ if (utxos.length === 0) {
   throw new Error('No UTXOs found in the wallet. Wallet is empty.');
 }
 async function fetchUtxo(txHash) {
-  const utxos = await blockchainProvider.fetchAddressUTxOs(
-    resolvePlutusScriptAddress(script, 0),
-  );
+  const utxos = await blockchainProvider.fetchAddressUTxOs(resolvePlutusScriptAddress(script, 0));
   return utxos.find((utxo) => {
     return utxo.input.txHash == txHash;
   });
 }
 
-const utxo = await fetchUtxo(
-  '1ef815a955cc4c86735de00ced484928d4c8ac237f8f75c2c8a19b5584b06e3d',
-);
+const utxo = await fetchUtxo('1ef815a955cc4c86735de00ced484928d4c8ac237f8f75c2c8a19b5584b06e3d');
 
 if (!utxo) {
   throw new Error('UTXO not found');
@@ -151,11 +143,9 @@ const redeemer = {
     fields: [],
   },
 };
-const invalidBefore =
-  unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
+const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK.preprod) - 1;
 
-const invalidAfter =
-  unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
+const invalidAfter = unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK.preprod) + 1;
 
 const unsignedTx = new Transaction({ initiator: wallet, fetcher: koios })
   .redeemValue({
@@ -163,10 +153,7 @@ const unsignedTx = new Transaction({ initiator: wallet, fetcher: koios })
     script: script,
     redeemer: redeemer,
   })
-  .sendValue(
-    { address: resolvePlutusScriptAddress(script, 0), datum: datum },
-    utxo,
-  )
+  .sendValue({ address: resolvePlutusScriptAddress(script, 0), datum: datum }, utxo)
   .setChangeAddress(address)
   .setRequiredSigners([address]);
 

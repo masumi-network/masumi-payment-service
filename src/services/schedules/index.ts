@@ -22,9 +22,7 @@ export async function initJobs() {
   await checkLatestTransactions();
   await checkRegistryTransactions();
   logger.info(
-    'Checked and synced transactions in ' +
-      (new Date().getTime() - start.getTime()) / 1000 +
-      's',
+    'Checked and synced transactions in ' + (new Date().getTime() - start.getTime()) / 1000 + 's',
   );
 
   void new Promise((resolve) => setTimeout(resolve, 750)).then(() => {
@@ -69,9 +67,7 @@ export async function initJobs() {
       const start = new Date();
       await collectRefundV1();
       logger.info(
-        'Finished to check for refunds in ' +
-          (new Date().getTime() - start.getTime()) / 1000 +
-          's',
+        'Finished to check for refunds in ' + (new Date().getTime() - start.getTime()) / 1000 + 's',
       );
     }, CONFIG.CHECK_COLLECT_REFUND_INTERVAL * 1000); // Convert seconds to milliseconds
   });
@@ -149,9 +145,7 @@ export async function initJobs() {
   void new Promise((resolve) => setTimeout(resolve, 35000)).then(() => {
     // Check wallet transaction hash interval
     AsyncInterval.start(async () => {
-      logger.info(
-        'Starting to check for wallet transactions and wallets to unlock',
-      );
+      logger.info('Starting to check for wallet transactions and wallets to unlock');
       const start = new Date();
       await updateWalletTransactionHash();
       logger.info(
@@ -225,9 +219,7 @@ export async function initJobs() {
         const start = new Date();
         await webhookQueueService.cleanupOldDeliveries();
         logger.info(
-          'Finished webhook cleanup in ' +
-            (new Date().getTime() - start.getTime()) / 1000 +
-            's',
+          'Finished webhook cleanup in ' + (new Date().getTime() - start.getTime()) / 1000 + 's',
         );
       },
       24 * 60 * 60 * 1000,

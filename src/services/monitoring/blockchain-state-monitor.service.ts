@@ -83,9 +83,7 @@ export class BlockchainStateMonitorService {
   getStatus() {
     return {
       isMonitoring: this.isMonitoring,
-      stats: this.isMonitoring
-        ? stateTransitionMonitor.getMonitoringStats()
-        : null,
+      stats: this.isMonitoring ? stateTransitionMonitor.getMonitoringStats() : null,
     };
   }
 
@@ -95,5 +93,4 @@ export class BlockchainStateMonitorService {
   }
 }
 
-export const blockchainStateMonitorService =
-  new BlockchainStateMonitorService();
+export const blockchainStateMonitorService = new BlockchainStateMonitorService();

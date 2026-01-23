@@ -357,10 +357,7 @@ export class ApiClient {
     };
   }
 
-  private async makeRequest<T>(
-    endpoint: string,
-    options: RequestInit = {},
-  ): Promise<T> {
+  private async makeRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.config.baseUrl}${endpoint}`;
 
     const controller = new AbortController();
@@ -422,29 +419,19 @@ export class ApiClient {
     });
   }
 
-  async queryRegistry(
-    params: QueryRegistryParams,
-  ): Promise<QueryRegistryResponse> {
+  async queryRegistry(params: QueryRegistryParams): Promise<QueryRegistryResponse> {
     const searchParams = new URLSearchParams();
 
     if (params.cursorId) searchParams.set('cursorId', params.cursorId);
     searchParams.set('network', params.network);
     if (params.filterSmartContractAddress) {
-      searchParams.set(
-        'filterSmartContractAddress',
-        params.filterSmartContractAddress,
-      );
+      searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
     }
 
-    return this.makeRequest<QueryRegistryResponse>(
-      `/api/v1/registry?${searchParams.toString()}`,
-    );
+    return this.makeRequest<QueryRegistryResponse>(`/api/v1/registry?${searchParams.toString()}`);
   }
 
-  async getRegistrationById(
-    id: string,
-    network: Network,
-  ): Promise<RegistrationResponse | null> {
+  async getRegistrationById(id: string, network: Network): Promise<RegistrationResponse | null> {
     try {
       const response = await this.queryRegistry({ network });
       const registration = response.Assets.find((asset) => asset.id === id);
@@ -456,9 +443,7 @@ export class ApiClient {
   }
 
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
-    return this.makeRequest<{ status: string; timestamp: string }>(
-      '/api/v1/health',
-    );
+    return this.makeRequest<{ status: string; timestamp: string }>('/api/v1/health');
   }
 
   async createPayment(data: CreatePaymentData): Promise<PaymentResponse> {
@@ -468,27 +453,20 @@ export class ApiClient {
     });
   }
 
-  async queryPayments(
-    params: QueryPaymentsParams,
-  ): Promise<QueryPaymentsResponse> {
+  async queryPayments(params: QueryPaymentsParams): Promise<QueryPaymentsResponse> {
     const searchParams = new URLSearchParams();
 
     if (params.limit) searchParams.set('limit', params.limit.toString());
     if (params.cursorId) searchParams.set('cursorId', params.cursorId);
     searchParams.set('network', params.network);
     if (params.filterSmartContractAddress) {
-      searchParams.set(
-        'filterSmartContractAddress',
-        params.filterSmartContractAddress,
-      );
+      searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
     }
     if (params.includeHistory !== undefined) {
       searchParams.set('includeHistory', params.includeHistory.toString());
     }
 
-    return this.makeRequest<QueryPaymentsResponse>(
-      `/api/v1/payment?${searchParams.toString()}`,
-    );
+    return this.makeRequest<QueryPaymentsResponse>(`/api/v1/payment?${searchParams.toString()}`);
   }
 
   async createPurchase(data: CreatePurchaseData): Promise<PurchaseResponse> {
@@ -498,27 +476,20 @@ export class ApiClient {
     });
   }
 
-  async queryPurchases(
-    params: QueryPurchasesParams,
-  ): Promise<QueryPurchasesResponse> {
+  async queryPurchases(params: QueryPurchasesParams): Promise<QueryPurchasesResponse> {
     const searchParams = new URLSearchParams();
 
     if (params.limit) searchParams.set('limit', params.limit.toString());
     if (params.cursorId) searchParams.set('cursorId', params.cursorId);
     searchParams.set('network', params.network);
     if (params.filterSmartContractAddress) {
-      searchParams.set(
-        'filterSmartContractAddress',
-        params.filterSmartContractAddress,
-      );
+      searchParams.set('filterSmartContractAddress', params.filterSmartContractAddress);
     }
     if (params.includeHistory !== undefined) {
       searchParams.set('includeHistory', params.includeHistory.toString());
     }
 
-    return this.makeRequest<QueryPurchasesResponse>(
-      `/api/v1/purchase?${searchParams.toString()}`,
-    );
+    return this.makeRequest<QueryPurchasesResponse>(`/api/v1/purchase?${searchParams.toString()}`);
   }
 
   async queryPaymentSources(

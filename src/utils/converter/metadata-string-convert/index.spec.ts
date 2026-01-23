@@ -44,8 +44,7 @@ describe('stringToMetadata', () => {
   });
 
   it('should return the same string as array when input is a string', () => {
-    const input =
-      'test string 1234567890 abcdefghijklmnopqrstuvwxyz 1234567890 1234567890';
+    const input = 'test string 1234567890 abcdefghijklmnopqrstuvwxyz 1234567890 1234567890';
     expect(stringToMetadata(input, false)).toEqual([
       'test string 1234567890 abcdefghijklmnopqrstuvwxyz 1234567890',
       ' 1234567890',
@@ -53,8 +52,7 @@ describe('stringToMetadata', () => {
   });
 
   it('should return the same string as array when input is a string', () => {
-    const input =
-      'https://masumi-quickstart-exam-mainnet-2yvmp.ondigitalocean.app';
+    const input = 'https://masumi-quickstart-exam-mainnet-2yvmp.ondigitalocean.app';
     expect(stringToMetadata(input)).toEqual([
       'https://masumi-quickstart-exam-mainnet-2yvmp.ondigitalocean.',
       'app',

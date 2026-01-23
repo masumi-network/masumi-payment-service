@@ -10,10 +10,7 @@ import { CONSTANTS } from '@/utils/config';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 
 export const postVerifyDataRevealSchemaInput = z.object({
-  signature: z
-    .string()
-    .max(7500)
-    .describe('Cryptographic signature from the admin wallet'),
+  signature: z.string().max(7500).describe('Cryptographic signature from the admin wallet'),
   key: z.string().max(2500).describe('Public key used to create the signature'),
   walletAddress: z
     .string()
@@ -23,23 +20,17 @@ export const postVerifyDataRevealSchemaInput = z.object({
     .number()
     .min(0)
     .max(1000000000000000000)
-    .describe(
-      'Unix timestamp (in milliseconds) until which this signature is valid',
-    ),
+    .describe('Unix timestamp (in milliseconds) until which this signature is valid'),
   blockchainIdentifier: z
     .string()
     .min(1)
     .max(2500)
-    .describe(
-      'The blockchain identifier, for which the data should be revealed',
-    ),
+    .describe('The blockchain identifier, for which the data should be revealed'),
   action: z.literal('reveal_data').describe('The action to perform'),
 });
 
 export const postRevealDataSchemaOutput = z.object({
-  isValid: z
-    .boolean()
-    .describe('Whether the signature is valid and the data can be revealed'),
+  isValid: z.boolean().describe('Whether the signature is valid and the data can be revealed'),
 });
 
 export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
@@ -70,19 +61,13 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       });
 
       if (payment == null) {
-        recordBusinessEndpointError(
-          '/api/v1/reveal-data',
-          'POST',
-          404,
-          'Payment not found',
-          {
-            wallet_address: input.walletAddress,
-            blockchain_identifier: input.blockchainIdentifier,
-            valid_until: input.validUntil,
-            signature: input.signature,
-            key: input.key,
-          },
-        );
+        recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 404, 'Payment not found', {
+          wallet_address: input.walletAddress,
+          blockchain_identifier: input.blockchainIdentifier,
+          valid_until: input.validUntil,
+          signature: input.signature,
+          key: input.key,
+        });
         throw createHttpError(404, 'Payment not found');
       }
       if (
@@ -137,19 +122,13 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
       }
 
       if (Date.now() > input.validUntil) {
-        recordBusinessEndpointError(
-          '/api/v1/reveal-data',
-          'POST',
-          400,
-          'Signature is expired',
-          {
-            wallet_address: input.walletAddress,
-            blockchain_identifier: input.blockchainIdentifier,
-            valid_until: input.validUntil,
-            signature: input.signature,
-            key: input.key,
-          },
-        );
+        recordBusinessEndpointError('/api/v1/reveal-data', 'POST', 400, 'Signature is expired', {
+          wallet_address: input.walletAddress,
+          blockchain_identifier: input.blockchainIdentifier,
+          valid_until: input.validUntil,
+          signature: input.signature,
+          key: input.key,
+        });
         throw createHttpError(400, 'Signature is expired');
       }
       if (Date.now() + CONSTANTS.REVEAL_DATA_VALIDITY_TIME < input.validUntil) {
@@ -185,28 +164,20 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         isValid,
       };
     } catch (error) {
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
-      recordBusinessEndpointError(
-        '/api/v1/reveal-data',
-        'POST',
-        statusCode,
-        errorInstance,
-        {
-          user_id: ctx.id,
-          wallet_id: input.walletAddress,
-          blockchain_identifier: input.blockchainIdentifier,
-          valid_until: input.validUntil,
-          signature: input.signature,
-          key: input.key,
-          duration: Date.now() - startTime,
-        },
-      );
+      recordBusinessEndpointError('/api/v1/reveal-data', 'POST', statusCode, errorInstance, {
+        user_id: ctx.id,
+        wallet_id: input.walletAddress,
+        blockchain_identifier: input.blockchainIdentifier,
+        valid_until: input.validUntil,
+        signature: input.signature,
+        key: input.key,
+        duration: Date.now() - startTime,
+      });
       throw error;
     }
   },

@@ -57,9 +57,7 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
       throw new Error('Test API client not initialized.');
     }
 
-    console.log(
-      `✅ Cancel Refund Request Flow environment validated for ${testNetwork}`,
-    );
+    console.log(`✅ Cancel Refund Request Flow environment validated for ${testNetwork}`);
   });
 
   afterAll(async () => {
@@ -152,10 +150,7 @@ describe(`Cancel Refund Request Flow E2E Tests (${testNetwork})`, () => {
       // STEP 6: SUBMIT RESULT (Using Helper Function)
       // ============================
       console.log('📋 Step 7: Submitting result after refund request...');
-      const result = await submitResult(
-        payment.blockchainIdentifier,
-        testNetwork,
-      );
+      const result = await submitResult(payment.blockchainIdentifier, testNetwork);
 
       console.log(`✅ Result submitted after refund request:
         - Result Hash: ${result.resultHash}

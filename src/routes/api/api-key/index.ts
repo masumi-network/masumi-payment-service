@@ -9,26 +9,15 @@ import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 
 export const getAPIKeySchemaInput = z.object({
-  limit: z.coerce
-    .number()
-    .min(1)
-    .max(100)
-    .default(10)
-    .describe('The number of API keys to return'),
-  cursorToken: z
-    .string()
-    .max(550)
-    .optional()
-    .describe('Used to paginate through the API keys'),
+  limit: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
+  cursorToken: z.string().max(550).optional().describe('Used to paginate through the API keys'),
 });
 
 export const apiKeyOutputSchema = z
   .object({
     id: z.string().describe('Unique identifier for the API key'),
     token: z.string().describe('The API key token'),
-    permission: z
-      .nativeEnum(Permission)
-      .describe('Permission level of the API key'),
+    permission: z.nativeEnum(Permission).describe('Permission level of the API key'),
     usageLimited: z.boolean().describe('Whether the API key has usage limits'),
     networkLimit: z
       .array(z.nativeEnum(Network))
@@ -49,9 +38,7 @@ export const apiKeyOutputSchema = z
         }),
       )
       .describe('Remaining usage credits for this API key'),
-    status: z
-      .nativeEnum(ApiKeyStatus)
-      .describe('Current status of the API key'),
+    status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
   })
   .openapi('APIKey');
 
@@ -63,11 +50,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
   method: 'get',
   input: getAPIKeySchemaInput,
   output: getAPIKeySchemaOutput,
-  handler: async ({
-    input,
-  }: {
-    input: z.infer<typeof getAPIKeySchemaInput>;
-  }) => {
+  handler: async ({ input }: { input: z.infer<typeof getAPIKeySchemaInput> }) => {
     const result = await prisma.apiKey.findMany({
       cursor: input.cursorToken ? { token: input.cursorToken } : undefined,
       take: input.limit,
@@ -78,9 +61,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
     return {
       ApiKeys: result.map((data) => ({
         ...data,
-        RemainingUsageCredits: transformBigIntAmounts(
-          data.RemainingUsageCredits,
-        ),
+        RemainingUsageCredits: transformBigIntAmounts(data.RemainingUsageCredits),
       })),
     };
   },
@@ -130,11 +111,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
   method: 'post',
   input: addAPIKeySchemaInput,
   output: addAPIKeySchemaOutput,
-  handler: async ({
-    input,
-  }: {
-    input: z.infer<typeof addAPIKeySchemaInput>;
-  }) => {
+  handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
     const isAdmin = input.permission == Permission.Admin;
     const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
     const result = await prisma.apiKey.create({
@@ -144,9 +121,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
         status: ApiKeyStatus.Active,
         permission: input.permission,
         usageLimited: isAdmin ? false : input.usageLimited,
-        networkLimit: isAdmin
-          ? [Network.Mainnet, Network.Preprod]
-          : input.networkLimit,
+        networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
         RemainingUsageCredits: {
           createMany: {
             data: input.UsageCredits.map((usageCredit) => {
@@ -165,24 +140,14 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
     });
     return {
       ...result,
-      RemainingUsageCredits: transformBigIntAmounts(
-        result.RemainingUsageCredits,
-      ),
+      RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
     };
   },
 });
 
 export const updateAPIKeySchemaInput = z.object({
-  id: z
-    .string()
-    .max(150)
-    .describe('The id of the API key to update. Provide either id or apiKey'),
-  token: z
-    .string()
-    .min(15)
-    .max(550)
-    .optional()
-    .describe('To change the api key token'),
+  id: z.string().max(150).describe('The id of the API key to update. Provide either id or apiKey'),
+  token: z.string().min(15).max(550).optional().describe('To change the api key token'),
   UsageCreditsToAddOrRemove: z
     .array(
       z.object({
@@ -224,126 +189,109 @@ export const updateAPIKeySchemaInput = z.object({
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
 
-export const updateAPIKeyEndpointPatch =
-  adminAuthenticatedEndpointFactory.build({
-    method: 'patch',
-    input: updateAPIKeySchemaInput,
-    output: updateAPIKeySchemaOutput,
-    handler: async ({
-      input,
-    }: {
-      input: z.infer<typeof updateAPIKeySchemaInput>;
-    }) => {
-      const apiKey = await prisma.$transaction(
-        async (prisma) => {
-          const apiKey = await prisma.apiKey.findUnique({
-            where: { id: input.id },
-            include: {
-              RemainingUsageCredits: {
-                select: { id: true, amount: true, unit: true },
-              },
+export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build({
+  method: 'patch',
+  input: updateAPIKeySchemaInput,
+  output: updateAPIKeySchemaOutput,
+  handler: async ({ input }: { input: z.infer<typeof updateAPIKeySchemaInput> }) => {
+    const apiKey = await prisma.$transaction(
+      async (prisma) => {
+        const apiKey = await prisma.apiKey.findUnique({
+          where: { id: input.id },
+          include: {
+            RemainingUsageCredits: {
+              select: { id: true, amount: true, unit: true },
             },
-          });
-          if (!apiKey) {
-            throw createHttpError(404, 'API key not found');
-          }
-          if (input.UsageCreditsToAddOrRemove) {
-            for (const usageCredit of input.UsageCreditsToAddOrRemove) {
-              const parsedAmount = BigInt(usageCredit.amount);
-              const existingCredit = apiKey.RemainingUsageCredits.find(
-                (credit) => credit.unit == usageCredit.unit,
-              );
-              if (existingCredit) {
-                existingCredit.amount += parsedAmount;
-                if (existingCredit.amount == 0n) {
-                  await prisma.unitValue.delete({
-                    where: { id: existingCredit.id },
-                  });
-                } else if (existingCredit.amount < 0) {
-                  throw createHttpError(400, 'Invalid amount');
-                } else {
-                  await prisma.unitValue.update({
-                    where: { id: existingCredit.id },
-                    data: { amount: existingCredit.amount },
-                  });
-                }
+          },
+        });
+        if (!apiKey) {
+          throw createHttpError(404, 'API key not found');
+        }
+        if (input.UsageCreditsToAddOrRemove) {
+          for (const usageCredit of input.UsageCreditsToAddOrRemove) {
+            const parsedAmount = BigInt(usageCredit.amount);
+            const existingCredit = apiKey.RemainingUsageCredits.find(
+              (credit) => credit.unit == usageCredit.unit,
+            );
+            if (existingCredit) {
+              existingCredit.amount += parsedAmount;
+              if (existingCredit.amount == 0n) {
+                await prisma.unitValue.delete({
+                  where: { id: existingCredit.id },
+                });
+              } else if (existingCredit.amount < 0) {
+                throw createHttpError(400, 'Invalid amount');
               } else {
-                if (parsedAmount <= 0) {
-                  throw createHttpError(400, 'Invalid amount');
-                }
-                await prisma.unitValue.create({
-                  data: {
-                    unit: usageCredit.unit,
-                    amount: parsedAmount,
-                    apiKeyId: apiKey.id,
-                    agentFixedPricingId: null,
-                    paymentRequestId: null,
-                    purchaseRequestId: null,
-                  },
+                await prisma.unitValue.update({
+                  where: { id: existingCredit.id },
+                  data: { amount: existingCredit.amount },
                 });
               }
+            } else {
+              if (parsedAmount <= 0) {
+                throw createHttpError(400, 'Invalid amount');
+              }
+              await prisma.unitValue.create({
+                data: {
+                  unit: usageCredit.unit,
+                  amount: parsedAmount,
+                  apiKeyId: apiKey.id,
+                  agentFixedPricingId: null,
+                  paymentRequestId: null,
+                  purchaseRequestId: null,
+                },
+              });
             }
           }
-          const result = await prisma.apiKey.update({
-            where: { id: input.id },
-            data: {
-              token: input.token,
-              usageLimited: input.usageLimited,
-              status: input.status,
-              networkLimit: input.networkLimit,
-            },
-            include: {
-              RemainingUsageCredits: { select: { amount: true, unit: true } },
-            },
-          });
-          return result;
-        },
-        {
-          timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-          maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
-          isolationLevel: 'Serializable',
-        },
-      );
-      return {
-        ...apiKey,
-        RemainingUsageCredits: transformBigIntAmounts(
-          apiKey.RemainingUsageCredits,
-        ),
-      };
-    },
-  });
+        }
+        const result = await prisma.apiKey.update({
+          where: { id: input.id },
+          data: {
+            token: input.token,
+            usageLimited: input.usageLimited,
+            status: input.status,
+            networkLimit: input.networkLimit,
+          },
+          include: {
+            RemainingUsageCredits: { select: { amount: true, unit: true } },
+          },
+        });
+        return result;
+      },
+      {
+        timeout: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+        maxWait: CONSTANTS.TRANSACTION_WAIT.SERIALIZABLE,
+        isolationLevel: 'Serializable',
+      },
+    );
+    return {
+      ...apiKey,
+      RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
+    };
+  },
+});
 
 export const deleteAPIKeySchemaInput = z.object({
-  id: z
-    .string()
-    .max(150)
-    .describe('The id of the API key to be (soft) deleted.'),
+  id: z.string().max(150).describe('The id of the API key to be (soft) deleted.'),
 });
 
 export const deleteAPIKeySchemaOutput = apiKeyOutputSchema;
 
-export const deleteAPIKeyEndpointDelete =
-  adminAuthenticatedEndpointFactory.build({
-    method: 'delete',
-    input: deleteAPIKeySchemaInput,
-    output: deleteAPIKeySchemaOutput,
-    handler: async ({
-      input,
-    }: {
-      input: z.infer<typeof deleteAPIKeySchemaInput>;
-    }) => {
-      const apiKey = await prisma.apiKey.update({
-        where: { id: input.id },
-        data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
-        include: {
-          RemainingUsageCredits: { select: { amount: true, unit: true } },
-        },
-      });
-      return {
-        ...apiKey,
-        RemainingUsageCredits: transformBigIntAmounts(
-          apiKey.RemainingUsageCredits,
-        ),
-      };
-    },
-  });
+export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.build({
+  method: 'delete',
+  input: deleteAPIKeySchemaInput,
+  output: deleteAPIKeySchemaOutput,
+  handler: async ({ input }: { input: z.infer<typeof deleteAPIKeySchemaInput> }) => {
+    const apiKey = await prisma.apiKey.update({
+      where: { id: input.id },
+      data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
+      include: {
+        RemainingUsageCredits: { select: { amount: true, unit: true } },
+      },
+    });
+    return {
+      ...apiKey,
+      RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
+    };
+  },
+});

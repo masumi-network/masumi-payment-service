@@ -5,16 +5,10 @@ import {
 } from '@/utils/converter/string-datum-convert';
 import { SmartContractState } from '@/utils/generator/contract-generator';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import {
-  PlutusDatumSchema,
-  Transaction,
-} from '@emurgo/cardano-serialization-lib-nodejs';
+import { PlutusDatumSchema, Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
 import { Network, OnChainState } from '@/generated/prisma/client';
-import {
-  getSmartContractInteractionTxHistoryList,
-  TransactionMetadata,
-} from '../blockchain';
+import { getSmartContractInteractionTxHistoryList, TransactionMetadata } from '../blockchain';
 
 export function calculateValueChange(
   inputs: Array<{
@@ -91,10 +85,7 @@ export function checkPaymentAmountsMatch(
   if (collateralReturn < 0n) {
     return false;
   }
-  if (
-    collateralReturn > 0n &&
-    collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE
-  ) {
+  if (collateralReturn > 0n && collateralReturn < CONSTANTS.MIN_COLLATERAL_LOVELACE) {
     return false;
   }
   return expectedAmounts.every((x) => {
@@ -117,10 +108,7 @@ export function checkPaymentAmountsMatch(
   });
 }
 
-export function getCardanoFeesSeller(
-  redeemerVersion: number,
-  tx: TransactionMetadata,
-) {
+export function getCardanoFeesSeller(redeemerVersion: number, tx: TransactionMetadata) {
   if (redeemerVersion == 0) {
     //Withdraw
     return tx.fees;
@@ -134,10 +122,7 @@ export function getCardanoFeesSeller(
   return BigInt(0);
 }
 
-export function getCardanoFeesBuyer(
-  redeemerVersion: number,
-  tx: TransactionMetadata,
-) {
+export function getCardanoFeesBuyer(redeemerVersion: number, tx: TransactionMetadata) {
   if (redeemerVersion == 1) {
     //RequestRefund
     return tx.fees;
@@ -174,17 +159,12 @@ export function redeemerToOnChainState(
     }
   } else if (redeemerVersion == 2) {
     //CancelRefundRequest
-    if (
-      decodedNewContract?.resultHash != null &&
-      decodedNewContract?.resultHash != ''
-    ) {
+    if (decodedNewContract?.resultHash != null && decodedNewContract?.resultHash != '') {
       return OnChainState.ResultSubmitted;
     } else {
       //Ensure the amounts match, to prevent state change attacks
 
-      return valueMatches == true
-        ? OnChainState.FundsLocked
-        : OnChainState.FundsOrDatumInvalid;
+      return valueMatches == true ? OnChainState.FundsLocked : OnChainState.FundsOrDatumInvalid;
     }
   } else if (redeemerVersion == 3) {
     //WithdrawRefund
@@ -326,8 +306,7 @@ export function extractOnChainTransactionData(
   }
   const redeemers = tx.transaction.witness_set().redeemers();
   //TODO: We need to fix the redeemer check to support other smart contracts
-  if (valueInputs.length == 0 && !redeemers)
-    return { type: 'Initial', valueOutputs };
+  if (valueInputs.length == 0 && !redeemers) return { type: 'Initial', valueOutputs };
   if (valueInputs.length != 1)
     return {
       type: 'Invalid',
@@ -343,9 +322,7 @@ export function extractOnChainTransactionData(
     return {
       type: 'Invalid',
       error:
-        'Smart Contract redeemer invalid length: ' +
-        redeemers.len().toString() +
-        ' (expected 1)',
+        'Smart Contract redeemer invalid length: ' + redeemers.len().toString() + ' (expected 1)',
     };
   }
   const valueInput = valueInputs[0];
@@ -383,17 +360,14 @@ export function extractOnChainTransactionData(
   const valueOutput = valueOutputs.length == 1 ? valueOutputs[0] : null;
 
   const outputDatum = valueOutput?.inline_datum ?? null;
-  const decodedOutputDatum: unknown =
-    outputDatum != null ? deserializeDatum(outputDatum) : null;
+  const decodedOutputDatum: unknown = outputDatum != null ? deserializeDatum(outputDatum) : null;
   const decodedNewContract = decodeV1ContractDatum(
     decodedOutputDatum,
     paymentContract.network == Network.Mainnet ? 'mainnet' : 'preprod',
   );
 
   const redeemer = redeemers.get(0);
-  const redeemerJson = redeemer
-    .data()
-    .to_json(PlutusDatumSchema.BasicConversions);
+  const redeemerJson = redeemer.data().to_json(PlutusDatumSchema.BasicConversions);
   const redeemerJsonObject = JSON.parse(redeemerJson) as {
     constructor: number;
   };
@@ -471,10 +445,7 @@ export async function checkIfTxIsInHistory(
   );
   //find tx hash in history
   for (const txHash of txHistory) {
-    if (
-      currentTxHash == txHash ||
-      transactionHistory.find((x) => x.txHash == txHash) != null
-    ) {
+    if (currentTxHash == txHash || transactionHistory.find((x) => x.txHash == txHash) != null) {
       return true;
     }
   }

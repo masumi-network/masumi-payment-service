@@ -4,7 +4,7 @@ import '../setup/globals';
 
 /**
  * Helper functions for querying PaymentSource data in E2E tests
- * 
+ *
  * Uses the API client to query payment sources instead of direct database access.
  */
 
@@ -18,17 +18,13 @@ export async function getActiveSmartContractAddress(
   const client = apiClient || global.testApiClient;
 
   if (!client) {
-    throw new Error(
-      'ApiClient not provided and global.testApiClient is not available',
-    );
+    throw new Error('ApiClient not provided and global.testApiClient is not available');
   }
 
   const response = await client.queryPaymentSources({ take: 100 });
 
   // Filter by network and find the most recent (first in descending order)
-  const paymentSource = response.ExtendedPaymentSources.find(
-    (ps) => ps.network === network,
-  );
+  const paymentSource = response.ExtendedPaymentSources.find((ps) => ps.network === network);
 
   if (!paymentSource) {
     throw new Error(
@@ -50,17 +46,13 @@ export async function getActiveWalletVKey(
   const client = apiClient || global.testApiClient;
 
   if (!client) {
-    throw new Error(
-      'ApiClient not provided and global.testApiClient is not available',
-    );
+    throw new Error('ApiClient not provided and global.testApiClient is not available');
   }
 
   const response = await client.queryPaymentSources({ take: 100 });
 
   // Find the payment source for the given network
-  const paymentSource = response.ExtendedPaymentSources.find(
-    (ps) => ps.network === network,
-  );
+  const paymentSource = response.ExtendedPaymentSources.find((ps) => ps.network === network);
 
   if (!paymentSource) {
     throw new Error(
@@ -83,9 +75,7 @@ export async function getActiveWalletVKey(
   // Get the first wallet (payment sources are returned in descending order by createdAt)
   const wallet = wallets[0];
 
-  console.log(
-    `✅ Found active ${walletType} wallet for ${network}: ${wallet.walletVkey}`,
-  );
+  console.log(`✅ Found active ${walletType} wallet for ${network}: ${wallet.walletVkey}`);
 
   return wallet.walletVkey;
 }
@@ -102,8 +92,7 @@ export async function getTestWalletFromDatabase(
   vkey: string;
   description: string;
 }> {
-  const walletType =
-    role === 'seller' ? HotWalletType.Selling : HotWalletType.Purchasing;
+  const walletType = role === 'seller' ? HotWalletType.Selling : HotWalletType.Purchasing;
 
   try {
     const vkey = await getActiveWalletVKey(network, walletType, apiClient);

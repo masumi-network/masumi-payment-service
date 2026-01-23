@@ -29,11 +29,7 @@ const config: Config.InitialOptions = {
   // Per-test timeout (applies to each `test(...)` and async hooks in test files)
   testTimeout: 1_200_000, // 20 minutes
   maxWorkers: 3,
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.spec.ts',
-    '!src/**/*.test.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/**/*.test.ts'],
 };
 
 export default config;

@@ -45,11 +45,7 @@ const getErrorType = (statusCode: number): string => {
   return 'unknown_error';
 };
 
-export const requestLogger = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   // Log request details
   logger.info({
     method: req.method,
@@ -101,18 +97,12 @@ export const requestLogger = (
       if (isBusiness) {
         // Try to get error details from response body or create generic error
         const errorMessage = `HTTP ${statusCode} - ${getErrorType(statusCode)}`;
-        recordBusinessEndpointError(
-          req.url,
-          req.method,
-          statusCode,
-          errorMessage,
-          {
-            duration,
-            user_agent: req.get('user-agent') || 'unknown',
-            ip: req.ip || 'unknown',
-            error_source: 'middleware',
-          },
-        );
+        recordBusinessEndpointError(req.url, req.method, statusCode, errorMessage, {
+          duration,
+          user_agent: req.get('user-agent') || 'unknown',
+          ip: req.ip || 'unknown',
+          error_source: 'middleware',
+        });
       }
     }
   });

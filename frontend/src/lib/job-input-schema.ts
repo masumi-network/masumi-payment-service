@@ -147,9 +147,7 @@ export const jobInputOptionSchema = z.object({
     description: z.string().optional(),
   }),
   validations: z
-    .array(
-      optionalValidationSchema.or(minValidationSchema).or(maxValidationSchema),
-    )
+    .array(optionalValidationSchema.or(minValidationSchema).or(maxValidationSchema))
     .optional(),
 });
 
@@ -197,9 +195,7 @@ export type JobInputFileSchemaType = z.infer<typeof jobInputFileSchema>;
 export type JobInputNoneSchemaType = z.infer<typeof jobInputNoneSchema>;
 
 // Form schema generation (based on sokosumi's approach)
-export const makeZodSchemaFromJobInputSchema = (
-  jobInputSchema: JobInputSchemaType,
-) => {
+export const makeZodSchemaFromJobInputSchema = (jobInputSchema: JobInputSchemaType) => {
   switch (jobInputSchema.type) {
     case ValidJobInputTypes.STRING:
       return makeZodSchemaFromJobInputStringSchema(jobInputSchema);
@@ -218,9 +214,7 @@ export const makeZodSchemaFromJobInputSchema = (
   }
 };
 
-const makeZodSchemaFromJobInputStringSchema = (
-  jobInputStringSchema: JobInputStringSchemaType,
-) => {
+const makeZodSchemaFromJobInputStringSchema = (jobInputStringSchema: JobInputStringSchemaType) => {
   const { validations } = jobInputStringSchema;
   const defaultSchema = z.string();
   if (!validations) return defaultSchema;
@@ -284,9 +278,7 @@ const makeZodSchemaFromJobInputTextareaSchema = (
   return canBeOptional ? schema.optional() : schema;
 };
 
-const makeZodSchemaFromJobInputNumberSchema = (
-  jobInputNumberSchema: JobInputNumberSchemaType,
-) => {
+const makeZodSchemaFromJobInputNumberSchema = (jobInputNumberSchema: JobInputNumberSchemaType) => {
   const { validations } = jobInputNumberSchema;
   const defaultSchema = z.coerce.number();
   if (!validations) return defaultSchema;
@@ -319,9 +311,7 @@ const makeZodSchemaFromJobInputBooleanSchema = () => {
   return z.boolean();
 };
 
-const makeZodSchemaFromJobInputOptionSchema = (
-  jobInputOptionSchema: JobInputOptionSchemaType,
-) => {
+const makeZodSchemaFromJobInputOptionSchema = (jobInputOptionSchema: JobInputOptionSchemaType) => {
   const {
     data: { values },
     validations,
@@ -352,9 +342,7 @@ const makeZodSchemaFromJobInputOptionSchema = (
   return canBeOptional ? schema.optional() : schema;
 };
 
-const makeZodSchemaFromJobInputFileSchema = (
-  jobInputFileSchema: JobInputFileSchemaType,
-) => {
+const makeZodSchemaFromJobInputFileSchema = (jobInputFileSchema: JobInputFileSchemaType) => {
   const { validations } = jobInputFileSchema;
   const defaultSchema = z.string();
   if (!validations) return defaultSchema;
@@ -376,19 +364,15 @@ const makeZodSchemaFromJobInputFileSchema = (
 
 // Helper functions
 export const isOptional = (jobInputSchema: JobInputSchemaType): boolean => {
-  if (!('validations' in jobInputSchema) || !jobInputSchema.validations)
-    return false;
+  if (!('validations' in jobInputSchema) || !jobInputSchema.validations) return false;
   return jobInputSchema.validations.some(
-    (v) =>
-      v.validation === ValidJobInputValidationTypes.OPTIONAL &&
-      v.value === 'true',
+    (v) => v.validation === ValidJobInputValidationTypes.OPTIONAL && v.value === 'true',
   );
 };
 
 export const isSingleOption = (jobInputSchema: JobInputSchemaType): boolean => {
   if (jobInputSchema.type !== ValidJobInputTypes.OPTION) return false;
-  if (!('validations' in jobInputSchema) || !jobInputSchema.validations)
-    return false;
+  if (!('validations' in jobInputSchema) || !jobInputSchema.validations) return false;
 
   const minValidation = jobInputSchema.validations.find(
     (v) => v.validation === ValidJobInputValidationTypes.MIN,

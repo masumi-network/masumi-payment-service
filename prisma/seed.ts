@@ -52,9 +52,7 @@ export const seed = async (prisma: PrismaClient) => {
     console.warn('****************************************************');
   }
   if (!adminKey || adminKey.length < 15) {
-    console.error(
-      'ADMIN_KEY is insecure, ensure it is at least 15 characters long',
-    );
+    console.error('ADMIN_KEY is insecure, ensure it is at least 15 characters long');
     throw Error('API-KEY is insecure');
   }
 
@@ -81,14 +79,12 @@ export const seed = async (prisma: PrismaClient) => {
 
   let collectionWalletPreprodAddress: string | null | undefined =
     process.env.COLLECTION_WALLET_PREPROD_ADDRESS;
-  let purchaseWalletPreprodMnemonic =
-    process.env.PURCHASE_WALLET_PREPROD_MNEMONIC;
+  let purchaseWalletPreprodMnemonic = process.env.PURCHASE_WALLET_PREPROD_MNEMONIC;
   if (!purchaseWalletPreprodMnemonic) {
     const secret_key = MeshWallet.brew(false) as string[];
     purchaseWalletPreprodMnemonic = secret_key.join(' ');
   }
-  let sellingWalletPreprodMnemonic =
-    process.env.SELLING_WALLET_PREPROD_MNEMONIC;
+  let sellingWalletPreprodMnemonic = process.env.SELLING_WALLET_PREPROD_MNEMONIC;
   if (!sellingWalletPreprodMnemonic) {
     const secret_key = MeshWallet.brew(false) as string[];
     sellingWalletPreprodMnemonic = secret_key.join(' ');
@@ -99,14 +95,12 @@ export const seed = async (prisma: PrismaClient) => {
 
   let collectionWalletMainnetAddress: string | null | undefined =
     process.env.COLLECTION_WALLET_MAINNET_ADDRESS;
-  let purchaseWalletMainnetMnemonic =
-    process.env.PURCHASE_WALLET_MAINNET_MNEMONIC;
+  let purchaseWalletMainnetMnemonic = process.env.PURCHASE_WALLET_MAINNET_MNEMONIC;
   if (!purchaseWalletMainnetMnemonic) {
     const secret_key = MeshWallet.brew(false) as string[];
     purchaseWalletMainnetMnemonic = secret_key.join(' ');
   }
-  let sellingWalletMainnetMnemonic =
-    process.env.SELLING_WALLET_MAINNET_MNEMONIC;
+  let sellingWalletMainnetMnemonic = process.env.SELLING_WALLET_MAINNET_MNEMONIC;
   if (!sellingWalletMainnetMnemonic) {
     const secret_key = MeshWallet.brew(false) as string[];
     sellingWalletMainnetMnemonic = secret_key.join(' ');
@@ -128,16 +122,10 @@ export const seed = async (prisma: PrismaClient) => {
   const cooldownTimePreprod = DEFAULTS.COOLDOWN_TIME_PREPROD;
   const cooldownTimeMainnet = DEFAULTS.COOLDOWN_TIME_MAINNET;
 
-  if (
-    encryptionKey != null &&
-    blockfrostApiKeyPreprod != null &&
-    blockfrostApiKeyPreprod != ''
-  ) {
+  if (encryptionKey != null && blockfrostApiKeyPreprod != null && blockfrostApiKeyPreprod != '') {
     const fee = feePermillePreprod;
     if (fee < 0 || fee > 1000) {
-      console.error(
-        'Fee permille is not valid, must be between 0 and 1000 (0.0% and 100.0%)',
-      );
+      console.error('Fee permille is not valid, must be between 0 and 1000 (0.0% and 100.0%)');
       throw Error('Fee permille is not valid');
     }
 
@@ -177,13 +165,8 @@ export const seed = async (prisma: PrismaClient) => {
       ]),
       version: 'V3',
     };
-    const smartContractAddress = resolvePlutusScriptAddress(
-      script as PlutusScript,
-      0,
-    );
-    if (
-      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD
-    ) {
+    const smartContractAddress = resolvePlutusScriptAddress(script as PlutusScript, 0);
+    if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD) {
       throw new Error(
         'Smart contract address is changed expected: ' +
           DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_PREPROD +
@@ -197,10 +180,10 @@ export const seed = async (prisma: PrismaClient) => {
 
     let latestTx: { tx_hash: string }[] | null = null;
     try {
-      latestTx = await blockfrostApi.addressesTransactions(
-        smartContractAddress,
-        { count: 1, order: 'desc' },
-      );
+      latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, {
+        count: 1,
+        order: 'desc',
+      });
       if (latestTx.length > 0) {
         console.log(
           'Smart contract address exists on preprod, syncing after tx: ' +
@@ -238,10 +221,7 @@ export const seed = async (prisma: PrismaClient) => {
         data: { encryptedMnemonic: sellingWalletSecret },
       });
 
-      const { policyId } = await getRegistryScriptV1(
-        smartContractAddress,
-        Network.Preprod,
-      );
+      const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Preprod);
       if (policyId != DEFAULTS.REGISTRY_POLICY_ID_PREPROD) {
         throw new Error(
           'Registry policyId is changed expected: ' +
@@ -262,8 +242,7 @@ export const seed = async (prisma: PrismaClient) => {
             },
           },
           syncInProgress: false,
-          lastIdentifierChecked:
-            latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
+          lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
           FeeReceiverNetworkWallet: {
             create: {
               walletAddress: feeWalletAddressPreprod,
@@ -285,17 +264,13 @@ export const seed = async (prisma: PrismaClient) => {
                   walletVkey: resolvePaymentKeyHash(
                     (await purchasingWallet.getUnusedAddresses())[0],
                   ),
-                  walletAddress: (
-                    await purchasingWallet.getUnusedAddresses()
-                  )[0],
+                  walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
                   note: 'Created by seeding',
                   type: HotWalletType.Purchasing,
                   secretId: purchasingWalletSecretId.id,
                 },
                 {
-                  walletVkey: resolvePaymentKeyHash(
-                    (await sellingWallet.getUnusedAddresses())[0],
-                  ),
+                  walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
                   walletAddress: (await sellingWallet.getUnusedAddresses())[0],
                   note: 'Created by seeding',
                   type: HotWalletType.Selling,
@@ -335,16 +310,10 @@ export const seed = async (prisma: PrismaClient) => {
   const feeWalletAddressMainnet = DEFAULTS.FEE_WALLET_MAINNET;
   const feePermilleMainnet = DEFAULTS.FEE_PERMILLE_MAINNET;
 
-  if (
-    encryptionKey != null &&
-    blockfrostApiKeyMainnet != null &&
-    blockfrostApiKeyMainnet != ''
-  ) {
+  if (encryptionKey != null && blockfrostApiKeyMainnet != null && blockfrostApiKeyMainnet != '') {
     const fee = feePermilleMainnet;
     if (fee < 0 || fee > 1000) {
-      console.error(
-        'Fee permille is not valid, must be between 0 and 1000 (0.0% and 100.0%)',
-      );
+      console.error('Fee permille is not valid, must be between 0 and 1000 (0.0% and 100.0%)');
       throw Error('Fee permille is not valid');
     }
 
@@ -386,9 +355,7 @@ export const seed = async (prisma: PrismaClient) => {
     };
 
     const smartContractAddress = resolvePlutusScriptAddress(script, 1);
-    if (
-      smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET
-    ) {
+    if (smartContractAddress != DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET) {
       throw new Error(
         'Smart contract address is changed expected: ' +
           DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET +
@@ -401,10 +368,10 @@ export const seed = async (prisma: PrismaClient) => {
     });
     let latestTx: { tx_hash: string }[] | null = null;
     try {
-      latestTx = await blockfrostApi.addressesTransactions(
-        smartContractAddress,
-        { count: 1, order: 'desc' },
-      );
+      latestTx = await blockfrostApi.addressesTransactions(smartContractAddress, {
+        count: 1,
+        order: 'desc',
+      });
       if (latestTx.length > 0) {
         console.log(
           'Smart contract address exists on mainnet, syncing after tx: ' +
@@ -412,10 +379,7 @@ export const seed = async (prisma: PrismaClient) => {
         );
       }
     } catch (error) {
-      console.warn(
-        'Smart contract address mainnet has no transactions. ',
-        error,
-      );
+      console.warn('Smart contract address mainnet has no transactions. ', error);
     }
     try {
       const purchasingWallet = new MeshWallet({
@@ -440,10 +404,7 @@ export const seed = async (prisma: PrismaClient) => {
       const sellingWalletSecretId = await prisma.walletSecret.create({
         data: { encryptedMnemonic: sellingWalletSecret },
       });
-      const { policyId } = await getRegistryScriptV1(
-        smartContractAddress,
-        Network.Mainnet,
-      );
+      const { policyId } = await getRegistryScriptV1(smartContractAddress, Network.Mainnet);
       if (policyId != DEFAULTS.REGISTRY_POLICY_ID_MAINNET) {
         throw new Error(
           'Registry policyId is changed expected: ' +
@@ -456,8 +417,7 @@ export const seed = async (prisma: PrismaClient) => {
         data: {
           smartContractAddress: smartContractAddress,
           policyId: policyId,
-          lastIdentifierChecked:
-            latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
+          lastIdentifierChecked: latestTx && latestTx.length > 0 ? latestTx[0].tx_hash : null,
           network: Network.Mainnet,
           PaymentSourceConfig: {
             create: {
@@ -487,17 +447,13 @@ export const seed = async (prisma: PrismaClient) => {
                   walletVkey: resolvePaymentKeyHash(
                     (await purchasingWallet.getUnusedAddresses())[0],
                   ),
-                  walletAddress: (
-                    await purchasingWallet.getUnusedAddresses()
-                  )[0],
+                  walletAddress: (await purchasingWallet.getUnusedAddresses())[0],
                   note: 'Created by seeding',
                   type: HotWalletType.Purchasing,
                   secretId: purchasingWalletSecretId.id,
                 },
                 {
-                  walletVkey: resolvePaymentKeyHash(
-                    (await sellingWallet.getUnusedAddresses())[0],
-                  ),
+                  walletVkey: resolvePaymentKeyHash((await sellingWallet.getUnusedAddresses())[0]),
                   walletAddress: (await sellingWallet.getUnusedAddresses())[0],
                   note: 'Created by seeding',
                   type: HotWalletType.Selling,

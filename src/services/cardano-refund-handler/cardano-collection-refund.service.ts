@@ -49,8 +49,7 @@ type PaymentSourceWithPurchaseRelations = Prisma.PaymentSourceGetPayload<{
 }>;
 
 // Extract PurchaseRequest type from PaymentSource
-type PurchaseRequestWithRelations =
-  PaymentSourceWithPurchaseRelations['PurchaseRequests'][number];
+type PurchaseRequestWithRelations = PaymentSourceWithPurchaseRelations['PurchaseRequests'][number];
 
 const mutex = new Mutex();
 
@@ -66,8 +65,7 @@ async function processSingleRefundCollection(
   if (request.collateralReturnLovelace == null) {
     throw new Error('Collateral return lovelace is null, this is deprecated');
   }
-  if (request.SmartContractWallet == null)
-    throw new Error('Smart contract wallet not found');
+  if (request.SmartContractWallet == null) throw new Error('Smart contract wallet not found');
   const { wallet, utxos, address } = await generateWalletExtended(
     paymentContract.network,
     paymentContract.PaymentSourceConfig.rpcProviderApiKey,
@@ -105,14 +103,10 @@ async function processSingleRefundCollection(
     }
 
     return (
-      smartContractStateEqualsOnChainState(
-        decodedContract.state,
-        request.onChainState,
-      ) &&
+      smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
       decodedContract.buyerVkey == request.SmartContractWallet?.walletVkey &&
       decodedContract.sellerVkey == request.SellerWallet.walletVkey &&
-      decodedContract.buyerAddress ==
-        request.SmartContractWallet?.walletAddress &&
+      decodedContract.buyerAddress == request.SmartContractWallet?.walletAddress &&
       decodedContract.sellerAddress == request.SellerWallet.walletAddress &&
       decodedContract.blockchainIdentifier == request.blockchainIdentifier &&
       decodedContract.inputHash == request.inputHash &&
@@ -142,12 +136,10 @@ async function processSingleRefundCollection(
   }
 
   const invalidBefore =
-    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) -
-    1;
+    unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[network]) - 1;
 
   const invalidAfter =
-    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) +
-    5;
+    unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[network]) + 5;
 
   const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
   const collateralUtxo = limitedFilteredUtxos[0];
@@ -155,25 +147,24 @@ async function processSingleRefundCollection(
     throw new Error('Collateral UTXO not found');
   }
 
-  const unsignedTx =
-    await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
-      'CollectRefund',
-      blockchainProvider,
-      network,
-      script,
-      address,
-      utxo,
-      collateralUtxo,
-      limitedFilteredUtxos,
-      {
-        collectAssets: utxo.output.amount,
-        collectionAddress: address,
-      },
-      null,
-      null,
-      invalidBefore,
-      invalidAfter,
-    );
+  const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+    'CollectRefund',
+    blockchainProvider,
+    network,
+    script,
+    address,
+    utxo,
+    collateralUtxo,
+    limitedFilteredUtxos,
+    {
+      collectAssets: utxo.output.amount,
+      collectionAddress: address,
+    },
+    null,
+    null,
+    invalidBefore,
+    invalidAfter,
+  );
 
   const signedTx = await wallet.signTx(unsignedTx);
   await prisma.purchaseRequest.update({
@@ -286,12 +277,7 @@ export async function collectRefundV1() {
           ],
           operations: purchaseRequests.map(
             (request) => async () =>
-              processSingleRefundCollection(
-                request,
-                paymentContract,
-                blockchainProvider,
-                network,
-              ),
+              processSingleRefundCollection(request, paymentContract, blockchainProvider, network),
           ),
         });
         let index = 0;
@@ -314,8 +300,7 @@ export async function collectRefundV1() {
                   create: {
                     requestedAction: PurchasingAction.WaitingForManualAction,
                     errorType: PurchaseErrorType.Unknown,
-                    errorNote:
-                      'Collecting refund failed: ' + errorToString(error),
+                    errorNote: 'Collecting refund failed: ' + errorToString(error),
                   },
                 },
                 SmartContractWallet: {

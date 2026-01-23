@@ -15,12 +15,7 @@ export type AuthContext = {
 const authMiddlewareInputSchema = z.object({});
 
 export const authMiddleware = (minPermission: Permission) =>
-  new Middleware<
-    Record<string, never>,
-    AuthContext,
-    string,
-    typeof authMiddlewareInputSchema
-  >({
+  new Middleware<Record<string, never>, AuthContext, string, typeof authMiddlewareInputSchema>({
     security: {
       // this information is optional and used for generating documentation
       type: 'header',
@@ -31,10 +26,7 @@ export const authMiddleware = (minPermission: Permission) =>
       try {
         const sentKey = request.headers.token;
         if (!sentKey || typeof sentKey !== 'string' || sentKey.length < 1) {
-          throw createHttpError(
-            401,
-            'Unauthorized, no authentication token provided',
-          );
+          throw createHttpError(401, 'Unauthorized, no authentication token provided');
         }
 
         const apiKey = await prisma.apiKey.findUnique({
@@ -44,20 +36,14 @@ export const authMiddleware = (minPermission: Permission) =>
         });
 
         if (!apiKey) {
-          throw createHttpError(
-            401,
-            'Unauthorized, invalid authentication token provided',
-          );
+          throw createHttpError(401, 'Unauthorized, invalid authentication token provided');
         }
 
         if (apiKey.status !== ApiKeyStatus.Active) {
           throw createHttpError(401, 'Unauthorized, API key is revoked');
         }
 
-        if (
-          minPermission == Permission.Admin &&
-          apiKey.permission != Permission.Admin
-        ) {
+        if (minPermission == Permission.Admin && apiKey.permission != Permission.Admin) {
           throw createHttpError(401, 'Unauthorized, admin access required');
         }
 
@@ -95,9 +81,7 @@ export const authMiddleware = (minPermission: Permission) =>
       } catch (error) {
         //await a random amount to throttle invalid requests
         logger.info('Throttling invalid requests', { error });
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.random() * 1000),
-        );
+        await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
         throw error;
       }
     },

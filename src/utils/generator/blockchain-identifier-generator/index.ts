@@ -16,26 +16,18 @@ export function generateBlockchainIdentifier(
   buyerNonce: string,
 ): string {
   const signedEncodedBlockchainIdentifier = Buffer.from(
-    sellerNonce +
-      '.' +
-      buyerNonce +
-      '.' +
-      referenceSignature +
-      '.' +
-      referenceKey,
+    sellerNonce + '.' + buyerNonce + '.' + referenceSignature + '.' + referenceKey,
   ).toString('utf-8');
 
-  return Buffer.from(
-    LZString.compressToUint8Array(signedEncodedBlockchainIdentifier),
-  ).toString('hex');
+  return Buffer.from(LZString.compressToUint8Array(signedEncodedBlockchainIdentifier)).toString(
+    'hex',
+  );
 }
 
 export function decodeBlockchainIdentifier(
   blockchainIdentifier: string,
 ): DecodedBlockchainIdentifier | null {
-  const decompressed = LZString.decompressFromUint8Array(
-    Buffer.from(blockchainIdentifier, 'hex'),
-  );
+  const decompressed = LZString.decompressFromUint8Array(Buffer.from(blockchainIdentifier, 'hex'));
   if (typeof decompressed !== 'string') {
     return null;
   }

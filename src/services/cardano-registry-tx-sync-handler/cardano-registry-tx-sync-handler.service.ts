@@ -1,7 +1,4 @@
-import {
-  RegistrationState,
-  TransactionStatus,
-} from '@/generated/prisma/client';
+import { RegistrationState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -38,9 +35,7 @@ export async function checkRegistryTransactions() {
             paymentContract.PaymentSourceConfig.rpcProviderApiKey,
           );
 
-          const registryRequests = await getRegistrationRequestsToSync(
-            paymentContract.id,
-          );
+          const registryRequests = await getRegistrationRequestsToSync(paymentContract.id);
           await syncRegistryRequests(registryRequests, blockfrost);
         }),
       );
@@ -76,10 +71,9 @@ async function syncRegistryRequests(
 ) {
   const results = await advancedRetryAll({
     operations: registryRequests.map((registryRequest) => async () => {
-      const owner = await blockfrost.assetsAddresses(
-        registryRequest.agentIdentifier!,
-        { order: 'desc' },
-      );
+      const owner = await blockfrost.assetsAddresses(registryRequest.agentIdentifier!, {
+        order: 'desc',
+      });
 
       if (registryRequest.state == RegistrationState.RegistrationInitiated) {
         if (owner.length >= 1 && owner[0].quantity == '1') {
@@ -89,9 +83,7 @@ async function syncRegistryRequests(
           ) {
             throw new Error('Registry request has no tx hash');
           }
-          const tx = await blockfrost.txs(
-            registryRequest.CurrentTransaction.txHash,
-          );
+          const tx = await blockfrost.txs(registryRequest.CurrentTransaction.txHash);
           const block = await blockfrost.blocks(tx.block);
           const confirmations = block.confirmations;
           await prisma.registryRequest.update({
@@ -138,9 +130,7 @@ async function syncRegistryRequests(
             },
           });
         }
-      } else if (
-        registryRequest.state == RegistrationState.DeregistrationInitiated
-      ) {
+      } else if (registryRequest.state == RegistrationState.DeregistrationInitiated) {
         if (owner.length == 0 || owner[0].quantity == '0') {
           if (
             registryRequest.CurrentTransaction == undefined ||
@@ -148,9 +138,7 @@ async function syncRegistryRequests(
           ) {
             throw new Error('Deregistration request has no tx hash');
           }
-          const tx = await blockfrost.txs(
-            registryRequest.CurrentTransaction.txHash,
-          );
+          const tx = await blockfrost.txs(registryRequest.CurrentTransaction.txHash);
           const block = await blockfrost.blocks(tx.block);
           const confirmations = block.confirmations;
           await prisma.registryRequest.update({
@@ -226,10 +214,7 @@ async function getRegistrationRequestsToSync(paymentContractId: string) {
         id: paymentContractId,
       },
       state: {
-        in: [
-          RegistrationState.RegistrationInitiated,
-          RegistrationState.DeregistrationInitiated,
-        ],
+        in: [RegistrationState.RegistrationInitiated, RegistrationState.DeregistrationInitiated],
       },
       CurrentTransaction: {
         isNot: null,

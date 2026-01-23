@@ -1,18 +1,11 @@
-import {
-  PaymentSource,
-  PaymentSourceConfig,
-  Prisma,
-} from '@/generated/prisma/client';
+import { PaymentSource, PaymentSourceConfig, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { logger } from '@/utils/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONFIG, CONSTANTS } from '@/utils/config';
 import { extractOnChainTransactionData } from './util';
-import {
-  getExtendedTxInformation,
-  getTxsFromCardanoAfterSpecificTx,
-} from './blockchain';
+import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
 import {
   updateInitialTransactions,
   updateRolledBackTransaction,
@@ -51,10 +44,7 @@ export async function checkLatestTransactions(
     try {
       const results = await Promise.allSettled(
         paymentContracts.map((paymentContract) =>
-          processPaymentSource(
-            paymentContract,
-            maxParallelTransactionsExtendedLookup,
-          ),
+          processPaymentSource(paymentContract, maxParallelTransactionsExtendedLookup),
         ),
       );
 
@@ -119,17 +109,11 @@ async function processPaymentSource(
 
     try {
       await processTransactionData(tx, paymentContract, blockfrost);
-      await updateSyncCheckpoint(
-        paymentContract,
-        tx.tx.tx_hash,
-        latestIdentifier,
-      );
+      await updateSyncCheckpoint(paymentContract, tx.tx.tx_hash, latestIdentifier);
       latestIdentifier = tx.tx.tx_hash;
     } catch (error) {
       //If the error persists this will prevent a further sync
-      logger.error(
-        '-----------SYNC FAILED TO CONTINUE: Error updating sync checkpoint-----------',
-      );
+      logger.error('-----------SYNC FAILED TO CONTINUE: Error updating sync checkpoint-----------');
       logger.error('SYNC FAILED TO CONTINUE: Error processing transaction', {
         error: error,
         tx: tx,
@@ -149,11 +133,7 @@ async function processTransactionData(
     logger.info('Skipping invalid tx: ', tx.tx.tx_hash, extractedData.error);
     return;
   } else if (extractedData.type == 'Initial') {
-    await updateInitialTransactions(
-      extractedData.valueOutputs,
-      paymentContract,
-      tx,
-    );
+    await updateInitialTransactions(extractedData.valueOutputs, paymentContract, tx);
   } else if (extractedData.type == 'Transaction') {
     await updateTransaction(paymentContract, extractedData, blockfrost, tx);
   }

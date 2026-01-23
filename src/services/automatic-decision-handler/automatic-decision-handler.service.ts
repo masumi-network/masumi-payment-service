@@ -40,9 +40,7 @@ export async function handleAutomaticDecisions() {
   }
 }
 
-async function handleInitializeAutoWithdrawPayments(
-  paymentSources: PaymentSource[],
-) {
+async function handleInitializeAutoWithdrawPayments(paymentSources: PaymentSource[]) {
   await Promise.all(
     paymentSources.map(async (paymentSource) => {
       try {
@@ -104,9 +102,7 @@ async function handleInitializeAutoWithdrawPayments(
   );
 }
 
-async function handleInitializeAutoWithdrawRefunds(
-  paymentSources: PaymentSource[],
-) {
+async function handleInitializeAutoWithdrawRefunds(paymentSources: PaymentSource[]) {
   await Promise.all(
     paymentSources.map(async (paymentSource) => {
       try {
@@ -144,8 +140,7 @@ async function handleInitializeAutoWithdrawRefunds(
                     },
                     NextAction: {
                       create: {
-                        requestedAction:
-                          PurchasingAction.WithdrawRefundRequested,
+                        requestedAction: PurchasingAction.WithdrawRefundRequested,
                       },
                     },
                   },

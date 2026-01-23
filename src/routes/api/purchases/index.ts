@@ -43,12 +43,8 @@ export const queryPurchaseRequestSchemaInput = z.object({
   cursorId: z
     .string()
     .optional()
-    .describe(
-      'Used to paginate through the purchases. If this is provided, cursorId is required',
-    ),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the purchases were made on'),
+    .describe('Used to paginate through the purchases. If this is provided, cursorId is required'),
+  network: z.nativeEnum(Network).describe('The network the purchases were made on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -60,21 +56,15 @@ export const queryPurchaseRequestSchemaInput = z.object({
     .default('false')
     .optional()
     .transform((val) => val?.toLowerCase() == 'true')
-    .describe(
-      'Whether to include the full transaction and action history of the purchases',
-    ),
+    .describe('Whether to include the full transaction and action history of the purchases'),
 });
 
 export const purchaseResponseSchema = z
   .object({
     id: z.string().describe('Unique identifier for the purchase'),
     createdAt: z.date().describe('Timestamp when the purchase was created'),
-    updatedAt: z
-      .date()
-      .describe('Timestamp when the purchase was last updated'),
-    blockchainIdentifier: z
-      .string()
-      .describe('Unique blockchain identifier for the purchase'),
+    updatedAt: z.date().describe('Timestamp when the purchase was last updated'),
+    blockchainIdentifier: z.string().describe('Unique blockchain identifier for the purchase'),
     agentIdentifier: z
       .string()
       .nullable()
@@ -82,9 +72,7 @@ export const purchaseResponseSchema = z
     lastCheckedAt: z
       .date()
       .nullable()
-      .describe(
-        'Timestamp when the purchase was last checked on-chain. Null if never checked',
-      ),
+      .describe('Timestamp when the purchase was last checked on-chain. Null if never checked'),
     payByTime: z
       .string()
       .nullable()
@@ -93,9 +81,7 @@ export const purchaseResponseSchema = z
       ),
     submitResultTime: z
       .string()
-      .describe(
-        'Unix timestamp (in milliseconds) by which the seller must submit the result',
-      ),
+      .describe('Unix timestamp (in milliseconds) by which the seller must submit the result'),
     unlockTime: z
       .string()
       .describe(
@@ -118,45 +104,29 @@ export const purchaseResponseSchema = z
       ),
     nextActionOrOnChainStateOrResultLastChangedAt: z
       .date()
-      .describe(
-        'Timestamp when the next action or on-chain state or result was last changed',
-      ),
-    nextActionLastChangedAt: z
-      .date()
-      .describe('Timestamp when the next action was last changed'),
+      .describe('Timestamp when the next action or on-chain state or result was last changed'),
+    nextActionLastChangedAt: z.date().describe('Timestamp when the next action was last changed'),
     onChainStateOrResultLastChangedAt: z
       .date()
       .describe('Timestamp when the on-chain state or result was last changed'),
-    requestedById: z
-      .string()
-      .describe('ID of the API key that created this purchase'),
+    requestedById: z.string().describe('ID of the API key that created this purchase'),
     onChainState: z
       .nativeEnum(OnChainState)
       .nullable()
-      .describe(
-        'Current state of the purchase on the blockchain. Null if not yet on-chain',
-      ),
+      .describe('Current state of the purchase on the blockchain. Null if not yet on-chain'),
     collateralReturnLovelace: z
       .string()
       .nullable()
-      .describe(
-        'Amount of collateral to return in lovelace. Null if no collateral',
-      ),
-    cooldownTime: z
-      .number()
-      .describe('Cooldown period in milliseconds for the buyer to dispute'),
+      .describe('Amount of collateral to return in lovelace. Null if no collateral'),
+    cooldownTime: z.number().describe('Cooldown period in milliseconds for the buyer to dispute'),
     cooldownTimeOtherParty: z
       .number()
       .describe('Cooldown period in milliseconds for the seller to dispute'),
-    inputHash: z
-      .string()
-      .describe('SHA256 hash of the input data for the purchase (hex string)'),
+    inputHash: z.string().describe('SHA256 hash of the input data for the purchase (hex string)'),
     resultHash: z
       .string()
       .nullable()
-      .describe(
-        'SHA256 hash of the result submitted by the seller (hex string)',
-      ),
+      .describe('SHA256 hash of the result submitted by the seller (hex string)'),
     NextAction: z
       .object({
         requestedAction: z
@@ -166,10 +136,7 @@ export const purchaseResponseSchema = z
           .nativeEnum(PurchaseErrorType)
           .nullable()
           .describe('Type of error that occurred, if any'),
-        errorNote: z
-          .string()
-          .nullable()
-          .describe('Additional details about the error, if any'),
+        errorNote: z.string().nullable().describe('Additional details about the error, if any'),
       })
       .describe('Next action required for this purchase'),
     ActionHistory: z
@@ -183,10 +150,7 @@ export const purchaseResponseSchema = z
               .nativeEnum(PurchaseErrorType)
               .nullable()
               .describe('Type of error that occurred, if any'),
-            errorNote: z
-              .string()
-              .nullable()
-              .describe('Additional details about the error, if any'),
+            errorNote: z.string().nullable().describe('Additional details about the error, if any'),
           })
           .describe('Next action required for this purchase'),
       )
@@ -197,25 +161,13 @@ export const purchaseResponseSchema = z
     CurrentTransaction: z
       .object({
         id: z.string().describe('Unique identifier for the transaction'),
-        createdAt: z
-          .date()
-          .describe('Timestamp when the transaction was created'),
-        updatedAt: z
-          .date()
-          .describe('Timestamp when the transaction was last updated'),
+        createdAt: z.date().describe('Timestamp when the transaction was created'),
+        updatedAt: z.date().describe('Timestamp when the transaction was last updated'),
         txHash: z.string().nullable().describe('Cardano transaction hash'),
-        status: z
-          .nativeEnum(TransactionStatus)
-          .describe('Current status of the transaction'),
+        status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
         fees: z.string().nullable().describe('Fees of the transaction'),
-        blockHeight: z
-          .number()
-          .nullable()
-          .describe('Block height of the transaction'),
-        blockTime: z
-          .number()
-          .nullable()
-          .describe('Block time of the transaction'),
+        blockHeight: z.number().nullable().describe('Block height of the transaction'),
+        blockTime: z.number().nullable().describe('Block time of the transaction'),
         previousOnChainState: z
           .nativeEnum(OnChainState)
           .nullable()
@@ -231,32 +183,18 @@ export const purchaseResponseSchema = z
           .describe('Number of block confirmations for this transaction'),
       })
       .nullable()
-      .describe(
-        'Current active transaction for this purchase. Null if no transaction in progress',
-      ),
+      .describe('Current active transaction for this purchase. Null if no transaction in progress'),
     TransactionHistory: z
       .array(
         z.object({
           id: z.string().describe('Unique identifier for the transaction'),
-          createdAt: z
-            .date()
-            .describe('Timestamp when the transaction was created'),
-          updatedAt: z
-            .date()
-            .describe('Timestamp when the transaction was last updated'),
+          createdAt: z.date().describe('Timestamp when the transaction was created'),
+          updatedAt: z.date().describe('Timestamp when the transaction was last updated'),
           txHash: z.string().nullable().describe('Cardano transaction hash'),
-          status: z
-            .nativeEnum(TransactionStatus)
-            .describe('Current status of the transaction'),
+          status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
           fees: z.string().nullable().describe('Fees of the transaction'),
-          blockHeight: z
-            .number()
-            .nullable()
-            .describe('Block height of the transaction'),
-          blockTime: z
-            .number()
-            .nullable()
-            .describe('Block time of the transaction'),
+          blockHeight: z.number().nullable().describe('Block height of the transaction'),
+          blockTime: z.number().nullable().describe('Block time of the transaction'),
           previousOnChainState: z
             .nativeEnum(OnChainState)
             .nullable()
@@ -300,28 +238,18 @@ export const purchaseResponseSchema = z
     SellerWallet: z
       .object({
         id: z.string().describe('Unique identifier for the seller wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the seller wallet'),
+        walletVkey: z.string().describe('Payment key hash of the seller wallet'),
       })
       .nullable()
       .describe('Seller wallet information. Null if not set'),
     SmartContractWallet: z
       .object({
-        id: z
-          .string()
-          .describe('Unique identifier for the smart contract wallet'),
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the smart contract wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the smart contract wallet'),
+        id: z.string().describe('Unique identifier for the smart contract wallet'),
+        walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
+        walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
       })
       .nullable()
-      .describe(
-        'Smart contract wallet (seller wallet) managing this purchase. Null if not set',
-      ),
+      .describe('Smart contract wallet (seller wallet) managing this purchase. Null if not set'),
     metadata: z
       .string()
       .nullable()
@@ -346,11 +274,7 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     input: z.infer<typeof queryPurchaseRequestSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
     const result = await prisma.purchaseRequest.findMany({
       where: {
@@ -450,13 +374,10 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
           ...purchase,
           ...transformPurchaseGetTimestamps(purchase),
           ...transformPurchaseGetAmounts(purchase),
-          totalBuyerCardanoFees:
-            Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
-          totalSellerCardanoFees:
-            Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
+          totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
           agentIdentifier:
-            decodeBlockchainIdentifier(purchase.blockchainIdentifier)
-              ?.agentIdentifier ?? null,
+            decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
           CurrentTransaction: purchase.CurrentTransaction
             ? {
                 ...purchase.CurrentTransaction,
@@ -500,19 +421,14 @@ export const createPurchaseInitSchemaInput = z.object({
     .string()
     .max(8000)
     .describe('The identifier of the purchase. Is provided by the seller'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the transaction will be made on'),
+  network: z.nativeEnum(Network).describe('The network the transaction will be made on'),
   inputHash: z
     .string()
     .max(250)
     .describe(
       'The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format',
     ),
-  sellerVkey: z
-    .string()
-    .max(250)
-    .describe('The verification key of the seller'),
+  sellerVkey: z.string().max(250).describe('The verification key of the seller'),
   agentIdentifier: z
     .string()
     .min(57)
@@ -524,15 +440,11 @@ export const createPurchaseInitSchemaInput = z.object({
         amount: z
           .string()
           .max(25)
-          .describe(
-            'Amount of the asset in smallest unit (e.g., lovelace for ADA)',
-          ),
+          .describe('Amount of the asset in smallest unit (e.g., lovelace for ADA)'),
         unit: z
           .string()
           .max(150)
-          .describe(
-            'Asset policy id + asset name concatenated. Empty string for ADA/lovelace',
-          ),
+          .describe('Asset policy id + asset name concatenated. Empty string for ADA/lovelace'),
       }),
     )
     .max(7)
@@ -540,9 +452,7 @@ export const createPurchaseInitSchemaInput = z.object({
     .describe('The amounts to be paid for the purchase'),
   unlockTime: z
     .string()
-    .describe(
-      'The time after which the purchase will be unlocked. In unix time (number)',
-    ),
+    .describe('The time after which the purchase will be unlocked. In unix time (number)'),
   externalDisputeUnlockTime: z
     .string()
     .describe(
@@ -550,25 +460,16 @@ export const createPurchaseInitSchemaInput = z.object({
     ),
   submitResultTime: z
     .string()
-    .describe(
-      'The time by which the result has to be submitted. In unix time (number)',
-    ),
+    .describe('The time by which the result has to be submitted. In unix time (number)'),
   payByTime: z
     .string()
-    .describe(
-      'The time after which the purchase has to be submitted to the smart contract',
-    ),
-  metadata: z
-    .string()
-    .optional()
-    .describe('Metadata to be stored with the purchase request'),
+    .describe('The time after which the purchase has to be submitted to the smart contract'),
+  metadata: z.string().optional().describe('Metadata to be stored with the purchase request'),
   identifierFromPurchaser: z
     .string()
     .min(14)
     .max(26)
-    .describe(
-      'The nonce of the purchaser of the purchase, needs to be in hex format',
-    ),
+    .describe('The nonce of the purchaser of the purchase, needs to be in hex format'),
 });
 
 export const createPurchaseInitSchemaOutput = purchaseResponseSchema.omit({
@@ -638,97 +539,71 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         },
       });
       if (existingPurchaseRequest != null) {
-        throw new HttpExistsError(
-          'Purchase exists',
-          existingPurchaseRequest.id,
-          {
-            ...existingPurchaseRequest,
-            totalBuyerCardanoFees:
-              Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) /
-              1_000_000,
-            totalSellerCardanoFees:
-              Number(
-                existingPurchaseRequest.totalSellerCardanoFees.toString(),
-              ) / 1_000_000,
-            CurrentTransaction: existingPurchaseRequest.CurrentTransaction
-              ? {
-                  id: existingPurchaseRequest.CurrentTransaction.id,
-                  createdAt:
-                    existingPurchaseRequest.CurrentTransaction.createdAt,
-                  updatedAt:
-                    existingPurchaseRequest.CurrentTransaction.updatedAt,
-                  txHash: existingPurchaseRequest.CurrentTransaction.txHash,
-                  status: existingPurchaseRequest.CurrentTransaction.status,
-                  fees:
-                    existingPurchaseRequest.CurrentTransaction.fees?.toString() ??
-                    null,
-                  blockHeight:
-                    existingPurchaseRequest.CurrentTransaction.blockHeight,
-                  blockTime:
-                    existingPurchaseRequest.CurrentTransaction.blockTime,
-                  utxoCount:
-                    existingPurchaseRequest.CurrentTransaction.utxoCount,
-                  withdrawalCount:
-                    existingPurchaseRequest.CurrentTransaction.withdrawalCount,
-                  assetMintOrBurnCount:
-                    existingPurchaseRequest.CurrentTransaction
-                      .assetMintOrBurnCount,
-                  redeemerCount:
-                    existingPurchaseRequest.CurrentTransaction.redeemerCount,
-                  validContract:
-                    existingPurchaseRequest.CurrentTransaction.validContract,
-                  outputAmount:
-                    existingPurchaseRequest.CurrentTransaction.outputAmount,
-                }
-              : null,
-            TransactionHistory: [],
-            payByTime: existingPurchaseRequest.payByTime?.toString() ?? null,
-            PaidFunds: (
-              existingPurchaseRequest.PaidFunds as Array<{
-                unit: string;
-                amount: bigint;
-              }>
-            ).map((amount) => ({
-              ...amount,
-              amount: amount.amount.toString(),
-            })),
-            WithdrawnForSeller: (
-              existingPurchaseRequest.WithdrawnForSeller as Array<{
-                unit: string;
-                amount: bigint;
-              }>
-            ).map((amount) => ({
-              ...amount,
-              amount: amount.amount.toString(),
-            })),
-            WithdrawnForBuyer: (
-              existingPurchaseRequest.WithdrawnForBuyer as Array<{
-                unit: string;
-                amount: bigint;
-              }>
-            ).map((amount) => ({
-              ...amount,
-              amount: amount.amount.toString(),
-            })),
-            submitResultTime:
-              existingPurchaseRequest.submitResultTime.toString(),
-            unlockTime: existingPurchaseRequest.unlockTime.toString(),
-            externalDisputeUnlockTime:
-              existingPurchaseRequest.externalDisputeUnlockTime.toString(),
-            cooldownTime: Number(existingPurchaseRequest.buyerCoolDownTime),
-            cooldownTimeOtherParty: Number(
-              existingPurchaseRequest.sellerCoolDownTime,
-            ),
-            collateralReturnLovelace:
-              existingPurchaseRequest.collateralReturnLovelace?.toString() ??
-              null,
-            metadata: existingPurchaseRequest.metadata,
-            buyerCoolDownTime:
-              existingPurchaseRequest.buyerCoolDownTime.toString(),
-            sellerCoolDownTime:
-              existingPurchaseRequest.sellerCoolDownTime.toString(),
-          },
-        );
+        throw new HttpExistsError('Purchase exists', existingPurchaseRequest.id, {
+          ...existingPurchaseRequest,
+          totalBuyerCardanoFees:
+            Number(existingPurchaseRequest.totalBuyerCardanoFees.toString()) / 1_000_000,
+          totalSellerCardanoFees:
+            Number(existingPurchaseRequest.totalSellerCardanoFees.toString()) / 1_000_000,
+          CurrentTransaction: existingPurchaseRequest.CurrentTransaction
+            ? {
+                id: existingPurchaseRequest.CurrentTransaction.id,
+                createdAt: existingPurchaseRequest.CurrentTransaction.createdAt,
+                updatedAt: existingPurchaseRequest.CurrentTransaction.updatedAt,
+                txHash: existingPurchaseRequest.CurrentTransaction.txHash,
+                status: existingPurchaseRequest.CurrentTransaction.status,
+                fees: existingPurchaseRequest.CurrentTransaction.fees?.toString() ?? null,
+                blockHeight: existingPurchaseRequest.CurrentTransaction.blockHeight,
+                blockTime: existingPurchaseRequest.CurrentTransaction.blockTime,
+                utxoCount: existingPurchaseRequest.CurrentTransaction.utxoCount,
+                withdrawalCount: existingPurchaseRequest.CurrentTransaction.withdrawalCount,
+                assetMintOrBurnCount:
+                  existingPurchaseRequest.CurrentTransaction.assetMintOrBurnCount,
+                redeemerCount: existingPurchaseRequest.CurrentTransaction.redeemerCount,
+                validContract: existingPurchaseRequest.CurrentTransaction.validContract,
+                outputAmount: existingPurchaseRequest.CurrentTransaction.outputAmount,
+              }
+            : null,
+          TransactionHistory: [],
+          payByTime: existingPurchaseRequest.payByTime?.toString() ?? null,
+          PaidFunds: (
+            existingPurchaseRequest.PaidFunds as Array<{
+              unit: string;
+              amount: bigint;
+            }>
+          ).map((amount) => ({
+            ...amount,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForSeller: (
+            existingPurchaseRequest.WithdrawnForSeller as Array<{
+              unit: string;
+              amount: bigint;
+            }>
+          ).map((amount) => ({
+            ...amount,
+            amount: amount.amount.toString(),
+          })),
+          WithdrawnForBuyer: (
+            existingPurchaseRequest.WithdrawnForBuyer as Array<{
+              unit: string;
+              amount: bigint;
+            }>
+          ).map((amount) => ({
+            ...amount,
+            amount: amount.amount.toString(),
+          })),
+          submitResultTime: existingPurchaseRequest.submitResultTime.toString(),
+          unlockTime: existingPurchaseRequest.unlockTime.toString(),
+          externalDisputeUnlockTime: existingPurchaseRequest.externalDisputeUnlockTime.toString(),
+          cooldownTime: Number(existingPurchaseRequest.buyerCoolDownTime),
+          cooldownTimeOtherParty: Number(existingPurchaseRequest.sellerCoolDownTime),
+          collateralReturnLovelace:
+            existingPurchaseRequest.collateralReturnLovelace?.toString() ?? null,
+          metadata: existingPurchaseRequest.metadata,
+          buyerCoolDownTime: existingPurchaseRequest.buyerCoolDownTime.toString(),
+          sellerCoolDownTime: existingPurchaseRequest.sellerCoolDownTime.toString(),
+        });
       }
       const policyId = input.agentIdentifier.substring(0, 56);
 
@@ -773,10 +648,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
             step: 'payment_source_lookup',
           },
         );
-        throw createHttpError(
-          404,
-          'No payment source found for agent identifiers policy id',
-        );
+        throw createHttpError(404, 'No payment source found for agent identifiers policy id');
       }
 
       const wallets = await prisma.hotWallet.aggregate({
@@ -841,26 +713,17 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
             current_time: Date.now().toString(),
           },
         );
-        throw createHttpError(
-          400,
-          'Pay by time must be in the future (max. 5 minutes)',
-        );
+        throw createHttpError(400, 'Pay by time must be in the future (max. 5 minutes)');
       }
 
-      if (
-        externalDisputeUnlockTime <
-        unlockTime + additionalExternalDisputeUnlockTime
-      ) {
+      if (externalDisputeUnlockTime < unlockTime + additionalExternalDisputeUnlockTime) {
         throw createHttpError(
           400,
           'External dispute unlock time must be after unlock time (min. 15 minutes difference)',
         );
       }
       if (submitResultTime < BigInt(Date.now() + 1000 * 60 * 15)) {
-        throw createHttpError(
-          400,
-          'Submit result time must be in the future (min. 15 minutes)',
-        );
+        throw createHttpError(400, 'Submit result time must be in the future (min. 15 minutes)');
       }
       const offset = BigInt(1000 * 60 * 15);
       if (submitResultTime > unlockTime - offset) {
@@ -875,9 +738,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       );
 
       const assetId = input.agentIdentifier;
-      const policyAsset = assetId.startsWith(policyId)
-        ? assetId
-        : policyId + assetId;
+      const policyAsset = assetId.startsWith(policyId) ? assetId : policyId + assetId;
       const assetInWallet = await provider.assetsAddresses(policyAsset, {
         order: 'desc',
         count: 1,
@@ -900,34 +761,24 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       if (!assetInfo.onchain_metadata) {
         throw createHttpError(404, 'Agent identifier not found');
       }
-      const parsedMetadata = metadataSchema.safeParse(
-        assetInfo.onchain_metadata,
-      );
+      const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
 
       if (!parsedMetadata.success || !parsedMetadata.data) {
         const error = parsedMetadata.error;
         logger.error('Error parsing metadata', { error });
-        throw createHttpError(
-          404,
-          'Agent identifier metadata invalid or unsupported',
-        );
+        throw createHttpError(404, 'Agent identifier metadata invalid or unsupported');
       }
 
       const pricing = parsedMetadata.data.agentPricing;
       if (pricing.pricingType != PricingType.Fixed) {
-        throw createHttpError(
-          400,
-          'Agent identifier pricing type not supported',
-        );
+        throw createHttpError(400, 'Agent identifier pricing type not supported');
       }
       const amounts = pricing.fixedPricing;
 
       const agentIdentifierAmountsMap = new Map<string, bigint>();
       for (const amount of amounts) {
         const unit =
-          metadataToString(amount.unit)!.toLowerCase() == ''
-            ? ''
-            : metadataToString(amount.unit)!;
+          metadataToString(amount.unit)!.toLowerCase() == '' ? '' : metadataToString(amount.unit)!;
         if (agentIdentifierAmountsMap.has(unit)) {
           agentIdentifierAmountsMap.set(
             unit,
@@ -946,10 +797,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       }
       const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
       if (decoded == null) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, format invalid',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
       }
       const purchaserId = decoded.purchaserId;
       const sellerId = decoded.sellerId;
@@ -957,43 +805,25 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       const key = decoded.key;
 
       if (purchaserId != input.identifierFromPurchaser) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, purchaser id mismatch',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, purchaser id mismatch');
       }
       if (validateHexString(purchaserId) == false) {
-        throw createHttpError(
-          400,
-          'Purchaser identifier is not a valid hex string',
-        );
+        throw createHttpError(400, 'Purchaser identifier is not a valid hex string');
       }
       if (validateHexString(sellerId) == false) {
-        throw createHttpError(
-          400,
-          'Seller identifier is not a valid hex string',
-        );
+        throw createHttpError(400, 'Seller identifier is not a valid hex string');
       }
       if (decoded.agentIdentifier != input.agentIdentifier) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, agent identifier mismatch',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, agent identifier mismatch');
       }
 
       const cosePublicKey = getPublicKeyFromCoseKey(key);
       if (cosePublicKey == null) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, key not found',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, key not found');
       }
       const publicKeyHash = cosePublicKey.hash();
       if (publicKeyHash.hex() != input.sellerVkey) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, key does not match',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, key does not match');
       }
 
       const reconstructedBlockchainIdentifier = {
@@ -1014,32 +844,24 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
         stringify(reconstructedBlockchainIdentifier),
       );
 
-      const identifierIsSignedCorrectly = await checkSignature(
-        hashedBlockchainIdentifier,
-        {
-          signature: signature,
-          key: key,
-        },
-      );
+      const identifierIsSignedCorrectly = await checkSignature(hashedBlockchainIdentifier, {
+        signature: signature,
+        key: key,
+      });
       if (!identifierIsSignedCorrectly) {
-        throw createHttpError(
-          400,
-          'Invalid blockchain identifier, signature invalid',
-        );
+        throw createHttpError(400, 'Invalid blockchain identifier, signature invalid');
       }
       const smartContractAddress = paymentSource.smartContractAddress;
 
       const initialPurchaseRequest = await handlePurchaseCreditInit({
         id: ctx.id,
-        cost: Array.from(agentIdentifierAmountsMap.entries()).map(
-          ([unit, amount]) => {
-            if (unit.toLowerCase() == 'lovelace') {
-              return { amount: amount, unit: '' };
-            } else {
-              return { amount: amount, unit: unit };
-            }
-          },
-        ),
+        cost: Array.from(agentIdentifierAmountsMap.entries()).map(([unit, amount]) => {
+          if (unit.toLowerCase() == 'lovelace') {
+            return { amount: amount, unit: '' };
+          } else {
+            return { amount: amount, unit: unit };
+          }
+        }),
         metadata: input.metadata,
         network: input.network,
         blockchainIdentifier: input.blockchainIdentifier,
@@ -1064,26 +886,18 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       };
     } catch (error: unknown) {
       // Record the business-specific error with context
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
-      recordBusinessEndpointError(
-        '/api/v1/purchase',
-        'POST',
-        statusCode,
-        errorInstance,
-        {
-          network: input.network,
-          user_id: ctx.id,
-          agent_identifier: input.agentIdentifier,
-          duration: Date.now() - startTime,
-          step: 'purchase_processing',
-        },
-      );
+      recordBusinessEndpointError('/api/v1/purchase', 'POST', statusCode, errorInstance, {
+        network: input.network,
+        user_id: ctx.id,
+        agent_identifier: input.agentIdentifier,
+        duration: Date.now() - startTime,
+        step: 'purchase_processing',
+      });
 
       throw error;
     }

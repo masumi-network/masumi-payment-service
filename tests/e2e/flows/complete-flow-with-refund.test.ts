@@ -40,15 +40,11 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
   }> = [];
 
   beforeAll(async () => {
-    console.log(
-      `🚀 Starting Complete E2E Flow with Refund for ${testNetwork}...`,
-    );
+    console.log(`🚀 Starting Complete E2E Flow with Refund for ${testNetwork}...`);
 
     // Wait for global setup to complete
     if (!global.testConfig) {
-      throw new Error(
-        'Global test configuration not available. Check testEnvironment.ts setup.',
-      );
+      throw new Error('Global test configuration not available. Check testEnvironment.ts setup.');
     }
 
     // Validate test wallet configuration
@@ -56,22 +52,16 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
     if (!walletValidation.valid) {
       console.error('❌ Test wallet validation failed:');
       walletValidation.errors.forEach((error) => console.error(`  - ${error}`));
-      throw new Error(
-        'Test wallets not properly configured. See fixtures/testWallets.ts',
-      );
+      throw new Error('Test wallets not properly configured. See fixtures/testWallets.ts');
     }
 
     // Verify API client is available
     if (!global.testApiClient) {
-      throw new Error(
-        'Test API client not initialized. Make sure test setup ran correctly.',
-      );
+      throw new Error('Test API client not initialized. Make sure test setup ran correctly.');
     }
 
     console.log(`✅ Test wallets validated for network: ${testNetwork}`);
-    console.log(
-      `✅ Complete E2E Flow with Refund environment validated for ${testNetwork}`,
-    );
+    console.log(`✅ Complete E2E Flow with Refund environment validated for ${testNetwork}`);
   });
 
   afterAll(async () => {
@@ -165,10 +155,7 @@ describe(`Complete E2E Flow with Refund Tests (${testNetwork})`, () => {
       // STEP 5: SUBMIT RESULT (Using Helper Function)
       // ============================
       console.log('📋 Step 5: Submitting result...');
-      const result = await submitResult(
-        payment.blockchainIdentifier,
-        testNetwork,
-      );
+      const result = await submitResult(payment.blockchainIdentifier, testNetwork);
 
       console.log(`✅ Result submitted:
         - Result Hash: ${result.resultHash}

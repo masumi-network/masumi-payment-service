@@ -17,19 +17,11 @@ import {
 } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
-import {
-  getBlockfrostInstance,
-  validateAssetsOnChain,
-} from '@/utils/blockfrost';
+import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 
 export const queryRegistryRequestSchemaInput = z.object({
-  cursorId: z
-    .string()
-    .optional()
-    .describe('The cursor id to paginate through the results'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network used to register the agent on'),
+  cursorId: z.string().optional().describe('The cursor id to paginate through the results'),
+  network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
   filterSmartContractAddress: z
     .string()
     .optional()
@@ -39,19 +31,11 @@ export const queryRegistryRequestSchemaInput = z.object({
 
 export const registryRequestOutputSchema = z
   .object({
-    error: z
-      .string()
-      .nullable()
-      .describe('Error message if registration failed. Null if no error'),
+    error: z.string().nullable().describe('Error message if registration failed. Null if no error'),
     id: z.string().describe('Unique identifier for the registry request'),
     name: z.string().describe('Name of the agent'),
-    description: z
-      .string()
-      .nullable()
-      .describe('Description of the agent. Null if not provided'),
-    apiBaseUrl: z
-      .string()
-      .describe('Base URL of the agent API for interactions'),
+    description: z.string().nullable().describe('Description of the agent. Null if not provided'),
+    apiBaseUrl: z.string().describe('Base URL of the agent API for interactions'),
     Capability: z
       .object({
         name: z
@@ -74,9 +58,7 @@ export const registryRequestOutputSchema = z
         contactOther: z
           .string()
           .nullable()
-          .describe(
-            'Other contact information for the author. Null if not provided',
-          ),
+          .describe('Other contact information for the author. Null if not provided'),
         organization: z
           .string()
           .nullable()
@@ -89,32 +71,18 @@ export const registryRequestOutputSchema = z
           .string()
           .nullable()
           .describe('URL to the privacy policy. Null if not provided'),
-        terms: z
-          .string()
-          .nullable()
-          .describe('URL to the terms of service. Null if not provided'),
-        other: z
-          .string()
-          .nullable()
-          .describe('Other legal information. Null if not provided'),
+        terms: z.string().nullable().describe('URL to the terms of service. Null if not provided'),
+        other: z.string().nullable().describe('Other legal information. Null if not provided'),
       })
       .describe('Legal information about the agent'),
-    state: z
-      .nativeEnum(RegistrationState)
-      .describe('Current state of the registration process'),
+    state: z.nativeEnum(RegistrationState).describe('Current state of the registration process'),
     Tags: z.array(z.string()).describe('List of tags categorizing the agent'),
-    createdAt: z
-      .date()
-      .describe('Timestamp when the registry request was created'),
-    updatedAt: z
-      .date()
-      .describe('Timestamp when the registry request was last updated'),
+    createdAt: z.date().describe('Timestamp when the registry request was created'),
+    updatedAt: z.date().describe('Timestamp when the registry request was last updated'),
     lastCheckedAt: z
       .date()
       .nullable()
-      .describe(
-        'Timestamp when the registry was last checked. Null if never checked',
-      ),
+      .describe('Timestamp when the registry was last checked. Null if never checked'),
     ExampleOutputs: z
       .array(
         z.object({
@@ -123,9 +91,7 @@ export const registryRequestOutputSchema = z
           mimeType: z
             .string()
             .max(60)
-            .describe(
-              'MIME type of the example output (e.g., image/png, text/plain)',
-            ),
+            .describe('MIME type of the example output (e.g., image/png, text/plain)'),
         }),
       )
       .max(25)
@@ -135,14 +101,10 @@ export const registryRequestOutputSchema = z
       .min(57)
       .max(250)
       .nullable()
-      .describe(
-        'Full agent identifier (policy ID + asset name). Null if not yet minted',
-      ),
+      .describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
     AgentPricing: z
       .object({
-        pricingType: z
-          .enum([PricingType.Fixed])
-          .describe('Pricing type for the agent '),
+        pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
         Pricing: z
           .array(
             z.object({
@@ -164,28 +126,20 @@ export const registryRequestOutputSchema = z
       })
       .or(
         z.object({
-          pricingType: z
-            .enum([PricingType.Free])
-            .describe('Pricing type for the agent '),
+          pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
         }),
       )
       .describe('Pricing information for the agent'),
     SmartContractWallet: z
       .object({
-        walletVkey: z
-          .string()
-          .describe('Payment key hash of the smart contract wallet'),
-        walletAddress: z
-          .string()
-          .describe('Cardano address of the smart contract wallet'),
+        walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
+        walletAddress: z.string().describe('Cardano address of the smart contract wallet'),
       })
       .describe('Smart contract wallet managing this agent registration'),
     CurrentTransaction: z
       .object({
         txHash: z.string().nullable().describe('Cardano transaction hash'),
-        status: z
-          .nativeEnum(TransactionStatus)
-          .describe('Current status of the transaction'),
+        status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
         confirmations: z
           .number()
           .nullable()
@@ -193,14 +147,8 @@ export const registryRequestOutputSchema = z
             'Number of block confirmations for this transaction. Null if not yet confirmed',
           ),
         fees: z.string().nullable().describe('Fees of the transaction'),
-        blockHeight: z
-          .number()
-          .nullable()
-          .describe('Block height of the transaction'),
-        blockTime: z
-          .number()
-          .nullable()
-          .describe('Block time of the transaction'),
+        blockHeight: z.number().nullable().describe('Block height of the transaction'),
+        blockTime: z.number().nullable().describe('Block time of the transaction'),
       })
       .nullable(),
   })
@@ -221,11 +169,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
     input: z.infer<typeof queryRegistryRequestSchemaInput>;
     ctx: AuthContext;
   }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
+    await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
     const result = await prisma.registryRequest.findMany({
       where: {
@@ -316,9 +260,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 });
 
 export const registerAgentSchemaInput = z.object({
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network used to register the agent on'),
+  network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
   sellingWalletVkey: z
     .string()
     .max(250)
@@ -331,38 +273,24 @@ export const registerAgentSchemaInput = z.object({
         mimeType: z
           .string()
           .max(60)
-          .describe(
-            'MIME type of the example output (e.g., image/png, text/plain)',
-          ),
+          .describe('MIME type of the example output (e.g., image/png, text/plain)'),
       }),
     )
     .max(25)
     .describe('List of example outputs from the agent'),
-  Tags: z
-    .array(z.string().max(63))
-    .min(1)
-    .max(15)
-    .describe('Tags used in the registry metadata'),
+  Tags: z.array(z.string().max(63)).min(1).max(15).describe('Tags used in the registry metadata'),
   name: z.string().max(250).describe('Name of the agent'),
-  apiBaseUrl: z
-    .string()
-    .max(250)
-    .describe('Base URL of the agent, to request interactions'),
+  apiBaseUrl: z.string().max(250).describe('Base URL of the agent, to request interactions'),
   description: z.string().max(250).describe('Description of the agent'),
   Capability: z
     .object({
       name: z.string().max(250).describe('Name of the AI model/capability'),
-      version: z
-        .string()
-        .max(250)
-        .describe('Version of the AI model/capability'),
+      version: z.string().max(250).describe('Version of the AI model/capability'),
     })
     .describe('Provide information about the used AI model and version'),
   AgentPricing: z
     .object({
-      pricingType: z
-        .enum([PricingType.Fixed])
-        .describe('Pricing type for the agent '),
+      pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
       Pricing: z
         .array(
           z.object({
@@ -386,24 +314,14 @@ export const registerAgentSchemaInput = z.object({
     })
     .or(
       z.object({
-        pricingType: z
-          .enum([PricingType.Free])
-          .describe('Pricing type for the agent '),
+        pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent '),
       }),
     )
     .describe('Pricing information for the agent'),
   Legal: z
     .object({
-      privacyPolicy: z
-        .string()
-        .max(250)
-        .optional()
-        .describe('URL to the privacy policy'),
-      terms: z
-        .string()
-        .max(250)
-        .optional()
-        .describe('URL to the terms of service'),
+      privacyPolicy: z.string().max(250).optional().describe('URL to the privacy policy'),
+      terms: z.string().max(250).optional().describe('URL to the terms of service'),
       other: z.string().max(250).optional().describe('Other legal information'),
     })
     .optional()
@@ -411,21 +329,13 @@ export const registerAgentSchemaInput = z.object({
   Author: z
     .object({
       name: z.string().max(250).describe('Name of the agent author'),
-      contactEmail: z
-        .string()
-        .max(250)
-        .optional()
-        .describe('Contact email of the author'),
+      contactEmail: z.string().max(250).optional().describe('Contact email of the author'),
       contactOther: z
         .string()
         .max(250)
         .optional()
         .describe('Other contact information for the author'),
-      organization: z
-        .string()
-        .max(250)
-        .optional()
-        .describe('Organization of the author'),
+      organization: z.string().max(250).optional().describe('Organization of the author'),
     })
     .describe('Author information about the agent'),
 });
@@ -484,10 +394,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
             wallet_vkey: input.sellingWalletVkey,
           },
         );
-        throw createHttpError(
-          404,
-          'Network and Address combination not supported',
-        );
+        throw createHttpError(404, 'Network and Address combination not supported');
       }
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
@@ -496,18 +403,12 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       );
 
       if (sellingWallet == null) {
-        recordBusinessEndpointError(
-          '/api/v1/registry',
-          'POST',
-          404,
-          'Selling wallet not found',
-          {
-            network: input.network,
-            operation: 'register_agent',
-            step: 'wallet_validation',
-            wallet_vkey: input.sellingWalletVkey,
-          },
-        );
+        recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Selling wallet not found', {
+          network: input.network,
+          operation: 'register_agent',
+          step: 'wallet_validation',
+          wallet_vkey: input.sellingWalletVkey,
+        });
         throw createHttpError(404, 'Selling wallet not found');
       }
 
@@ -518,11 +419,11 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           sellingWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
         );
 
-        const assetUnits = input.AgentPricing.Pricing.map(
-          (pricing) => pricing.unit,
+        const assetUnits = input.AgentPricing.Pricing.map((pricing) => pricing.unit);
+        const { valid: _validAssets, invalid: invalidAssets } = await validateAssetsOnChain(
+          blockfrost,
+          assetUnits,
         );
-        const { valid: _validAssets, invalid: invalidAssets } =
-          await validateAssetsOnChain(blockfrost, assetUnits);
 
         if (invalidAssets.length > 0) {
           const invalidAssetsMessage = invalidAssets
@@ -542,10 +443,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
                 .join('; '),
             },
           );
-          throw createHttpError(
-            400,
-            `Invalid assets in pricing: ${invalidAssetsMessage}`,
-          );
+          throw createHttpError(400, `Invalid assets in pricing: ${invalidAssetsMessage}`);
         }
       }
 
@@ -600,10 +498,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
                         Amounts: {
                           createMany: {
                             data: input.AgentPricing.Pricing.map((price) => ({
-                              unit:
-                                price.unit.toLowerCase() == 'lovelace'
-                                  ? ''
-                                  : price.unit,
+                              unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
                               amount: BigInt(price.amount),
                             })),
                           },
@@ -687,26 +582,18 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
       };
     } catch (error: unknown) {
       // Record the business-specific error with context
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
-      recordBusinessEndpointError(
-        '/api/v1/registry',
-        'POST',
-        statusCode,
-        errorInstance,
-        {
-          network: input.network,
-          user_id: ctx.id,
-          agent_name: input.name,
-          operation: 'register_agent',
-          duration: Date.now() - startTime,
-        },
-      );
+      recordBusinessEndpointError('/api/v1/registry', 'POST', statusCode, errorInstance, {
+        network: input.network,
+        user_id: ctx.id,
+        agent_name: input.name,
+        operation: 'register_agent',
+        duration: Date.now() - startTime,
+      });
 
       throw error;
     }
@@ -714,12 +601,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 });
 
 export const deleteAgentRegistrationSchemaInput = z.object({
-  id: z
-    .string()
-    .cuid()
-    .describe(
-      'The database ID of the agent registration record to be deleted.',
-    ),
+  id: z.string().cuid().describe('The database ID of the agent registration record to be deleted.'),
 });
 
 export const deleteAgentRegistrationSchemaOutput = registryRequestOutputSchema;
@@ -858,24 +740,16 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
       };
     } catch (error: unknown) {
       // Record the business-specific error with context
-      const errorInstance =
-        error instanceof Error ? error : new Error(String(error));
+      const errorInstance = error instanceof Error ? error : new Error(String(error));
       const statusCode =
-        (errorInstance as { statusCode?: number; status?: number })
-          .statusCode ||
+        (errorInstance as { statusCode?: number; status?: number }).statusCode ||
         (errorInstance as { statusCode?: number; status?: number }).status ||
         500;
-      recordBusinessEndpointError(
-        '/api/v1/registry',
-        'DELETE',
-        statusCode,
-        errorInstance,
-        {
-          registry_id: input.id,
-          operation: 'delete_agent_registration',
-          duration: Date.now() - startTime,
-        },
-      );
+      recordBusinessEndpointError('/api/v1/registry', 'DELETE', statusCode, errorInstance, {
+        registry_id: input.id,
+        operation: 'delete_agent_registration',
+        duration: Date.now() - startTime,
+      });
 
       throw error;
     }

@@ -81,8 +81,7 @@ export class WebhookSenderService {
       }
     } catch (error) {
       const durationMs = Date.now() - startTime;
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       // Check if this is a timeout or HTTP connection error
       const isTimeoutError = this.isTimeoutOrNetworkError(error);
@@ -222,10 +221,7 @@ export class WebhookSenderService {
     const baseDelay = 30 * 1000;
     const maxDelay = 10 * 60 * 1000;
 
-    const delay = Math.min(
-      baseDelay * Math.pow(2, attemptNumber - 1),
-      maxDelay,
-    );
+    const delay = Math.min(baseDelay * Math.pow(2, attemptNumber - 1), maxDelay);
 
     const jitter = Math.random() * 0.3 * delay;
 
@@ -235,9 +231,7 @@ export class WebhookSenderService {
   /**
    * Update webhook endpoint success tracking
    */
-  private async updateWebhookSuccessTracking(
-    webhookEndpointId: string,
-  ): Promise<void> {
+  private async updateWebhookSuccessTracking(webhookEndpointId: string): Promise<void> {
     await prisma.webhookEndpoint.update({
       where: { id: webhookEndpointId },
       data: {
@@ -272,9 +266,7 @@ export class WebhookSenderService {
   /**
    * Update webhook endpoint failure tracking
    */
-  private async updateWebhookFailureTracking(
-    webhookEndpointId: string,
-  ): Promise<void> {
+  private async updateWebhookFailureTracking(webhookEndpointId: string): Promise<void> {
     const webhook = await prisma.webhookEndpoint.findUnique({
       where: { id: webhookEndpointId },
     });

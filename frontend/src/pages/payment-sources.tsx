@@ -113,12 +113,7 @@ function UpdatePaymentSourceDialog({
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>
@@ -136,37 +131,23 @@ export default function PaymentSourcesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [sourceToDelete, setSourceToDelete] =
-    useState<PaymentSourceExtended | null>(null);
-  const [sourceToUpdate, setSourceToUpdate] =
-    useState<PaymentSourceExtended | null>(null);
+  const [sourceToDelete, setSourceToDelete] = useState<PaymentSourceExtended | null>(null);
+  const [sourceToUpdate, setSourceToUpdate] = useState<PaymentSourceExtended | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const {
-    apiClient,
-    selectedPaymentSourceId,
-    network,
-    setSelectedPaymentSourceId,
-  } = useAppContext();
-  const [filteredPaymentSources, setFilteredPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
+  const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId } =
+    useAppContext();
+  const [filteredPaymentSources, setFilteredPaymentSources] = useState<PaymentSourceExtended[]>([]);
 
-  const {
-    paymentSources: ps,
-    isLoading,
-    refetch,
-  } = usePaymentSourceExtendedAll();
+  const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
 
-  const [paymentSources, setPaymentSources] = useState<PaymentSourceExtended[]>(
-    [],
-  );
+  const [paymentSources, setPaymentSources] = useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
     setPaymentSources(ps.filter((ps) => ps.network === network));
   }, [ps, network]);
 
-  const [sourceToSelect, setSourceToSelect] = useState<
-    PaymentSourceExtended | undefined
-  >(undefined);
+  const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(
+    undefined,
+  );
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
     useState<PaymentSourceExtended | null>(null);
 
@@ -176,10 +157,8 @@ export default function PaymentSourcesPage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((source) => {
-        const matchAddress =
-          source.smartContractAddress?.toLowerCase().includes(query) || false;
-        const matchNetwork =
-          source.network?.toLowerCase().includes(query) || false;
+        const matchAddress = source.smartContractAddress?.toLowerCase().includes(query) || false;
+        const matchNetwork = source.network?.toLowerCase().includes(query) || false;
         return matchAddress || matchNetwork;
       });
     }
@@ -202,9 +181,7 @@ export default function PaymentSourcesPage() {
 
   const handleSelectSource = (id: string) => {
     setSelectedSources((prev) =>
-      prev.includes(id)
-        ? prev.filter((sourceId) => sourceId !== id)
-        : [...prev, id],
+      prev.includes(id) ? prev.filter((sourceId) => sourceId !== id) : [...prev, id],
     );
   };
 
@@ -317,17 +294,11 @@ export default function PaymentSourcesPage() {
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
-                  <th className="p-4 text-left text-sm font-medium truncate">
-                    Contract address
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium truncate">Contract address</th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium truncate">
-                    Fee rate
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium truncate">
-                    Created at
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium truncate">Fee rate</th>
+                  <th className="p-4 text-left text-sm font-medium truncate">Created at</th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
                   <th className="w-20 p-4"></th>
                 </tr>
@@ -370,9 +341,7 @@ export default function PaymentSourcesPage() {
                         <div className="text-sm">{source.network}</div>
                       </td>
                       <td className="p-4">
-                        <div className="text-sm">
-                          {(source.feeRatePermille / 10).toFixed(1)}%
-                        </div>
+                        <div className="text-sm">{(source.feeRatePermille / 10).toFixed(1)}%</div>
                       </td>
                       <td className="p-4">
                         <div className="text-xs text-muted-foreground">
@@ -451,9 +420,7 @@ export default function PaymentSourcesPage() {
             refetch();
           }}
           paymentSourceId={sourceToUpdate?.id || ''}
-          currentApiKey={
-            sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''
-          }
+          currentApiKey={sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''}
         />
 
         <ConfirmDialog

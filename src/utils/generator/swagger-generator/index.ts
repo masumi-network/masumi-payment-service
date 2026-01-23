@@ -1,8 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import {
-  OpenAPIRegistry,
-  OpenApiGeneratorV3,
-} from '@asteasolutions/zod-to-openapi';
+import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
 import { healthResponseSchema } from '@/routes/api/health';
 import {
   addAPIKeySchemaInput,
@@ -63,10 +60,7 @@ import {
   getRpcProviderKeysSchemaOutput,
 } from '@/routes/api/rpc-api-keys';
 import { getUTXOSchemaInput, getUTXOSchemaOutput } from '@/routes/api/utxos';
-import {
-  paymentSourceSchemaInput,
-  paymentSourceSchemaOutput,
-} from '@/routes/api/payment-source';
+import { paymentSourceSchemaInput, paymentSourceSchemaOutput } from '@/routes/api/payment-source';
 import {
   Network,
   PurchasingAction,
@@ -246,8 +240,7 @@ const registryEntryExample = {
       mimeType: 'application/json',
     },
   ],
-  agentIdentifier:
-    'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+  agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
   AgentPricing: {
     pricingType: PricingType.Fixed,
     Pricing: [
@@ -410,14 +403,12 @@ export function generateOpenAPI() {
         description: 'API key status',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: getAPIKeyStatusSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: apiKeyExample,
-                },
-              }),
+            schema: z.object({ status: z.string(), data: getAPIKeyStatusSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: apiKeyExample,
+              },
+            }),
           },
         },
       },
@@ -446,14 +437,12 @@ export function generateOpenAPI() {
         description: 'Wallet status',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: getWalletSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: walletExample,
-                },
-              }),
+            schema: z.object({ status: z.string(), data: getWalletSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: walletExample,
+              },
+            }),
           },
         },
       },
@@ -541,8 +530,7 @@ export function generateOpenAPI() {
     method: 'post',
     path: '/reveal-data/',
     description: 'Verifies the reveal data signature is valid.',
-    summary:
-      'Verifies the reveal data signature is valid. (read access required)',
+    summary: 'Verifies the reveal data signature is valid. (read access required)',
     tags: ['reveal-data'],
     request: {
       body: {
@@ -600,16 +588,14 @@ export function generateOpenAPI() {
         description: 'Api key status',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: getAPIKeySchemaOutput })
-              .openapi({
-                example: {
-                  data: {
-                    ApiKeys: [apiKeyExample],
-                  },
-                  status: 'success',
+            schema: z.object({ status: z.string(), data: getAPIKeySchemaOutput }).openapi({
+              example: {
+                data: {
+                  ApiKeys: [apiKeyExample],
                 },
-              }),
+                status: 'success',
+              },
+            }),
           },
         },
       },
@@ -658,14 +644,12 @@ export function generateOpenAPI() {
         description: 'API key deleted',
         content: {
           'application/json': {
-            schema: z
-              .object({ data: addAPIKeySchemaOutput, status: z.string() })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: apiKeyExample,
-                },
-              }),
+            schema: z.object({ data: addAPIKeySchemaOutput, status: z.string() }).openapi({
+              example: {
+                status: 'success',
+                data: apiKeyExample,
+              },
+            }),
           },
         },
       },
@@ -719,17 +703,15 @@ export function generateOpenAPI() {
         description: 'API key deleted',
         content: {
           'application/json': {
-            schema: z
-              .object({ data: updateAPIKeySchemaOutput, status: z.string() })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    ...apiKeyExample,
-                    networkLimit: [Network.Preprod, Network.Mainnet],
-                  },
+            schema: z.object({ data: updateAPIKeySchemaOutput, status: z.string() }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  ...apiKeyExample,
+                  networkLimit: [Network.Preprod, Network.Mainnet],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -771,17 +753,15 @@ export function generateOpenAPI() {
         description: 'API key deleted',
         content: {
           'application/json': {
-            schema: z
-              .object({ data: deleteAPIKeySchemaOutput, status: z.string() })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    ...apiKeyExample,
-                    status: ApiKeyStatus.Revoked,
-                  },
+            schema: z.object({ data: deleteAPIKeySchemaOutput, status: z.string() }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  ...apiKeyExample,
+                  status: ApiKeyStatus.Revoked,
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -801,8 +781,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/payment/',
-    description:
-      'Gets the payment status. It needs to be created first with a POST request.',
+    description: 'Gets the payment status. It needs to be created first with a POST request.',
     summary: 'Get information about a payment request. (admin access required)',
     tags: ['payment'],
     request: {
@@ -820,18 +799,14 @@ export function generateOpenAPI() {
         description: 'Payment status',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    Payments: [
-                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
-                    ],
-                  },
+            schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -852,8 +827,7 @@ export function generateOpenAPI() {
     path: '/payment/diff',
     description:
       'Returns payments that changed since the provided timestamp (combined next-action + on-chain-state/result).',
-    summary:
-      'Diff payments by combined status timestamp (READ access required)',
+    summary: 'Diff payments by combined status timestamp (READ access required)',
     tags: ['payment'],
     request: {
       query: queryPaymentDiffSchemaInput.openapi({
@@ -872,18 +846,14 @@ export function generateOpenAPI() {
         description: 'Payment diff',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    Payments: [
-                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
-                    ],
-                  },
+            schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -922,18 +892,14 @@ export function generateOpenAPI() {
         description: 'Payment diff',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    Payments: [
-                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
-                    ],
-                  },
+            schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -952,10 +918,8 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/payment/diff/onchain-state-or-result',
-    description:
-      'Returns payments whose on-chain state or result hash changed since lastUpdate.',
-    summary:
-      'Diff payments by on-chain-state/result timestamp (READ access required)',
+    description: 'Returns payments whose on-chain state or result hash changed since lastUpdate.',
+    summary: 'Diff payments by on-chain-state/result timestamp (READ access required)',
     tags: ['payment'],
     request: {
       query: queryPaymentDiffSchemaInput.openapi({
@@ -974,18 +938,14 @@ export function generateOpenAPI() {
         description: 'Payment diff',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: queryPaymentsSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    Payments: [
-                      { ...paymentSchemaOutputExample, TransactionHistory: [] },
-                    ],
-                  },
+            schema: z.object({ status: z.string(), data: queryPaymentsSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  Payments: [{ ...paymentSchemaOutputExample, TransactionHistory: [] }],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -1017,11 +977,9 @@ export function generateOpenAPI() {
               example: {
                 agentIdentifier: 'agent_identifier',
                 network: Network.Preprod,
-                inputHash:
-                  '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+                inputHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
                 payByTime: new Date(1713626260).toISOString(),
-                metadata:
-                  '(private) metadata to be stored with the payment request',
+                metadata: '(private) metadata to be stored with the payment request',
                 submitResultTime: new Date(1713636260).toISOString(),
                 identifierFromPurchaser: 'aabbaabb11221122aabb',
               },
@@ -1036,14 +994,12 @@ export function generateOpenAPI() {
         description: 'Payment request created',
         content: {
           'application/json': {
-            schema: z
-              .object({ data: createPaymentSchemaOutput, status: z.string() })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: paymentSchemaOutputExample,
-                },
-              }),
+            schema: z.object({ data: createPaymentSchemaOutput, status: z.string() }).openapi({
+              example: {
+                status: 'success',
+                data: paymentSchemaOutputExample,
+              },
+            }),
           },
         },
       },
@@ -1369,9 +1325,7 @@ export function generateOpenAPI() {
       .describe(
         'Return purchases whose selected status timestamp changed at/after this ISO timestamp',
       ),
-    network: z
-      .nativeEnum(Network)
-      .describe('The network the purchases were made on'),
+    network: z.nativeEnum(Network).describe('The network the purchases were made on'),
     filterSmartContractAddress: z
       .string()
       .optional()
@@ -1381,18 +1335,14 @@ export function generateOpenAPI() {
       .string()
       .optional()
       .default('false')
-      .describe(
-        'Whether to include the full transaction and status history of the purchases',
-      ),
+      .describe('Whether to include the full transaction and status history of the purchases'),
   });
 
   registry.registerPath({
     method: 'get',
     path: '/purchase/',
-    description:
-      'Gets the purchase status. It needs to be created first with a POST request.',
-    summary:
-      'Get information about an existing purchase request. (READ access required)',
+    description: 'Gets the purchase status. It needs to be created first with a POST request.',
+    summary: 'Get information about an existing purchase request. (READ access required)',
     tags: ['purchase'],
     request: {
       query: queryPurchaseRequestSchemaInput.openapi({
@@ -1434,8 +1384,7 @@ export function generateOpenAPI() {
                         collateralReturnLovelace: null,
                         inputHash: 'input_hash',
                         NextAction: {
-                          requestedAction:
-                            PurchasingAction.FundsLockingRequested,
+                          requestedAction: PurchasingAction.FundsLockingRequested,
                           errorType: null,
                           errorNote: null,
                         },
@@ -1459,9 +1408,7 @@ export function generateOpenAPI() {
                         WithdrawnForBuyer: [],
                         totalBuyerCardanoFees: 0,
                         totalSellerCardanoFees: 0,
-                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
-                          1713636260,
-                        ),
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
                         nextActionLastChangedAt: new Date(1713636260),
                         onChainStateOrResultLastChangedAt: new Date(1713636260),
                       },
@@ -1489,8 +1436,7 @@ export function generateOpenAPI() {
     path: '/purchase/diff',
     description:
       'Returns purchases that changed since the provided timestamp (combined next-action + on-chain-state/result).',
-    summary:
-      'Diff purchases by combined status timestamp (READ access required)',
+    summary: 'Diff purchases by combined status timestamp (READ access required)',
     tags: ['purchase'],
     request: {
       query: queryPurchaseDiffSchemaInputForDocs.openapi({
@@ -1534,8 +1480,7 @@ export function generateOpenAPI() {
                         collateralReturnLovelace: null,
                         inputHash: 'input_hash',
                         NextAction: {
-                          requestedAction:
-                            PurchasingAction.FundsLockingRequested,
+                          requestedAction: PurchasingAction.FundsLockingRequested,
                           errorType: null,
                           errorNote: null,
                         },
@@ -1559,9 +1504,7 @@ export function generateOpenAPI() {
                         WithdrawnForBuyer: [],
                         totalBuyerCardanoFees: 0,
                         totalSellerCardanoFees: 0,
-                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(
-                          1713636260,
-                        ),
+                        nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
                         nextActionLastChangedAt: new Date(1713636260),
                         onChainStateOrResultLastChangedAt: new Date(1713636260),
                       },
@@ -1587,8 +1530,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/purchase/diff/next-action',
-    description:
-      'Returns purchases whose next action changed since lastUpdate.',
+    description: 'Returns purchases whose next action changed since lastUpdate.',
     summary: 'Diff purchases by next-action timestamp (READ access required)',
     tags: ['purchase'],
     request: {
@@ -1630,10 +1572,8 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/purchase/diff/onchain-state-or-result',
-    description:
-      'Returns purchases whose on-chain state or result hash changed since lastUpdate.',
-    summary:
-      'Diff purchases by on-chain-state/result timestamp (READ access required)',
+    description: 'Returns purchases whose on-chain state or result hash changed since lastUpdate.',
+    summary: 'Diff purchases by on-chain-state/result timestamp (READ access required)',
     tags: ['purchase'],
     request: {
       query: queryPurchaseDiffSchemaInputForDocs.openapi({
@@ -1674,8 +1614,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'post',
     path: '/purchase/',
-    description:
-      'Creates a purchase and pays the seller. This requires funds to be available.',
+    description: 'Creates a purchase and pays the seller. This requires funds to be available.',
     summary: 'Create a new purchase request and pay. (access required +PAY)',
     tags: ['purchase'],
     request: {
@@ -1694,8 +1633,7 @@ export function generateOpenAPI() {
                 unlockTime: (1713636260).toString(),
                 externalDisputeUnlockTime: (1713636260).toString(),
                 agentIdentifier: 'agent_identifier',
-                inputHash:
-                  '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+                inputHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
               },
             }),
           },
@@ -1866,8 +1804,7 @@ export function generateOpenAPI() {
     method: 'post',
     path: '/payment/resolve-blockchain-identifier',
     description: 'Resolves a payment request by its blockchain identifier.',
-    summary:
-      'Resolve a payment request by its blockchain identifier. (READ access required)',
+    summary: 'Resolve a payment request by its blockchain identifier. (READ access required)',
     tags: ['payment'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -1946,9 +1883,7 @@ export function generateOpenAPI() {
                     totalSellerCardanoFees: 0,
                     nextActionLastChangedAt: new Date(1713636260),
                     onChainStateOrResultLastChangedAt: new Date(1713636260),
-                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
-                      1713636260,
-                    ),
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
                   },
                 },
               }),
@@ -1974,8 +1909,7 @@ export function generateOpenAPI() {
     method: 'post',
     path: '/purchase/resolve-blockchain-identifier',
     description: 'Resolves a purchase request by its blockchain identifier.',
-    summary:
-      'Resolve a purchase request by its blockchain identifier. (READ access required)',
+    summary: 'Resolve a purchase request by its blockchain identifier. (READ access required)',
     tags: ['purchase'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -2051,9 +1985,7 @@ export function generateOpenAPI() {
                     WithdrawnForBuyer: [],
                     totalBuyerCardanoFees: 0,
                     totalSellerCardanoFees: 0,
-                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(
-                      1713636260,
-                    ),
+                    nextActionOrOnChainStateOrResultLastChangedAt: new Date(1713636260),
                     nextActionLastChangedAt: new Date(1713636260),
                     onChainStateOrResultLastChangedAt: new Date(1713636260),
                   },
@@ -2162,8 +2094,7 @@ export function generateOpenAPI() {
     method: 'get',
     path: '/registry/',
     description: 'Gets the agent metadata.',
-    summary:
-      'List every agent that is recorded in the Masumi Registry. (READ access required)',
+    summary: 'List every agent that is recorded in the Masumi Registry. (READ access required)',
     tags: ['registry'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -2247,8 +2178,7 @@ export function generateOpenAPI() {
     path: '/registry/diff',
     description:
       'Returns registry entries that changed since the provided timestamp (registrationStateLastChangedAt).',
-    summary:
-      'Diff registry entries by state-change timestamp (READ access required)',
+    summary: 'Diff registry entries by state-change timestamp (READ access required)',
     tags: ['registry'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -2344,14 +2274,12 @@ export function generateOpenAPI() {
         description: 'Agent registered',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: registerAgentSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: registryEntryExample,
-                },
-              }),
+            schema: z.object({ status: z.string(), data: registerAgentSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: registryEntryExample,
+              },
+            }),
           },
         },
       },
@@ -2363,8 +2291,7 @@ export function generateOpenAPI() {
     path: '/registry/deregister',
     description:
       'Deregisters a agent from the specified registry (Please note that while the command is put on-chain, the transaction is not yet finalized by the blockchain, as designed finality is only eventually reached. If you need certainty, please check status via the registry(GET) or if you require custom logic, the transaction directly using the txHash)',
-    summary:
-      'Deregisters an agent from the specified registry. (admin access required +PAY)',
+    summary: 'Deregisters an agent from the specified registry. (admin access required +PAY)',
     tags: ['registry'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -2387,14 +2314,12 @@ export function generateOpenAPI() {
         description: 'Payment source deleted',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: unregisterAgentSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: registryEntryExample,
-                },
-              }),
+            schema: z.object({ status: z.string(), data: unregisterAgentSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: registryEntryExample,
+              },
+            }),
           },
         },
       },
@@ -2488,8 +2413,7 @@ export function generateOpenAPI() {
     method: 'get',
     path: '/payment-source/',
     description: 'Gets the payment source.',
-    summary:
-      'List payment sources with their public details. (READ access required)',
+    summary: 'List payment sources with their public details. (READ access required)',
     tags: ['payment-source'],
     security: [{ [apiKeyAuth.name]: [] }],
     request: {
@@ -2505,69 +2429,66 @@ export function generateOpenAPI() {
         description: 'Payment source status',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: paymentSourceSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    PaymentSources: [
-                      {
-                        id: 'cuid_v2_auto_generated',
-                        createdAt: new Date(1713636260),
-                        updatedAt: new Date(1713636260),
-                        network: Network.Mainnet,
-                        smartContractAddress: 'address_of_the_smart_contract',
-                        policyId: 'policy_id',
-                        AdminWallets: [
-                          { walletAddress: 'wallet_address', order: 0 },
-                          { walletAddress: 'wallet_address', order: 1 },
-                          { walletAddress: 'wallet_address', order: 2 },
-                        ],
-                        feeRatePermille: 50,
-                        FeeReceiverNetworkWallet: {
-                          walletAddress: 'wallet_address',
-                        },
-                        lastCheckedAt: new Date(1713636260),
-                        lastIdentifierChecked: 'identifier',
-                        PurchasingWallets: [
-                          {
-                            collectionAddress: null,
-                            note: 'note',
-                            walletVkey: 'wallet_vkey',
-                            walletAddress: 'wallet_address',
-                            id: 'unique_cuid_v2_auto_generated',
-                          },
-                          {
-                            collectionAddress: 'send_refunds_to_this_address',
-                            note: 'note',
-                            walletVkey: 'wallet_vkey',
-                            walletAddress: 'wallet_address',
-                            id: 'unique_cuid_v2_auto_generated',
-                          },
-                        ],
-                        SellingWallets: [
-                          {
-                            collectionAddress:
-                              'null_will_use_selling_wallet_as_revenue_address',
-                            note: 'note',
-                            walletVkey: 'wallet_vkey',
-                            walletAddress: 'wallet_address',
-                            id: 'unique_cuid_v2_auto_generated',
-                          },
-                          {
-                            collectionAddress: 'send_revenue_to_this_address',
-                            note: 'note',
-                            walletVkey: 'wallet_vkey',
-                            walletAddress: 'wallet_address',
-                            id: 'unique_cuid_v2_auto_generated',
-                          },
-                        ],
+            schema: z.object({ status: z.string(), data: paymentSourceSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  PaymentSources: [
+                    {
+                      id: 'cuid_v2_auto_generated',
+                      createdAt: new Date(1713636260),
+                      updatedAt: new Date(1713636260),
+                      network: Network.Mainnet,
+                      smartContractAddress: 'address_of_the_smart_contract',
+                      policyId: 'policy_id',
+                      AdminWallets: [
+                        { walletAddress: 'wallet_address', order: 0 },
+                        { walletAddress: 'wallet_address', order: 1 },
+                        { walletAddress: 'wallet_address', order: 2 },
+                      ],
+                      feeRatePermille: 50,
+                      FeeReceiverNetworkWallet: {
+                        walletAddress: 'wallet_address',
                       },
-                    ],
-                  },
+                      lastCheckedAt: new Date(1713636260),
+                      lastIdentifierChecked: 'identifier',
+                      PurchasingWallets: [
+                        {
+                          collectionAddress: null,
+                          note: 'note',
+                          walletVkey: 'wallet_vkey',
+                          walletAddress: 'wallet_address',
+                          id: 'unique_cuid_v2_auto_generated',
+                        },
+                        {
+                          collectionAddress: 'send_refunds_to_this_address',
+                          note: 'note',
+                          walletVkey: 'wallet_vkey',
+                          walletAddress: 'wallet_address',
+                          id: 'unique_cuid_v2_auto_generated',
+                        },
+                      ],
+                      SellingWallets: [
+                        {
+                          collectionAddress: 'null_will_use_selling_wallet_as_revenue_address',
+                          note: 'note',
+                          walletVkey: 'wallet_vkey',
+                          walletAddress: 'wallet_address',
+                          id: 'unique_cuid_v2_auto_generated',
+                        },
+                        {
+                          collectionAddress: 'send_revenue_to_this_address',
+                          note: 'note',
+                          walletVkey: 'wallet_vkey',
+                          walletAddress: 'wallet_address',
+                          id: 'unique_cuid_v2_auto_generated',
+                        },
+                      ],
+                    },
+                  ],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -2647,8 +2568,7 @@ export function generateOpenAPI() {
                         ],
                         SellingWallets: [
                           {
-                            collectionAddress:
-                              'null_will_use_selling_wallet_as_revenue_address',
+                            collectionAddress: 'null_will_use_selling_wallet_as_revenue_address',
                             note: 'note',
                             walletVkey: 'wallet_vkey',
                             walletAddress: 'wallet_address',
@@ -2871,32 +2791,30 @@ export function generateOpenAPI() {
         description: 'UTXOs',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: getUTXOSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    Utxos: [
-                      {
-                        txHash: 'tx_hash',
-                        address: 'addr1qx2ej34k567890',
-                        Amounts: [
-                          {
-                            unit: '', // Empty string = ADA/lovelace
-                            quantity: 10000000, // 10 ADA (amount in lovelace: 10 * 1,000,000)
-                          },
-                        ],
-                        outputIndex: 1,
-                        block: '1',
-                        dataHash: 'data_hash',
-                        inlineDatum: 'inline_datum',
-                        referenceScriptHash: 'reference_script_hash',
-                      },
-                    ],
-                  },
+            schema: z.object({ status: z.string(), data: getUTXOSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  Utxos: [
+                    {
+                      txHash: 'tx_hash',
+                      address: 'addr1qx2ej34k567890',
+                      Amounts: [
+                        {
+                          unit: '', // Empty string = ADA/lovelace
+                          quantity: 10000000, // 10 ADA (amount in lovelace: 10 * 1,000,000)
+                        },
+                      ],
+                      outputIndex: 1,
+                      block: '1',
+                      dataHash: 'data_hash',
+                      inlineDatum: 'inline_datum',
+                      referenceScriptHash: 'reference_script_hash',
+                    },
+                  ],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -2906,8 +2824,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/rpc-api-keys/',
-    description:
-      'Gets rpc api keys, currently only blockfrost is supported (internal)',
+    description: 'Gets rpc api keys, currently only blockfrost is supported (internal)',
     summary: 'List Blockfrost API keys. (admin access required)',
     tags: ['rpc-api-keys'],
     security: [{ [apiKeyAuth.name]: [] }],
@@ -3251,37 +3168,32 @@ export function generateOpenAPI() {
         description: 'List of webhook endpoints',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: listWebhooksSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    webhooks: [
-                      {
-                        id: 'webhook_endpoint_id',
-                        url: 'https://your-server.com/webhook',
-                        name: 'My Webhook',
-                        events: [
-                          'PURCHASE_ON_CHAIN_STATUS_CHANGED',
-                          'PAYMENT_ON_ERROR',
-                        ],
-                        isActive: true,
-                        createdAt: new Date(1713636260),
-                        updatedAt: new Date(1713636260),
-                        paymentSourceId: null,
-                        failureCount: 0,
-                        lastSuccessAt: new Date(1713636260),
-                        disabledAt: null,
-                        createdBy: {
-                          apiKeyId: 'api_key_id',
-                          apiKeyToken: 'masked_token',
-                        },
+            schema: z.object({ status: z.string(), data: listWebhooksSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  webhooks: [
+                    {
+                      id: 'webhook_endpoint_id',
+                      url: 'https://your-server.com/webhook',
+                      name: 'My Webhook',
+                      events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+                      isActive: true,
+                      createdAt: new Date(1713636260),
+                      updatedAt: new Date(1713636260),
+                      paymentSourceId: null,
+                      failureCount: 0,
+                      lastSuccessAt: new Date(1713636260),
+                      disabledAt: null,
+                      createdBy: {
+                        apiKeyId: 'api_key_id',
+                        apiKeyToken: 'masked_token',
                       },
-                    ],
-                  },
+                    },
+                  ],
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -3311,10 +3223,7 @@ export function generateOpenAPI() {
               example: {
                 url: 'https://your-server.com/webhook',
                 authToken: 'your-webhook-secret-token',
-                events: [
-                  'PURCHASE_ON_CHAIN_STATUS_CHANGED',
-                  'PAYMENT_ON_ERROR',
-                ],
+                events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
                 name: 'My Payment Webhook',
                 paymentSourceId: 'payment_source_id_optional',
               },
@@ -3328,25 +3237,20 @@ export function generateOpenAPI() {
         description: 'Webhook endpoint registered successfully',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: registerWebhookSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    id: 'webhook_endpoint_id',
-                    url: 'https://your-server.com/webhook',
-                    name: 'My Payment Webhook',
-                    events: [
-                      'PURCHASE_ON_CHAIN_STATUS_CHANGED',
-                      'PAYMENT_ON_ERROR',
-                    ],
-                    isActive: true,
-                    createdAt: new Date(1713636260),
-                    paymentSourceId: null,
-                  },
+            schema: z.object({ status: z.string(), data: registerWebhookSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  id: 'webhook_endpoint_id',
+                  url: 'https://your-server.com/webhook',
+                  name: 'My Payment Webhook',
+                  events: ['PURCHASE_ON_CHAIN_STATUS_CHANGED', 'PAYMENT_ON_ERROR'],
+                  isActive: true,
+                  createdAt: new Date(1713636260),
+                  paymentSourceId: null,
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -3389,19 +3293,17 @@ export function generateOpenAPI() {
         description: 'Webhook endpoint deleted successfully',
         content: {
           'application/json': {
-            schema: z
-              .object({ status: z.string(), data: deleteWebhookSchemaOutput })
-              .openapi({
-                example: {
-                  status: 'success',
-                  data: {
-                    id: 'webhook_endpoint_id',
-                    url: 'https://your-server.com/webhook',
-                    name: 'My Payment Webhook',
-                    deletedAt: new Date(1713636260),
-                  },
+            schema: z.object({ status: z.string(), data: deleteWebhookSchemaOutput }).openapi({
+              example: {
+                status: 'success',
+                data: {
+                  id: 'webhook_endpoint_id',
+                  url: 'https://your-server.com/webhook',
+                  name: 'My Payment Webhook',
+                  deletedAt: new Date(1713636260),
                 },
-              }),
+              },
+            }),
           },
         },
       },
@@ -3424,8 +3326,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'get',
     path: '/monitoring/',
-    description:
-      'Gets the current status of the blockchain state monitoring service',
+    description: 'Gets the current status of the blockchain state monitoring service',
     summary: 'Get monitoring service status. (admin access required)',
     tags: ['monitoring'],
     security: [{ [apiKeyAuth.name]: [] }],
@@ -3472,8 +3373,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'post',
     path: '/monitoring/trigger-cycle/',
-    description:
-      'Manually triggers a monitoring cycle to check blockchain state',
+    description: 'Manually triggers a monitoring cycle to check blockchain state',
     summary: 'Trigger a manual monitoring cycle. (admin access required)',
     tags: ['monitoring'],
     security: [{ [apiKeyAuth.name]: [] }],
@@ -3503,8 +3403,7 @@ export function generateOpenAPI() {
   registry.registerPath({
     method: 'post',
     path: '/monitoring/start/',
-    description:
-      'Starts the blockchain state monitoring service with a specified interval',
+    description: 'Starts the blockchain state monitoring service with a specified interval',
     summary: 'Start the monitoring service. (admin access required)',
     tags: ['monitoring'],
     security: [{ [apiKeyAuth.name]: [] }],

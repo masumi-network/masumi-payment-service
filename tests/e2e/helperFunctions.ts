@@ -15,11 +15,7 @@
  */
 
 import { Network } from '@/generated/prisma/enums';
-import {
-  PaymentResponse,
-  PurchaseResponse,
-  RegistrationResponse,
-} from './utils/apiClient';
+import { PaymentResponse, PurchaseResponse, RegistrationResponse } from './utils/apiClient';
 import './setup/globals';
 import {
   getTestWalletFromDatabase,
@@ -134,9 +130,7 @@ export interface TimingConfig {
  * @param network - The blockchain network (Preprod, Mainnet, etc.)
  * @returns Confirmed agent data with identifier
  */
-export async function registerAndConfirmAgent(
-  network: Network,
-): Promise<ConfirmedAgent> {
+export async function registerAndConfirmAgent(network: Network): Promise<ConfirmedAgent> {
   console.log('📝 E2E: starting agent registration and confirmation...');
 
   // Get test wallet dynamically from database
@@ -144,11 +138,7 @@ export async function registerAndConfirmAgent(
   const testWallet = await getTestWalletFromDatabase(network, 'seller');
   const testScenario = getTestScenarios().basicAgent;
 
-  const registrationData = generateTestRegistrationData(
-    network,
-    testWallet.vkey,
-    testScenario,
-  );
+  const registrationData = generateTestRegistrationData(network, testWallet.vkey, testScenario);
 
   console.log(`🎯 E2E: registration payload:
     - Agent Name: ${registrationData.name}
@@ -158,8 +148,7 @@ export async function registerAndConfirmAgent(
   `);
 
   // Submit registration
-  const registrationResponse =
-    await global.testApiClient.registerAgent(registrationData);
+  const registrationResponse = await global.testApiClient.registerAgent(registrationData);
 
   console.log(`✅ E2E: registration submitted:
     - ID: ${registrationResponse.id}
@@ -169,9 +158,7 @@ export async function registerAndConfirmAgent(
 
   // Wait for registration confirmation
   console.log('⏳ E2E: waiting for registration confirmation...');
-  console.log(
-    '💡 E2E: note — blockchain confirmations can be slow/unpredictable on Preprod',
-  );
+  console.log('💡 E2E: note — blockchain confirmations can be slow/unpredictable on Preprod');
 
   const startTime = Date.now();
   let confirmedRegistration: RegistrationResponse | undefined;
@@ -205,9 +192,7 @@ export async function registerAndConfirmAgent(
         throw new Error(`Registration ${registrationResponse.id} not found`);
       }
 
-      console.log(
-        `📊 E2E: registration ${registrationResponse.id} state=${registration.state}`,
-      );
+      console.log(`📊 E2E: registration ${registrationResponse.id} state=${registration.state}`);
 
       // Fail fast on terminal error states (wait-for-expect would otherwise retry)
       if (registration.state === 'RegistrationFailed') {
@@ -217,9 +202,7 @@ export async function registerAndConfirmAgent(
       }
 
       if (registration.state !== 'RegistrationConfirmed') {
-        throw new Error(
-          `Registration not yet confirmed (state=${registration.state})`,
-        );
+        throw new Error(`Registration not yet confirmed (state=${registration.state})`);
       }
 
       confirmedRegistration = registration;
@@ -254,25 +237,16 @@ export async function registerAndConfirmAgent(
         );
       }
 
-      if (
-        registration.state === 'RegistrationConfirmed' &&
-        registration.agentIdentifier
-      ) {
-        console.log(
-          `🎯 E2E: agent identifier assigned: ${registration.agentIdentifier}`,
-        );
+      if (registration.state === 'RegistrationConfirmed' && registration.agentIdentifier) {
+        console.log(`🎯 E2E: agent identifier assigned: ${registration.agentIdentifier}`);
         confirmedRegistration = registration;
-        const match = registration.agentIdentifier.match(
-          /^[a-f0-9]{56}[a-f0-9]+$/,
-        );
+        const match = registration.agentIdentifier.match(/^[a-f0-9]{56}[a-f0-9]+$/);
         if (!match) {
           throw new FatalE2EError(
             `Agent identifier ${registration.agentIdentifier} does not match expected pattern`,
           );
         }
-        console.log(
-          `🎯 E2E: agent identifier registered: ${registration.agentIdentifier}`,
-        );
+        console.log(`🎯 E2E: agent identifier registered: ${registration.agentIdentifier}`);
         return;
       }
 
@@ -285,18 +259,14 @@ export async function registerAndConfirmAgent(
   );
 
   const registrationMinutes = Math.floor((Date.now() - startTime) / 60000);
-  console.log(
-    `✅ E2E: registration completed after ${registrationMinutes} min`,
-  );
+  console.log(`✅ E2E: registration completed after ${registrationMinutes} min`);
   if (!confirmedRegistration?.agentIdentifier) {
     throw new Error(
       `Registration ${registrationResponse.id} confirmed but agentIdentifier missing`,
     );
   }
 
-  console.log(
-    `🎯 E2E: agent identifier: ${confirmedRegistration.agentIdentifier}`,
-  );
+  console.log(`🎯 E2E: agent identifier: ${confirmedRegistration.agentIdentifier}`);
 
   return {
     id: confirmedRegistration.id,
@@ -318,8 +288,7 @@ export async function deregisterAgent(
   agentIdentifier: string,
 ): Promise<{ id: string; state: string }> {
   // Query the active smart contract address dynamically from database
-  const activeSmartContractAddress =
-    await getActiveSmartContractAddress(network);
+  const activeSmartContractAddress = await getActiveSmartContractAddress(network);
 
   const deregisterResponse = await global.testApiClient.request<{
     id: string;
@@ -368,9 +337,7 @@ export async function deregisterAndConfirmAgent(
       }
 
       const state = registration.state;
-      console.log(
-        `📊 E2E: deregistration ${deregisterResponse.id} state=${state}`,
-      );
+      console.log(`📊 E2E: deregistration ${deregisterResponse.id} state=${state}`);
 
       if (state === 'DeregistrationFailed') {
         throw new FatalE2EError(
@@ -383,10 +350,7 @@ export async function deregisterAndConfirmAgent(
       }
     },
     {
-      timeoutMs:
-        options?.timeoutMs ??
-        global.testConfig.timeout.blockchain ??
-        10 * 60 * 1000,
+      timeoutMs: options?.timeoutMs ?? global.testConfig.timeout.blockchain ?? 10 * 60 * 1000,
       intervalMs: options?.intervalMs ?? 5000,
       label: 'deregistration confirmation',
     },
@@ -420,8 +384,7 @@ export async function createPayment(
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
 
-  const paymentResponse: PaymentResponse =
-    await global.testApiClient.createPayment(paymentData);
+  const paymentResponse: PaymentResponse = await global.testApiClient.createPayment(paymentData);
 
   expect(paymentResponse).toBeDefined();
   expect(paymentResponse.id).toBeDefined();
@@ -478,8 +441,7 @@ export async function createPaymentWithCustomTiming(
     - Purchaser ID: ${paymentData.identifierFromPurchaser}
   `);
 
-  const paymentResponse: PaymentResponse =
-    await global.testApiClient.createPayment(paymentData);
+  const paymentResponse: PaymentResponse = await global.testApiClient.createPayment(paymentData);
 
   expect(paymentResponse).toBeDefined();
   expect(paymentResponse.id).toBeDefined();
@@ -548,9 +510,7 @@ export async function createPurchase(
 
   expect(purchaseResponse).toBeDefined();
   expect(purchaseResponse.id).toBeDefined();
-  expect(purchaseResponse.blockchainIdentifier).toBe(
-    paymentResult.blockchainIdentifier,
-  );
+  expect(purchaseResponse.blockchainIdentifier).toBe(paymentResult.blockchainIdentifier);
   expect(purchaseResponse.inputHash).toBe(paymentResult.inputHash);
   expect(purchaseResponse.NextAction).toBeDefined();
 
@@ -587,12 +547,8 @@ export async function waitForFundsLocked(
   const fundsLockedStartTime = Date.now();
   await pollUntil(
     async () => {
-      const elapsedMinutes = Math.floor(
-        (Date.now() - fundsLockedStartTime) / 60000,
-      );
-      console.log(
-        `⏱️ E2E: polling states for FundsLocked (${elapsedMinutes} min elapsed)`,
-      );
+      const elapsedMinutes = Math.floor((Date.now() - fundsLockedStartTime) / 60000);
+      console.log(`⏱️ E2E: polling states for FundsLocked (${elapsedMinutes} min elapsed)`);
 
       // Query both payment and purchase states in parallel
       const [paymentResponse, purchaseResponse] = await Promise.all([
@@ -623,21 +579,15 @@ export async function waitForFundsLocked(
       }
 
       if (!currentPayment || !currentPurchase) {
-        throw new Error(
-          `Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`,
-        );
+        throw new Error(`Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`);
       }
 
-      if (
-        currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
-      if (
-        currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPurchase.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
@@ -654,17 +604,12 @@ export async function waitForFundsLocked(
         );
       }
 
-      if (
-        currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction') {
         console.info(
           `ℹ️ E2E: waiting for WaitingForExternalAction — payment action=${currentPayment.NextAction.requestedAction}`,
         );
       }
-      if (
-        currentPurchase.NextAction.requestedAction !==
-        'WaitingForExternalAction'
-      ) {
+      if (currentPurchase.NextAction.requestedAction !== 'WaitingForExternalAction') {
         console.info(
           `ℹ️ E2E: waiting for WaitingForExternalAction — purchase action=${currentPurchase.NextAction.requestedAction}`,
         );
@@ -672,15 +617,11 @@ export async function waitForFundsLocked(
 
       // Verify payment state
       expect(currentPayment.onChainState).toBe('FundsLocked');
-      expect(currentPayment.NextAction.requestedAction).toBe(
-        'WaitingForExternalAction',
-      );
+      expect(currentPayment.NextAction.requestedAction).toBe('WaitingForExternalAction');
 
       // Verify purchase state matches payment state
       expect(currentPurchase.onChainState).toBe('FundsLocked');
-      expect(currentPurchase.NextAction.requestedAction).toBe(
-        'WaitingForExternalAction',
-      );
+      expect(currentPurchase.NextAction.requestedAction).toBe('WaitingForExternalAction');
 
       console.log(
         `📊 E2E: payment state=${currentPayment.onChainState}, action=${currentPayment.NextAction.requestedAction}`,
@@ -692,9 +633,7 @@ export async function waitForFundsLocked(
     { timeoutMs: 0, intervalMs: 5000, label: 'FundsLocked' },
   );
 
-  const fundsLockedMinutes = Math.floor(
-    (Date.now() - fundsLockedStartTime) / 60000,
-  );
+  const fundsLockedMinutes = Math.floor((Date.now() - fundsLockedStartTime) / 60000);
   console.log(`✅ E2E: FundsLocked reached after ${fundsLockedMinutes} min`);
 }
 
@@ -714,12 +653,8 @@ export async function waitForResultSubmitted(
   const resultSubmittedStartTime = Date.now();
   await pollUntil(
     async () => {
-      const elapsedMinutes = Math.floor(
-        (Date.now() - resultSubmittedStartTime) / 60000,
-      );
-      console.log(
-        `⏱️ E2E: polling states for ResultSubmitted (${elapsedMinutes} min elapsed)`,
-      );
+      const elapsedMinutes = Math.floor((Date.now() - resultSubmittedStartTime) / 60000);
+      console.log(`⏱️ E2E: polling states for ResultSubmitted (${elapsedMinutes} min elapsed)`);
 
       // Query both payment and purchase states in parallel
       const [paymentResponse, purchaseResponse] = await Promise.all([
@@ -753,16 +688,12 @@ export async function waitForResultSubmitted(
       expect(currentPayment).toBeDefined();
       expect(currentPurchase).toBeDefined();
 
-      if (
-        currentPayment!.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPayment!.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment!.NextAction.errorNote}`,
         );
       }
-      if (
-        currentPurchase!.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPurchase!.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase!.NextAction.errorNote}`,
         );
@@ -793,12 +724,8 @@ export async function waitForResultSubmitted(
     { timeoutMs: 0, intervalMs: 5000, label: 'ResultSubmitted' },
   );
 
-  const resultSubmittedMinutes = Math.floor(
-    (Date.now() - resultSubmittedStartTime) / 60000,
-  );
-  console.log(
-    `✅ E2E: ResultSubmitted reached after ${resultSubmittedMinutes} min`,
-  );
+  const resultSubmittedMinutes = Math.floor((Date.now() - resultSubmittedStartTime) / 60000);
+  console.log(`✅ E2E: ResultSubmitted reached after ${resultSubmittedMinutes} min`);
 }
 
 /**
@@ -816,12 +743,8 @@ export async function waitForDisputed(
   const disputedWaitStartTime = Date.now();
   await pollUntil(
     async () => {
-      const elapsedMinutes = Math.floor(
-        (Date.now() - disputedWaitStartTime) / 60000,
-      );
-      console.log(
-        `⏱️ E2E: polling states for Disputed (${elapsedMinutes} min elapsed)`,
-      );
+      const elapsedMinutes = Math.floor((Date.now() - disputedWaitStartTime) / 60000);
+      console.log(`⏱️ E2E: polling states for Disputed (${elapsedMinutes} min elapsed)`);
 
       // Query both payment and purchase states in parallel
       const [paymentResponse, purchaseResponse] = await Promise.all([
@@ -852,47 +775,34 @@ export async function waitForDisputed(
       }
 
       if (!currentPayment || !currentPurchase) {
-        throw new Error(
-          `Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`,
-        );
+        throw new Error(`Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`);
       }
 
-      if (
-        currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
-      if (
-        currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPurchase.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
       }
 
       if (currentPayment.onChainState !== 'Disputed') {
-        console.info(
-          `ℹ️ E2E: waiting for Disputed — payment state=${currentPayment.onChainState}`,
-        );
+        console.info(`ℹ️ E2E: waiting for Disputed — payment state=${currentPayment.onChainState}`);
       }
       if (currentPurchase.onChainState !== 'Disputed') {
         console.info(
           `ℹ️ E2E: waiting for Disputed — purchase state=${currentPurchase.onChainState}`,
         );
       }
-      if (
-        currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction') {
         console.info(
           `ℹ️ E2E: waiting for WaitingForExternalAction — payment action=${currentPayment.NextAction.requestedAction}`,
         );
       }
-      if (
-        currentPurchase.NextAction.requestedAction !==
-        'WaitingForExternalAction'
-      ) {
+      if (currentPurchase.NextAction.requestedAction !== 'WaitingForExternalAction') {
         console.info(
           `ℹ️ E2E: waiting for WaitingForExternalAction — purchase action=${currentPurchase.NextAction.requestedAction}`,
         );
@@ -900,28 +810,18 @@ export async function waitForDisputed(
 
       // Wait until both payment and purchase reach Disputed state after refund request
       expect(currentPayment.onChainState).toBe('Disputed');
-      expect(currentPayment.NextAction.requestedAction).toBe(
-        'WaitingForExternalAction',
-      );
+      expect(currentPayment.NextAction.requestedAction).toBe('WaitingForExternalAction');
 
       expect(currentPurchase.onChainState).toBe('Disputed');
-      expect(currentPurchase.NextAction.requestedAction).toBe(
-        'WaitingForExternalAction',
-      );
+      expect(currentPurchase.NextAction.requestedAction).toBe('WaitingForExternalAction');
 
-      console.log(
-        '✅ E2E: payment is Disputed and ready for admin authorization',
-      );
-      console.log(
-        '✅ E2E: purchase is Disputed and ready for admin authorization',
-      );
+      console.log('✅ E2E: payment is Disputed and ready for admin authorization');
+      console.log('✅ E2E: purchase is Disputed and ready for admin authorization');
     },
     { timeoutMs: 0, intervalMs: 5000, label: 'Disputed' },
   );
 
-  const refundStateMinutes = Math.floor(
-    (Date.now() - disputedWaitStartTime) / 60000,
-  );
+  const refundStateMinutes = Math.floor((Date.now() - disputedWaitStartTime) / 60000);
   console.log(`✅ E2E: Disputed reached after ${refundStateMinutes} min`);
 }
 
@@ -940,12 +840,8 @@ export async function waitForRefundRequested(
   const refundRequestedStartTime = Date.now();
   await pollUntil(
     async () => {
-      const elapsedMinutes = Math.floor(
-        (Date.now() - refundRequestedStartTime) / 60000,
-      );
-      console.log(
-        `⏱️ E2E: polling states for RefundRequested (${elapsedMinutes} min elapsed)`,
-      );
+      const elapsedMinutes = Math.floor((Date.now() - refundRequestedStartTime) / 60000);
+      console.log(`⏱️ E2E: polling states for RefundRequested (${elapsedMinutes} min elapsed)`);
 
       // Query both payment and purchase states in parallel
       const [paymentResponse, purchaseResponse] = await Promise.all([
@@ -977,21 +873,15 @@ export async function waitForRefundRequested(
       }
 
       if (!currentPayment || !currentPurchase) {
-        throw new Error(
-          `Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`,
-        );
+        throw new Error(`Payment/Purchase not found yet for blockchainId=${blockchainIdentifier}`);
       }
 
-      if (
-        currentPayment.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Payment entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPayment.NextAction.errorNote}`,
         );
       }
-      if (
-        currentPurchase.NextAction.requestedAction === 'WaitingForManualAction'
-      ) {
+      if (currentPurchase.NextAction.requestedAction === 'WaitingForManualAction') {
         throw new FatalE2EError(
           `Purchase entered WaitingForManualAction (blockchainId=${blockchainIdentifier}) with error: ${currentPurchase.NextAction.errorNote}`,
         );
@@ -1007,9 +897,7 @@ export async function waitForRefundRequested(
           `ℹ️ E2E: waiting for RefundRequested — purchase state=${currentPurchase.onChainState}`,
         );
       }
-      if (
-        currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction'
-      ) {
+      if (currentPayment.NextAction.requestedAction !== 'WaitingForExternalAction') {
         console.info(
           `ℹ️ E2E: waiting for WaitingForExternalAction — payment action=${currentPayment.NextAction.requestedAction}`,
         );
@@ -1019,22 +907,14 @@ export async function waitForRefundRequested(
       expect(currentPayment.onChainState).toBe('RefundRequested');
       expect(currentPurchase.onChainState).toBe('RefundRequested');
 
-      console.log(
-        '✅ E2E: payment is RefundRequested and ready for result submission',
-      );
-      console.log(
-        '✅ E2E: purchase is RefundRequested and ready for result submission',
-      );
+      console.log('✅ E2E: payment is RefundRequested and ready for result submission');
+      console.log('✅ E2E: purchase is RefundRequested and ready for result submission');
     },
     { timeoutMs: 0, intervalMs: 5000, label: 'RefundRequested' },
   );
 
-  const refundRequestedMinutes = Math.floor(
-    (Date.now() - refundRequestedStartTime) / 60000,
-  );
-  console.log(
-    `✅ E2E: RefundRequested reached after ${refundRequestedMinutes} min`,
-  );
+  const refundRequestedMinutes = Math.floor((Date.now() - refundRequestedStartTime) / 60000);
+  console.log(`✅ E2E: RefundRequested reached after ${refundRequestedMinutes} min`);
 }
 
 // ============================================================================
@@ -1060,27 +940,24 @@ export async function submitResult(
     - SHA256 Hash: ${randomSHA256Hash}
   `);
 
-  const submitResultResponse =
-    await global.testApiClient.request<PaymentResponse>(
-      '/api/v1/payment/submit-result',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          network: network,
-          submitResultHash: randomSHA256Hash,
-          blockchainIdentifier: blockchainIdentifier,
-        }),
-      },
-    );
+  const submitResultResponse = await global.testApiClient.request<PaymentResponse>(
+    '/api/v1/payment/submit-result',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        network: network,
+        submitResultHash: randomSHA256Hash,
+        blockchainIdentifier: blockchainIdentifier,
+      }),
+    },
+  );
 
   expect(submitResultResponse).toBeDefined();
   expect(submitResultResponse.blockchainIdentifier).toBe(blockchainIdentifier);
 
   // Verify the state transition
   expect(submitResultResponse.NextAction).toBeDefined();
-  expect(submitResultResponse.NextAction.requestedAction).toBe(
-    'SubmitResultRequested',
-  );
+  expect(submitResultResponse.NextAction.requestedAction).toBe('SubmitResultRequested');
   expect(submitResultResponse.NextAction.resultHash).toBe(randomSHA256Hash);
 
   console.log(`✅ E2E: result submitted:
@@ -1108,24 +985,21 @@ export async function requestRefund(
 ): Promise<PurchaseResponse> {
   console.log('💸 E2E: requesting refund...');
 
-  const refundRequestResponse =
-    await global.testApiClient.request<PurchaseResponse>(
-      '/api/v1/purchase/request-refund',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          network: network,
-          blockchainIdentifier: blockchainIdentifier,
-        }),
-      },
-    );
+  const refundRequestResponse = await global.testApiClient.request<PurchaseResponse>(
+    '/api/v1/purchase/request-refund',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        network: network,
+        blockchainIdentifier: blockchainIdentifier,
+      }),
+    },
+  );
 
   expect(refundRequestResponse).toBeDefined();
   expect(refundRequestResponse.id).toBeDefined();
   expect(refundRequestResponse.NextAction).toBeDefined();
-  expect(refundRequestResponse.NextAction.requestedAction).toBe(
-    'SetRefundRequestedRequested',
-  );
+  expect(refundRequestResponse.NextAction.requestedAction).toBe('SetRefundRequestedRequested');
 
   console.log('✅ E2E: refund request submitted');
 
@@ -1144,25 +1018,22 @@ export async function authorizeRefund(
 ): Promise<PaymentResponse> {
   console.log('👨‍💼 E2E: admin refund authorization (Disputed → Complete)...');
 
-  const authorizeRefundResponse =
-    await global.testApiClient.request<PaymentResponse>(
-      '/api/v1/payment/authorize-refund',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          network: network,
-          blockchainIdentifier: blockchainIdentifier,
-        }),
-      },
-    );
+  const authorizeRefundResponse = await global.testApiClient.request<PaymentResponse>(
+    '/api/v1/payment/authorize-refund',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        network: network,
+        blockchainIdentifier: blockchainIdentifier,
+      }),
+    },
+  );
 
   expect(authorizeRefundResponse).toBeDefined();
   expect(authorizeRefundResponse.id).toBeDefined();
   expect(authorizeRefundResponse.onChainState).toBeDefined();
   expect(authorizeRefundResponse.NextAction).toBeDefined();
-  expect(authorizeRefundResponse.NextAction.requestedAction).toBe(
-    'AuthorizeRefundRequested',
-  );
+  expect(authorizeRefundResponse.NextAction.requestedAction).toBe('AuthorizeRefundRequested');
 
   console.log(`✅ E2E: admin authorization requested:
     - Payment ID: ${authorizeRefundResponse.id}
@@ -1185,17 +1056,16 @@ export async function cancelRefundRequest(
 ): Promise<PurchaseResponse> {
   console.log('ℹ️ E2E: cancelling refund request...');
 
-  const cancelRefundResponse =
-    await global.testApiClient.request<PurchaseResponse>(
-      '/api/v1/purchase/cancel-refund-request',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          network: network,
-          blockchainIdentifier: blockchainIdentifier,
-        }),
-      },
-    );
+  const cancelRefundResponse = await global.testApiClient.request<PurchaseResponse>(
+    '/api/v1/purchase/cancel-refund-request',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        network: network,
+        blockchainIdentifier: blockchainIdentifier,
+      }),
+    },
+  );
 
   expect(cancelRefundResponse).toBeDefined();
   expect(cancelRefundResponse.id).toBeDefined();

@@ -90,24 +90,14 @@ const emitLog = (
   const errorStr = error ? ` ERROR: ${error.message}` : '';
   const fullMessage = `${message}${contextStr}${errorStr}`;
 
-  winstonLogger.info(
-    `${timestamp} ${separator} [${paddedLevel}] ${separator} ${fullMessage}`,
-  );
+  winstonLogger.info(`${timestamp} ${separator} [${paddedLevel}] ${separator} ${fullMessage}`);
 };
 
-export const logDebug = (
-  message: string,
-  context?: LogContext,
-  attributes?: LogAttributes,
-) => {
+export const logDebug = (message: string, context?: LogContext, attributes?: LogAttributes) => {
   emitLog(LogLevel.DEBUG, message, context, attributes);
 };
 
-export const logInfo = (
-  message: string,
-  context?: LogContext,
-  attributes?: LogAttributes,
-) => {
+export const logInfo = (message: string, context?: LogContext, attributes?: LogAttributes) => {
   emitLog(LogLevel.INFO, message, context, attributes);
 };
 

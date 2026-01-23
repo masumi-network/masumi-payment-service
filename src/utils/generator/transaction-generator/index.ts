@@ -40,24 +40,23 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
   invalidBefore: number,
   invalidAfter: number,
 ) {
-  const evaluationTx =
-    await generateMasumiSmartContractInteractionTransactionCustomFee(
-      type,
-      blockchainProvider,
-      network,
-      script,
-      walletAddress,
-      smartContractUtxo,
-      collateralUtxo,
-      walletUtxos,
-      newInlineDatum,
-      invalidBefore,
-      invalidAfter,
-    );
+  const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
+    type,
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    smartContractUtxo,
+    collateralUtxo,
+    walletUtxos,
+    newInlineDatum,
+    invalidBefore,
+    invalidAfter,
+  );
 
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
+  const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+    budget: { mem: number; steps: number };
+  }>;
 
   return await generateMasumiSmartContractInteractionTransactionCustomFee(
     type,
@@ -121,17 +120,12 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
       smartContractUtxo.input.outputIndex,
       smartContractUtxo.output.amount,
       smartContractUtxo.output.address,
-      smartContractUtxo.output.scriptRef
-        ? smartContractUtxo.output.scriptRef.length / 2
-        : 0,
+      smartContractUtxo.output.scriptRef ? smartContractUtxo.output.scriptRef.length / 2 : 0,
     )
     .txInScript(script.code) // ,script.version)
     .txInRedeemerValue(redeemerData, 'Mesh', exUnits)
     .txInInlineDatumPresent()
-    .txInCollateral(
-      collateralUtxo.input.txHash,
-      collateralUtxo.input.outputIndex,
-    )
+    .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
     .setTotalCollateral('3000000')
     .txOut(smartContractAddress, smartContractUtxo.output.amount)
     .txOutInlineDatumValue(newInlineDatum);
@@ -226,26 +220,25 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
   invalidBefore: number,
   invalidAfter: number,
 ) {
-  const evaluationTx =
-    await generateMasumiSmartContractWithdrawTransactionCustomFee(
-      type,
-      blockchainProvider,
-      network,
-      script,
-      walletAddress,
-      smartContractUtxo,
-      collateralUtxo,
-      walletUtxos,
-      collection,
-      fee,
-      collateralReturn,
-      invalidBefore,
-      invalidAfter,
-    );
+  const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
+    type,
+    blockchainProvider,
+    network,
+    script,
+    walletAddress,
+    smartContractUtxo,
+    collateralUtxo,
+    walletUtxos,
+    collection,
+    fee,
+    collateralReturn,
+    invalidBefore,
+    invalidAfter,
+  );
 
-  const estimatedFee = (await blockchainProvider.evaluateTx(
-    evaluationTx,
-  )) as Array<{ budget: { mem: number; steps: number } }>;
+  const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+    budget: { mem: number; steps: number };
+  }>;
 
   return await generateMasumiSmartContractWithdrawTransactionCustomFee(
     type,
@@ -317,17 +310,12 @@ export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
       smartContractUtxo.input.outputIndex,
       smartContractUtxo.output.amount,
       smartContractUtxo.output.address,
-      smartContractUtxo.output.scriptRef
-        ? smartContractUtxo.output.scriptRef.length / 2
-        : 0,
+      smartContractUtxo.output.scriptRef ? smartContractUtxo.output.scriptRef.length / 2 : 0,
     )
     .txInScript(script.code) // ,script.version)
     .txInRedeemerValue(redeemerData, 'Mesh', exUnits)
     .txInInlineDatumPresent()
-    .txInCollateral(
-      collateralUtxo.input.txHash,
-      collateralUtxo.input.outputIndex,
-    )
+    .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
     .setTotalCollateral('3000000')
     .txOut(collection.collectionAddress, collection.collectAssets);
 
@@ -337,15 +325,10 @@ export async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 
   if (fee) {
     const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
-    txBuilder
-      .txOut(fee.feeAddress, fee.feeAssets)
-      .txOutInlineDatumValue(outputReference);
+    txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
   }
   if (collateralReturn != null && collateralReturn.lovelace > 0n) {
-    const outputReference = mOutputReference(
-      collateralReturn.txHash,
-      collateralReturn.outputIndex,
-    );
+    const outputReference = mOutputReference(collateralReturn.txHash, collateralReturn.outputIndex);
     txBuilder
       .txOut(collateralReturn.address, [
         {

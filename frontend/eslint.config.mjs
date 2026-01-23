@@ -1,7 +1,8 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
-import reactHooksPlugin from "eslint-plugin-react-hooks";
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { FlatCompat } from '@eslint/eslintrc';
+import reactHooksPlugin from 'eslint-plugin-react-hooks';
+import prettierPlugin from 'eslint-plugin-prettier';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,26 +12,28 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...compat.extends('next/core-web-vitals', 'next/typescript', 'prettier'),
   {
-    ignores: ["**/*.gen.ts", "src/lib/api/generated/**"]
+    ignores: ['**/*.gen.ts', 'src/lib/api/generated/**'],
   },
   {
-    files: ["**/*.{js,jsx,ts,tsx}"],
+    files: ['**/*.{js,jsx,ts,tsx}'],
     plugins: {
-      "react-hooks": reactHooksPlugin
+      'react-hooks': reactHooksPlugin,
+      prettier: prettierPlugin,
     },
     rules: {
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn"
-    }
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      'prettier/prettier': 'error',
+    },
   },
   {
-    files: ["**/*.gen.ts", "src/lib/api/generated/**"],
+    files: ['**/*.gen.ts', 'src/lib/api/generated/**'],
     rules: {
-      "@typescript-eslint/no-explicit-any": "off"
-    }
-  }
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 ];
 
 export default eslintConfig;

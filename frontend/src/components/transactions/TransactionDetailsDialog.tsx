@@ -1,12 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
@@ -26,8 +21,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 type Transaction =
   | (Payment & { type: 'payment' })
   | (Purchase & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface ApiError {
   message: string;
@@ -43,8 +38,7 @@ interface TransactionDetailsDialogProps {
 }
 
 const handleError = (error: ApiError) => {
-  const errorMessage =
-    error.error?.message || error.message || 'An error occurred';
+  const errorMessage = error.error?.message || error.message || 'An error occurred';
   toast.error(errorMessage);
 };
 
@@ -115,9 +109,7 @@ export default function TransactionDetailsDialog({
 }: TransactionDetailsDialogProps) {
   const { network, apiClient } = useAppContext();
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
-  const [confirmAction, setConfirmAction] = React.useState<
-    'refund' | 'cancel' | null
-  >(null);
+  const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const clearTransactionError = async () => {
     try {
@@ -144,8 +136,7 @@ export default function TransactionDetailsDialog({
         });
         if (response.error) {
           toast.error(
-            (response.error as { message: string }).message ||
-            'Failed to clear error state',
+            (response.error as { message: string }).message || 'Failed to clear error state',
           );
           return false;
         }
@@ -165,8 +156,7 @@ export default function TransactionDetailsDialog({
         });
         if (response.error) {
           toast.error(
-            (response.error as { message: string }).message ||
-            'Failed to clear error state',
+            (response.error as { message: string }).message || 'Failed to clear error state',
           );
           return false;
         }
@@ -295,9 +285,7 @@ export default function TransactionDetailsDialog({
 
             <div className="col-span-2 my-4">
               <h4 className="font-semibold mb-1">Network</h4>
-              <p className="text-sm capitalize">
-                {transaction.PaymentSource.network}
-              </p>
+              <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
             </div>
 
             <div className="col-span-2 w-full mb-4">
@@ -314,9 +302,7 @@ export default function TransactionDetailsDialog({
             </div>
             <div>
               <h4 className="font-semibold mb-1">Created</h4>
-              <p className="text-sm">
-                {new Date(transaction.createdAt).toLocaleString()}
-              </p>
+              <p className="text-sm">{new Date(transaction.createdAt).toLocaleString()}</p>
             </div>
           </div>
 
@@ -329,8 +315,8 @@ export default function TransactionDetailsDialog({
                 </h4>
               </div>
               <p className="text-sm text-orange-700 dark:text-orange-300">
-                This payment is in dispute. As the seller, you can authorize a
-                refund to resolve the dispute.
+                This payment is in dispute. As the seller, you can authorize a refund to resolve the
+                dispute.
               </p>
             </div>
           )}
@@ -364,9 +350,7 @@ export default function TransactionDetailsDialog({
                       return 'Refund Requested (waiting for approval)';
                     case 'refundwithdrawn':
                     default:
-                      return state
-                        ? state.charAt(0).toUpperCase() + state.slice(1)
-                        : '—';
+                      return state ? state.charAt(0).toUpperCase() + state.slice(1) : '—';
                   }
                 })()}
               </p>
@@ -417,10 +401,7 @@ export default function TransactionDetailsDialog({
                 <p
                   className={cn(
                     'text-sm',
-                    getStatusColor(
-                      transaction.onChainState,
-                      !!transaction.NextAction?.errorType,
-                    ),
+                    getStatusColor(transaction.onChainState, !!transaction.NextAction?.errorType),
                   )}
                 >
                   {formatStatus(transaction.onChainState)}
@@ -431,8 +412,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                    transaction.RequestedFunds &&
-                    transaction.RequestedFunds.length > 0 ? (
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
@@ -500,14 +481,10 @@ export default function TransactionDetailsDialog({
                     >
                       {transaction.CurrentTransaction.txHash}
                     </a>
-                    <CopyButton
-                      value={transaction.CurrentTransaction?.txHash}
-                    />
+                    <CopyButton value={transaction.CurrentTransaction?.txHash} />
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No transaction hash available
-                  </p>
+                  <p className="text-sm text-muted-foreground">No transaction hash available</p>
                 )}
               </div>
             </div>
@@ -518,75 +495,56 @@ export default function TransactionDetailsDialog({
             <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
               <div>
                 <h5 className="text-sm font-medium mb-1">Created</h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.createdAt)}
-                </p>
+                <p className="text-sm">{formatTimestamp(transaction.createdAt)}</p>
               </div>
               <div>
                 <h5 className="text-sm font-medium mb-1">Last Updated</h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.updatedAt)}
-                </p>
+                <p className="text-sm">{formatTimestamp(transaction.updatedAt)}</p>
               </div>
               <div>
                 <h5 className="text-sm font-medium mb-1">Submit Result By</h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.submitResultTime)}
-                </p>
+                <p className="text-sm">{formatTimestamp(transaction.submitResultTime)}</p>
               </div>
               <div>
                 <h5 className="text-sm font-medium mb-1">Unlock Time</h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.unlockTime)}
-                </p>
+                <p className="text-sm">{formatTimestamp(transaction.unlockTime)}</p>
               </div>
               <div>
-                <h5 className="text-sm font-medium mb-1">
-                  External Dispute Unlock Time
-                </h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.externalDisputeUnlockTime)}
-                </p>
+                <h5 className="text-sm font-medium mb-1">External Dispute Unlock Time</h5>
+                <p className="text-sm">{formatTimestamp(transaction.externalDisputeUnlockTime)}</p>
               </div>
               <div>
                 <h5 className="text-sm font-medium mb-1">Last Checked</h5>
-                <p className="text-sm">
-                  {formatTimestamp(transaction.lastCheckedAt)}
-                </p>
+                <p className="text-sm">{formatTimestamp(transaction.lastCheckedAt)}</p>
               </div>
             </div>
           </div>
 
-          {transaction.type === 'payment' &&
-            transaction.SmartContractWallet && (
-              <div className="space-y-2">
-                <h4 className="font-semibold">Wallet Information</h4>
-                <div className="grid grid-cols-1 gap-4 rounded-md border p-4">
-                  <div>
-                    <h5 className="text-sm font-medium mb-1">
-                      Collection Wallet
-                    </h5>
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={getExplorerUrl(
-                          transaction.SmartContractWallet.walletAddress,
-                          network,
-                          'address',
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-mono break-all hover:underline text-primary"
-                      >
-                        {transaction.SmartContractWallet.walletAddress}
-                      </a>
-                      <CopyButton
-                        value={transaction.SmartContractWallet?.walletAddress}
-                      />
-                    </div>
+          {transaction.type === 'payment' && transaction.SmartContractWallet && (
+            <div className="space-y-2">
+              <h4 className="font-semibold">Wallet Information</h4>
+              <div className="grid grid-cols-1 gap-4 rounded-md border p-4">
+                <div>
+                  <h5 className="text-sm font-medium mb-1">Collection Wallet</h5>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={getExplorerUrl(
+                        transaction.SmartContractWallet.walletAddress,
+                        network,
+                        'address',
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono break-all hover:underline text-primary"
+                    >
+                      {transaction.SmartContractWallet.walletAddress}
+                    </a>
+                    <CopyButton value={transaction.SmartContractWallet?.walletAddress} />
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
           {transaction.NextAction?.errorType && (
             <div className="space-y-2 break-all">
@@ -615,9 +573,7 @@ export default function TransactionDetailsDialog({
                         }
                       }}
                     >
-                      {isLoading
-                        ? 'Clearing error state...'
-                        : 'Clear Error State'}
+                      {isLoading ? 'Clearing error state...' : 'Clear Error State'}
                     </Button>
                   </div>
                 </div>
@@ -626,15 +582,11 @@ export default function TransactionDetailsDialog({
           )}
 
           <div className="flex gap-2 justify-end">
-            {canRequestRefund(transaction) &&
-              transaction.type === 'purchase' && (
-                <Button
-                  variant="secondary"
-                  onClick={() => handleRefundRequest(transaction)}
-                >
-                  Request Refund
-                </Button>
-              )}
+            {canRequestRefund(transaction) && transaction.type === 'purchase' && (
+              <Button variant="secondary" onClick={() => handleRefundRequest(transaction)}>
+                Request Refund
+              </Button>
+            )}
             {canAllowRefund(transaction) && (
               <Button
                 variant="default"
@@ -647,18 +599,17 @@ export default function TransactionDetailsDialog({
                 Authorize Refund
               </Button>
             )}
-            {canCancelRefund(transaction) &&
-              transaction.type === 'purchase' && (
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setConfirmAction('cancel');
-                    setShowConfirmDialog(true);
-                  }}
-                >
-                  Cancel Refund Request
-                </Button>
-              )}
+            {canCancelRefund(transaction) && transaction.type === 'purchase' && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setConfirmAction('cancel');
+                  setShowConfirmDialog(true);
+                }}
+              >
+                Cancel Refund Request
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>
@@ -669,11 +620,7 @@ export default function TransactionDetailsDialog({
           setShowConfirmDialog(false);
           setConfirmAction(null);
         }}
-        title={
-          confirmAction === 'refund'
-            ? 'Authorize Refund'
-            : 'Cancel Refund Request'
-        }
+        title={confirmAction === 'refund' ? 'Authorize Refund' : 'Cancel Refund Request'}
         description={
           confirmAction === 'refund'
             ? 'Are you sure you want to authorize this refund?'

@@ -63,16 +63,10 @@ export function decodeV1ContractDatum(
       //invalid transaction
       return null;
     }
-    const buyerAddress = serializeAddressObj(
-      fields[0],
-      network == 'mainnet' ? 1 : 0,
-    );
+    const buyerAddress = serializeAddressObj(fields[0], network == 'mainnet' ? 1 : 0);
     const buyerVkey = resolvePaymentKeyHash(buyerAddress);
 
-    const sellerAddress = serializeAddressObj(
-      fields[1],
-      network == 'mainnet' ? 1 : 0,
-    );
+    const sellerAddress = serializeAddressObj(fields[1], network == 'mainnet' ? 1 : 0);
     const sellerVkey = resolvePaymentKeyHash(sellerAddress);
 
     if (fields[2] == null || fields[2].bytes == null) {
@@ -202,8 +196,7 @@ export function decodeV1ContractDatum(
 
 export function newCooldownTime(cooldownTime: bigint) {
   //We add some additional cooldown time to avoid validity issues with blocktime
-  const cooldownTimeMs =
-    BigInt(Date.now()) + cooldownTime + BigInt(1000 * 60 * 10);
+  const cooldownTimeMs = BigInt(Date.now()) + cooldownTime + BigInt(1000 * 60 * 10);
   return cooldownTimeMs;
 }
 
@@ -211,11 +204,7 @@ function valueToStatus(value: any) {
   if (value == null) {
     return null;
   }
-  if (
-    value.constructor == null ||
-    value.fields == null ||
-    value.fields.length != 0
-  ) {
+  if (value.constructor == null || value.fields == null || value.fields.length != 0) {
     return null;
   }
   const constructor = value.constructor;

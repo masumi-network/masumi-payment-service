@@ -12,8 +12,8 @@ The webhook system uses strongly-typed enums and predefined payload structures t
 
 Webhooks notify external services when payments or purchases change status. Instead of polling the API, external services receive instant HTTP notifications.
 
-
 **Quick Overview**:
+
 1. External service registers webhook URL
 2. Payment/purchase status changes in Masumi
 3. System queues webhook delivery
@@ -25,11 +25,13 @@ Webhooks notify external services when payments or purchases change status. Inst
 ### Add Trigger Code
 
 Import the webhook service:
+
 ```typescript
 import { webhookEventsService } from '../webhook-handler/webhook-events.service';
 ```
 
 Add trigger after status changes:
+
 ```typescript
 // After payment completes
 await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
@@ -45,6 +47,7 @@ await webhookEventsService.triggerPurchaseOnError(purchaseId);
 ### Handle Errors Gracefully
 
 Always wrap in try-catch:
+
 ```typescript
 try {
   await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
@@ -86,16 +89,19 @@ curl -X POST http://localhost:3000/api/v1/webhooks \
 ### Check Database
 
 View pending deliveries:
+
 ```sql
 SELECT * FROM "WebhookDelivery" WHERE status = 'Pending';
 ```
 
 View failed deliveries:
+
 ```sql
 SELECT * FROM "WebhookDelivery" WHERE status = 'Failed' ORDER BY "createdAt" DESC LIMIT 10;
 ```
 
 View all registered webhooks:
+
 ```sql
 SELECT id, url, "isActive", events FROM "WebhookEndpoint";
 ```
@@ -105,16 +111,19 @@ SELECT id, url, "isActive", events FROM "WebhookEndpoint";
 ### Webhooks Not Being Sent?
 
 1. **Check if webhook is active:**
+
 ```sql
 SELECT url, "isActive", events FROM "WebhookEndpoint";
 ```
 
 2. **Check if deliveries are created:**
+
 ```sql
 SELECT * FROM "WebhookDelivery" ORDER BY "createdAt" DESC LIMIT 5;
 ```
 
 3. **Check logs:**
+
 ```bash
 docker logs <container> | grep -i webhook
 ```
@@ -124,8 +133,9 @@ docker logs <container> | grep -i webhook
 After 10 consecutive failures, webhooks auto-disable.
 
 **Re-enable:**
+
 ```sql
-UPDATE "WebhookEndpoint" 
+UPDATE "WebhookEndpoint"
 SET "isActive" = true, "consecutiveFailures" = 0, "disabledAt" = NULL
 WHERE id = 'your-webhook-id';
 ```
@@ -133,6 +143,7 @@ WHERE id = 'your-webhook-id';
 ### Deliveries Stuck in Pending?
 
 Check if background job is running:
+
 ```bash
 docker logs <container> | grep "webhook delivery processor"
 ```
@@ -149,7 +160,7 @@ async function processPayment(paymentId: string) {
   try {
     // 1. Process payment
     await updatePaymentStatus(paymentId, 'Completed');
-    
+
     // 2. Trigger webhook (non-blocking)
     try {
       logger.info('Triggering payment webhook', { paymentId });
@@ -158,17 +169,16 @@ async function processPayment(paymentId: string) {
       logger.error('Webhook trigger failed', { webhookError });
       // Continue - don't let webhook failures break main flow
     }
-    
   } catch (error) {
     // On main error, trigger error webhook
     logger.error('Payment processing failed', { error });
-    
+
     try {
       await webhookEventsService.triggerPaymentOnError(paymentId);
     } catch (webhookError) {
       logger.error('Error webhook trigger failed', { webhookError });
     }
-    
+
     throw error;
   }
 }
@@ -194,9 +204,9 @@ All webhook payloads follow this base structure:
 ```typescript
 interface BaseWebhookPayload {
   event_type: WebhookEventType;
-  timestamp: string;          
-  webhook_id: string;          
-  data: Record<string, unknown>; 
+  timestamp: string;
+  webhook_id: string;
+  data: Record<string, unknown>;
 }
 ```
 
@@ -208,16 +218,16 @@ Triggered when a purchase's on-chain status changes (e.g., funds locked, etc.).
 
 ```typescript
 interface PurchaseOnChainStatusChangedPayload {
-  event_type: "PURCHASE_ON_CHAIN_STATUS_CHANGED";
+  event_type: 'PURCHASE_ON_CHAIN_STATUS_CHANGED';
   timestamp: string;
   webhook_id: string;
   data: {
     id: string;
     blockchainIdentifier: string;
     onChainState: string;
-    submitResultTime: string;  
-    unlockTime: string;        
-    externalDisputeUnlockTime: string; 
+    submitResultTime: string;
+    unlockTime: string;
+    externalDisputeUnlockTime: string;
     cooldownTime: number;
     cooldownTimeOtherParty: number;
     PaymentSource: {
@@ -252,6 +262,7 @@ interface PurchaseOnChainStatusChangedPayload {
 ```
 
 **Example:**
+
 ```json
 {
   "event_type": "PURCHASE_ON_CHAIN_STATUS_CHANGED",
@@ -294,16 +305,16 @@ Triggered when a payment's on-chain status changes (e.g., funds locked, payment 
 
 ```typescript
 interface PaymentOnChainStatusChangedPayload {
-  event_type: "PAYMENT_ON_CHAIN_STATUS_CHANGED";
+  event_type: 'PAYMENT_ON_CHAIN_STATUS_CHANGED';
   timestamp: string;
   webhook_id: string;
   data: {
     id: string;
     blockchainIdentifier: string;
     onChainState: string;
-    submitResultTime: string;  
-    unlockTime: string;        
-    externalDisputeUnlockTime: string; 
+    submitResultTime: string;
+    unlockTime: string;
+    externalDisputeUnlockTime: string;
     cooldownTime: number;
     cooldownTimeOtherParty: number;
     PaymentSource: {
@@ -338,6 +349,7 @@ interface PaymentOnChainStatusChangedPayload {
 ```
 
 **Example:**
+
 ```json
 {
   "event_type": "PAYMENT_ON_CHAIN_STATUS_CHANGED",
@@ -380,7 +392,7 @@ Triggered when a purchase encounters an error (e.g., transaction failure, valida
 
 ```typescript
 interface PurchaseOnErrorPayload {
-  event_type: "PURCHASE_ON_ERROR";
+  event_type: 'PURCHASE_ON_ERROR';
   timestamp: string;
   webhook_id: string;
   data: {
@@ -392,6 +404,7 @@ interface PurchaseOnErrorPayload {
 ```
 
 **Example:**
+
 ```json
 {
   "event_type": "PURCHASE_ON_ERROR",
@@ -416,7 +429,7 @@ Triggered when a payment encounters an error (e.g., transaction failure, validat
 
 ```typescript
 interface PaymentOnErrorPayload {
-  event_type: "PAYMENT_ON_ERROR";
+  event_type: 'PAYMENT_ON_ERROR';
   timestamp: string;
   webhook_id: string;
   data: {
@@ -428,6 +441,7 @@ interface PaymentOnErrorPayload {
 ```
 
 **Example:**
+
 ```json
 {
   "event_type": "PAYMENT_ON_ERROR",
@@ -506,10 +520,9 @@ Your webhook endpoint should:
 Failed webhook deliveries are retried with exponential backoff:
 
 - **Retry 1**: 30 seconds
-- **Retry 2**: 60 seconds  
+- **Retry 2**: 60 seconds
 - **Retry 3**: 120 seconds
 - **Retry 4**: 240 seconds
 - **Retry 5**: 480 seconds
 
 After 10 consecutive failures, the webhook endpoint is automatically disabled.
-

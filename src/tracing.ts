@@ -5,10 +5,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
-import {
-  ATTR_SERVICE_NAME,
-  ATTR_SERVICE_VERSION,
-} from '@opentelemetry/semantic-conventions';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
@@ -29,17 +26,13 @@ export async function setupTracing() {
   // OTLP endpoints
   const otlpEndpoint = CONFIG.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (!otlpEndpoint) {
-    logger.warn(
-      '************************** OTEL is not configured ******************************',
-    );
+    logger.warn('************************** OTEL is not configured ******************************');
     return;
   }
-  const traceEndpoint =
-    CONFIG.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
+  const traceEndpoint = CONFIG.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || `${otlpEndpoint}/v1/traces`;
   const metricsEndpoint =
     CONFIG.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT || `${otlpEndpoint}/v1/metrics`;
-  const logsEndpoint =
-    CONFIG.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || `${otlpEndpoint}/v1/logs`;
+  const logsEndpoint = CONFIG.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT || `${otlpEndpoint}/v1/logs`;
 
   // Resource configuration
   const resource = resourceFromAttributes({
@@ -95,13 +88,10 @@ export async function setupTracing() {
       requestHook: (span: Span, info: { request: Request }) => {
         // Add custom attributes for Express requests
         span.setAttributes({
-          'http.request.body.size':
-            Number(info.request.get('content-length')) || 0,
+          'http.request.body.size': Number(info.request.get('content-length')) || 0,
           'http.request.user_agent': info.request.get('user-agent') || '',
-          'http.request.remote_addr':
-            info.request.ip || info.request.socket?.remoteAddress || '',
-          'http.request.x_forwarded_for':
-            info.request.get('x-forwarded-for') || '',
+          'http.request.remote_addr': info.request.ip || info.request.socket?.remoteAddress || '',
+          'http.request.x_forwarded_for': info.request.get('x-forwarded-for') || '',
         });
       },
     }),
@@ -117,10 +107,7 @@ export async function setupTracing() {
           });
         }
       },
-      responseHook: (
-        span: Span,
-        response: IncomingMessage | OutgoingMessage,
-      ) => {
+      responseHook: (span: Span, response: IncomingMessage | OutgoingMessage) => {
         if ('headers' in response) {
           const contentLength = response.headers['content-length'];
           span.setAttributes({
@@ -143,13 +130,10 @@ export async function setupTracing() {
     instrumentations,
   });
 
-  logInfo(
-    `🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`,
-    {
-      component: 'tracing',
-      operation: 'initialization',
-    },
-  );
+  logInfo(`🚀 Initializing OpenTelemetry for ${serviceName} v${serviceVersion}`, {
+    component: 'tracing',
+    operation: 'initialization',
+  });
   logInfo(`📊 Traces endpoint: ${traceEndpoint}`, {
     component: 'tracing',
     operation: 'configuration',
