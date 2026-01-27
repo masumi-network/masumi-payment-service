@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -78,6 +78,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   // Store form data for use in step 2
   const [formData, setFormData] = useState<FullCycleFormValues | null>(null);
+
+  // Ref to store timeout ID for cleanup
+  const purchaseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     register,
@@ -178,7 +181,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           toast.success('Payment created successfully');
 
           // Automatically proceed to create purchase
-          setTimeout(() => {
+          purchaseTimeoutRef.current = setTimeout(() => {
             createPurchaseAutomatically(payment, data);
           }, 500);
         } else {
@@ -252,6 +255,11 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   };
 
   const handleClose = () => {
+    // Clear any pending purchase timeout
+    if (purchaseTimeoutRef.current) {
+      clearTimeout(purchaseTimeoutRef.current);
+      purchaseTimeoutRef.current = null;
+    }
     reset();
     setStep(1);
     setPaymentResponse(null);

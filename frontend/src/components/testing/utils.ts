@@ -34,9 +34,9 @@ export function extractErrorMessage(error: unknown, fallback: string = 'An error
 
 // Generate random hex string for identifierFromPurchaser (14-26 chars)
 export function generateRandomHex(length: number = 16): string {
-  const array = new Uint8Array(length / 2);
+  const array = new Uint8Array(Math.ceil(length / 2));
   crypto.getRandomValues(array);
-  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, length);
 }
 
 // Generate SHA256 hash using Web Crypto API (browser-compatible)

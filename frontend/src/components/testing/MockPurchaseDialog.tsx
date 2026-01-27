@@ -318,7 +318,6 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   <Input
                     {...register('identifierFromPurchaser')}
                     className="font-mono text-xs"
-                    readOnly
                   />
                 </div>
 
