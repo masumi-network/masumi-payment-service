@@ -40,14 +40,11 @@ import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
 function WelcomeScreen({
   onStart,
-  networkType,
 }: {
   onStart: () => void;
-  networkType: string;
   ignoreSetup: () => void;
 }) {
-  const networkDisplay =
-    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const { network } = useAppContext();
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -55,35 +52,20 @@ function WelcomeScreen({
       <h2 className="text-3xl font-bold">
         Let&apos;s set up your
         <br />
-        {networkDisplay} environment
+        {network} environment
       </h2>
 
       <p className="text-sm text-muted-foreground mt-4 mb-8 text-center max-w-md">
-        We'll help you set up your payment environment by creating secure
+        We&apos;ll help you set up your payment environment by creating secure
         wallets, configuring payment sources, and setting up your first AI
         agent.
       </p>
 
-      <div className="flex items-center justify-center gap-4 mt-8">
-        <div className="relative">
-          <div className="text-sm flex items-center gap-2">
-            <span>Network:</span>
-            <Select
-              defaultValue={networkDisplay}
-              onValueChange={(value) =>
-                router.replace(`/setup?network=${value}`)
-              }
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectItem value="Preprod">Preprod</SelectItem>
-                <SelectItem value="Mainnet">Mainnet</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+      <p className="text-xs text-muted-foreground">
+        You can switch networks using the toggle in the sidebar.
+      </p>
+
+      <div className="flex items-center justify-center mt-8">
         <Button className="text-sm" onClick={onStart}>
           Start setup <ArrowRight className="w-4 h-4" />
         </Button>
@@ -1225,15 +1207,12 @@ function AddAiAgentScreen({
 }
 function SuccessScreen({
   onComplete,
-  networkType,
   hasAiAgent = false,
 }: {
   onComplete: () => void;
-  networkType: string;
   hasAiAgent?: boolean;
 }) {
-  const networkDisplay =
-    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const { network } = useAppContext();
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -1243,13 +1222,13 @@ function SuccessScreen({
         </span>
       </div>
       <h1 className="text-4xl font-bold">
-        Your {networkDisplay} environment
+        Your {network} environment
         <br />
         is all set!
       </h1>
 
       <p className="text-sm text-muted-foreground mt-4 mb-8">
-        You've successfully configured your payment environment and created
+        You&apos;ve successfully configured your payment environment and created
         secure wallets{hasAiAgent ? ' and set up your first AI agent' : ''}. You
         can now start managing your Agentic AI services and receiving payments
         through the dashboard.
@@ -1264,7 +1243,7 @@ function SuccessScreen({
   );
 }
 
-export function SetupWelcome({ networkType }: { networkType: string }) {
+export function SetupWelcomeContent() {
   const [currentStep, setCurrentStep] = useState(0);
   const [wallets, setWallets] = useState<{
     buying: { address: string; mnemonic: string } | null;
@@ -1298,7 +1277,6 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     <WelcomeScreen
       key="welcome"
       onStart={() => setCurrentStep(1)}
-      networkType={networkType}
       ignoreSetup={handleIgnoreSetup}
     />,
     <SeedPhrasesScreen
@@ -1326,20 +1304,29 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     <SuccessScreen
       key="success"
       onComplete={handleComplete}
-      networkType={networkType}
       hasAiAgent={hasAiAgent}
     />,
   ];
 
   return (
+    <div className="flex items-center justify-center min-h-[60vh] py-8">
+      {steps[currentStep]}
+    </div>
+  );
+}
+
+// Backwards compatibility export
+export function SetupWelcome({ networkType }: { networkType: string }) {
+  // networkType is ignored - using AppContext instead
+  void networkType;
+  return (
     <div className="min-h-screen flex flex-col w-full">
       <Header />
       <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
-        <div className="flex items-center justify-center ">
-          {steps[currentStep]}
-        </div>
+        <SetupWelcomeContent />
       </main>
       <Footer />
     </div>
   );
 }
+
