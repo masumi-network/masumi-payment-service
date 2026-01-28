@@ -85,7 +85,7 @@ if git diff --exit-code --quiet -- src/utils/generator/swagger-generator/openapi
     echo "${GREEN}✅ OpenAPI JSON unchanged, skipping Postman collection generation${NC}"
 else
     echo "${BLUE}🔍 OpenAPI JSON changed, generating Postman collection...${NC}"
-    if ! pnpm run openapi2postmanv2 -s ./src/utils/generator/swagger-generator/openapi-docs.json -o ./masumi-payment-service.postman_collection.json -p; then
+    if ! pnpm run swagger-postman; then
         echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
         exit 7
     fi
