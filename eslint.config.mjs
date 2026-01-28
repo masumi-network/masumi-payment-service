@@ -4,6 +4,7 @@ import { FlatCompat } from '@eslint/eslintrc';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import prettier from 'eslint-plugin-prettier';
+import prettierConfig from 'eslint-config-prettier';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,13 +35,28 @@ export default [
 	pluginJs.configs.recommended,
 	// Use the compatibility layer to load the TypeScript plugin and recommended rules
 	...compat.extends('plugin:@typescript-eslint/recommended-type-checked'),
+	// Disable ESLint rules that conflict with Prettier
+	prettierConfig,
 	// Add Prettier plugin
 	{
 		plugins: {
 			prettier,
 		},
 		rules: {
-			'prettier/prettier': 'error',
+			'prettier/prettier': [
+				'error',
+				{
+					trailingComma: 'all',
+					tabWidth: 2,
+					semi: true,
+					singleQuote: true,
+					useTabs: true,
+					printWidth: 120,
+					bracketSpacing: true,
+					arrowParens: 'always',
+					endOfLine: 'lf',
+				},
+			],
 		},
 	},
 	// Add custom rules for TypeScript
@@ -53,7 +69,6 @@ export default [
 			'@typescript-eslint/no-unsafe-argument': ['error'],
 			'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
 			'@typescript-eslint/require-await': ['off'],
-			semi: ['error', 'always'],
 		},
 	},
 	// Add Jest environment for test files
