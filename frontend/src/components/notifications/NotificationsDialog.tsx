@@ -57,7 +57,7 @@ export function NotificationsDialog({
                     <p className="text-xs text-muted-foreground">
                       Amount:{' '}
                       {transaction.Amounts?.[0]
-                        ? `${(parseInt(transaction.Amounts[0].amount) / 1000000).toFixed(2)} ₳`
+                        ? `${(parseInt(transaction.Amounts[0].amount) / 1000000).toFixed(2)} ADA`
                         : '—'}
                     </p>
                     <p className="text-xs text-muted-foreground">
