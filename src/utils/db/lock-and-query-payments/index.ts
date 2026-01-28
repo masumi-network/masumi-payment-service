@@ -56,7 +56,6 @@ export async function lockAndQueryPayments({
           const potentialPaymentRequests = await prisma.paymentRequest.findMany(
             {
               where: {
-                buyerCoolDownTime: { lt: Date.now() - minCooldownTime },
                 NextAction: {
                   requestedAction: paymentStatus,
                   errorType: null,
@@ -72,7 +71,7 @@ export async function lockAndQueryPayments({
                 },
                 onChainState: onChainState,
                 //we only want to lock the payment if the cooldown time has passed
-                sellerCoolDownTime: { lte: minCooldownTime },
+                sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
                 resultHash: resultHash,
               },
               include: {
