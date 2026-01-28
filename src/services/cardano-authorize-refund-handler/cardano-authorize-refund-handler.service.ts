@@ -82,6 +82,7 @@ export async function authorizeRefundV1() {
       paymentStatus: PaymentAction.AuthorizeRefundRequested,
       resultHash: { not: null },
       onChainState: { in: [OnChainState.Disputed] },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(
