@@ -380,7 +380,7 @@ export function generateOpenAPI() {
     request: {},
     responses: {
       200: {
-        description: 'Object with status ok, if the server is running',
+        description: 'Object with status ok, if the server is up and healthy',
         content: {
           'application/json': {
             schema: healthResponseSchema.openapi({ example: { status: 'ok' } }),
