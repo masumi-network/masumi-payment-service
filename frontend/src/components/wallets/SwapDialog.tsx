@@ -25,7 +25,6 @@ import { Spinner } from '../ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
-import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
@@ -49,7 +48,6 @@ export function SwapDialog({
   const { network, apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
-  const [nmkrBalance, setNmkrBalance] = useState<number>(0);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,22 +165,9 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
-      const nmkr =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === NMKR_CONFIG?.fullAssetId) {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
 
       setAdaBalance(lovelace / 1000000);
       setUsdmBalance(usdm / 1000000);
-      setNmkrBalance(nmkr / 1000000);
       setBalanceError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
@@ -279,8 +264,6 @@ export function SwapDialog({
         return adaBalance;
       case 'USDM':
         return usdmBalance;
-      case 'NMKR':
-        return nmkrBalance;
       default:
         return 0;
     }
@@ -505,7 +488,7 @@ export function SwapDialog({
                       <div className="relative w-full">
                         <input
                           type="number"
-                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
+                          className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-hidden appearance-none text-[24px] font-bold mb-2 text-foreground ${
                             fromAmount > getMaxAmount(selectedFromToken.symbol)
                               ? 'text-red-500'
                               : ''
@@ -532,14 +515,14 @@ export function SwapDialog({
                     </div>
                   </div>
                   <div className="relative flex items-center">
-                    <div className="flex-grow border-t border-border"></div>
+                    <div className="grow border-t border-border"></div>
                     <Button
                       onClick={handleSwitch}
                       className="mx-4 p-2 w-10 h-10 flex items-center justify-center transform rotate-90"
                     >
                       <FaExchangeAlt className="w-5 h-5" />
                     </Button>
-                    <div className="flex-grow border-t border-border"></div>
+                    <div className="grow border-t border-border"></div>
                   </div>
                   <div className="flex justify-between items-center bg-secondary p-4 rounded-md">
                     <div className="flex flex-col space-y-1">
@@ -575,7 +558,7 @@ export function SwapDialog({
                     <div className="flex flex-col items-end">
                       <input
                         type="text"
-                        className="w-24 text-right bg-transparent focus:outline-none appearance-none text-foreground"
+                        className="w-24 text-right bg-transparent focus:outline-hidden appearance-none text-foreground"
                         placeholder="0"
                         value={toAmount.toFixed(6)}
                         readOnly

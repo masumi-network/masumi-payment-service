@@ -5,7 +5,7 @@ import {
   PurchasingAction,
   TransactionStatus,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -267,6 +267,7 @@ export async function batchLatestPaymentEntriesV1() {
               orderBy: {
                 createdAt: 'asc',
               },
+              take: maxBatchSize,
             },
             PaymentSourceConfig: true,
             HotWallets: {

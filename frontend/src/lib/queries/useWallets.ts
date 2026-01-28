@@ -17,13 +17,13 @@ type UTXOAmount = UtxoAmount;
 
 type Wallet =
   | (PurchasingWallet & {
-      type: 'Purchasing';
-      network: 'Preprod' | 'Mainnet';
-    })
+    type: 'Purchasing';
+    network: 'Preprod' | 'Mainnet';
+  })
   | (SellingWallet & {
-      type: 'Selling';
-      network: 'Preprod' | 'Mainnet';
-    });
+    type: 'Selling';
+    network: 'Preprod' | 'Mainnet';
+  });
 
 export type WalletWithBalance = Wallet & {
   balance: string;

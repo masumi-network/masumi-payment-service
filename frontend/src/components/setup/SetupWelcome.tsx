@@ -459,10 +459,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-              { walletAddress: string },
-              { walletAddress: string },
-              { walletAddress: string },
-            ],
+                { walletAddress: string },
+                { walletAddress: string },
+                { walletAddress: string },
+              ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -634,8 +634,8 @@ function AddAiAgentScreen({
   const [error, setError] = useState<string>('');
 
   const priceSchema = z.object({
-    unit: z.enum(['lovelace', 'USDM'], {
-      required_error: 'Token is required',
+    unit: z.enum(['lovelace', 'USDM'] as const, {
+      error: () => 'Token is required',
     }),
     amount: z.string().refine((val) => {
       if (val === '0' || val === '0.0' || val === '0.00') return true;
@@ -814,18 +814,18 @@ function AddAiAgentScreen({
               : { name: 'Custom Agent', version: '1.0.0' },
           AgentPricing: data.isFree
             ? {
-                pricingType: 'Free',
-              }
+              pricingType: 'Free',
+            }
             : {
-                pricingType: 'Fixed',
-                Pricing: data.prices.map((price) => ({
-                  unit:
-                    price.unit === 'lovelace'
-                      ? 'lovelace'
-                      : getUsdmConfig(network).fullAssetId,
-                  amount: (parseFloat(price.amount) * 1000000).toString(),
-                })),
-              },
+              pricingType: 'Fixed',
+              Pricing: data.prices.map((price) => ({
+                unit:
+                  price.unit === 'lovelace'
+                    ? 'lovelace'
+                    : getUsdmConfig(network).fullAssetId,
+                amount: (parseFloat(price.amount) * 1000000).toString(),
+              })),
+            },
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',

@@ -4,7 +4,7 @@ import {
   PurchasingAction,
   TransactionStatus,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -254,6 +254,7 @@ export async function collectRefundV1() {
       submitResultTime: {
         lte: Date.now() - 1000 * 60 * 10, //add 10 minutes for block time
       },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

@@ -2,7 +2,7 @@ import {
   TransactionStatus,
   RegistrationState,
   PricingType,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -151,6 +151,7 @@ export async function registerAgentV1() {
     //Submit a result for invalid tokens
     const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
       state: RegistrationState.RegistrationRequested,
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

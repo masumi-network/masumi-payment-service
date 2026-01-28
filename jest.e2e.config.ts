@@ -1,6 +1,8 @@
 import type { Config } from '@jest/types';
 
 const moduleNameMapper = {
+  '^@prisma/client$': '<rootDir>/src/generated/prisma/client',
+  '@/generated/(.*)': '<rootDir>/src/generated/$1',
   '@/(.*)': '<rootDir>/src/$1',
   '@e2e/(.*)': '<rootDir>/tests/e2e/$1',
   '^(\\.{1,2}/.*)\\.js$': '$1',

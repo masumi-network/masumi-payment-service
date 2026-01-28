@@ -10,7 +10,7 @@ import {
   Transaction,
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { deserializeDatum, resolvePaymentKeyHash } from '@meshsdk/core';
-import { Network, OnChainState } from '@prisma/client';
+import { Network, OnChainState } from '@/generated/prisma/client';
 import {
   getSmartContractInteractionTxHistoryList,
   TransactionMetadata,

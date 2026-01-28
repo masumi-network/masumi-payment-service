@@ -1,4 +1,7 @@
-import { TransactionStatus, RegistrationState } from '@prisma/client';
+import {
+  TransactionStatus,
+  RegistrationState,
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -79,6 +82,7 @@ export async function deRegisterAgentV1() {
     //Submit a result for invalid tokens
     const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
       state: RegistrationState.DeregistrationRequested,
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(
@@ -125,7 +129,13 @@ export async function deRegisterAgentV1() {
             const { script, policyId } =
               await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
-            const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier!);
+            if (!request.agentIdentifier) {
+              throw new Error(
+                'Agent identifier is required for deregistration',
+              );
+            }
+
+            const tokenUtxo = findTokenUtxo(utxos, request.agentIdentifier);
 
             const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
             const collateralUtxo = limitedFilteredUtxos[0];
@@ -133,7 +143,7 @@ export async function deRegisterAgentV1() {
               throw new Error('Collateral UTXO not found');
             }
 
-            const assetName = extractAssetName(request.agentIdentifier!);
+            const assetName = extractAssetName(request.agentIdentifier);
 
             const unsignedTx =
               await generateDeregisterAgentTransactionAutomaticFees(

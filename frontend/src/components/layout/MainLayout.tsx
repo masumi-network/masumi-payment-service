@@ -18,6 +18,7 @@ import {
   Bell,
   Search,
   NotebookPen,
+  Code,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -202,6 +203,12 @@ export function MainLayout({ children }: MainLayoutProps) {
           badge: null,
         },
         {
+          href: '/openapi',
+          name: 'OpenAPI',
+          icon: <Code className="h-4 w-4" />,
+          badge: null,
+        },
+        {
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
@@ -291,7 +298,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
                   'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
@@ -304,7 +311,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 variant="ghost"
                 size="sm2"
                 className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.05] transition-all duration-300 truncate',
+                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
                   'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
@@ -455,7 +462,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       <div
-        className="flex flex-col min-h-screen w-[100vw] transition-all duration-300"
+        className="flex flex-col min-h-screen w-screen transition-all duration-300"
         style={{
           paddingLeft:
             collapsed && !isHovered

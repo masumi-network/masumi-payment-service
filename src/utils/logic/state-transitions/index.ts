@@ -1,6 +1,6 @@
-import { OnChainState, PaymentErrorType } from '@prisma/client';
-import { PaymentAction } from '@prisma/client';
-import { PurchasingAction, PurchaseErrorType } from '@prisma/client';
+import { OnChainState, PaymentErrorType } from '@/generated/prisma/client';
+import { PaymentAction } from '@/generated/prisma/client';
+import { PurchasingAction, PurchaseErrorType } from '@/generated/prisma/client';
 
 //TODO: Check error notes and possibly new error types
 const ERROR_MESSAGES = {

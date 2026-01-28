@@ -1,8 +1,13 @@
-import { HotWallet, OnChainState, PaymentAction } from '@prisma/client';
+import {
+  HotWalletType,
+  OnChainState,
+  PaymentAction,
+} from '@/generated/prisma/client';
 import { prisma } from '..';
 
 export async function lockAndQueryPayments({
   paymentStatus,
+  maxBatchSize,
   submitResultTime = undefined,
   onChainState = undefined,
   resultHash = undefined,
@@ -15,10 +20,10 @@ export async function lockAndQueryPayments({
   resultHash?: string | { not: string | null } | undefined;
   requestedResultHash?: string | { not: null } | undefined;
   unlockTime?: { lte: number } | undefined | { gte: number };
+  maxBatchSize: number;
 }) {
   return await prisma.$transaction(
     async (prisma) => {
-      const minCooldownTime = Date.now() - 1000 * 60 * 3;
       const paymentSources = await prisma.paymentSource.findMany({
         where: {
           syncInProgress: false,
@@ -26,39 +31,12 @@ export async function lockAndQueryPayments({
           disablePaymentAt: null,
         },
         include: {
-          PaymentRequests: {
+          HotWallets: {
             where: {
-              NextAction: {
-                requestedAction: paymentStatus,
-                errorType: null,
-                resultHash: requestedResultHash,
-              },
-              submitResultTime: submitResultTime,
-              unlockTime: unlockTime,
-              SmartContractWallet: {
-                PendingTransaction: { is: null },
-                lockedAt: null,
-                deletedAt: null,
-              },
-              onChainState: onChainState,
-              //we only want to lock the payment if the cooldown time has passed
-              sellerCoolDownTime: { lte: minCooldownTime },
-              resultHash: resultHash,
-            },
-            include: {
-              NextAction: true,
-              CurrentTransaction: true,
-              RequestedFunds: true,
-              BuyerWallet: true,
-              SmartContractWallet: {
-                include: {
-                  Secret: true,
-                },
-                where: { deletedAt: null },
-              },
-            },
-            orderBy: {
-              createdAt: 'asc',
+              PendingTransaction: { is: null },
+              lockedAt: null,
+              deletedAt: null,
+              type: HotWalletType.Selling,
             },
           },
           AdminWallets: true,
@@ -69,34 +47,66 @@ export async function lockAndQueryPayments({
           createdAt: 'asc',
         },
       });
-      const sellingWallets: HotWallet[] = [];
 
       const newPaymentSources = [];
       for (const paymentSource of paymentSources) {
         const paymentRequests = [];
         const minCooldownTime = paymentSource.cooldownTime;
-        for (const paymentRequest of paymentSource.PaymentRequests) {
-          if (
-            paymentRequest.sellerCoolDownTime >
-            Date.now() - minCooldownTime
-          ) {
-            continue;
-          }
-
-          const wallet = paymentRequest.SmartContractWallet;
-          if (
-            wallet != null &&
-            !sellingWallets.some((w) => w.id === wallet.id)
-          ) {
-            const result = await prisma.hotWallet.update({
-              where: { id: wallet.id, deletedAt: null },
+        for (const hotWallet of paymentSource.HotWallets) {
+          const potentialPaymentRequests = await prisma.paymentRequest.findMany(
+            {
+              where: {
+                NextAction: {
+                  requestedAction: paymentStatus,
+                  errorType: null,
+                  resultHash: requestedResultHash,
+                },
+                submitResultTime: submitResultTime,
+                unlockTime: unlockTime,
+                SmartContractWallet: {
+                  id: hotWallet.id,
+                  PendingTransaction: { is: null },
+                  lockedAt: null,
+                  deletedAt: null,
+                },
+                onChainState: onChainState,
+                //we only want to lock the payment if the cooldown time has passed
+                sellerCoolDownTime: { lt: Date.now() - minCooldownTime },
+                resultHash: resultHash,
+              },
+              include: {
+                NextAction: true,
+                CurrentTransaction: true,
+                RequestedFunds: true,
+                BuyerWallet: true,
+                SmartContractWallet: {
+                  include: {
+                    Secret: true,
+                  },
+                  where: { deletedAt: null },
+                },
+              },
+              orderBy: {
+                createdAt: 'asc',
+              },
+              take: maxBatchSize,
+            },
+          );
+          if (potentialPaymentRequests.length > 0) {
+            const hotWalletResult = await prisma.hotWallet.update({
+              where: { id: hotWallet.id, deletedAt: null },
               data: { lockedAt: new Date() },
             });
-            wallet.pendingTransactionId = result.pendingTransactionId;
-            sellingWallets.push(wallet);
-            paymentRequests.push(paymentRequest);
+            potentialPaymentRequests.forEach((paymentRequest) => {
+              paymentRequest.SmartContractWallet!.pendingTransactionId =
+                hotWalletResult.pendingTransactionId;
+              paymentRequest.SmartContractWallet!.lockedAt =
+                hotWalletResult.lockedAt;
+            });
+            paymentRequests.push(...potentialPaymentRequests);
           }
         }
+
         if (paymentRequests.length > 0) {
           newPaymentSources.push({
             ...paymentSource,

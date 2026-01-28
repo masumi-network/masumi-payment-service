@@ -3,7 +3,7 @@ import {
   PaymentAction,
   PaymentErrorType,
   TransactionStatus,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -82,6 +82,7 @@ export async function authorizeRefundV1() {
       paymentStatus: PaymentAction.AuthorizeRefundRequested,
       resultHash: { not: null },
       onChainState: { in: [OnChainState.Disputed] },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

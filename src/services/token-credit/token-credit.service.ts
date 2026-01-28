@@ -1,7 +1,7 @@
 import { creditTokenRepository } from '@/repositories/creditTokens';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
 import { logger } from '@/utils/logger';
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 export async function handlePurchaseCreditInit({
   id,

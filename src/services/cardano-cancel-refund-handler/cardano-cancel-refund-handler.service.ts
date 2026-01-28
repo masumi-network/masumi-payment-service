@@ -3,7 +3,7 @@ import {
   PurchaseErrorType,
   PurchasingAction,
   TransactionStatus,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -132,6 +132,7 @@ export async function cancelRefundsV1() {
       onChainState: {
         in: [OnChainState.Disputed, OnChainState.RefundRequested],
       },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

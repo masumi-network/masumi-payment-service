@@ -3,7 +3,7 @@ import {
   TransactionStatus,
   PurchaseErrorType,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -268,6 +268,7 @@ export async function requestRefundsV1() {
     const paymentContractsWithWalletLocked = await lockAndQueryPurchases({
       purchasingAction: PurchasingAction.SetRefundRequestedRequested,
       unlockTime: { gte: Date.now() - 1000 * 60 * 1 },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

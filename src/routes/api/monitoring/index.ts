@@ -1,7 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { blockchainStateMonitorService } from '@/services/monitoring/blockchain-state-monitor.service';
-import { checkRegistryData } from '@/utils/monitoring/diagnostic';
+import createHttpError from 'http-errors';
 
 export const monitoringStatusResponseSchema = z
   .object({
@@ -19,9 +19,28 @@ export const monitoringStatusResponseSchema = z
               .describe(
                 'Number of entities being tracked by the monitoring service',
               ),
-            lastCheckTime: z
-              .string()
-              .describe('ISO timestamp of the last monitoring check'),
+            purchaseCursor: z
+              .object({
+                timestamp: z
+                  .string()
+                  .describe('Last processed purchase timestamp'),
+                lastId: z
+                  .string()
+                  .nullable()
+                  .describe('Last processed purchase ID'),
+              })
+              .describe('Cursor position for purchase diff tracking'),
+            paymentCursor: z
+              .object({
+                timestamp: z
+                  .string()
+                  .describe('Last processed payment timestamp'),
+                lastId: z
+                  .string()
+                  .nullable()
+                  .describe('Last processed payment ID'),
+              })
+              .describe('Cursor position for payment diff tracking'),
             memoryUsage: z
               .object({
                 heapUsed: z
@@ -52,24 +71,39 @@ export const getMonitoringStatus = adminAuthenticatedEndpointFactory.build({
   input: z.object({}),
   output: monitoringStatusResponseSchema,
   handler: async () => {
-    const status = blockchainStateMonitorService.getStatus();
+    try {
+      const status = blockchainStateMonitorService.getStatus();
 
-    return {
-      monitoringStatus: {
-        isMonitoring: status.isMonitoring,
-        stats: status.stats
-          ? {
-              trackedEntities: status.stats.trackedEntities,
-              lastCheckTime: status.stats.lastCheckTime.toISOString(),
-              memoryUsage: {
-                heapUsed: `${Math.round(status.stats.memoryUsage.heapUsed / 1024 / 1024)}MB`,
-                heapTotal: `${Math.round(status.stats.memoryUsage.heapTotal / 1024 / 1024)}MB`,
-                external: `${Math.round(status.stats.memoryUsage.external / 1024 / 1024)}MB`,
-              },
-            }
-          : null,
-      },
-    };
+      return {
+        monitoringStatus: {
+          isMonitoring: status.isMonitoring,
+          stats: status.stats
+            ? {
+                trackedEntities: status.stats.trackedEntities,
+                purchaseCursor: {
+                  timestamp:
+                    status.stats.purchaseCursor.timestamp.toISOString(),
+                  lastId: status.stats.purchaseCursor.lastId ?? null,
+                },
+                paymentCursor: {
+                  timestamp: status.stats.paymentCursor.timestamp.toISOString(),
+                  lastId: status.stats.paymentCursor.lastId ?? null,
+                },
+                memoryUsage: {
+                  heapUsed: `${Math.round(status.stats.memoryUsage.heapUsed / 1024 / 1024)}MB`,
+                  heapTotal: `${Math.round(status.stats.memoryUsage.heapTotal / 1024 / 1024)}MB`,
+                  external: `${Math.round(status.stats.memoryUsage.external / 1024 / 1024)}MB`,
+                },
+              }
+            : null,
+        },
+      };
+    } catch (error) {
+      throw createHttpError(
+        500,
+        `Failed to get monitoring status: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   },
 });
 
@@ -96,10 +130,10 @@ export const triggerMonitoringCycle = adminAuthenticatedEndpointFactory.build({
         triggered: true,
       };
     } catch (error) {
-      return {
-        message: `Failed to trigger monitoring cycle: ${error instanceof Error ? error.message : String(error)}`,
-        triggered: false,
-      };
+      throw createHttpError(
+        500,
+        `Failed to trigger monitoring cycle: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 });
@@ -130,16 +164,23 @@ export const startMonitoring = adminAuthenticatedEndpointFactory.build({
   output: startMonitoringResponseSchema,
   handler: async ({ input }) => {
     try {
+      const status = blockchainStateMonitorService.getStatus();
+      if (status.isMonitoring) {
+        throw createHttpError(409, 'Monitoring service is already running');
+      }
       await blockchainStateMonitorService.startMonitoring(input.intervalMs);
       return {
         message: `Monitoring service started with ${input.intervalMs}ms interval`,
         started: true,
       };
     } catch (error) {
-      return {
-        message: `Failed to start monitoring: ${error instanceof Error ? error.message : String(error)}`,
-        started: false,
-      };
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      // Check if monitoring is already running
+      if (errorMessage.includes('already running')) {
+        throw createHttpError(409, errorMessage);
+      }
+      throw createHttpError(500, `Failed to start monitoring: ${errorMessage}`);
     }
   },
 });
@@ -161,16 +202,27 @@ export const stopMonitoring = adminAuthenticatedEndpointFactory.build({
   output: stopMonitoringResponseSchema,
   handler: async () => {
     try {
+      const status = blockchainStateMonitorService.getStatus();
+      if (!status.isMonitoring) {
+        throw createHttpError(
+          400,
+          'Monitoring service is not currently running',
+        );
+      }
       blockchainStateMonitorService.stopMonitoring();
       return {
         message: 'Monitoring service stopped successfully',
         stopped: true,
       };
     } catch (error) {
-      return {
-        message: `Failed to stop monitoring: ${error instanceof Error ? error.message : String(error)}`,
-        stopped: false,
-      };
+      // Re-throw HTTP errors as-is
+      if (error && typeof error === 'object' && 'statusCode' in error) {
+        throw error;
+      }
+      throw createHttpError(
+        500,
+        `Failed to stop monitoring: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   },
 });
@@ -183,21 +235,3 @@ export const getDiagnosticsResponseSchema = z
       .describe('List of all possible registry request states'),
   })
   .openapi('DiagnosticsData');
-
-export const getDiagnostics = adminAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: z.object({}),
-  output: getDiagnosticsResponseSchema,
-  handler: async () => {
-    const diagnostic = await checkRegistryData();
-
-    if (!diagnostic) {
-      throw new Error('Failed to run diagnostics');
-    }
-
-    return {
-      recentCount: diagnostic.recentCount,
-      allStates: diagnostic.allStates,
-    };
-  },
-});

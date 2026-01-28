@@ -4,7 +4,7 @@ import {
   PaymentErrorType,
   TransactionStatus,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   Asset,
@@ -336,6 +336,7 @@ export async function collectOutstandingPaymentsV1() {
       resultHash: { not: null },
       unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
       onChainState: { in: [OnChainState.ResultSubmitted] },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

@@ -7,7 +7,7 @@ import {
   PricingType,
   RegistrationState,
   TransactionStatus,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
@@ -17,6 +17,10 @@ import {
 } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import {
+  getBlockfrostInstance,
+  validateAssetsOnChain,
+} from '@/utils/blockfrost';
 
 export const queryRegistryRequestSchemaInput = z.object({
   cursorId: z
@@ -457,6 +461,15 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
             network: input.network,
           },
         },
+        include: {
+          PaymentSource: {
+            include: {
+              PaymentSourceConfig: {
+                select: { rpcProviderApiKey: true },
+              },
+            },
+          },
+        },
       });
       if (sellingWallet == null) {
         recordBusinessEndpointError(
@@ -496,6 +509,44 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
           },
         );
         throw createHttpError(404, 'Selling wallet not found');
+      }
+
+      // Validate pricing assets exist on-chain
+      if (input.AgentPricing.pricingType === PricingType.Fixed) {
+        const blockfrost = getBlockfrostInstance(
+          input.network,
+          sellingWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+        );
+
+        const assetUnits = input.AgentPricing.Pricing.map(
+          (pricing) => pricing.unit,
+        );
+        const { valid: _validAssets, invalid: invalidAssets } =
+          await validateAssetsOnChain(blockfrost, assetUnits);
+
+        if (invalidAssets.length > 0) {
+          const invalidAssetsMessage = invalidAssets
+            .map((item) => `${item.asset} (${item.errorMessage})`)
+            .join(', ');
+          recordBusinessEndpointError(
+            '/api/v1/registry',
+            'POST',
+            400,
+            `Invalid assets in pricing: ${invalidAssetsMessage}`,
+            {
+              network: input.network,
+              operation: 'register_agent',
+              step: 'asset_validation',
+              invalid_assets: invalidAssets
+                .map((item) => `${item.asset}: ${item.errorMessage}`)
+                .join('; '),
+            },
+          );
+          throw createHttpError(
+            400,
+            `Invalid assets in pricing: ${invalidAssetsMessage}`,
+          );
+        }
       }
 
       const result = await prisma.registryRequest.create({

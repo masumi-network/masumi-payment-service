@@ -4,7 +4,7 @@ import {
   PaymentErrorType,
   Network,
   Prisma,
-} from '@prisma/client';
+} from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import {
   BlockfrostProvider,
@@ -402,6 +402,7 @@ export async function submitResultV1() {
         gte: Date.now() + 1000 * 60 * 1,
       },
       requestedResultHash: { not: null },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(
