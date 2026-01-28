@@ -19,6 +19,8 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude/
 
+/certs/
+
 frontend/.env
 smart-contracts/registry/wallet1.addr
 smart-contracts/registry/wallet1.sk
