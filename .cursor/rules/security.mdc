@@ -1,6 +1,6 @@
 ---
 description: Security-critical patterns for authentication, encryption, and secret handling
-globs: ["**/*.ts"]
+globs: ["**/*.ts", "**/*.tsx"]
 alwaysApply: true
 ---
 
