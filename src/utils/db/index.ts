@@ -11,7 +11,13 @@ const CERT_PATH = path.resolve('certs/ca-certificate.crt');
 // Write CA certificate from DATABASE_CA_CERT env var to disk so sslrootcert can reference it
 const writeCaCertificate = () => {
 	const cert = process.env.DATABASE_CA_CERT;
-	if (!cert) return;
+	if (!cert) {
+		// Remove stale certificate file if env var is not set
+		if (fs.existsSync(CERT_PATH)) {
+			fs.unlinkSync(CERT_PATH);
+		}
+		return;
+	}
 	const pemContent = cert.replace(/\\n/g, '\n');
 	fs.mkdirSync(path.dirname(CERT_PATH), { recursive: true });
 	fs.writeFileSync(CERT_PATH, pemContent);
