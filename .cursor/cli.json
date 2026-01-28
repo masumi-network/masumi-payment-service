@@ -22,6 +22,8 @@
     "deny": [
       "Shell(rm -rf:*)",
       "Shell(rm -r:*)",
+      "Shell(cat:*.env*)",
+      "Shell(cat:.env*)",
       "Read(.env*)",
       "Write(.env*)",
       "Write(**/*.key)",
