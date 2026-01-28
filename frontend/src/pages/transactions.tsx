@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -55,9 +55,7 @@ export default function Transactions() {
   };
 
   const [activeTab, setActiveTab] = useState('All');
-  const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
-    [],
-  );
+
 
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]
@@ -199,21 +197,7 @@ export default function Transactions() {
     }
   }, [hasMore, isLoadingMore, loadMore]);
 
-  const handleSelectTransaction = (id: string) => {
-    setSelectedTransactions((prev) =>
-      prev.includes(id)
-        ? prev.filter((transactionId) => transactionId !== id)
-        : [...prev, id],
-    );
-  };
 
-  const handleSelectAll = () => {
-    if (filteredTransactions.length === selectedTransactions.length) {
-      setSelectedTransactions([]);
-    } else {
-      setSelectedTransactions(filteredTransactions.map((t) => t.id));
-    }
-  };
 
   const getStatusColor = (status: string | null, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
@@ -400,16 +384,7 @@ export default function Transactions() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium">
-                    <Checkbox
-                      checked={
-                        filteredTransactions.length > 0 &&
-                        selectedTransactions.length ===
-                        filteredTransactions.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
+
                   <th className="p-4 text-left text-sm font-medium">Type</th>
                   <th className="p-4 text-left text-sm font-medium">
                     Transaction Hash
@@ -429,13 +404,13 @@ export default function Transactions() {
                   <TransactionTableSkeleton rows={5} />
                 ) : isInitialLoading ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       No transactions found
                     </td>
                   </tr>
@@ -452,16 +427,8 @@ export default function Transactions() {
                       )}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedTransactions.includes(
-                            transaction.id,
-                          )}
-                          onCheckedChange={() =>
-                            handleSelectTransaction(transaction.id)
-                          }
-                        />
-                      </td>
+
+
                       <td className="p-4">
                         <span className="capitalize">{transaction.type}</span>
                       </td>

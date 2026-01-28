@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -66,7 +66,7 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
 
   // Use React Query for initial load (cached)
@@ -146,14 +146,14 @@ export default function AIAgentsPage() {
         const matchState = agent.state?.toLowerCase().includes(query) || false;
         const matchPrice =
           agent.AgentPricing &&
-          agent.AgentPricing.pricingType == 'Fixed' &&
-          agent.AgentPricing.Pricing?.[0]?.amount
+            agent.AgentPricing.pricingType == 'Fixed' &&
+            agent.AgentPricing.Pricing?.[0]?.amount
             ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
-                .toFixed(2)
-                .includes(query)
+              .toFixed(2)
+              .includes(query)
             : agent.AgentPricing &&
-              agent.AgentPricing.pricingType == 'Free' &&
-              'free'.includes(query);
+            agent.AgentPricing.pricingType == 'Free' &&
+            'free'.includes(query);
 
         return (
           matchName ||
@@ -184,26 +184,7 @@ export default function AIAgentsPage() {
     }
   }, [router.query.action, router]);
 
-  const handleSelectAgent = (id: string) => {
-    setSelectedAgents((prev) =>
-      prev.includes(id)
-        ? prev.filter((agentId) => agentId !== id)
-        : [...prev, id],
-    );
-  };
 
-  const handleSelectAll = () => {
-    if (agents.length === 0) {
-      setSelectedAgents([]);
-      return;
-    }
-
-    if (selectedAgents.length === agents.length) {
-      setSelectedAgents([]);
-    } else {
-      setSelectedAgents(agents.map((agent) => agent.id));
-    }
-  };
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -407,15 +388,7 @@ export default function AIAgentsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        agents.length > 0 &&
-                        selectedAgents.length === agents.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
+
                   <th className="p-4 text-left text-sm font-medium">Name</th>
                   <th className="p-4 text-left text-sm font-medium">Added</th>
                   <th className="p-4 text-left text-sm font-medium">
@@ -454,12 +427,7 @@ export default function AIAgentsPage() {
                       }}
                       onClick={() => handleAgentClick(agent)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedAgents.includes(agent.id)}
-                          onCheckedChange={() => handleSelectAgent(agent.id)}
-                        />
-                      </td>
+
                       <td className="p-4 max-w-[200px] truncate">
                         <div className="text-sm font-medium">{agent.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
@@ -533,7 +501,7 @@ export default function AIAgentsPage() {
                           variant={getStatusBadgeVariant(agent.state)}
                           className={cn(
                             agent.state === 'RegistrationConfirmed' &&
-                              'bg-green-50 text-green-700 hover:bg-green-50/80',
+                            'bg-green-50 text-green-700 hover:bg-green-50/80',
                           )}
                         >
                           {parseAgentStatus(agent.state)}
@@ -631,13 +599,13 @@ export default function AIAgentsPage() {
           }}
           title={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Delete ${selectedAgentToDelete?.name}`
               : `Deregister ${selectedAgentToDelete?.name}`
           }
           description={
             selectedAgentToDelete?.state === 'RegistrationFailed' ||
-            selectedAgentToDelete?.state === 'DeregistrationConfirmed'
+              selectedAgentToDelete?.state === 'DeregistrationConfirmed'
               ? `Are you sure you want to delete "${selectedAgentToDelete?.name}"? This action cannot be undone.`
               : `Are you sure you want to deregister "${selectedAgentToDelete?.name}"? This action cannot be undone.`
           }
