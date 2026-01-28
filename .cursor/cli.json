@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(ls:*)",
+      "Shell(cat:*)",
+      "Shell(git:*)",
+      "Shell(pnpm:*)",
+      "Shell(npx prisma:*)",
+      "Shell(npx tsx:*)",
+      "Read(**/*.ts)",
+      "Read(**/*.tsx)",
+      "Read(**/*.md)",
+      "Read(**/*.ak)",
+      "Read(**/*.json)",
+      "Read(**/*.mdc)",
+      "Read(prisma/schema.prisma)",
+      "Write(src/**/*.ts)",
+      "Write(frontend/src/**/*.tsx)",
+      "Write(prisma/schema.prisma)",
+      "Write(package.json)"
+    ],
+    "deny": [
+      "Shell(rm -rf:*)",
+      "Shell(rm -r:*)",
+      "Shell(cat:*.env*)",
+      "Shell(cat:.env*)",
+      "Shell(cat:**/*.key)",
+      "Shell(cat:**/*.mnemonic)",
+      "Shell(cat:**/*.sk)",
+      "Read(.env*)",
+      "Write(.env*)",
+      "Write(**/*.key)",
+      "Write(**/*.mnemonic)",
+      "Write(src/generated/**)",
+      "Write(frontend/src/lib/api/generated/**)"
+    ]
+  }
+}

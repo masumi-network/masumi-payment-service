@@ -37,9 +37,7 @@ export default function JobInputRenderer({
   const defaultValue = getDefaultValue(jobInputSchema);
   const currentValue = value !== undefined ? value : defaultValue;
 
-  const handleChange = (
-    newValue: string | number | boolean | number[] | null,
-  ) => {
+  const handleChange = (newValue: string | number | boolean | number[] | null) => {
     if (onChange) {
       onChange(newValue);
     }
@@ -77,11 +75,7 @@ export default function JobInputRenderer({
             placeholder={data?.placeholder}
             type="number"
             value={currentValue !== null ? currentValue.toString() : ''}
-            onChange={(e) =>
-              handleChange(
-                e.target.value === '' ? null : Number(e.target.value),
-              )
-            }
+            onChange={(e) => handleChange(e.target.value === '' ? null : Number(e.target.value))}
             disabled={disabled}
           />
         );
@@ -111,9 +105,7 @@ export default function JobInputRenderer({
           return (
             <Select
               value={selectedValue}
-              onValueChange={(value) =>
-                handleChange([data.values.indexOf(value)])
-              }
+              onValueChange={(value) => handleChange([data.values.indexOf(value)])}
               disabled={disabled}
             >
               <SelectTrigger className="w-full">
@@ -189,9 +181,7 @@ export default function JobInputRenderer({
 
       default:
         return (
-          <div className="text-sm text-muted-foreground italic">
-            Unknown input type: {type}
-          </div>
+          <div className="text-sm text-muted-foreground italic">Unknown input type: {type}</div>
         );
     }
   };
@@ -202,9 +192,7 @@ export default function JobInputRenderer({
         {name} {!isFieldOptional && '*'}
       </Label>
       {renderField()}
-      {data?.description && (
-        <p className="text-xs text-muted-foreground">{data.description}</p>
-      )}
+      {data?.description && <p className="text-xs text-muted-foreground">{data.description}</p>}
     </div>
   );
 }

@@ -1,10 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { shortenAddress, getExplorerUrl } from '@/lib/utils';
@@ -19,11 +13,7 @@ interface PaymentSourceDialogProps {
   paymentSource: any;
 }
 
-export function PaymentSourceDialog({
-  open,
-  onClose,
-  paymentSource,
-}: PaymentSourceDialogProps) {
+export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSourceDialogProps) {
   const { network } = useAppContext();
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
@@ -56,26 +46,16 @@ export function PaymentSourceDialog({
             <h3 className="text-lg font-semibold">Basic Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Network
-                </label>
+                <label className="text-sm font-medium text-muted-foreground">Network</label>
                 <div className="text-sm">{paymentSource.network}</div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Fee Rate
-                </label>
-                <div className="text-sm">
-                  {(paymentSource.feeRatePermille / 10).toFixed(1)}%
-                </div>
+                <label className="text-sm font-medium text-muted-foreground">Fee Rate</label>
+                <div className="text-sm">{(paymentSource.feeRatePermille / 10).toFixed(1)}%</div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  Created At
-                </label>
-                <div className="text-sm">
-                  {new Date(paymentSource.createdAt).toLocaleString()}
-                </div>
+                <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                <div className="text-sm">{new Date(paymentSource.createdAt).toLocaleString()}</div>
               </div>
             </div>
           </div>
@@ -87,10 +67,7 @@ export function PaymentSourceDialog({
             </label>
             <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
               <a
-                href={getExplorerUrl(
-                  paymentSource.smartContractAddress,
-                  network,
-                )}
+                href={getExplorerUrl(paymentSource.smartContractAddress, network)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-mono flex-1 hover:underline text-primary"
@@ -118,44 +95,34 @@ export function PaymentSourceDialog({
             </button>
             {expandedSections.admin && (
               <div className="space-y-3 pl-4">
-                {paymentSource.AdminWallets?.map(
-                  (wallet: any, index: number) => (
-                    <div
-                      key={index}
-                      className="p-3 border rounded-md space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          Admin Wallet {index + 1}
-                        </span>
-                        {wallet.note && (
-                          <Badge variant="secondary" className="text-xs">
-                            {wallet.note}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono flex-1">
-                          Address:{' '}
-                          <a
-                            href={getExplorerUrl(wallet.walletAddress, network)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline text-primary"
-                          >
-                            {shortenAddress(wallet.walletAddress, 10)}
-                          </a>
-                        </span>
-                        <CopyButton value={wallet.walletAddress} />
-                      </div>
+                {paymentSource.AdminWallets?.map((wallet: any, index: number) => (
+                  <div key={index} className="p-3 border rounded-md space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Admin Wallet {index + 1}</span>
+                      {wallet.note && (
+                        <Badge variant="secondary" className="text-xs">
+                          {wallet.note}
+                        </Badge>
+                      )}
                     </div>
-                  ),
-                )}
-                {(!paymentSource.AdminWallets ||
-                  paymentSource.AdminWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No admin wallets found
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono flex-1">
+                        Address:{' '}
+                        <a
+                          href={getExplorerUrl(wallet.walletAddress, network)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline text-primary"
+                        >
+                          {shortenAddress(wallet.walletAddress, 10)}
+                        </a>
+                      </span>
+                      <CopyButton value={wallet.walletAddress} />
+                    </div>
                   </div>
+                ))}
+                {(!paymentSource.AdminWallets || paymentSource.AdminWallets.length === 0) && (
+                  <div className="text-sm text-muted-foreground">No admin wallets found</div>
                 )}
               </div>
             )}
@@ -168,8 +135,7 @@ export function PaymentSourceDialog({
               className="flex items-center justify-between w-full p-3 bg-muted rounded-md hover:bg-muted/80 transition-colors"
             >
               <h4 className="font-medium">
-                Purchasing Wallets (
-                {paymentSource.PurchasingWallets?.length || 0})
+                Purchasing Wallets ({paymentSource.PurchasingWallets?.length || 0})
               </h4>
               {expandedSections.purchasing ? (
                 <ChevronDown className="h-4 w-4" />
@@ -179,74 +145,56 @@ export function PaymentSourceDialog({
             </button>
             {expandedSections.purchasing && (
               <div className="space-y-3 pl-4">
-                {paymentSource.PurchasingWallets?.map(
-                  (wallet: any, index: number) => (
-                    <div
-                      key={index}
-                      className="p-3 border rounded-md space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          Purchasing Wallet {index + 1}
-                        </span>
-                        {wallet.note && (
-                          <Badge variant="secondary" className="text-xs">
-                            {wallet.note}
-                          </Badge>
-                        )}
+                {paymentSource.PurchasingWallets?.map((wallet: any, index: number) => (
+                  <div key={index} className="p-3 border rounded-md space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Purchasing Wallet {index + 1}</span>
+                      {wallet.note && (
+                        <Badge variant="secondary" className="text-xs">
+                          {wallet.note}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Address:</span>
+                        <a
+                          href={getExplorerUrl(wallet.walletAddress, network)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono flex-1 hover:underline text-primary"
+                        >
+                          {shortenAddress(wallet.walletAddress, 10)}
+                        </a>
+                        <CopyButton value={wallet.walletAddress} />
                       </div>
-                      <div className="space-y-1">
+                      {wallet.collectionAddress && (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            Address:
-                          </span>
+                          <span className="text-xs text-muted-foreground">Collection:</span>
                           <a
-                            href={getExplorerUrl(wallet.walletAddress, network)}
+                            href={getExplorerUrl(wallet.collectionAddress, network)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-mono flex-1 hover:underline text-primary"
                           >
-                            {shortenAddress(wallet.walletAddress, 10)}
+                            {shortenAddress(wallet.collectionAddress, 10)}
                           </a>
-                          <CopyButton value={wallet.walletAddress} />
+                          <CopyButton value={wallet.collectionAddress} />
                         </div>
-                        {wallet.collectionAddress && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              Collection:
-                            </span>
-                            <a
-                              href={getExplorerUrl(
-                                wallet.collectionAddress,
-                                network,
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-mono flex-1 hover:underline text-primary"
-                            >
-                              {shortenAddress(wallet.collectionAddress, 10)}
-                            </a>
-                            <CopyButton value={wallet.collectionAddress} />
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            Verification Key:
-                          </span>
-                          <span className="text-sm font-mono flex-1">
-                            {shortenAddress(wallet.walletVkey, 10)}
-                          </span>
-                          <CopyButton value={wallet.walletVkey} />
-                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Verification Key:</span>
+                        <span className="text-sm font-mono flex-1">
+                          {shortenAddress(wallet.walletVkey, 10)}
+                        </span>
+                        <CopyButton value={wallet.walletVkey} />
                       </div>
                     </div>
-                  ),
-                )}
+                  </div>
+                ))}
                 {(!paymentSource.PurchasingWallets ||
                   paymentSource.PurchasingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No purchasing wallets found
-                  </div>
+                  <div className="text-sm text-muted-foreground">No purchasing wallets found</div>
                 )}
               </div>
             )}
@@ -269,74 +217,55 @@ export function PaymentSourceDialog({
             </button>
             {expandedSections.selling && (
               <div className="space-y-3 pl-4">
-                {paymentSource.SellingWallets?.map(
-                  (wallet: any, index: number) => (
-                    <div
-                      key={index}
-                      className="p-3 border rounded-md space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">
-                          Selling Wallet {index + 1}
-                        </span>
-                        {wallet.note && (
-                          <Badge variant="secondary" className="text-xs">
-                            {wallet.note}
-                          </Badge>
-                        )}
+                {paymentSource.SellingWallets?.map((wallet: any, index: number) => (
+                  <div key={index} className="p-3 border rounded-md space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Selling Wallet {index + 1}</span>
+                      {wallet.note && (
+                        <Badge variant="secondary" className="text-xs">
+                          {wallet.note}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Address:</span>
+                        <a
+                          href={getExplorerUrl(wallet.walletAddress, network)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono flex-1 hover:underline text-primary"
+                        >
+                          {shortenAddress(wallet.walletAddress, 10)}
+                        </a>
+                        <CopyButton value={wallet.walletAddress} />
                       </div>
-                      <div className="space-y-1">
+                      {wallet.collectionAddress && (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            Address:
-                          </span>
+                          <span className="text-xs text-muted-foreground">Collection:</span>
                           <a
-                            href={getExplorerUrl(wallet.walletAddress, network)}
+                            href={getExplorerUrl(wallet.collectionAddress, network)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-mono flex-1 hover:underline text-primary"
                           >
-                            {shortenAddress(wallet.walletAddress, 10)}
+                            {shortenAddress(wallet.collectionAddress, 10)}
                           </a>
-                          <CopyButton value={wallet.walletAddress} />
+                          <CopyButton value={wallet.collectionAddress} />
                         </div>
-                        {wallet.collectionAddress && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-muted-foreground">
-                              Collection:
-                            </span>
-                            <a
-                              href={getExplorerUrl(
-                                wallet.collectionAddress,
-                                network,
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-mono flex-1 hover:underline text-primary"
-                            >
-                              {shortenAddress(wallet.collectionAddress, 10)}
-                            </a>
-                            <CopyButton value={wallet.collectionAddress} />
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            Verification Key:
-                          </span>
-                          <span className="text-sm font-mono flex-1">
-                            {shortenAddress(wallet.walletVkey, 10)}
-                          </span>
-                          <CopyButton value={wallet.walletVkey} />
-                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Verification Key:</span>
+                        <span className="text-sm font-mono flex-1">
+                          {shortenAddress(wallet.walletVkey, 10)}
+                        </span>
+                        <CopyButton value={wallet.walletVkey} />
                       </div>
                     </div>
-                  ),
-                )}
-                {(!paymentSource.SellingWallets ||
-                  paymentSource.SellingWallets.length === 0) && (
-                  <div className="text-sm text-muted-foreground">
-                    No selling wallets found
                   </div>
+                ))}
+                {(!paymentSource.SellingWallets || paymentSource.SellingWallets.length === 0) && (
+                  <div className="text-sm text-muted-foreground">No selling wallets found</div>
                 )}
               </div>
             )}
@@ -369,22 +298,13 @@ export function PaymentSourceDialog({
                         rel="noopener noreferrer"
                         className="text-sm font-mono flex-1 hover:underline text-primary"
                       >
-                        {shortenAddress(
-                          paymentSource.FeeReceiverNetworkWallet.walletAddress,
-                          10,
-                        )}
+                        {shortenAddress(paymentSource.FeeReceiverNetworkWallet.walletAddress, 10)}
                       </a>
-                      <CopyButton
-                        value={
-                          paymentSource.FeeReceiverNetworkWallet.walletAddress
-                        }
-                      />
+                      <CopyButton value={paymentSource.FeeReceiverNetworkWallet.walletAddress} />
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm text-muted-foreground">
-                    No fee receiver wallet found
-                  </div>
+                  <div className="text-sm text-muted-foreground">No fee receiver wallet found</div>
                 )}
               </div>
             )}
@@ -395,12 +315,8 @@ export function PaymentSourceDialog({
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Configuration</h3>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">
-                  RPC Provider
-                </label>
-                <div className="text-sm">
-                  {paymentSource.PaymentSourceConfig.rpcProvider}
-                </div>
+                <label className="text-sm font-medium text-muted-foreground">RPC Provider</label>
+                <div className="text-sm">{paymentSource.PaymentSourceConfig.rpcProvider}</div>
               </div>
             </div>
           )}

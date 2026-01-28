@@ -1,10 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
@@ -67,9 +62,7 @@ export function ConfirmDialog({
         </DialogHeader>
 
         <div className="py-4 mb-20">
-          <p className="text-sm text-muted-foreground">
-            {description ?? '...'}
-          </p>
+          <p className="text-sm text-muted-foreground">{description ?? '...'}</p>
 
           {requireConfirmation && (
             <div className="mt-4 space-y-2">
@@ -87,9 +80,7 @@ export function ConfirmDialog({
                 disabled={isLoading}
               />
               {confirmationInput.trim() && !isConfirmationValid && (
-                <p className="text-xs text-destructive">
-                  The entered text does not match
-                </p>
+                <p className="text-xs text-destructive">The entered text does not match</p>
               )}
             </div>
           )}
@@ -109,9 +100,7 @@ export function ConfirmDialog({
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={
-              isLoading || (requireConfirmation && !isConfirmationValid)
-            }
+            disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
           >
             {isLoading ? <Spinner size={16} /> : 'Confirm'}
           </Button>

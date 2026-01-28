@@ -5,9 +5,6 @@ export function AIAgentTableSkeleton({ rows = 5 }: { rows?: number }) {
     <>
       {Array.from({ length: rows }).map((_, index) => (
         <tr key={index} className="border-b">
-          <td className="w-12 p-4">
-            <Skeleton className="h-4 w-4" />
-          </td>
           <td className="p-4">
             <Skeleton className="h-4 w-32" />
           </td>
