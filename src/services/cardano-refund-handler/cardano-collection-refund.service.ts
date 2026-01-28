@@ -254,6 +254,7 @@ export async function collectRefundV1() {
       submitResultTime: {
         lte: Date.now() - 1000 * 60 * 10, //add 10 minutes for block time
       },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

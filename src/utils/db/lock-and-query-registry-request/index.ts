@@ -1,14 +1,12 @@
-import {
-  HotWallet,
-  HotWalletType,
-  RegistrationState,
-} from '@/generated/prisma/client';
+import { HotWalletType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '../index.js';
 
 export async function lockAndQueryRegistryRequests({
   state,
+  maxBatchSize,
 }: {
   state: RegistrationState;
+  maxBatchSize: number;
 }) {
   return await prisma.$transaction(
     async (prisma) => {
@@ -19,30 +17,6 @@ export async function lockAndQueryRegistryRequests({
           disablePaymentAt: null,
         },
         include: {
-          RegistryRequest: {
-            where: {
-              state: state,
-              SmartContractWallet: {
-                deletedAt: null,
-                PendingTransaction: { is: null },
-                lockedAt: null,
-              },
-            },
-            include: {
-              SmartContractWallet: {
-                include: {
-                  Secret: true,
-                },
-              },
-              Pricing: {
-                include: { FixedPricing: { include: { Amounts: true } } },
-              },
-              ExampleOutputs: true,
-            },
-            orderBy: {
-              createdAt: 'asc',
-            },
-          },
           HotWallets: {
             include: {
               Secret: true,
@@ -59,25 +33,50 @@ export async function lockAndQueryRegistryRequests({
           PaymentSourceConfig: true,
         },
       });
-      const sellingWallets: HotWallet[] = [];
 
       const newPaymentSources = [];
       for (const paymentSource of paymentSources) {
         const registryRequests = [];
-        for (const registryRequest of paymentSource.RegistryRequest) {
-          const wallet = registryRequest.SmartContractWallet;
-          if (
-            wallet != null &&
-            wallet.lockedAt == null &&
-            !sellingWallets.some((w) => w.id === wallet.id)
-          ) {
-            const result = await prisma.hotWallet.update({
-              where: { id: wallet.id, deletedAt: null },
+        for (const hotWallet of paymentSource.HotWallets) {
+          const potentialRegistryRequests =
+            await prisma.registryRequest.findMany({
+              where: {
+                state: state,
+                SmartContractWallet: {
+                  id: hotWallet.id,
+                  deletedAt: null,
+                  PendingTransaction: { is: null },
+                  lockedAt: null,
+                },
+              },
+              include: {
+                SmartContractWallet: {
+                  include: {
+                    Secret: true,
+                  },
+                },
+                Pricing: {
+                  include: { FixedPricing: { include: { Amounts: true } } },
+                },
+                ExampleOutputs: true,
+              },
+              orderBy: {
+                createdAt: 'asc',
+              },
+              take: maxBatchSize,
+            });
+          if (potentialRegistryRequests.length > 0) {
+            const hotWalletResult = await prisma.hotWallet.update({
+              where: { id: hotWallet.id, deletedAt: null },
               data: { lockedAt: new Date() },
             });
-            wallet.pendingTransactionId = result.pendingTransactionId;
-            sellingWallets.push(wallet);
-            registryRequests.push(registryRequest);
+            potentialRegistryRequests.forEach((registryRequest) => {
+              registryRequest.SmartContractWallet.pendingTransactionId =
+                hotWalletResult.pendingTransactionId;
+              registryRequest.SmartContractWallet.lockedAt =
+                hotWalletResult.lockedAt;
+            });
+            registryRequests.push(...potentialRegistryRequests);
           }
         }
         if (registryRequests.length > 0) {

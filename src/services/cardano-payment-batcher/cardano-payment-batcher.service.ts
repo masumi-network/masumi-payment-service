@@ -267,6 +267,7 @@ export async function batchLatestPaymentEntriesV1() {
               orderBy: {
                 createdAt: 'asc',
               },
+              take: maxBatchSize,
             },
             PaymentSourceConfig: true,
             HotWallets: {

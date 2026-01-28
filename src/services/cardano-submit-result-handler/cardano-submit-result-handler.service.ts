@@ -402,6 +402,7 @@ export async function submitResultV1() {
         gte: Date.now() + 1000 * 60 * 1,
       },
       requestedResultHash: { not: null },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

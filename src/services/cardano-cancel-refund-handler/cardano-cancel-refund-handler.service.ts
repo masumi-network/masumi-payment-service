@@ -132,6 +132,7 @@ export async function cancelRefundsV1() {
       onChainState: {
         in: [OnChainState.Disputed, OnChainState.RefundRequested],
       },
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(

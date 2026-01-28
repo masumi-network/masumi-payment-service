@@ -82,6 +82,7 @@ export async function deRegisterAgentV1() {
     //Submit a result for invalid tokens
     const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
       state: RegistrationState.DeregistrationRequested,
+      maxBatchSize: 1,
     });
 
     await Promise.allSettled(
