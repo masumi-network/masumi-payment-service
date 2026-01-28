@@ -505,10 +505,11 @@ export function AddPaymentSourceDialog({
                 </div>
                 <input
                   type="number"
-                  className="w-full p-2 rounded-md bg-background border"
+                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
                   {...register('feePermille', { valueAsNumber: true })}
                   min="0"
                   max="1000"
+                  disabled
                 />
                 {errors.feePermille && (
                   <p className="text-xs text-destructive mt-1">
@@ -537,9 +538,10 @@ export function AddPaymentSourceDialog({
               </label>
               <input
                 type="text"
-                className="w-full p-2 rounded-md bg-background border"
+                className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
                 {...register('feeReceiverWallet.walletAddress')}
                 placeholder="Enter fee receiver wallet address"
+                disabled
               />
               {errors.feeReceiverWallet?.walletAddress && (
                 <p className="text-xs text-destructive mt-1">
@@ -563,7 +565,7 @@ export function AddPaymentSourceDialog({
                 </Tooltip>
               </div>
               <div className="flex items-center gap-2">
-                <label className="text-sm">Use Custom Admin Wallets</label>
+                <label className="text-sm">Use Custom Configuration</label>
                 <input type="checkbox" {...register('useCustomAdminWallets')} />
               </div>
             </div>
