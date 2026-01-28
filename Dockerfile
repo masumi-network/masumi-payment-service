@@ -12,6 +12,7 @@ COPY ./prisma ./prisma
 COPY ./public ./public
 COPY tsconfig.json .
 COPY eslint.config.mjs .
+COPY certs ./certs
 COPY frontend/package.json ./frontend/
 
 RUN pnpm install --frozen-lockfile
@@ -58,6 +59,7 @@ COPY --from=backend-builder /usr/src/app/prisma ./prisma
 COPY --from=backend-builder /usr/src/app/smart-contracts ./smart-contracts
 COPY --from=backend-builder /usr/src/app/src ./src
 COPY --from=backend-builder /usr/src/app/public ./public
+COPY --from=backend-builder /usr/src/app/certs ./certs
 COPY --from=backend-builder /usr/src/app/tsconfig.json ./tsconfig.json
 COPY --from=backend-builder /usr/src/app/eslint.config.mjs ./eslint.config.mjs
 

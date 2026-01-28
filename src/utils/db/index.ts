@@ -1,8 +1,24 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import fs from 'fs';
+import path from 'path';
 import { Pool } from 'pg';
 import { logger } from '../logger';
 import { recordPrismaDataTransfer } from '../metrics';
+
+// Load all CA certificates from the certs/ directory
+const loadCaCertificates = (): string[] => {
+	const certsDir = path.resolve(process.cwd(), 'certs');
+	if (!fs.existsSync(certsDir)) {
+		return [];
+	}
+	const certFiles = fs.readdirSync(certsDir).filter(
+		(f) => f.endsWith('.crt') || f.endsWith('.pem'),
+	);
+	return certFiles.map((f) => fs.readFileSync(path.join(certsDir, f), 'utf-8'));
+};
+
+const caCertificates = loadCaCertificates();
 
 // Add timeout parameters to DATABASE_URL if not already present
 const getDatabaseUrlWithTimeouts = () => {
@@ -44,6 +60,12 @@ const getPoolConfig = () => {
 		min: 1, // Minimum number of clients in the pool
 		idleTimeoutMillis: poolTimeout, // Close idle clients after this many milliseconds
 		connectionTimeoutMillis: connectTimeout, // Return an error after this many milliseconds if a connection cannot be established
+		...(caCertificates.length > 0 && {
+			ssl: {
+				rejectUnauthorized: true,
+				ca: caCertificates,
+			},
+		}),
 	};
 };
 
