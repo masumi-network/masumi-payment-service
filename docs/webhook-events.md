@@ -50,10 +50,10 @@ Always wrap in try-catch:
 
 ```typescript
 try {
-  await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
+	await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
 } catch (error) {
-  logger.error('Webhook trigger failed', { error, paymentId });
-  // Don't throw - webhook failures shouldn't break main flow
+	logger.error('Webhook trigger failed', { error, paymentId });
+	// Don't throw - webhook failures shouldn't break main flow
 }
 ```
 
@@ -157,30 +157,30 @@ import { webhookEventsService } from '../webhook-handler/webhook-events.service'
 import { logger } from '@/utils/logger';
 
 async function processPayment(paymentId: string) {
-  try {
-    // 1. Process payment
-    await updatePaymentStatus(paymentId, 'Completed');
+	try {
+		// 1. Process payment
+		await updatePaymentStatus(paymentId, 'Completed');
 
-    // 2. Trigger webhook (non-blocking)
-    try {
-      logger.info('Triggering payment webhook', { paymentId });
-      await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
-    } catch (webhookError) {
-      logger.error('Webhook trigger failed', { webhookError });
-      // Continue - don't let webhook failures break main flow
-    }
-  } catch (error) {
-    // On main error, trigger error webhook
-    logger.error('Payment processing failed', { error });
+		// 2. Trigger webhook (non-blocking)
+		try {
+			logger.info('Triggering payment webhook', { paymentId });
+			await webhookEventsService.triggerPaymentOnChainStatusChanged(paymentId);
+		} catch (webhookError) {
+			logger.error('Webhook trigger failed', { webhookError });
+			// Continue - don't let webhook failures break main flow
+		}
+	} catch (error) {
+		// On main error, trigger error webhook
+		logger.error('Payment processing failed', { error });
 
-    try {
-      await webhookEventsService.triggerPaymentOnError(paymentId);
-    } catch (webhookError) {
-      logger.error('Error webhook trigger failed', { webhookError });
-    }
+		try {
+			await webhookEventsService.triggerPaymentOnError(paymentId);
+		} catch (webhookError) {
+			logger.error('Error webhook trigger failed', { webhookError });
+		}
 
-    throw error;
-  }
+		throw error;
+	}
 }
 ```
 
@@ -203,10 +203,10 @@ All webhook payloads follow this base structure:
 
 ```typescript
 interface BaseWebhookPayload {
-  event_type: WebhookEventType;
-  timestamp: string;
-  webhook_id: string;
-  data: Record<string, unknown>;
+	event_type: WebhookEventType;
+	timestamp: string;
+	webhook_id: string;
+	data: Record<string, unknown>;
 }
 ```
 
@@ -218,46 +218,46 @@ Triggered when a purchase's on-chain status changes (e.g., funds locked, etc.).
 
 ```typescript
 interface PurchaseOnChainStatusChangedPayload {
-  event_type: 'PURCHASE_ON_CHAIN_STATUS_CHANGED';
-  timestamp: string;
-  webhook_id: string;
-  data: {
-    id: string;
-    blockchainIdentifier: string;
-    onChainState: string;
-    submitResultTime: string;
-    unlockTime: string;
-    externalDisputeUnlockTime: string;
-    cooldownTime: number;
-    cooldownTimeOtherParty: number;
-    PaymentSource: {
-      id: string;
-      network: string;
-      smartContractAddress: string;
-      policyId: string;
-      paymentType: string;
-      feeRatePermille: number;
-      cooldownTime: number;
-    };
-    SellerWallet: {
-      id: string;
-      walletAddress: string;
-      walletVkey: string;
-      type: string;
-    };
-    NextAction: {
-      id: string;
-      requestedAction: string;
-      inputHash: string;
-      submittedTxHash: string | null;
-      errorType: string | null;
-      errorNote: string | null;
-    };
-    PaidFunds: Array<{ unit: string; amount: string }>;
-    TransactionHistory: Array<object>;
-    WithdrawnForBuyer: Array<{ unit: string; amount: string }>;
-    WithdrawnForSeller: Array<{ unit: string; amount: string }>;
-  };
+	event_type: 'PURCHASE_ON_CHAIN_STATUS_CHANGED';
+	timestamp: string;
+	webhook_id: string;
+	data: {
+		id: string;
+		blockchainIdentifier: string;
+		onChainState: string;
+		submitResultTime: string;
+		unlockTime: string;
+		externalDisputeUnlockTime: string;
+		cooldownTime: number;
+		cooldownTimeOtherParty: number;
+		PaymentSource: {
+			id: string;
+			network: string;
+			smartContractAddress: string;
+			policyId: string;
+			paymentType: string;
+			feeRatePermille: number;
+			cooldownTime: number;
+		};
+		SellerWallet: {
+			id: string;
+			walletAddress: string;
+			walletVkey: string;
+			type: string;
+		};
+		NextAction: {
+			id: string;
+			requestedAction: string;
+			inputHash: string;
+			submittedTxHash: string | null;
+			errorType: string | null;
+			errorNote: string | null;
+		};
+		PaidFunds: Array<{ unit: string; amount: string }>;
+		TransactionHistory: Array<object>;
+		WithdrawnForBuyer: Array<{ unit: string; amount: string }>;
+		WithdrawnForSeller: Array<{ unit: string; amount: string }>;
+	};
 }
 ```
 
@@ -265,37 +265,37 @@ interface PurchaseOnChainStatusChangedPayload {
 
 ```json
 {
-  "event_type": "PURCHASE_ON_CHAIN_STATUS_CHANGED",
-  "timestamp": "2025-08-20T05:07:11.157Z",
-  "webhook_id": "cmejigo89000gucbqgmqphura",
-  "data": {
-    "id": "cmejigo85000cucbqnscuc2l6",
-    "blockchainIdentifier": "purchase-blockchain-1755666431140",
-    "onChainState": "FundsLocked",
-    "submitResultTime": "1755669953855",
-    "unlockTime": "1755673553855",
-    "externalDisputeUnlockTime": "1755677153855",
-    "cooldownTime": 7200,
-    "cooldownTimeOtherParty": 3600,
-    "PaymentSource": {
-      "id": "cmejif0l60004uc3rea61s1mz",
-      "network": "Preprod",
-      "smartContractAddress": "addr_test_1755666353849",
-      "paymentType": "Web3CardanoV1",
-      "feeRatePermille": 25
-    },
-    "SellerWallet": {
-      "id": "cmejif0l80006uc3r1q2r5d56",
-      "walletAddress": "addr_test_seller",
-      "type": "Seller"
-    },
-    "NextAction": {
-      "requestedAction": "FundsLockingRequested",
-      "inputHash": "test-input-hash"
-    },
-    "PaidFunds": [],
-    "TransactionHistory": []
-  }
+	"event_type": "PURCHASE_ON_CHAIN_STATUS_CHANGED",
+	"timestamp": "2025-08-20T05:07:11.157Z",
+	"webhook_id": "cmejigo89000gucbqgmqphura",
+	"data": {
+		"id": "cmejigo85000cucbqnscuc2l6",
+		"blockchainIdentifier": "purchase-blockchain-1755666431140",
+		"onChainState": "FundsLocked",
+		"submitResultTime": "1755669953855",
+		"unlockTime": "1755673553855",
+		"externalDisputeUnlockTime": "1755677153855",
+		"cooldownTime": 7200,
+		"cooldownTimeOtherParty": 3600,
+		"PaymentSource": {
+			"id": "cmejif0l60004uc3rea61s1mz",
+			"network": "Preprod",
+			"smartContractAddress": "addr_test_1755666353849",
+			"paymentType": "Web3CardanoV1",
+			"feeRatePermille": 25
+		},
+		"SellerWallet": {
+			"id": "cmejif0l80006uc3r1q2r5d56",
+			"walletAddress": "addr_test_seller",
+			"type": "Seller"
+		},
+		"NextAction": {
+			"requestedAction": "FundsLockingRequested",
+			"inputHash": "test-input-hash"
+		},
+		"PaidFunds": [],
+		"TransactionHistory": []
+	}
 }
 ```
 
@@ -305,46 +305,46 @@ Triggered when a payment's on-chain status changes (e.g., funds locked, payment 
 
 ```typescript
 interface PaymentOnChainStatusChangedPayload {
-  event_type: 'PAYMENT_ON_CHAIN_STATUS_CHANGED';
-  timestamp: string;
-  webhook_id: string;
-  data: {
-    id: string;
-    blockchainIdentifier: string;
-    onChainState: string;
-    submitResultTime: string;
-    unlockTime: string;
-    externalDisputeUnlockTime: string;
-    cooldownTime: number;
-    cooldownTimeOtherParty: number;
-    PaymentSource: {
-      id: string;
-      network: string;
-      smartContractAddress: string;
-      policyId: string;
-      paymentType: string;
-      feeRatePermille: number;
-      cooldownTime: number;
-    };
-    BuyerWallet: {
-      id: string;
-      walletAddress: string;
-      walletVkey: string;
-      type: string;
-    };
-    NextAction: {
-      id: string;
-      requestedAction: string;
-      inputHash: string;
-      submittedTxHash: string | null;
-      errorType: string | null;
-      errorNote: string | null;
-    };
-    RequestedFunds: Array<{ unit: string; amount: string }>;
-    TransactionHistory: Array<object>;
-    WithdrawnForBuyer: Array<{ unit: string; amount: string }>;
-    WithdrawnForSeller: Array<{ unit: string; amount: string }>;
-  };
+	event_type: 'PAYMENT_ON_CHAIN_STATUS_CHANGED';
+	timestamp: string;
+	webhook_id: string;
+	data: {
+		id: string;
+		blockchainIdentifier: string;
+		onChainState: string;
+		submitResultTime: string;
+		unlockTime: string;
+		externalDisputeUnlockTime: string;
+		cooldownTime: number;
+		cooldownTimeOtherParty: number;
+		PaymentSource: {
+			id: string;
+			network: string;
+			smartContractAddress: string;
+			policyId: string;
+			paymentType: string;
+			feeRatePermille: number;
+			cooldownTime: number;
+		};
+		BuyerWallet: {
+			id: string;
+			walletAddress: string;
+			walletVkey: string;
+			type: string;
+		};
+		NextAction: {
+			id: string;
+			requestedAction: string;
+			inputHash: string;
+			submittedTxHash: string | null;
+			errorType: string | null;
+			errorNote: string | null;
+		};
+		RequestedFunds: Array<{ unit: string; amount: string }>;
+		TransactionHistory: Array<object>;
+		WithdrawnForBuyer: Array<{ unit: string; amount: string }>;
+		WithdrawnForSeller: Array<{ unit: string; amount: string }>;
+	};
 }
 ```
 
@@ -352,37 +352,37 @@ interface PaymentOnChainStatusChangedPayload {
 
 ```json
 {
-  "event_type": "PAYMENT_ON_CHAIN_STATUS_CHANGED",
-  "timestamp": "2025-08-20T05:07:11.383Z",
-  "webhook_id": "cmejigo89000gucbqgmqphura",
-  "data": {
-    "id": "cmejigo87000eucbqxtt7cnct",
-    "blockchainIdentifier": "payment-blockchain-1755666431143",
-    "onChainState": "FundsLocked",
-    "submitResultTime": "1755669953858",
-    "unlockTime": "1755673553858",
-    "externalDisputeUnlockTime": "1755677153858",
-    "cooldownTime": 7200,
-    "cooldownTimeOtherParty": 3600,
-    "PaymentSource": {
-      "id": "cmejif0l60004uc3rea61s1mz",
-      "network": "Preprod",
-      "smartContractAddress": "addr_test_1755666353849",
-      "paymentType": "Web3CardanoV1",
-      "feeRatePermille": 25
-    },
-    "BuyerWallet": {
-      "id": "cmejif0la000auc3r8k2m1pqx",
-      "walletAddress": "addr_test_buyer",
-      "type": "Buyer"
-    },
-    "NextAction": {
-      "requestedAction": "FundsLockingRequested",
-      "inputHash": "test-input-hash"
-    },
-    "RequestedFunds": [],
-    "TransactionHistory": []
-  }
+	"event_type": "PAYMENT_ON_CHAIN_STATUS_CHANGED",
+	"timestamp": "2025-08-20T05:07:11.383Z",
+	"webhook_id": "cmejigo89000gucbqgmqphura",
+	"data": {
+		"id": "cmejigo87000eucbqxtt7cnct",
+		"blockchainIdentifier": "payment-blockchain-1755666431143",
+		"onChainState": "FundsLocked",
+		"submitResultTime": "1755669953858",
+		"unlockTime": "1755673553858",
+		"externalDisputeUnlockTime": "1755677153858",
+		"cooldownTime": 7200,
+		"cooldownTimeOtherParty": 3600,
+		"PaymentSource": {
+			"id": "cmejif0l60004uc3rea61s1mz",
+			"network": "Preprod",
+			"smartContractAddress": "addr_test_1755666353849",
+			"paymentType": "Web3CardanoV1",
+			"feeRatePermille": 25
+		},
+		"BuyerWallet": {
+			"id": "cmejif0la000auc3r8k2m1pqx",
+			"walletAddress": "addr_test_buyer",
+			"type": "Buyer"
+		},
+		"NextAction": {
+			"requestedAction": "FundsLockingRequested",
+			"inputHash": "test-input-hash"
+		},
+		"RequestedFunds": [],
+		"TransactionHistory": []
+	}
 }
 ```
 
@@ -392,14 +392,14 @@ Triggered when a purchase encounters an error (e.g., transaction failure, valida
 
 ```typescript
 interface PurchaseOnErrorPayload {
-  event_type: 'PURCHASE_ON_ERROR';
-  timestamp: string;
-  webhook_id: string;
-  data: {
-    id: string;
-    blockchainIdentifier: string;
-    onChainState: string;
-  };
+	event_type: 'PURCHASE_ON_ERROR';
+	timestamp: string;
+	webhook_id: string;
+	data: {
+		id: string;
+		blockchainIdentifier: string;
+		onChainState: string;
+	};
 }
 ```
 
@@ -407,19 +407,19 @@ interface PurchaseOnErrorPayload {
 
 ```json
 {
-  "event_type": "PURCHASE_ON_ERROR",
-  "timestamp": "2025-08-20T05:07:11.270Z",
-  "webhook_id": "cmejigo89000gucbqgmqphura",
-  "data": {
-    "id": "cmejigo85000cucbqnscuc2l6",
-    "blockchainIdentifier": "purchase-blockchain-1755666431140",
-    "onChainState": "FundsLocked",
-    "NextAction": {
-      "requestedAction": "FundsLockingRequested",
-      "errorType": "TRANSACTION_FAILED",
-      "errorNote": "Insufficient funds for transaction fee"
-    }
-  }
+	"event_type": "PURCHASE_ON_ERROR",
+	"timestamp": "2025-08-20T05:07:11.270Z",
+	"webhook_id": "cmejigo89000gucbqgmqphura",
+	"data": {
+		"id": "cmejigo85000cucbqnscuc2l6",
+		"blockchainIdentifier": "purchase-blockchain-1755666431140",
+		"onChainState": "FundsLocked",
+		"NextAction": {
+			"requestedAction": "FundsLockingRequested",
+			"errorType": "TRANSACTION_FAILED",
+			"errorNote": "Insufficient funds for transaction fee"
+		}
+	}
 }
 ```
 
@@ -429,14 +429,14 @@ Triggered when a payment encounters an error (e.g., transaction failure, validat
 
 ```typescript
 interface PaymentOnErrorPayload {
-  event_type: 'PAYMENT_ON_ERROR';
-  timestamp: string;
-  webhook_id: string;
-  data: {
-    id: string;
-    blockchainIdentifier: string;
-    onChainState: string;
-  };
+	event_type: 'PAYMENT_ON_ERROR';
+	timestamp: string;
+	webhook_id: string;
+	data: {
+		id: string;
+		blockchainIdentifier: string;
+		onChainState: string;
+	};
 }
 ```
 
@@ -444,19 +444,19 @@ interface PaymentOnErrorPayload {
 
 ```json
 {
-  "event_type": "PAYMENT_ON_ERROR",
-  "timestamp": "2025-08-20T05:07:11.497Z",
-  "webhook_id": "cmejigo89000gucbqgmqphura",
-  "data": {
-    "id": "cmejigo87000eucbqxtt7cnct",
-    "blockchainIdentifier": "payment-blockchain-1755666431143",
-    "onChainState": "FundsLocked",
-    "NextAction": {
-      "requestedAction": "PaymentConfirmationRequested",
-      "errorType": "NETWORK_ERROR",
-      "errorNote": "Unable to connect to blockchain node"
-    }
-  }
+	"event_type": "PAYMENT_ON_ERROR",
+	"timestamp": "2025-08-20T05:07:11.497Z",
+	"webhook_id": "cmejigo89000gucbqgmqphura",
+	"data": {
+		"id": "cmejigo87000eucbqxtt7cnct",
+		"blockchainIdentifier": "payment-blockchain-1755666431143",
+		"onChainState": "FundsLocked",
+		"NextAction": {
+			"requestedAction": "PaymentConfirmationRequested",
+			"errorType": "NETWORK_ERROR",
+			"errorNote": "Unable to connect to blockchain node"
+		}
+	}
 }
 ```
 

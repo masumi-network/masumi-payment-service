@@ -6,13 +6,13 @@ const network = 'preprod';
 const blockchainProvider = new KoiosProvider(network);
 
 const wallet = new MeshWallet({
-  networkId: 0,
-  fetcher: blockchainProvider,
-  submitter: blockchainProvider,
-  key: {
-    type: 'mnemonic',
-    words: fs.readFileSync('wallet.sk').toString().split(' '),
-  },
+	networkId: 0,
+	fetcher: blockchainProvider,
+	submitter: blockchainProvider,
+	key: {
+		type: 'mnemonic',
+		words: fs.readFileSync('wallet.sk').toString().split(' '),
+	},
 });
 
 const address = (await wallet.getUnusedAddresses())[0];

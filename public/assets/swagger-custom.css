@@ -5,296 +5,296 @@
 
 /* Dark Theme Styles - Applied when user prefers dark mode */
 @media (prefers-color-scheme: dark) {
-  .swagger-ui {
-    background-color: #0f1419 !important;
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui {
+		background-color: #0f1419 !important;
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .info {
-    background-color: #1a202c !important;
-    border-radius: 12px !important;
-    padding: 2rem !important;
-    border: 1px solid #2d3748 !important;
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui .info {
+		background-color: #1a202c !important;
+		border-radius: 12px !important;
+		padding: 2rem !important;
+		border: 1px solid #2d3748 !important;
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .info p {
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui .info p {
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .scheme-container {
-    background-color: #1a202c !important;
-    border: 1px solid #2d3748 !important;
-  }
+	.swagger-ui .scheme-container {
+		background-color: #1a202c !important;
+		border: 1px solid #2d3748 !important;
+	}
 
-  /* Dark theme for operation blocks */
-  .swagger-ui .opblock {
-    background-color: #1a202c !important;
-    border: 1px solid #2d3748 !important;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3) !important;
-  }
+	/* Dark theme for operation blocks */
+	.swagger-ui .opblock {
+		background-color: #1a202c !important;
+		border: 1px solid #2d3748 !important;
+		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3) !important;
+	}
 
-  .swagger-ui .opblock .opblock-summary {
-    border-color: #2d3748 !important;
-  }
+	.swagger-ui .opblock .opblock-summary {
+		border-color: #2d3748 !important;
+	}
 
-  .swagger-ui .opblock-section-header {
-    background-color: #2d3748 !important;
-    border-color: #4a5568 !important;
-  }
+	.swagger-ui .opblock-section-header {
+		background-color: #2d3748 !important;
+		border-color: #4a5568 !important;
+	}
 
-  .swagger-ui .opblock-section-header h4 {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .opblock-section-header h4 {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .opblock-section-header label {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .opblock-section-header label {
+		color: #cbd5e0 !important;
+	}
 
-  /* Dark theme for title and description */
-  .swagger-ui .info .title {
-    color: #f7fafc !important;
-  }
+	/* Dark theme for title and description */
+	.swagger-ui .info .title {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .info .description {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .info .description {
+		color: #cbd5e0 !important;
+	}
 
-  /* Dark theme for inputs and forms */
-  .swagger-ui input[type='text'],
-  .swagger-ui input[type='password'],
-  .swagger-ui textarea,
-  .swagger-ui select {
-    background-color: #2d3748 !important;
-    border: 2px solid #4a5568 !important;
-    color: #e2e8f0 !important;
-  }
+	/* Dark theme for inputs and forms */
+	.swagger-ui input[type='text'],
+	.swagger-ui input[type='password'],
+	.swagger-ui textarea,
+	.swagger-ui select {
+		background-color: #2d3748 !important;
+		border: 2px solid #4a5568 !important;
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui input[type='text']:focus,
-  .swagger-ui input[type='password']:focus,
-  .swagger-ui textarea:focus,
-  .swagger-ui select:focus {
-    border-color: #ff6400 !important;
-    box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.2) !important;
-    background-color: #1a202c !important;
-  }
+	.swagger-ui input[type='text']:focus,
+	.swagger-ui input[type='password']:focus,
+	.swagger-ui textarea:focus,
+	.swagger-ui select:focus {
+		border-color: #ff6400 !important;
+		box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.2) !important;
+		background-color: #1a202c !important;
+	}
 
-  /* Dark theme for buttons */
-  .swagger-ui .btn {
-    color: white !important;
-  }
+	/* Dark theme for buttons */
+	.swagger-ui .btn {
+		color: white !important;
+	}
 
-  .swagger-ui .btn.authorize svg {
-    fill: #fff;
-  }
+	.swagger-ui .btn.authorize svg {
+		fill: #fff;
+	}
 
-  /* White fill for unlocked and arrow icons in dark mode */
-  .swagger-ui .unlocked,
-  .swagger-ui .arrow {
-    fill: #fff !important;
-  }
+	/* White fill for unlocked and arrow icons in dark mode */
+	.swagger-ui .unlocked,
+	.swagger-ui .arrow {
+		fill: #fff !important;
+	}
 
-  .swagger-ui .unlocked svg,
-  .swagger-ui .arrow svg {
-    fill: #fff !important;
-  }
+	.swagger-ui .unlocked svg,
+	.swagger-ui .arrow svg {
+		fill: #fff !important;
+	}
 
-  .swagger-ui .btn.cancel {
-    background-color: #4a5568 !important;
-    border-color: #4a5568 !important;
-  }
+	.swagger-ui .btn.cancel {
+		background-color: #4a5568 !important;
+		border-color: #4a5568 !important;
+	}
 
-  .swagger-ui .btn.cancel:hover {
-    background-color: #2d3748 !important;
-    border-color: #2d3748 !important;
-  }
+	.swagger-ui .btn.cancel:hover {
+		background-color: #2d3748 !important;
+		border-color: #2d3748 !important;
+	}
 
-  /* Dark theme for authorization modal */
-  .swagger-ui .modal-ux {
-    background-color: rgba(15, 20, 25, 0.8) !important;
-  }
+	/* Dark theme for authorization modal */
+	.swagger-ui .modal-ux {
+		background-color: rgba(15, 20, 25, 0.8) !important;
+	}
 
-  .swagger-ui .dialog-ux .modal-ux {
-    border: 1px solid #a5a5a5f6 !important;
-  }
+	.swagger-ui .dialog-ux .modal-ux {
+		border: 1px solid #a5a5a5f6 !important;
+	}
 
-  .swagger-ui .modal-ux-header {
-    background-color: #2d3748 !important;
-    border-bottom: 1px solid #4a5568 !important;
-    color: #f7fafc !important;
-  }
+	.swagger-ui .modal-ux-header {
+		background-color: #2d3748 !important;
+		border-bottom: 1px solid #4a5568 !important;
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .modal-ux-header h3 {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .modal-ux-header h3 {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .modal-ux-content h4,
-  .swagger-ui .modal-ux-content p,
-  .swagger-ui .modal-ux-content label {
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui .modal-ux-content h4,
+	.swagger-ui .modal-ux-content p,
+	.swagger-ui .modal-ux-content label {
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .modal-ux-content input[type='text'],
-  .swagger-ui .modal-ux-content input[type='password'] {
-    background-color: #2d3748 !important;
-    border: 2px solid #4a5568 !important;
-    color: #e2e8f0 !important;
-    border-radius: 6px !important;
-  }
+	.swagger-ui .modal-ux-content input[type='text'],
+	.swagger-ui .modal-ux-content input[type='password'] {
+		background-color: #2d3748 !important;
+		border: 2px solid #4a5568 !important;
+		color: #e2e8f0 !important;
+		border-radius: 6px !important;
+	}
 
-  .swagger-ui .modal-ux-content input[type='text']:focus,
-  .swagger-ui .modal-ux-content input[type='password']:focus {
-    border-color: #ff6400 !important;
-    box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.2) !important;
-    background-color: #1a202c !important;
-  }
+	.swagger-ui .modal-ux-content input[type='text']:focus,
+	.swagger-ui .modal-ux-content input[type='password']:focus {
+		border-color: #ff6400 !important;
+		box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.2) !important;
+		background-color: #1a202c !important;
+	}
 
-  .swagger-ui .close-modal {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .close-modal {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .close-modal:hover {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .close-modal:hover {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .auth-container h4 {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .auth-container h4 {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .auth-container .wrapper {
-    background-color: transparent !important;
-  }
+	.swagger-ui .auth-container .wrapper {
+		background-color: transparent !important;
+	}
 
-  /* Headers and section titles */
-  .swagger-ui h4,
-  .swagger-ui h5 {
-    color: #f7fafc !important;
-  }
+	/* Headers and section titles */
+	.swagger-ui h4,
+	.swagger-ui h5 {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .opblock-tag {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .opblock-tag {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .opblock-summary-method {
-    color: #ffffff !important;
-  }
+	.swagger-ui .opblock-summary-method {
+		color: #ffffff !important;
+	}
 
-  .swagger-ui .opblock-summary-path {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .opblock-summary-path {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .opblock-summary-description {
-    color: #a0aec0 !important;
-  }
+	.swagger-ui .opblock-summary-description {
+		color: #a0aec0 !important;
+	}
 
-  /* Parameter and response headers */
-  .swagger-ui .parameters-col_header,
-  .swagger-ui .responses-col_header {
-    color: #f7fafc !important;
-  }
+	/* Parameter and response headers */
+	.swagger-ui .parameters-col_header,
+	.swagger-ui .responses-col_header {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .parameter__name {
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui .parameter__name {
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .parameter__type {
-    color: #a0aec0 !important;
-  }
+	.swagger-ui .parameter__type {
+		color: #a0aec0 !important;
+	}
 
-  .swagger-ui .parameter__deprecated {
-    color: #fc8181 !important;
-  }
+	.swagger-ui .parameter__deprecated {
+		color: #fc8181 !important;
+	}
 
-  /* Response and model text */
-  .swagger-ui .response-col_status {
-    color: #f7fafc !important;
-  }
+	/* Response and model text */
+	.swagger-ui .response-col_status {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .response-col_description {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .response-col_description {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .model-title {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .model-title {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .model-title__text {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .model-title__text {
+		color: #f7fafc !important;
+	}
 
-  .swagger-ui .model {
-    color: #e2e8f0 !important;
-  }
+	.swagger-ui .model {
+		color: #e2e8f0 !important;
+	}
 
-  .swagger-ui .model .property {
-    color: #cbd5e0 !important;
-  }
+	.swagger-ui .model .property {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .model .property-type {
-    color: #a0aec0 !important;
-  }
+	.swagger-ui .model .property-type {
+		color: #a0aec0 !important;
+	}
 
-  .swagger-ui table tbody tr td {
-    color: #e2e8f0 !important;
-    border-color: #4a5568 !important;
-  }
+	.swagger-ui table tbody tr td {
+		color: #e2e8f0 !important;
+		border-color: #4a5568 !important;
+	}
 
-  /* Schema and example text */
-  .swagger-ui .renderedMarkdown p,
-  .swagger-ui .renderedMarkdown li,
-  .swagger-ui .renderedMarkdown h1,
-  .swagger-ui .renderedMarkdown h2,
-  .swagger-ui .renderedMarkdown h3,
-  .swagger-ui .renderedMarkdown h4,
-  .swagger-ui .renderedMarkdown h5,
-  .swagger-ui .renderedMarkdown h6 {
-    color: #e2e8f0 !important;
-  }
+	/* Schema and example text */
+	.swagger-ui .renderedMarkdown p,
+	.swagger-ui .renderedMarkdown li,
+	.swagger-ui .renderedMarkdown h1,
+	.swagger-ui .renderedMarkdown h2,
+	.swagger-ui .renderedMarkdown h3,
+	.swagger-ui .renderedMarkdown h4,
+	.swagger-ui .renderedMarkdown h5,
+	.swagger-ui .renderedMarkdown h6 {
+		color: #e2e8f0 !important;
+	}
 
-  /* JSON schema property names */
-  .swagger-ui .property-row .property-name {
-    color: #f7fafc !important;
-  }
+	/* JSON schema property names */
+	.swagger-ui .property-row .property-name {
+		color: #f7fafc !important;
+	}
 
-  /* Tab headers */
-  .swagger-ui .tab li {
-    color: #cbd5e0 !important;
-  }
+	/* Tab headers */
+	.swagger-ui .tab li {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .tab li.active {
-    color: #f7fafc !important;
-  }
+	.swagger-ui .tab li.active {
+		color: #f7fafc !important;
+	}
 
-  /* Error messages and validation */
-  .swagger-ui .errors-wrapper {
-    background-color: #742a2a !important;
-    border: 1px solid #e53e3e !important;
-    color: #fed7d7 !important;
-  }
+	/* Error messages and validation */
+	.swagger-ui .errors-wrapper {
+		background-color: #742a2a !important;
+		border: 1px solid #e53e3e !important;
+		color: #fed7d7 !important;
+	}
 
-  .swagger-ui .errors-wrapper .error-wrapper {
-    color: #fed7d7 !important;
-  }
+	.swagger-ui .errors-wrapper .error-wrapper {
+		color: #fed7d7 !important;
+	}
 
-  /* Labels and small text */
-  .swagger-ui label {
-    color: #cbd5e0 !important;
-  }
+	/* Labels and small text */
+	.swagger-ui label {
+		color: #cbd5e0 !important;
+	}
 
-  .swagger-ui .wrapper .col-12 p {
-    color: #a0aec0 !important;
-  }
+	.swagger-ui .wrapper .col-12 p {
+		color: #a0aec0 !important;
+	}
 }
 
 /* Set Inter as the default font for the entire Swagger UI, excluding code elements */
 .swagger-ui {
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif !important;
+	font-family:
+		'Inter',
+		-apple-system,
+		BlinkMacSystemFont,
+		'Segoe UI',
+		Roboto,
+		sans-serif !important;
 }
 
 /* Ensure code elements keep monospace fonts */
@@ -309,8 +309,7 @@
 .swagger-ui .renderedMarkdown code,
 .swagger-ui .response-content-type,
 .swagger-ui textarea {
-  font-family:
-    'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Consolas', 'Courier New', monospace !important;
+	font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Consolas', 'Courier New', monospace !important;
 }
 
 /* Hide the default Swagger logo
@@ -320,74 +319,74 @@
 
 /* Custom header styling */
 .swagger-ui .topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(135deg, #ff6400 0%, #fa008c 100%);
-  padding: 10px 20px;
-  position: relative;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	background: linear-gradient(135deg, #ff6400 0%, #fa008c 100%);
+	padding: 10px 20px;
+	position: relative;
 }
 
 /* Logo on the right side of topbar */
 .swagger-ui .topbar::after {
-  content: '';
-  background-image: url('/assets/logo.png');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  width: 150px;
-  height: 40px;
-  display: block;
-  margin-left: auto;
+	content: '';
+	background-image: url('/assets/logo.png');
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
+	width: 150px;
+	height: 40px;
+	display: block;
+	margin-left: auto;
 }
 
 .topbar .wrapper {
-  padding: 0;
+	padding: 0;
 }
 
 .swagger-ui .info {
-  background-color: #fff;
-  border-radius: 12px;
-  padding: 2rem !important;
-  border: 1px solid #e2e8f0;
+	background-color: #fff;
+	border-radius: 12px;
+	padding: 2rem !important;
+	border: 1px solid #e2e8f0;
 }
 
 /* Custom title styling */
 .swagger-ui .info .title {
-  color: #1a202c;
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 10px;
-  text-align: center;
-  letter-spacing: -0.025em; /* Tighter letter spacing for Inter */
+	color: #1a202c;
+	font-size: 2.5rem;
+	font-weight: 700;
+	margin-bottom: 10px;
+	text-align: center;
+	letter-spacing: -0.025em; /* Tighter letter spacing for Inter */
 }
 
 /* Custom description styling */
 .swagger-ui .info .description {
-  color: #4a5568;
-  font-size: 1.1rem;
-  font-weight: 400;
-  text-align: center;
-  margin-bottom: 20px;
-  line-height: 1.6; /* Better line height for Inter */
+	color: #4a5568;
+	font-size: 1.1rem;
+	font-weight: 400;
+	text-align: center;
+	margin-bottom: 20px;
+	line-height: 1.6; /* Better line height for Inter */
 }
 
 /* Enhance the overall appearance */
 .swagger-ui .info {
-  margin: 30px 0;
+	margin: 30px 0;
 }
 
 /* Custom operation styling */
 .swagger-ui .opblock {
-  border-radius: 8px;
-  margin-bottom: 15px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	border-radius: 8px;
+	margin-bottom: 15px;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 /* Custom button styling */
 .swagger-ui .btn {
-  border-radius: 6px;
-  font-weight: 500;
+	border-radius: 6px;
+	font-weight: 500;
 }
 
 /* Light theme for inputs and forms */
@@ -395,34 +394,34 @@
 .swagger-ui input[type='password'],
 .swagger-ui textarea,
 .swagger-ui select {
-  border-radius: 6px;
-  border: 2px solid #e2e8f0;
-  transition: border-color 0.2s ease;
+	border-radius: 6px;
+	border: 2px solid #e2e8f0;
+	transition: border-color 0.2s ease;
 }
 
 .swagger-ui input[type='text']:focus,
 .swagger-ui input[type='password']:focus,
 .swagger-ui textarea:focus,
 .swagger-ui select:focus {
-  border-color: #ff6400;
-  box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.1);
+	border-color: #ff6400;
+	box-shadow: 0 0 0 3px rgba(255, 100, 0, 0.1);
 }
 
 /* Light theme for buttons */
 .swagger-ui .btn {
-  border-radius: 6px;
-  font-weight: 500;
+	border-radius: 6px;
+	font-weight: 500;
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .swagger-ui .topbar::before {
-    width: 120px;
-    height: 32px;
-    margin-left: 10px;
-  }
+	.swagger-ui .topbar::before {
+		width: 120px;
+		height: 32px;
+		margin-left: 10px;
+	}
 
-  .swagger-ui .info .title {
-    font-size: 2rem;
-  }
+	.swagger-ui .info .title {
+		font-size: 2rem;
+	}
 }

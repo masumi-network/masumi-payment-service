@@ -1,11 +1,11 @@
 import cbor from 'cbor';
 import {
-  resolvePlutusScriptAddress,
-  MeshWallet,
-  Transaction,
-  KoiosProvider,
-  applyParamsToScript,
-  MeshTxBuilder,
+	resolvePlutusScriptAddress,
+	MeshWallet,
+	Transaction,
+	KoiosProvider,
+	applyParamsToScript,
+	MeshTxBuilder,
 } from '@meshsdk/core';
 import fs from 'node:fs';
 import { deserializePlutusScript } from '@meshsdk/core-cst';
@@ -16,13 +16,13 @@ console.log('Minting example asset');
 const network = 'preprod';
 const blockchainProvider = new KoiosProvider(network);
 const wallet = new MeshWallet({
-  networkId: 0,
-  fetcher: blockchainProvider,
-  submitter: blockchainProvider,
-  key: {
-    type: 'mnemonic',
-    words: fs.readFileSync('wallet.sk').toString().split(' '),
-  },
+	networkId: 0,
+	fetcher: blockchainProvider,
+	submitter: blockchainProvider,
+	key: {
+		type: 'mnemonic',
+		words: fs.readFileSync('wallet.sk').toString().split(' '),
+	},
 });
 
 const address = (await wallet.getUnusedAddresses())[0];
@@ -31,13 +31,13 @@ const blueprint = JSON.parse(fs.readFileSync('./plutus.json'));
 const paymentContractAddress = 'addr_test1wzlwhustapq9ck0zdz8dahhwd350nzlpg785nz7hs0tqjtgdy4230';
 
 const script = {
-  code: applyParamsToScript(blueprint.validators[0].compiledCode, [paymentContractAddress]),
-  version: 'V3',
+	code: applyParamsToScript(blueprint.validators[0].compiledCode, [paymentContractAddress]),
+	version: 'V3',
 };
 
 const utxos = await wallet.getUtxos();
 if (utxos.length === 0) {
-  throw new Error('No UTXOs found for the specified wallet');
+	throw new Error('No UTXOs found for the specified wallet');
 }
 
 const firstUtxo = utxos[0];
@@ -46,72 +46,70 @@ const txId = firstUtxo.input.txHash;
 const txIndex = firstUtxo.input.outputIndex;
 const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
 
-const serializedOutputUint8Array = new Uint8Array(
-  Buffer.from(serializedOutput.toString('hex'), 'hex'),
-);
+const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString('hex'), 'hex'));
 // Hash the serialized output using blake2b_256
 const blake2b256 = blake2b(serializedOutputUint8Array, 32);
 let assetName = Buffer.from(blake2b256).toString('hex');
 
 const redeemer = {
-  data: { alternative: 0, fields: [] },
-  tag: 'MINT',
+	data: { alternative: 0, fields: [] },
+	tag: 'MINT',
 };
 const policyId = deserializePlutusScript(script.code, script.version).hash().toString();
 
 const tx = new Transaction({ initiator: wallet }).setTxInputs([
-  //ensure our first utxo hash (serializedOutput) is used as first input
-  firstUtxo,
-  ...utxos.slice(1),
+	//ensure our first utxo hash (serializedOutput) is used as first input
+	firstUtxo,
+	...utxos.slice(1),
 ]);
 
 tx.isCollateralNeeded = true;
 const ctxbuilder = new MeshTxBuilder({
-  fetcher: blockchainProvider,
+	fetcher: blockchainProvider,
 });
 const deserializedAddress = ctxbuilder.serializer.deserializer.key.deserializeAddress(address);
 //setup minting data separately as the minting function does not work well with hex encoded strings without some magic
 const mintingData = await ctxbuilder
-  .txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)
-  .mintPlutusScript(script.version)
-  .mint('1', policyId, assetName)
-  .mintingScript(script.code)
-  .mintRedeemerValue(redeemer.data, 'Mesh')
-  .metadataValue(721, {
-    [policyId]: {
-      [assetName]: {
-        tags: [['test', '.de']],
-        image: 'abc.de',
-        //name can be freely chosen
-        name: 'Registry Example NAME',
-        api_url: 'http://localhost:3002',
-        description: 'This is a valid second example NFT for the registry',
-        company_name: 'Example Inc.',
-        capability: { name: 'HelloAI', version: '1.3.2.1' },
-        agentPricing: {
-          pricingType: 'Fixed',
-          fixedPricing: [
-            {
-              amount: 250000,
-              unit: '',
-            },
-          ],
-        },
-      },
-    },
-  })
-  .txIn(utxos[1].input.txHash, utxos[1].input.outputIndex)
-  .txInCollateral(utxos[1].input.txHash, utxos[1].input.outputIndex)
-  .setTotalCollateral('5000000')
-  .txOut(address, [
-    { unit: policyId + assetName, quantity: '1' },
-    { unit: 'lovelace', quantity: '5000000' },
-  ])
-  .requiredSignerHash(deserializedAddress.pubKeyHash)
-  .setNetwork(network)
-  .metadataValue(674, { msg: ['Masumi', 'MintRegistry'] })
-  .changeAddress(address)
-  .complete();
+	.txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)
+	.mintPlutusScript(script.version)
+	.mint('1', policyId, assetName)
+	.mintingScript(script.code)
+	.mintRedeemerValue(redeemer.data, 'Mesh')
+	.metadataValue(721, {
+		[policyId]: {
+			[assetName]: {
+				tags: [['test', '.de']],
+				image: 'abc.de',
+				//name can be freely chosen
+				name: 'Registry Example NAME',
+				api_url: 'http://localhost:3002',
+				description: 'This is a valid second example NFT for the registry',
+				company_name: 'Example Inc.',
+				capability: { name: 'HelloAI', version: '1.3.2.1' },
+				agentPricing: {
+					pricingType: 'Fixed',
+					fixedPricing: [
+						{
+							amount: 250000,
+							unit: '',
+						},
+					],
+				},
+			},
+		},
+	})
+	.txIn(utxos[1].input.txHash, utxos[1].input.outputIndex)
+	.txInCollateral(utxos[1].input.txHash, utxos[1].input.outputIndex)
+	.setTotalCollateral('5000000')
+	.txOut(address, [
+		{ unit: policyId + assetName, quantity: '1' },
+		{ unit: 'lovelace', quantity: '5000000' },
+	])
+	.requiredSignerHash(deserializedAddress.pubKeyHash)
+	.setNetwork(network)
+	.metadataValue(674, { msg: ['Masumi', 'MintRegistry'] })
+	.changeAddress(address)
+	.complete();
 
 //send the minted asset to the address where we want to receive payments
 // tx.sendAssets(address, [{ unit: policyId + assetName, quantity: '1' }])
@@ -127,9 +125,7 @@ const txHash = await wallet.submitTx(signedTx);
 
 console.log(`Minted 1 asset with the contract at:
     Tx ID: ${txHash}
-    View (after a bit) on https://${
-      network === 'preprod' ? 'preprod.' : ''
-    }cardanoscan.io/transaction/${txHash}
+    View (after a bit) on https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${txHash}
     AssetName: ${assetName}
     PolicyId: ${policyId}
     AssetId: ${policyId + assetName}
