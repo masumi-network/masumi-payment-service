@@ -12,9 +12,7 @@ const loadCaCertificates = (): string[] => {
 	if (!fs.existsSync(certsDir)) {
 		return [];
 	}
-	const certFiles = fs.readdirSync(certsDir).filter(
-		(f) => f.endsWith('.crt') || f.endsWith('.pem'),
-	);
+	const certFiles = fs.readdirSync(certsDir).filter((f) => f.endsWith('.crt') || f.endsWith('.pem'));
 	return certFiles.map((f) => fs.readFileSync(path.join(certsDir, f), 'utf-8'));
 };
 
