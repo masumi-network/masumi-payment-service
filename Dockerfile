@@ -24,9 +24,11 @@ RUN pnpm run swagger-json
 # Frontend build step
 FROM node:20-slim AS frontend-builder
 RUN npm install -g pnpm
+WORKDIR /usr/src/app
+COPY package.json pnpm-workspace.yaml ./
+COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
 WORKDIR /usr/src/app/frontend
 COPY frontend/package.json ./
-COPY --from=backend-builder /usr/src/app/pnpm-lock.yaml ./
 COPY frontend/openapi-ts.config.ts ./openapi-ts.config.ts
 COPY frontend/src ./src
 COPY frontend/public ./public
