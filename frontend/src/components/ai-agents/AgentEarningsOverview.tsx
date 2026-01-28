@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getPayment, Payment, PaymentSourceExtended } from '@/lib/api/generated';
+import {
+  getPayment,
+  Payment,
+  PaymentSourceExtended,
+} from '@/lib/api/generated';
 import { Spinner } from '@/components/ui/spinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,20 +25,26 @@ interface AgentEarningsOverviewProps {
 
 type TimePeriod = '1d' | '7d' | '30d' | 'all';
 
-export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarningsOverviewProps) {
+export function AgentEarningsOverview({
+  agentIdentifier,
+  agentName,
+}: AgentEarningsOverviewProps) {
   const { apiClient, selectedPaymentSourceId, network } = useAppContext();
-  const [earningsData, setEarningsData] = useState<AgentEarningsData | null>(null);
+  const [earningsData, setEarningsData] = useState<AgentEarningsData | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('30d');
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
   const fetchAgentEarnings = useCallback(async () => {
     try {
@@ -51,11 +61,12 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         selectedPeriod === 'all'
           ? new Date(0) // Start from epoch for all time
           : (() => {
-              const periodDays = selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
-              const date = new Date();
-              date.setDate(date.getDate() - periodDays);
-              return date;
-            })();
+            const periodDays =
+              selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
+            const date = new Date();
+            date.setDate(date.getDate() - periodDays);
+            return date;
+          })();
 
       // Filter transactions by agent identifier and last 30 days
       const allPayments: Payment[] = [];
@@ -83,7 +94,8 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
           paymentsResponse.data.data.Payments.filter(
             (payment) =>
               payment.agentIdentifier === agentIdentifier &&
-              new Date(parseInt(payment.unlockTime || '0')) >= periodStartDate &&
+              new Date(parseInt(payment.unlockTime || '0')) >=
+              periodStartDate &&
               new Date(parseInt(payment.unlockTime || '0')) <= new Date() &&
               (payment.onChainState === 'Withdrawn' ||
                 payment.onChainState === 'ResultSubmitted' ||
@@ -108,7 +120,10 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
           return;
         }
         payment.RequestedFunds.forEach((fund) => {
-          totalEarnings.set(fund.unit, (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount));
+          totalEarnings.set(
+            fund.unit,
+            (totalEarnings.get(fund.unit) ?? 0) + parseInt(fund.amount),
+          );
         });
       });
 
@@ -150,7 +165,10 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     return (
       <div className="p-8 text-center">
         <p className="text-destructive">{error}</p>
-        <button onClick={fetchAgentEarnings} className="mt-2 text-sm text-primary hover:underline">
+        <button
+          onClick={fetchAgentEarnings}
+          className="mt-2 text-sm text-primary hover:underline"
+        >
           Try again
         </button>
       </div>
@@ -158,7 +176,11 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
   }
 
   if (!earningsData) {
-    return <div className="p-8 text-center text-muted-foreground">No earnings data available</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        No earnings data available
+      </div>
+    );
   }
 
   const getPeriodLabel = (period: TimePeriod) => {
@@ -180,7 +202,7 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     if (token.unit === 'lovelace' || token.unit === '') {
       const ada = token.quantity / 1000000;
       const formattedAmount = ada === 0 ? '0' : formatBalance(ada.toFixed(2));
-      return formattedAmount + ' ₳';
+      return formattedAmount + ' ADA';
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
@@ -193,7 +215,8 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
     }
 
     const amount = token.quantity;
-    const formattedAmount = amount === 0 ? '0' : formatBalance(amount.toFixed(0));
+    const formattedAmount =
+      amount === 0 ? '0' : formatBalance(amount.toFixed(0));
     return formattedAmount + ' ' + token.unit;
   };
 
@@ -211,11 +234,10 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                selectedPeriod === period
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${selectedPeriod === period
                   ? 'bg-background text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               {getPeriodLabel(period)}
             </button>
@@ -234,11 +256,13 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              {Array.from(earningsData.totalEarnings.entries()).map(([key, value]) => (
-                <div key={key} className="text-sm text-muted-foreground">
-                  {formatTokenBalance({ unit: key, quantity: value })}
-                </div>
-              ))}
+              {Array.from(earningsData.totalEarnings.entries()).map(
+                ([key, value]) => (
+                  <div key={key} className="text-sm text-muted-foreground">
+                    {formatTokenBalance({ unit: key, quantity: value })}
+                  </div>
+                ),
+              )}
               {earningsData.totalPayments === 0 && (
                 <div className="text-sm text-muted-foreground">
                   No earnings data available in the selected period
@@ -247,7 +271,9 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
             </div>
           </div>
           <div className="text-center">
-            <Badge variant="secondary">{earningsData.totalPayments} transactions</Badge>
+            <Badge variant="secondary">
+              {earningsData.totalPayments} transactions
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -262,7 +288,9 @@ export function AgentEarningsOverview({ agentIdentifier, agentName }: AgentEarni
           return (
             <p>
               Fee rate: {(feeRate / 10).toFixed(1)}%
-              {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
+              {selectedPaymentSource
+                ? ` (${selectedPaymentSource.network})`
+                : ' (default)'}
             </p>
           );
         })()}

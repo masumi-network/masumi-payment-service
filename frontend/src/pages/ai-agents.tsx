@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -30,7 +30,10 @@ import { FaRegClock } from 'react-icons/fa';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
-import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
+import {
+  WalletDetailsDialog,
+  WalletWithBalance,
+} from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -63,7 +66,7 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
-  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+
   const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
 
   // Use React Query for initial load (cached)
@@ -77,20 +80,25 @@ export default function AIAgentsPage() {
   } = useAgents();
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
+  const [selectedAgentToDelete, setSelectedAgentToDelete] =
+    useState<AIAgent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
+    useState<PaymentSourceExtended[]>([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+    setCurrentNetworkPaymentSources(
+      paymentSources.filter((ps) => ps.network === network),
+    );
   }, [paymentSources, network]);
   const [activeTab, setActiveTab] = useState('All');
-  const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
-  const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
+  const [selectedAgentForDetails, setSelectedAgentForDetails] =
+    useState<AIAgent | null>(null);
+  const [initialDialogTab, setInitialDialogTab] = useState<
+    'Details' | 'Earnings'
+  >('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -106,35 +114,54 @@ export default function AIAgentsPage() {
     let filtered = [...agents];
 
     if (activeTab === 'Registered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Registered');
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Registered',
+      );
     } else if (activeTab === 'Deregistered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Deregistered');
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Deregistered',
+      );
     } else if (activeTab === 'Pending') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Pending');
+      filtered = filtered.filter(
+        (agent) => parseAgentStatus(agent.state) === 'Pending',
+      );
     } else if (activeTab === 'Failed') {
-      filtered = filtered.filter((agent) => agent.state && agent.state.includes('Failed'));
+      filtered = filtered.filter(
+        (agent) => agent.state && agent.state.includes('Failed'),
+      );
     }
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((agent) => {
         const matchName = agent.name?.toLowerCase().includes(query) || false;
-        const matchDescription = agent.description?.toLowerCase().includes(query) || false;
-        const matchTags = agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
+        const matchDescription =
+          agent.description?.toLowerCase().includes(query) || false;
+        const matchTags =
+          agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
         const matchWallet =
-          agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
+          agent.SmartContractWallet?.walletAddress
+            ?.toLowerCase()
+            .includes(query) || false;
         const matchState = agent.state?.toLowerCase().includes(query) || false;
         const matchPrice =
           agent.AgentPricing &&
           agent.AgentPricing.pricingType == 'Fixed' &&
           agent.AgentPricing.Pricing?.[0]?.amount
-            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000).toFixed(2).includes(query)
+            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000)
+                .toFixed(2)
+                .includes(query)
             : agent.AgentPricing &&
               agent.AgentPricing.pricingType == 'Free' &&
               'free'.includes(query);
 
         return (
-          matchName || matchDescription || matchTags || matchWallet || matchState || matchPrice
+          matchName ||
+          matchDescription ||
+          matchTags ||
+          matchWallet ||
+          matchState ||
+          matchPrice
         );
       });
     }
@@ -156,25 +183,6 @@ export default function AIAgentsPage() {
       router.replace('/ai-agents', undefined, { shallow: true });
     }
   }, [router.query.action, router]);
-
-  const handleSelectAgent = (id: string) => {
-    setSelectedAgents((prev) =>
-      prev.includes(id) ? prev.filter((agentId) => agentId !== id) : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (agents.length === 0) {
-      setSelectedAgents([]);
-      return;
-    }
-
-    if (selectedAgents.length === agents.length) {
-      setSelectedAgents([]);
-    } else {
-      setSelectedAgents(agents.map((agent) => agent.id));
-    }
-  };
 
   const formatDate = (date: Date | string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
@@ -277,8 +285,11 @@ export default function AIAgentsPage() {
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
       // Find the wallet by vkey from payment sources in context
-      const filteredSources = currentNetworkPaymentSources.filter((source: any) =>
-        selectedPaymentSourceId ? source.id === selectedPaymentSourceId : true,
+      const filteredSources = currentNetworkPaymentSources.filter(
+        (source: any) =>
+          selectedPaymentSourceId
+            ? source.id === selectedPaymentSourceId
+            : true,
       );
 
       // Flatten all wallets from filtered sources
@@ -297,7 +308,9 @@ export default function AIAgentsPage() {
         })),
       ]);
 
-      const foundWallet = allWallets.find((wallet: any) => wallet.walletVkey === walletVkey);
+      const foundWallet = allWallets.find(
+        (wallet: any) => wallet.walletVkey === walletVkey,
+      );
 
       if (!foundWallet) {
         toast.error('Wallet not found');
@@ -373,20 +386,20 @@ export default function AIAgentsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={agents.length > 0 && selectedAgents.length === agents.length}
-                      onCheckedChange={handleSelectAll}
-                    />
+                  <th className="p-4 text-left text-sm font-medium pl-6">
+                    Name
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">Name</th>
                   <th className="p-4 text-left text-sm font-medium">Added</th>
-                  <th className="p-4 text-left text-sm font-medium">Agent ID</th>
-                  <th className="p-4 text-left text-sm font-medium">Linked wallet</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Agent ID
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Linked wallet
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Price</th>
                   <th className="p-4 text-left text-sm font-medium">Tags</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-20 p-4"></th>
+                  <th className="w-20 p-4 pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -406,23 +419,22 @@ export default function AIAgentsPage() {
                       key={agent.id}
                       className="border-b cursor-pointer hover:bg-muted/50"
                       style={{
-                        opacity: agent.state === 'DeregistrationConfirmed' ? '0.4' : '1',
+                        opacity:
+                          agent.state === 'DeregistrationConfirmed'
+                            ? '0.4'
+                            : '1',
                       }}
                       onClick={() => handleAgentClick(agent)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedAgents.includes(agent.id)}
-                          onCheckedChange={() => handleSelectAgent(agent.id)}
-                        />
-                      </td>
-                      <td className="p-4 max-w-[200px] truncate">
+                      <td className="p-4 max-w-[200px] truncate pl-6">
                         <div className="text-sm font-medium">{agent.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
                           {agent.description}
                         </div>
                       </td>
-                      <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
+                      <td className="p-4 text-sm">
+                        {formatDate(agent.createdAt)}
+                      </td>
                       <td className="p-4">
                         {agent.agentIdentifier ? (
                           <div className="text-xs font-mono truncate max-w-[200px] flex items-center gap-2">
@@ -432,28 +444,39 @@ export default function AIAgentsPage() {
                             <CopyButton value={agent.agentIdentifier} />
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
                         )}
                       </td>
                       <td className="p-4">
-                        <div className="text-xs font-medium">Selling wallet</div>
+                        <div className="text-xs font-medium">
+                          Selling wallet
+                        </div>
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           <span
                             className="cursor-pointer hover:text-primary"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleWalletClick(agent.SmartContractWallet.walletVkey);
+                              handleWalletClick(
+                                agent.SmartContractWallet.walletVkey,
+                              );
                             }}
                           >
-                            {shortenAddress(agent.SmartContractWallet.walletAddress)}
+                            {shortenAddress(
+                              agent.SmartContractWallet.walletAddress,
+                            )}
                           </span>
-                          <CopyButton value={agent.SmartContractWallet.walletAddress} />
+                          <CopyButton
+                            value={agent.SmartContractWallet.walletAddress}
+                          />
                         </div>
                       </td>
                       <td className="p-4 text-sm truncate max-w-[100px]">
-                        {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                          <div className="whitespace-nowrap">Free</div>
-                        )}
+                        {agent.AgentPricing &&
+                          agent.AgentPricing.pricingType == 'Free' && (
+                            <div className="whitespace-nowrap">Free</div>
+                          )}
                         {agent.AgentPricing &&
                           agent.AgentPricing.pricingType == 'Fixed' &&
                           agent.AgentPricing.Pricing?.map((price, index) => (
@@ -482,7 +505,7 @@ export default function AIAgentsPage() {
                           {parseAgentStatus(agent.state)}
                         </Badge>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         {['RegistrationConfirmed'].includes(agent.state) ? (
                           <div className="flex items-center gap-1">
                             <Button

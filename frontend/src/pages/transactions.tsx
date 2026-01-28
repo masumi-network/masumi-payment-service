@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -32,7 +32,8 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 };
 
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } =
+    useAppContext();
   const {
     transactions,
     isLoading,
@@ -54,11 +55,13 @@ export default function Transactions() {
   };
 
   const [activeTab, setActiveTab] = useState('All');
-  const [selectedTransactions, setSelectedTransactions] = useState<string[]>([]);
 
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<
+    Transaction[]
+  >([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && transactions.length === 0;
@@ -78,7 +81,9 @@ export default function Transactions() {
     const refundCount = dedupedTransactions.filter(
       (t) => t.onChainState === 'RefundRequested',
     ).length;
-    const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
+    const disputeCount = dedupedTransactions.filter(
+      (t) => t.onChainState === 'Disputed',
+    ).length;
 
     return [
       { name: 'All', count: null },
@@ -120,17 +125,26 @@ export default function Transactions() {
       filtered = filtered.filter((transaction) => {
         const matchId = transaction.id?.toLowerCase().includes(query) || false;
         const matchHash =
-          transaction.CurrentTransaction?.txHash?.toLowerCase().includes(query) || false;
-        const matchState = transaction.onChainState?.toLowerCase().includes(query) || false;
-        const matchType = transaction.type?.toLowerCase().includes(query) || false;
+          transaction.CurrentTransaction?.txHash
+            ?.toLowerCase()
+            .includes(query) || false;
+        const matchState =
+          transaction.onChainState?.toLowerCase().includes(query) || false;
+        const matchType =
+          transaction.type?.toLowerCase().includes(query) || false;
         const matchNetwork =
-          transaction.PaymentSource?.network?.toLowerCase().includes(query) || false;
+          transaction.PaymentSource?.network?.toLowerCase().includes(query) ||
+          false;
         const matchWallet =
-          transaction.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
+          transaction.SmartContractWallet?.walletAddress
+            ?.toLowerCase()
+            .includes(query) || false;
 
         const matchRequestedFunds =
           transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some((fund) => parseInt(fund.amount) / 1000000)
+          transaction.RequestedFunds?.some(
+            (fund) => parseInt(fund.amount) / 1000000,
+          )
             .toString()
             .toLowerCase()
             .includes(query);
@@ -160,7 +174,10 @@ export default function Transactions() {
   useEffect(() => {
     // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
-      localStorage.setItem('masumi_last_transactions_visit', new Date().toISOString());
+      localStorage.setItem(
+        'masumi_last_transactions_visit',
+        new Date().toISOString(),
+      );
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
   }, [network, apiClient, selectedPaymentSourceId]);
@@ -178,20 +195,6 @@ export default function Transactions() {
       loadMore();
     }
   }, [hasMore, isLoadingMore, loadMore]);
-
-  const handleSelectTransaction = (id: string) => {
-    setSelectedTransactions((prev) =>
-      prev.includes(id) ? prev.filter((transactionId) => transactionId !== id) : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (filteredTransactions.length === selectedTransactions.length) {
-      setSelectedTransactions([]);
-    } else {
-      setSelectedTransactions(filteredTransactions.map((t) => t.id));
-    }
-  };
 
   const getStatusColor = (status: string | null, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
@@ -231,7 +234,8 @@ export default function Transactions() {
         'Fee Rate Permille',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille = selectedPaymentSource?.feeRatePermille ?? 'Unknown';
+        const feeRatePermille =
+          selectedPaymentSource?.feeRatePermille ?? 'Unknown';
         const paymentAmounts = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
@@ -248,7 +252,9 @@ export default function Transactions() {
             })),
           );
         }
-        const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
+        const amount = paymentAmounts
+          .map((amount) => `${amount.amount} ${amount.unit}`)
+          .join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
         const status = formatStatus(transaction.onChainState);
@@ -265,13 +271,18 @@ export default function Transactions() {
         ];
       });
 
-      return [headers, ...rows].map((row) => row.map((field) => `"${field}"`).join(',')).join('\n');
+      return [headers, ...rows]
+        .map((row) => row.map((field) => `"${field}"`).join(','))
+        .join('\n');
     },
     [selectedPaymentSource?.feeRatePermille, network],
   );
 
   // Download CSV file
-  const downloadCSV = (transactions: Transaction[], filename: string = 'transactions.csv') => {
+  const downloadCSV = (
+    transactions: Transaction[],
+    filename: string = 'transactions.csv',
+  ) => {
     const csvData = generateCSVData(transactions);
     const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -311,7 +322,9 @@ export default function Transactions() {
                   return (
                     <p className="text-xs text-muted-foreground mt-1">
                       Fee rate: none applied
-                      {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
+                      {selectedPaymentSource
+                        ? ` (${selectedPaymentSource.network})`
+                        : ' (default)'}
                     </p>
                   );
                 }
@@ -319,7 +332,9 @@ export default function Transactions() {
                 return (
                   <p className="text-xs text-muted-foreground mt-1">
                     Fee rate: {(feeRate / 10).toFixed(1)}%
-                    {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
+                    {selectedPaymentSource
+                      ? ` (${selectedPaymentSource.network})`
+                      : ' (default)'}
                   </p>
                 );
               })()}
@@ -355,7 +370,10 @@ export default function Transactions() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              <RefreshButton
+                onRefresh={() => refreshTransactions()}
+                isRefreshing={isLoading}
+              />
             </div>
           </div>
 
@@ -363,23 +381,20 @@ export default function Transactions() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium">
-                    <Checkbox
-                      checked={
-                        filteredTransactions.length > 0 &&
-                        selectedTransactions.length === filteredTransactions.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
+                  <th className="p-4 text-left text-sm font-medium pl-6">
+                    Type
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">Transaction Hash</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Transaction Hash
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Amount</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="p-4 text-left text-sm font-medium">Unlock Time</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Unlock Time
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium"></th>
+                  <th className="p-4 text-left text-sm font-medium pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -387,13 +402,13 @@ export default function Transactions() {
                   <TransactionTableSkeleton rows={5} />
                 ) : isInitialLoading ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={8} className="text-center py-8">
                       No transactions found
                     </td>
                   </tr>
@@ -403,18 +418,14 @@ export default function Transactions() {
                       key={transaction.id}
                       className={cn(
                         'border-b last:border-b-0',
-                        transaction.NextAction?.errorType ? 'bg-destructive/10' : '',
+                        transaction.NextAction?.errorType
+                          ? 'bg-destructive/10'
+                          : '',
                         'cursor-pointer hover:bg-muted/50',
                       )}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedTransactions.includes(transaction.id)}
-                          onCheckedChange={() => handleSelectTransaction(transaction.id)}
-                        />
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
@@ -425,12 +436,15 @@ export default function Transactions() {
                               : '—'}
                           </span>
                           {transaction.CurrentTransaction?.txHash && (
-                            <CopyButton value={transaction.CurrentTransaction?.txHash} />
+                            <CopyButton
+                              value={transaction.CurrentTransaction?.txHash}
+                            />
                           )}
                         </div>
                       </td>
                       <td className="p-4">
-                        {transaction.type === 'payment' && transaction.RequestedFunds?.length
+                        {transaction.type === 'payment' &&
+                        transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(fund.unit, network);
@@ -440,7 +454,8 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' && transaction.PaidFunds?.length
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.length
                             ? transaction.PaidFunds.map((fund, index) => {
                                 const amount = formatPrice(fund.amount);
                                 const unit = formatFundUnit(fund.unit, network);
@@ -452,7 +467,9 @@ export default function Transactions() {
                               })
                             : '—'}
                       </td>
-                      <td className="p-4">{transaction.PaymentSource.network}</td>
+                      <td className="p-4">
+                        {transaction.PaymentSource.network}
+                      </td>
                       <td className="p-4">
                         <span
                           className={getStatusColor(
@@ -475,8 +492,10 @@ export default function Transactions() {
                           ? formatTimestamp(transaction.unlockTime)
                           : '—'}
                       </td>
-                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
                       <td className="p-4">
+                        {new Date(transaction.createdAt).toLocaleString()}
+                      </td>
+                      <td className="p-4 pr-8">
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           ⋮
                         </Button>
@@ -490,7 +509,11 @@ export default function Transactions() {
 
           <div className="flex flex-col gap-4 items-center">
             {!isInitialLoading && (
-              <Pagination hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
+              <Pagination
+                hasMore={hasMore}
+                isLoading={isLoadingMore}
+                onLoadMore={handleLoadMore}
+              />
             )}
           </div>
         </div>

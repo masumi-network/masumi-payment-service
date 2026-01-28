@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -33,7 +33,7 @@ import { ApiKey } from '@/lib/api/generated';
 export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+
   const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -73,12 +73,21 @@ export default function ApiKeys() {
       filtered = filtered.filter((key) => {
         const nameMatch = key.id?.toLowerCase().includes(query) || false;
         const tokenMatch = key.token?.toLowerCase().includes(query) || false;
-        const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
+        const permissionMatch =
+          key.permission?.toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((network) => network.toLowerCase().includes(query)) || false;
+          key.networkLimit?.some((network) =>
+            network.toLowerCase().includes(query),
+          ) || false;
 
-        return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
+        return (
+          nameMatch ||
+          tokenMatch ||
+          permissionMatch ||
+          statusMatch ||
+          networkMatch
+        );
       });
     }
 
@@ -100,18 +109,6 @@ export default function ApiKeys() {
 
   const handleLoadMore = () => {
     loadMore();
-  };
-
-  const handleSelectKey = (token: string) => {
-    setSelectedKeys((prev) =>
-      prev.includes(token) ? prev.filter((k) => k !== token) : [...prev, token],
-    );
-  };
-
-  const handleSelectAll = () => {
-    setSelectedKeys(
-      selectedKeys.length === allApiKeys.length ? [] : allApiKeys.map((key) => key.token),
-    );
   };
 
   const handleDeleteApiKey = async () => {
@@ -206,19 +203,19 @@ export default function ApiKeys() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={allApiKeys.length > 0 && selectedKeys.length === allApiKeys.length}
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium">ID</th>
+                  <th className="p-4 text-left text-sm font-medium pl-6">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
-                  <th className="p-4 text-left text-sm font-medium">Permission</th>
-                  <th className="p-4 text-left text-sm font-medium">Networks</th>
-                  <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Permission
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Networks
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium">
+                    Usage Limits
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-12 p-4"></th>
+                  <th className="w-12 p-4 pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -226,20 +223,16 @@ export default function ApiKeys() {
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
-                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
+                    <td colSpan={7} className="text-center py-8">
+                      {searchQuery
+                        ? 'No API keys found matching your search'
+                        : 'No API keys found'}
                     </td>
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
                     <tr key={index} className="border-b" onClick={() => {}}>
-                      <td className="p-4">
-                        <Checkbox
-                          checked={selectedKeys.includes(key.token)}
-                          onCheckedChange={() => handleSelectKey(key.token)}
-                        />
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <div className="text-sm">{key.id}</div>
                       </td>
                       <td className="p-4 truncate">
@@ -289,7 +282,7 @@ export default function ApiKeys() {
                           {key.status}
                         </span>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         <Select
                           onValueChange={(value) => {
                             if (value === 'update') {
@@ -310,7 +303,9 @@ export default function ApiKeys() {
                               value="delete"
                               className="text-red-600"
                             >
-                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
+                              {key.token === apiKey
+                                ? 'Cannot delete current API key'
+                                : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -324,7 +319,11 @@ export default function ApiKeys() {
 
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (
-              <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
+              <Pagination
+                hasMore={hasMore}
+                isLoading={isLoading}
+                onLoadMore={handleLoadMore}
+              />
             )}
           </div>
         </div>

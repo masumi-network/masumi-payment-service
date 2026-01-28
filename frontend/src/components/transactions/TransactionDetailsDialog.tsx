@@ -426,7 +426,7 @@ export default function TransactionDetailsDialog({
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
-                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
@@ -450,7 +450,7 @@ export default function TransactionDetailsDialog({
                       return (
                         <p key={index}>
                           {fund.unit === 'lovelace' || !fund.unit
-                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ₳`
+                            ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
                               ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
