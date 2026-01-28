@@ -1470,7 +1470,7 @@ export type GetHealthData = {
 
 export type GetHealthResponses = {
     /**
-     * Object with status ok, if the server is running
+     * Object with status ok, if the server is up and healthy
      */
     200: {
         /**
