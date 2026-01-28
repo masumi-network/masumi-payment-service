@@ -1,8 +1,23 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import { Pool, PoolConfig } from 'pg';
 import { logger } from '../logger';
 import { recordPrismaDataTransfer } from '../metrics';
+import fs from 'fs';
+import path from 'path';
+
+const CERT_PATH = path.resolve('certs/ca-certificate.crt');
+
+// Write CA certificate from DATABASE_CA_CERT env var to disk so sslrootcert can reference it
+const writeCaCertificate = () => {
+	const cert = process.env.DATABASE_CA_CERT;
+	if (!cert) return;
+	const pemContent = cert.replace(/\\n/g, '\n');
+	fs.mkdirSync(path.dirname(CERT_PATH), { recursive: true });
+	fs.writeFileSync(CERT_PATH, pemContent);
+};
+
+writeCaCertificate();
 
 // Add timeout parameters to DATABASE_URL if not already present
 const getDatabaseUrlWithTimeouts = () => {
@@ -21,6 +36,10 @@ const getDatabaseUrlWithTimeouts = () => {
 	if (!url.searchParams.has('connect_timeout')) {
 		url.searchParams.set('connect_timeout', '10');
 	}
+	// Add sslrootcert if CA cert file exists
+	if (!url.searchParams.has('sslrootcert') && fs.existsSync(CERT_PATH)) {
+		url.searchParams.set('sslrootcert', CERT_PATH);
+	}
 	return url.toString();
 };
 
@@ -37,14 +56,13 @@ const getPoolConfig = () => {
 
 	// Extract pool_timeout from URL params (default: 20 seconds = 20000ms)
 	const poolTimeout = parseInt(url.searchParams.get('pool_timeout') || '20', 10) * 1000;
-
 	return {
 		connectionString,
 		max: connectionLimit, // Maximum number of clients in the pool
 		min: 1, // Minimum number of clients in the pool
 		idleTimeoutMillis: poolTimeout, // Close idle clients after this many milliseconds
 		connectionTimeoutMillis: connectTimeout, // Return an error after this many milliseconds if a connection cannot be established
-	};
+	} as PoolConfig;
 };
 
 // Create a connection pool with configured settings
