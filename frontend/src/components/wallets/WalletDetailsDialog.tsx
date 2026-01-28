@@ -370,6 +370,97 @@ export function WalletDetailsDialog({
               </div>
             </div>
 
+
+            <div className="bg-muted rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Token Balances</div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={fetchTokenBalances}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <Spinner size={20} />
+                </div>
+              ) : error ? (
+                <div className="text-sm text-destructive">{error}</div>
+              ) : (
+                <div className="space-y-2">
+                  {tokenBalances.length === 0 && (
+                    <div className="text-xs text-muted-foreground">
+                      No tokens found
+                    </div>
+                  )}
+                  {/* Sort tokens: ADA first, then USDM, then others */}
+                  {(() => {
+                    const adaToken = tokenBalances.find(
+                      (t) => t.unit === 'lovelace',
+                    );
+                    const usdmConfig = getUsdmConfig(network);
+                    const usdmToken = tokenBalances.find(
+                      (t) =>
+                        t.policyId === usdmConfig.policyId &&
+                        t.assetName === hexToAscii(usdmConfig.assetName),
+                    );
+                    const otherTokens = tokenBalances.filter(
+                      (t) =>
+                        t.unit !== 'lovelace' &&
+                        !(
+                          t.policyId === usdmConfig.policyId &&
+                          t.assetName === hexToAscii(usdmConfig.assetName)
+                        ),
+                    );
+                    // Filter out undefined tokens before mapping
+                    const sortedTokens = [
+                      adaToken,
+                      usdmToken,
+                      ...otherTokens,
+                    ].filter((t): t is TokenBalance => Boolean(t));
+                    return sortedTokens.map((token) => {
+                      const { amount, usdValue } = formatTokenBalance(token);
+                      const isUSDM =
+                        token.policyId === usdmConfig.policyId &&
+                        token.assetName === hexToAscii(usdmConfig.assetName);
+                      const displayName =
+                        isUSDM && token.policyId
+                          ? `USDM (${shortenAddress(token.policyId)})`
+                          : token.displayName;
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
+                        >
+                          <div>
+                            <div className="font-medium">{displayName}</div>
+                            {!isUSDM && token.policyId && (
+                              <div className="text-xs text-muted-foreground">
+                                Policy ID: {shortenAddress(token.policyId)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div>{amount}</div>
+                            {/* Only show USD value for non-USDM tokens */}
+                            {usdValue && !isUSDM && (
+                              <div className="text-xs text-muted-foreground">
+                                {usdValue}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </div>
+
             {wallet.type !== 'Collection' && (
               <div className="flex items-center gap-2">
                 <Button
@@ -506,96 +597,6 @@ export function WalletDetailsDialog({
                 )}
               </div>
             )}
-
-            <div className="bg-muted rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Token Balances</div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchTokenBalances}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              {isLoading ? (
-                <div className="flex justify-center py-4">
-                  <Spinner size={20} />
-                </div>
-              ) : error ? (
-                <div className="text-sm text-destructive">{error}</div>
-              ) : (
-                <div className="space-y-2">
-                  {tokenBalances.length === 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      No tokens found
-                    </div>
-                  )}
-                  {/* Sort tokens: ADA first, then USDM, then others */}
-                  {(() => {
-                    const adaToken = tokenBalances.find(
-                      (t) => t.unit === 'lovelace',
-                    );
-                    const usdmConfig = getUsdmConfig(network);
-                    const usdmToken = tokenBalances.find(
-                      (t) =>
-                        t.policyId === usdmConfig.policyId &&
-                        t.assetName === hexToAscii(usdmConfig.assetName),
-                    );
-                    const otherTokens = tokenBalances.filter(
-                      (t) =>
-                        t.unit !== 'lovelace' &&
-                        !(
-                          t.policyId === usdmConfig.policyId &&
-                          t.assetName === hexToAscii(usdmConfig.assetName)
-                        ),
-                    );
-                    // Filter out undefined tokens before mapping
-                    const sortedTokens = [
-                      adaToken,
-                      usdmToken,
-                      ...otherTokens,
-                    ].filter((t): t is TokenBalance => Boolean(t));
-                    return sortedTokens.map((token) => {
-                      const { amount, usdValue } = formatTokenBalance(token);
-                      const isUSDM =
-                        token.policyId === usdmConfig.policyId &&
-                        token.assetName === hexToAscii(usdmConfig.assetName);
-                      const displayName =
-                        isUSDM && token.policyId
-                          ? `USDM (${shortenAddress(token.policyId)})`
-                          : token.displayName;
-                      return (
-                        <div
-                          key={token.unit}
-                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
-                        >
-                          <div>
-                            <div className="font-medium">{displayName}</div>
-                            {!isUSDM && token.policyId && (
-                              <div className="text-xs text-muted-foreground">
-                                Policy ID: {shortenAddress(token.policyId)}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div>{amount}</div>
-                            {/* Only show USD value for non-USDM tokens */}
-                            {usdValue && !isUSDM && (
-                              <div className="text-xs text-muted-foreground">
-                                {usdValue}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
