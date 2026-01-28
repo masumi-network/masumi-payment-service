@@ -43,20 +43,7 @@ export default [
 			prettier,
 		},
 		rules: {
-			'prettier/prettier': [
-				'error',
-				{
-					trailingComma: 'all',
-					tabWidth: 2,
-					semi: true,
-					singleQuote: true,
-					useTabs: true,
-					printWidth: 120,
-					bracketSpacing: true,
-					arrowParens: 'always',
-					endOfLine: 'lf',
-				},
-			],
+			'prettier/prettier': 'error',
 		},
 	},
 	// Add custom rules for TypeScript
@@ -101,7 +88,6 @@ export default [
 			'smart-contracts/*',
 			'frontend/*',
 			'eslint.config.mjs',
-			'frontend/*',
 			'commitlint.config.js',
 			'jest.config.ts',
 			'prisma/*',
