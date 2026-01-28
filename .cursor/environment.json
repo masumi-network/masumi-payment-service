@@ -1,0 +1,9 @@
+{
+  "name": "Masumi Payment Service",
+  "description": "Cardano payment escrow service with smart contracts",
+  "agentCanUpdateSnapshot": true,
+  "install": "pnpm install",
+  "start": "pnpm dev",
+  "test": "pnpm run test",
+  "lint": "pnpm run lint && pnpm run format"
+}
