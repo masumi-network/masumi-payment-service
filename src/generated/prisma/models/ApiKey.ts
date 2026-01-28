@@ -30,7 +30,9 @@ export type ApiKeyMinAggregateOutputType = {
   token: string | null
   tokenHash: string | null
   status: $Enums.ApiKeyStatus | null
-  permission: $Enums.Permission | null
+  canRead: boolean | null
+  canPay: boolean | null
+  canAdmin: boolean | null
   usageLimited: boolean | null
   deletedAt: Date | null
 }
@@ -42,7 +44,9 @@ export type ApiKeyMaxAggregateOutputType = {
   token: string | null
   tokenHash: string | null
   status: $Enums.ApiKeyStatus | null
-  permission: $Enums.Permission | null
+  canRead: boolean | null
+  canPay: boolean | null
+  canAdmin: boolean | null
   usageLimited: boolean | null
   deletedAt: Date | null
 }
@@ -54,7 +58,9 @@ export type ApiKeyCountAggregateOutputType = {
   token: number
   tokenHash: number
   status: number
-  permission: number
+  canRead: number
+  canPay: number
+  canAdmin: number
   networkLimit: number
   usageLimited: number
   deletedAt: number
@@ -69,7 +75,9 @@ export type ApiKeyMinAggregateInputType = {
   token?: true
   tokenHash?: true
   status?: true
-  permission?: true
+  canRead?: true
+  canPay?: true
+  canAdmin?: true
   usageLimited?: true
   deletedAt?: true
 }
@@ -81,7 +89,9 @@ export type ApiKeyMaxAggregateInputType = {
   token?: true
   tokenHash?: true
   status?: true
-  permission?: true
+  canRead?: true
+  canPay?: true
+  canAdmin?: true
   usageLimited?: true
   deletedAt?: true
 }
@@ -93,7 +103,9 @@ export type ApiKeyCountAggregateInputType = {
   token?: true
   tokenHash?: true
   status?: true
-  permission?: true
+  canRead?: true
+  canPay?: true
+  canAdmin?: true
   networkLimit?: true
   usageLimited?: true
   deletedAt?: true
@@ -179,7 +191,9 @@ export type ApiKeyGroupByOutputType = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead: boolean
+  canPay: boolean
+  canAdmin: boolean
   networkLimit: $Enums.Network[]
   usageLimited: boolean
   deletedAt: Date | null
@@ -213,7 +227,9 @@ export type ApiKeyWhereInput = {
   token?: Prisma.StringFilter<"ApiKey"> | string
   tokenHash?: Prisma.StringFilter<"ApiKey"> | string
   status?: Prisma.EnumApiKeyStatusFilter<"ApiKey"> | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFilter<"ApiKey"> | $Enums.Permission
+  canRead?: Prisma.BoolFilter<"ApiKey"> | boolean
+  canPay?: Prisma.BoolFilter<"ApiKey"> | boolean
+  canAdmin?: Prisma.BoolFilter<"ApiKey"> | boolean
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolFilter<"ApiKey"> | boolean
   deletedAt?: Prisma.DateTimeNullableFilter<"ApiKey"> | Date | string | null
@@ -230,7 +246,9 @@ export type ApiKeyOrderByWithRelationInput = {
   token?: Prisma.SortOrder
   tokenHash?: Prisma.SortOrder
   status?: Prisma.SortOrder
-  permission?: Prisma.SortOrder
+  canRead?: Prisma.SortOrder
+  canPay?: Prisma.SortOrder
+  canAdmin?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -250,7 +268,9 @@ export type ApiKeyWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"ApiKey"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ApiKey"> | Date | string
   status?: Prisma.EnumApiKeyStatusFilter<"ApiKey"> | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFilter<"ApiKey"> | $Enums.Permission
+  canRead?: Prisma.BoolFilter<"ApiKey"> | boolean
+  canPay?: Prisma.BoolFilter<"ApiKey"> | boolean
+  canAdmin?: Prisma.BoolFilter<"ApiKey"> | boolean
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolFilter<"ApiKey"> | boolean
   deletedAt?: Prisma.DateTimeNullableFilter<"ApiKey"> | Date | string | null
@@ -267,7 +287,9 @@ export type ApiKeyOrderByWithAggregationInput = {
   token?: Prisma.SortOrder
   tokenHash?: Prisma.SortOrder
   status?: Prisma.SortOrder
-  permission?: Prisma.SortOrder
+  canRead?: Prisma.SortOrder
+  canPay?: Prisma.SortOrder
+  canAdmin?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -286,7 +308,9 @@ export type ApiKeyScalarWhereWithAggregatesInput = {
   token?: Prisma.StringWithAggregatesFilter<"ApiKey"> | string
   tokenHash?: Prisma.StringWithAggregatesFilter<"ApiKey"> | string
   status?: Prisma.EnumApiKeyStatusWithAggregatesFilter<"ApiKey"> | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionWithAggregatesFilter<"ApiKey"> | $Enums.Permission
+  canRead?: Prisma.BoolWithAggregatesFilter<"ApiKey"> | boolean
+  canPay?: Prisma.BoolWithAggregatesFilter<"ApiKey"> | boolean
+  canAdmin?: Prisma.BoolWithAggregatesFilter<"ApiKey"> | boolean
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolWithAggregatesFilter<"ApiKey"> | boolean
   deletedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"ApiKey"> | Date | string | null
@@ -299,7 +323,9 @@ export type ApiKeyCreateInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -316,7 +342,9 @@ export type ApiKeyUncheckedCreateInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -333,7 +361,9 @@ export type ApiKeyUpdateInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -350,7 +380,9 @@ export type ApiKeyUncheckedUpdateInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -367,7 +399,9 @@ export type ApiKeyCreateManyInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -380,7 +414,9 @@ export type ApiKeyUpdateManyMutationInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -393,7 +429,9 @@ export type ApiKeyUncheckedUpdateManyInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -414,7 +452,9 @@ export type ApiKeyCountOrderByAggregateInput = {
   token?: Prisma.SortOrder
   tokenHash?: Prisma.SortOrder
   status?: Prisma.SortOrder
-  permission?: Prisma.SortOrder
+  canRead?: Prisma.SortOrder
+  canPay?: Prisma.SortOrder
+  canAdmin?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
@@ -427,7 +467,9 @@ export type ApiKeyMaxOrderByAggregateInput = {
   token?: Prisma.SortOrder
   tokenHash?: Prisma.SortOrder
   status?: Prisma.SortOrder
-  permission?: Prisma.SortOrder
+  canRead?: Prisma.SortOrder
+  canPay?: Prisma.SortOrder
+  canAdmin?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
 }
@@ -439,7 +481,9 @@ export type ApiKeyMinOrderByAggregateInput = {
   token?: Prisma.SortOrder
   tokenHash?: Prisma.SortOrder
   status?: Prisma.SortOrder
-  permission?: Prisma.SortOrder
+  canRead?: Prisma.SortOrder
+  canPay?: Prisma.SortOrder
+  canAdmin?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
 }
@@ -470,17 +514,13 @@ export type EnumApiKeyStatusFieldUpdateOperationsInput = {
   set?: $Enums.ApiKeyStatus
 }
 
-export type EnumPermissionFieldUpdateOperationsInput = {
-  set?: $Enums.Permission
+export type BoolFieldUpdateOperationsInput = {
+  set?: boolean
 }
 
 export type ApiKeyUpdatenetworkLimitInput = {
   set?: $Enums.Network[]
   push?: $Enums.Network | $Enums.Network[]
-}
-
-export type BoolFieldUpdateOperationsInput = {
-  set?: boolean
 }
 
 export type NullableDateTimeFieldUpdateOperationsInput = {
@@ -554,7 +594,9 @@ export type ApiKeyCreateWithoutRemainingUsageCreditsInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -570,7 +612,9 @@ export type ApiKeyUncheckedCreateWithoutRemainingUsageCreditsInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -602,7 +646,9 @@ export type ApiKeyUpdateWithoutRemainingUsageCreditsInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -618,7 +664,9 @@ export type ApiKeyUncheckedUpdateWithoutRemainingUsageCreditsInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -634,7 +682,9 @@ export type ApiKeyCreateWithoutPaymentRequestInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -650,7 +700,9 @@ export type ApiKeyUncheckedCreateWithoutPaymentRequestInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -682,7 +734,9 @@ export type ApiKeyUpdateWithoutPaymentRequestInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -698,7 +752,9 @@ export type ApiKeyUncheckedUpdateWithoutPaymentRequestInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -714,7 +770,9 @@ export type ApiKeyCreateWithoutPurchaseRequestInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -730,7 +788,9 @@ export type ApiKeyUncheckedCreateWithoutPurchaseRequestInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -762,7 +822,9 @@ export type ApiKeyUpdateWithoutPurchaseRequestInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -778,7 +840,9 @@ export type ApiKeyUncheckedUpdateWithoutPurchaseRequestInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -794,7 +858,9 @@ export type ApiKeyCreateWithoutCreatedWebhooksInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -810,7 +876,9 @@ export type ApiKeyUncheckedCreateWithoutCreatedWebhooksInput = {
   token: string
   tokenHash: string
   status: $Enums.ApiKeyStatus
-  permission: $Enums.Permission
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
   deletedAt?: Date | string | null
@@ -842,7 +910,9 @@ export type ApiKeyUpdateWithoutCreatedWebhooksInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -858,7 +928,9 @@ export type ApiKeyUncheckedUpdateWithoutCreatedWebhooksInput = {
   token?: Prisma.StringFieldUpdateOperationsInput | string
   tokenHash?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumApiKeyStatusFieldUpdateOperationsInput | $Enums.ApiKeyStatus
-  permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
+  canRead?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canPay?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  canAdmin?: Prisma.BoolFieldUpdateOperationsInput | boolean
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -932,7 +1004,9 @@ export type ApiKeySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   token?: boolean
   tokenHash?: boolean
   status?: boolean
-  permission?: boolean
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
   deletedAt?: boolean
@@ -950,7 +1024,9 @@ export type ApiKeySelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   token?: boolean
   tokenHash?: boolean
   status?: boolean
-  permission?: boolean
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
   deletedAt?: boolean
@@ -963,7 +1039,9 @@ export type ApiKeySelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   token?: boolean
   tokenHash?: boolean
   status?: boolean
-  permission?: boolean
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
   deletedAt?: boolean
@@ -976,13 +1054,15 @@ export type ApiKeySelectScalar = {
   token?: boolean
   tokenHash?: boolean
   status?: boolean
-  permission?: boolean
+  canRead?: boolean
+  canPay?: boolean
+  canAdmin?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
   deletedAt?: boolean
 }
 
-export type ApiKeyOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "token" | "tokenHash" | "status" | "permission" | "networkLimit" | "usageLimited" | "deletedAt", ExtArgs["result"]["apiKey"]>
+export type ApiKeyOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "token" | "tokenHash" | "status" | "canRead" | "canPay" | "canAdmin" | "networkLimit" | "usageLimited" | "deletedAt", ExtArgs["result"]["apiKey"]>
 export type ApiKeyInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   PaymentRequest?: boolean | Prisma.ApiKey$PaymentRequestArgs<ExtArgs>
   PurchaseRequest?: boolean | Prisma.ApiKey$PurchaseRequestArgs<ExtArgs>
@@ -1008,7 +1088,9 @@ export type $ApiKeyPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     token: string
     tokenHash: string
     status: $Enums.ApiKeyStatus
-    permission: $Enums.Permission
+    canRead: boolean
+    canPay: boolean
+    canAdmin: boolean
     networkLimit: $Enums.Network[]
     usageLimited: boolean
     deletedAt: Date | null
@@ -1445,7 +1527,9 @@ export interface ApiKeyFieldRefs {
   readonly token: Prisma.FieldRef<"ApiKey", 'String'>
   readonly tokenHash: Prisma.FieldRef<"ApiKey", 'String'>
   readonly status: Prisma.FieldRef<"ApiKey", 'ApiKeyStatus'>
-  readonly permission: Prisma.FieldRef<"ApiKey", 'Permission'>
+  readonly canRead: Prisma.FieldRef<"ApiKey", 'Boolean'>
+  readonly canPay: Prisma.FieldRef<"ApiKey", 'Boolean'>
+  readonly canAdmin: Prisma.FieldRef<"ApiKey", 'Boolean'>
   readonly networkLimit: Prisma.FieldRef<"ApiKey", 'Network[]'>
   readonly usageLimited: Prisma.FieldRef<"ApiKey", 'Boolean'>
   readonly deletedAt: Prisma.FieldRef<"ApiKey", 'DateTime'>

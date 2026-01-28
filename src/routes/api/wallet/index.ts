@@ -302,7 +302,7 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
       const secretKey = MeshWallet.brew(false);
       const secretWords =

@@ -349,7 +349,7 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
     await checkIsAllowedNetworkOrThrowUnauthorized(
       ctx.networkLimit,
       input.network,
-      ctx.permission,
+      ctx.canAdmin,
     );
 
     const result = await prisma.purchaseRequest.findMany({
@@ -592,7 +592,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
       const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
         where: {

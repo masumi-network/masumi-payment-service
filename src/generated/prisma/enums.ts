@@ -16,15 +16,6 @@ export const ApiKeyStatus = {
 export type ApiKeyStatus = (typeof ApiKeyStatus)[keyof typeof ApiKeyStatus]
 
 
-export const Permission = {
-  Read: 'Read',
-  ReadAndPay: 'ReadAndPay',
-  Admin: 'Admin'
-} as const
-
-export type Permission = (typeof Permission)[keyof typeof Permission]
-
-
 export const HotWalletType = {
   Selling: 'Selling',
   Purchasing: 'Purchasing'

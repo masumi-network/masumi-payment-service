@@ -164,7 +164,7 @@ async function queryPaymentDiffByMode({
   await checkIsAllowedNetworkOrThrowUnauthorized(
     ctx.networkLimit,
     input.network,
-    ctx.permission,
+    ctx.canAdmin,
   );
 
   const since = input.lastUpdate;

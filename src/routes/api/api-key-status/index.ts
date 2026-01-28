@@ -4,6 +4,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
 import { apiKeyOutputSchema } from '@/routes/api/api-key';
+import { computePermissionFromFlags } from '@/utils/permissions';
 
 const getAPIKeyStatusSchemaInput = z.object({});
 
@@ -26,6 +27,11 @@ export const queryAPIKeyStatusEndpointGet =
       }
       return {
         ...result,
+        permission: computePermissionFromFlags(
+          result.canRead,
+          result.canPay,
+          result.canAdmin,
+        ),
         RemainingUsageCredits: transformBigIntAmounts(
           result.RemainingUsageCredits,
         ),

@@ -71,7 +71,6 @@ import {
   Network,
   PurchasingAction,
   PaymentAction,
-  Permission,
   ApiKeyStatus,
   RPCProvider,
   PricingType,
@@ -195,7 +194,12 @@ const paymentSourceExtendedExample = {
 const apiKeyExample = {
   id: 'api_key_id',
   token: 'masumi_payment_api_key_secret',
-  permission: Permission.Admin,
+  // Flag-based permissions
+  canRead: true,
+  canPay: true,
+  canAdmin: true,
+
+  permission: 'Admin' as const,
   usageLimited: true,
   networkLimit: [Network.Preprod],
   RemainingUsageCredits: [
@@ -645,7 +649,7 @@ export function generateOpenAPI() {
                     amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
                   },
                 ],
-                permission: Permission.Admin,
+                permission: 'Admin',
               },
             }),
           },

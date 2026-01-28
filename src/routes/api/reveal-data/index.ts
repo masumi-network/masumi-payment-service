@@ -1,7 +1,6 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { Permission } from '@/generated/prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import stringify from 'canonical-json';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
@@ -86,7 +85,7 @@ export const revealDataEndpointPost = readAuthenticatedEndpointFactory.build({
         throw createHttpError(404, 'Payment not found');
       }
       if (
-        ctx.permission !== Permission.Admin &&
+        !ctx.canAdmin &&
         !ctx.networkLimit.includes(payment.PaymentSource.network)
       ) {
         recordBusinessEndpointError(

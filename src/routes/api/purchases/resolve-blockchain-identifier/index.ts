@@ -53,7 +53,7 @@ export const resolvePurchaseRequestPost =
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       const purchase = await prisma.purchaseRequest.findUnique({

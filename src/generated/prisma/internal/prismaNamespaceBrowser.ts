@@ -95,7 +95,9 @@ export const ApiKeyScalarFieldEnum = {
   token: 'token',
   tokenHash: 'tokenHash',
   status: 'status',
-  permission: 'permission',
+  canRead: 'canRead',
+  canPay: 'canPay',
+  canAdmin: 'canAdmin',
   networkLimit: 'networkLimit',
   usageLimited: 'usageLimited',
   deletedAt: 'deletedAt'

@@ -3,7 +3,6 @@ import {
   Network,
   PurchasingAction,
   OnChainState,
-  Permission,
 } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
@@ -50,7 +49,7 @@ export const cancelPurchaseRefundRequestPost =
       await checkIsAllowedNetworkOrThrowUnauthorized(
         ctx.networkLimit,
         input.network,
-        ctx.permission,
+        ctx.canAdmin,
       );
 
       const purchase = await prisma.purchaseRequest.findUnique({
@@ -80,10 +79,7 @@ export const cancelPurchaseRefundRequestPost =
         throw createHttpError(404, 'Purchase not found or in invalid state');
       }
 
-      if (
-        purchase.requestedById != ctx.id &&
-        ctx.permission != Permission.Admin
-      ) {
+      if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
         throw createHttpError(
           403,
           'You are not authorized to cancel a refund request for this purchase',
