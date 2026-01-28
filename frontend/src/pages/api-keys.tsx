@@ -111,8 +111,6 @@ export default function ApiKeys() {
     loadMore();
   };
 
-
-
   const handleDeleteApiKey = async () => {
     if (!keyToDelete || !keyToDelete.id) return;
 
@@ -205,8 +203,7 @@ export default function ApiKeys() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-
-                  <th className="p-4 text-left text-sm font-medium">ID</th>
+                  <th className="p-4 text-left text-sm font-medium pl-6">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
                   <th className="p-4 text-left text-sm font-medium">
                     Permission
@@ -218,7 +215,7 @@ export default function ApiKeys() {
                     Usage Limits
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-12 p-4"></th>
+                  <th className="w-12 p-4 pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -234,9 +231,8 @@ export default function ApiKeys() {
                   </tr>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr key={index} className="border-b" onClick={() => { }}>
-
-                      <td className="p-4">
+                    <tr key={index} className="border-b" onClick={() => {}}>
+                      <td className="p-4 pl-6">
                         <div className="text-sm">{key.id}</div>
                       </td>
                       <td className="p-4 truncate">
@@ -277,15 +273,16 @@ export default function ApiKeys() {
                       </td>
                       <td className="p-4 text-sm">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${key.status === 'Active'
+                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                            key.status === 'Active'
                               ? 'bg-green-100 text-green-700'
                               : 'bg-red-100 text-red-700'
-                            }`}
+                          }`}
                         >
                           {key.status}
                         </span>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         <Select
                           onValueChange={(value) => {
                             if (value === 'update') {

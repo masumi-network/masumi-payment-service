@@ -56,7 +56,6 @@ export default function Transactions() {
 
   const [activeTab, setActiveTab] = useState('All');
 
-
   const [filteredTransactions, setFilteredTransactions] = useState<
     Transaction[]
   >([]);
@@ -196,8 +195,6 @@ export default function Transactions() {
       loadMore();
     }
   }, [hasMore, isLoadingMore, loadMore]);
-
-
 
   const getStatusColor = (status: string | null, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
@@ -384,8 +381,9 @@ export default function Transactions() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-
-                  <th className="p-4 text-left text-sm font-medium">Type</th>
+                  <th className="p-4 text-left text-sm font-medium pl-6">
+                    Type
+                  </th>
                   <th className="p-4 text-left text-sm font-medium">
                     Transaction Hash
                   </th>
@@ -396,7 +394,7 @@ export default function Transactions() {
                     Unlock Time
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium"></th>
+                  <th className="p-4 text-left text-sm font-medium pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -427,9 +425,7 @@ export default function Transactions() {
                       )}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-
-
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
@@ -448,19 +444,8 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' &&
-                          transaction.RequestedFunds?.length
+                        transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
-                            const amount = formatPrice(fund.amount);
-                            const unit = formatFundUnit(fund.unit, network);
-                            return (
-                              <div key={index} className="text-sm">
-                                {amount} {unit}
-                              </div>
-                            );
-                          })
-                          : transaction.type === 'purchase' &&
-                            transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(fund.unit, network);
                               return (
@@ -469,6 +454,17 @@ export default function Transactions() {
                                 </div>
                               );
                             })
+                          : transaction.type === 'purchase' &&
+                              transaction.PaidFunds?.length
+                            ? transaction.PaidFunds.map((fund, index) => {
+                                const amount = formatPrice(fund.amount);
+                                const unit = formatFundUnit(fund.unit, network);
+                                return (
+                                  <div key={index} className="text-sm">
+                                    {amount} {unit}
+                                  </div>
+                                );
+                              })
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -499,7 +495,7 @@ export default function Transactions() {
                       <td className="p-4">
                         {new Date(transaction.createdAt).toLocaleString()}
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           ⋮
                         </Button>

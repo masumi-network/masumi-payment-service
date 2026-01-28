@@ -51,7 +51,6 @@ export default function WalletsPage() {
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
-
   // Use React Query for cached wallet data
   const {
     wallets: walletsList,
@@ -111,13 +110,13 @@ export default function WalletsPage() {
               prev.map((w) =>
                 w.id === wallet.id
                   ? {
-                    ...w,
-                    collectionBalance: {
-                      ada: collectionBalance.ada,
-                      usdm: collectionBalance.usdm,
-                    },
-                    isLoadingCollectionBalance: false,
-                  }
+                      ...w,
+                      collectionBalance: {
+                        ada: collectionBalance.ada,
+                        usdm: collectionBalance.usdm,
+                      },
+                      isLoadingCollectionBalance: false,
+                    }
                   : w,
               ),
             );
@@ -204,8 +203,6 @@ export default function WalletsPage() {
   useEffect(() => {
     filterWallets();
   }, [allWallets, searchQuery, activeTab, filterWallets]);
-
-
 
   const refreshWalletBalance = useCallback(
     async (wallet: WalletWithBalance, isCollection: boolean = false) => {
@@ -315,8 +312,7 @@ export default function WalletsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b">
-
-                <th className="p-4 text-left text-sm font-medium">Type</th>
+                <th className="p-4 text-left text-sm font-medium pl-7">Type</th>
                 <th className="p-4 text-left text-sm font-medium">Note</th>
                 <th className="p-4 text-left text-sm font-medium">Address</th>
                 <th className="p-4 text-left text-sm font-medium">
@@ -328,7 +324,7 @@ export default function WalletsPage() {
                 <th className="p-4 text-left text-sm font-medium">
                   Balance, USDM
                 </th>
-                <th className="w-20 p-4"></th>
+                <th className="w-20 p-4 pr-8"></th>
               </tr>
             </thead>
             <tbody>
@@ -348,8 +344,7 @@ export default function WalletsPage() {
                       className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
                       onClick={() => handleWalletClick(wallet)}
                     >
-
-                      <td className="p-4">
+                      <td className="p-4 pl-7">
                         {wallet.type === 'Collection' ? (
                           <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
                             Collection
@@ -381,7 +376,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         {wallet.type === 'Selling' &&
-                          wallet.collectionAddress ? (
+                        wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
                             <span
                               className="font-mono text-sm"
@@ -401,16 +396,16 @@ export default function WalletsPage() {
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) ||
-                              wallet.isLoadingBalance ? (
+                            wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
                                   ? formatBalance(
-                                    (
-                                      parseInt(wallet.balance) / 1000000
-                                    ).toFixed(2),
-                                  )
+                                      (
+                                        parseInt(wallet.balance) / 1000000
+                                      ).toFixed(2),
+                                    )
                                   : '0'}
                               </span>
                             )}
@@ -434,7 +429,7 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex items-center gap-2">
                           {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                          wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>
@@ -445,7 +440,7 @@ export default function WalletsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         <div className="flex items-center gap-2">
                           <Button
                             variant="ghost"

@@ -200,8 +200,6 @@ export default function PaymentSourcesPage() {
     }
   }, [router.query.action, router]);
 
-
-
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
 
@@ -294,8 +292,7 @@ export default function PaymentSourcesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-
-                  <th className="p-4 text-left text-sm font-medium truncate">
+                  <th className="p-4 text-left text-sm font-medium truncate pl-6">
                     Contract address
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
@@ -307,7 +304,7 @@ export default function PaymentSourcesPage() {
                     Created at
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                  <th className="w-20 p-4"></th>
+                  <th className="w-20 p-4 pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -326,8 +323,7 @@ export default function PaymentSourcesPage() {
                       className="border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
-
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           {shortenAddress(source.smartContractAddress)}{' '}
                           <CopyButton value={source.smartContractAddress} />
@@ -362,7 +358,10 @@ export default function PaymentSourcesPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="p-4 pr-8"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex gap-2">
                           <Button
                             variant="ghost"
