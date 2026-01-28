@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { MainLayout } from '@/components/layout/MainLayout';
 import Head from 'next/head';
 import { useState, useMemo } from 'react';

@@ -1,30 +1,21 @@
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-import reactHooksPlugin from 'eslint-plugin-react-hooks';
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import prettierConfig from 'eslint-config-prettier';
 import prettierPlugin from 'eslint-plugin-prettier';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript', 'prettier'),
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  prettierConfig,
+  globalIgnores(['.next/**', 'dist/**', 'node_modules/**']),
   {
     ignores: ['**/*.gen.ts', 'src/lib/api/generated/**'],
   },
   {
     files: ['**/*.{js,jsx,ts,tsx}'],
     plugins: {
-      'react-hooks': reactHooksPlugin,
       prettier: prettierPlugin,
     },
     rules: {
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
       'prettier/prettier': 'error',
     },
   },
@@ -34,6 +25,6 @@ const eslintConfig = [
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
-];
+]);
 
 export default eslintConfig;

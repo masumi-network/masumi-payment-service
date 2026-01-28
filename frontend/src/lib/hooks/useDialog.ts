@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useState, useCallback, MouseEvent as ReactMouseEvent, useEffect, useRef } from 'react';
 
 interface Position {

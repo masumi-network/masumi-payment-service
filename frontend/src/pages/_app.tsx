@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { AppProvider } from '@/lib/contexts/AppContext';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';

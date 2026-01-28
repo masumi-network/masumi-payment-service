@@ -8,7 +8,8 @@
     "type": "module",
     "scripts": {
         "prepare": "husky",
-        "lint": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
+        "lint": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
+        "lint:fix": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint:fix",
         "lint-ci": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
         "format": "prettier --log-level silent --write \"src/**/*.{ts,js}\" && pnpm -C frontend run format",
         "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",

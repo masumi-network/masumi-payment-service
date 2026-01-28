@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/rules-of-hooks, @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/rules-of-hooks */
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
