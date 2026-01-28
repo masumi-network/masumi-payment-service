@@ -109,16 +109,21 @@ initialize()
 					res.json(JSON.parse(docsString));
 				});
 
-				//serve the static admin files
 				app.use('/admin', express.static('frontend/dist'));
 				app.use('/_next', express.static('frontend/dist/_next'));
-				// Catch all routes for admin and serve index.html via rerouting (excluding static files)
-				app.get('/admin/*name', (req, res, next) => {
-					// Skip static files (files with extensions)
+				// Serve page HTML by path (Next static export). Use req.path — Express 5 doesn't populate wildcard params.
+				app.get(/^\/admin(?:\/(.*))?$/, (req, res, next) => {
 					if (req.path.match(/\.[a-zA-Z0-9]+$/)) {
 						return next();
 					}
-					res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+					const subPath = req.path.replace(/^\/admin\/?/, '').replace(/\/$/, '') || 'index';
+					const pagePath = subPath === 'index' ? 'index.html' : `${subPath}.html`;
+					const frontendDist = path.join(__dirname, 'frontend/dist');
+					const filePath = path.join(frontendDist, pagePath);
+					if (fs.existsSync(filePath)) {
+						return res.sendFile(filePath);
+					}
+					res.sendFile(path.join(frontendDist, 'index.html'));
 				});
 			},
 			http: {

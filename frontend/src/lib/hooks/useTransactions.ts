@@ -224,14 +224,15 @@ export function useTransactions() {
   }, [query.dataUpdatedAt, transactions]);
 
   useEffect(() => {
-    const normalizedPathname = normalizePathname(router.pathname);
+    const path = router.asPath?.split('?')[0] ?? router.pathname;
+    const normalizedPathname = normalizePathname(path);
     if (normalizedPathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);
       setLastVisitTimestamp(new Date().toISOString());
       seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
     }
-  }, [router.pathname, newTransactionsCount, transactions]);
+  }, [router.asPath, router.pathname, newTransactionsCount, transactions]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);

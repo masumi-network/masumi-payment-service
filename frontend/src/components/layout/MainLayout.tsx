@@ -365,7 +365,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 'flex items-center rounded-lg text-sm transition-all relative',
                 'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
                 collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
-                normalizePathname(router.pathname) === item.href &&
+                normalizePathname(router.asPath?.split('?')[0] ?? router.pathname) === item.href &&
                   'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
               title={collapsed && !isHovered ? item.name : undefined}

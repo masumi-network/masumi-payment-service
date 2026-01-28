@@ -73,23 +73,34 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
+  // Wait for router.isReady so pathname is correct (basePath + static export can be stale on first run).
   useEffect(() => {
-    if (isLoading) return;
+    if (!router.isReady || isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    const normalizedPathname = normalizePathname(router.asPath?.split('?')[0] ?? router.pathname);
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
-      const normalizedPathname = normalizePathname(router.pathname);
       if (protectedPages.includes(normalizedPathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      const normalizedPathname = normalizePathname(router.pathname);
       if (normalizedPathname === '/setup') {
         router.replace('/');
       }
     }
-  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
+  }, [
+    router.isReady,
+    router.asPath,
+    router.pathname,
+    apiKey,
+    isHealthy,
+    router,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+  ]);
 
   useEffect(() => {
     const init = async () => {
