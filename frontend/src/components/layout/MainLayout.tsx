@@ -154,6 +154,10 @@ export function MainLayout({ children }: MainLayoutProps) {
       currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
     );
   }, [currentNetworkPaymentSources]);
+
+  // Detect if we're on the setup page to show minimal navigation
+  const isSetupPage = router.pathname === '/setup';
+
   const [navItems, setNavItems] = useState<
     {
       href: string;
@@ -164,6 +168,19 @@ export function MainLayout({ children }: MainLayoutProps) {
   >([]);
 
   useEffect(() => {
+    // During setup: show only settings in nav
+    if (isSetupPage) {
+      setNavItems([
+        {
+          href: '/settings',
+          name: 'Settings',
+          icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+      ]);
+      return;
+    }
+
     if (hasPaymentSources) {
       setNavItems([
         {
@@ -237,7 +254,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
       },
     ]);
-  }, [hasPaymentSources, newTransactionsCount]);
+  }, [hasPaymentSources, newTransactionsCount, isSetupPage]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
