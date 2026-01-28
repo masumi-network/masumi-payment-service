@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
-import { cn } from '@/lib/utils';
+import { cn, normalizePathname } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
@@ -365,7 +365,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                 'flex items-center rounded-lg text-sm transition-all relative',
                 'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
                 collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
-                router.pathname === item.href && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                normalizePathname(router.pathname) === item.href &&
+                  'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
               title={collapsed && !isHovered ? item.name : undefined}
             >

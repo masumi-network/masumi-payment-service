@@ -17,7 +17,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, normalizePathname } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -79,11 +79,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
-      if (protectedPages.includes(router.pathname)) {
+      const normalizedPathname = normalizePathname(router.pathname);
+      if (protectedPages.includes(normalizedPathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      if (router.pathname === '/setup') {
+      const normalizedPathname = normalizePathname(router.pathname);
+      if (normalizedPathname === '/setup') {
         router.replace('/');
       }
     }

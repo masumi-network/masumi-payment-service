@@ -302,3 +302,23 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
 
   return unit ?? '—';
 }
+
+/**
+ * Normalizes a pathname by removing the basePath
+ * This ensures path comparisons work correctly with Next.js basePath configuration
+ *
+ * @param pathname - The pathname to normalize (e.g., '/admin/setup' or '/setup')
+ * @param basePath - The basePath configured in next.config.ts (default: '/admin')
+ * @returns The normalized pathname without basePath (e.g., '/setup')
+ */
+export function normalizePathname(pathname: string, basePath: string = '/admin'): string {
+  if (!pathname) return '/';
+
+  // Remove basePath if present
+  if (pathname.startsWith(basePath)) {
+    const normalized = pathname.slice(basePath.length);
+    return normalized || '/';
+  }
+
+  return pathname;
+}
