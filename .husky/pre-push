@@ -73,7 +73,7 @@ fi
 
 # Run ESLint only on staged files
 echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
-pnpm run lint -- || \
+if ! pnpm run lint; then \
 (
     echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
     exit 5
@@ -112,7 +112,7 @@ if git diff --quiet; then
 else
     echo "${BLUE}📝 Committing generated file changes...${NC}"
     git add .
-    git commit -m "chore: update generated files" --no-verify
+    git commit -m "chore: generate, format and lint" --no-verify
     echo "${GREEN}✅ Generated files committed${NC}"
 fi
 
