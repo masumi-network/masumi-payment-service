@@ -194,6 +194,24 @@ export function AddPaymentSourceDialog({
     }
   }, [open, currentNetwork, reset]);
 
+  const network = watch('network');
+
+  // Update network-dependent values when the form's network dropdown changes
+  useEffect(() => {
+    if (open && network) {
+      setValue(
+        'feeReceiverWallet.walletAddress',
+        DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+      );
+      setValue('feePermille', DEFAULT_FEE_CONFIG[network].feePermille);
+      setValue('customAdminWallets', [
+        { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
+        { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
+        { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
+      ]);
+    }
+  }, [network, open, setValue]);
+
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
     setCopiedAddresses({ ...copiedAddresses, [address]: true });
@@ -356,7 +374,6 @@ export function AddPaymentSourceDialog({
   };
 
   const useCustomAdminWallets = watch('useCustomAdminWallets');
-  const network = watch('network');
 
   // Handler to generate mnemonic for a purchasing wallet
   const handleGeneratePurchasingMnemonic = async (index: number) => {
