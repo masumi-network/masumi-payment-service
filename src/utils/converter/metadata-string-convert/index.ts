@@ -8,9 +8,9 @@ export function metadataToString(value: string | string[] | undefined) {
 export function stringToMetadata(
   s: string | undefined | null,
   forceArray: boolean = true,
-) {
+): string | string[] | undefined {
   if (s == undefined || s == null) {
-    return '';
+    return undefined;
   }
   if (s.length <= 60 && forceArray == false) {
     return s;
