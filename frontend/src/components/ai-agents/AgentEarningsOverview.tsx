@@ -61,12 +61,12 @@ export function AgentEarningsOverview({
         selectedPeriod === 'all'
           ? new Date(0) // Start from epoch for all time
           : (() => {
-              const periodDays =
-                selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
-              const date = new Date();
-              date.setDate(date.getDate() - periodDays);
-              return date;
-            })();
+            const periodDays =
+              selectedPeriod === '1d' ? 1 : selectedPeriod === '7d' ? 7 : 30;
+            const date = new Date();
+            date.setDate(date.getDate() - periodDays);
+            return date;
+          })();
 
       // Filter transactions by agent identifier and last 30 days
       const allPayments: Payment[] = [];
@@ -95,7 +95,7 @@ export function AgentEarningsOverview({
             (payment) =>
               payment.agentIdentifier === agentIdentifier &&
               new Date(parseInt(payment.unlockTime || '0')) >=
-                periodStartDate &&
+              periodStartDate &&
               new Date(parseInt(payment.unlockTime || '0')) <= new Date() &&
               (payment.onChainState === 'Withdrawn' ||
                 payment.onChainState === 'ResultSubmitted' ||
@@ -202,7 +202,7 @@ export function AgentEarningsOverview({
     if (token.unit === 'lovelace' || token.unit === '') {
       const ada = token.quantity / 1000000;
       const formattedAmount = ada === 0 ? '0' : formatBalance(ada.toFixed(2));
-      return formattedAmount + ' ₳';
+      return formattedAmount + ' ADA';
     }
 
     // For USDM, match by policyId and assetName (hex) - network aware
@@ -234,11 +234,10 @@ export function AgentEarningsOverview({
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                selectedPeriod === period
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${selectedPeriod === period
                   ? 'bg-background text-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
-              }`}
+                }`}
             >
               {getPeriodLabel(period)}
             </button>
