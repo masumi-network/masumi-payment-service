@@ -7,13 +7,7 @@ export interface SearchableItem {
   id: string;
   title: string;
   description?: string;
-  type:
-    | 'page'
-    | 'action'
-    | 'wallet'
-    | 'agent'
-    | 'payment-source'
-    | 'transaction';
+  type: 'page' | 'action' | 'wallet' | 'agent' | 'payment-source' | 'transaction';
   href: string;
   keywords?: string[];
   elementId?: string;
@@ -109,12 +103,11 @@ export function useSearch() {
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
   useEffect(() => {
@@ -127,8 +120,7 @@ export function useSearch() {
         dynamicResults.push({
           id: wallet.walletAddress,
           title: 'Buying Wallet',
-          description:
-            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
+          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
           href: `/wallets?searched=${wallet.walletAddress}`,
           elementId: `wallet-${wallet.walletAddress}`,
@@ -139,8 +131,7 @@ export function useSearch() {
         dynamicResults.push({
           id: wallet.walletAddress,
           title: 'Selling Wallet',
-          description:
-            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
+          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
           href: `/wallets?searched=${wallet.walletAddress}`,
           elementId: `wallet-${wallet.walletAddress}`,
@@ -171,9 +162,7 @@ export function useSearch() {
         (item) =>
           item.title.toLowerCase().includes(queryLower) ||
           item.description?.toLowerCase().includes(queryLower) ||
-          item.keywords?.some((keyword) =>
-            keyword.toLowerCase().includes(queryLower),
-          ),
+          item.keywords?.some((keyword) => keyword.toLowerCase().includes(queryLower)),
       );
 
       return filteredResults;

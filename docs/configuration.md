@@ -11,7 +11,6 @@ variables
 ## Advanced Configuration
 
 - If you need to seed a new database, you will also need to set the following:
-
   - **BLOCKFROST_API_KEY**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
 
 - **DATABASE_URL**: The endpoint for a PostgreSQL database to be used
@@ -35,7 +34,6 @@ variables
 
 1. If you're setting up the database for the first time (or want to provide some initial data) you also need the
    following variables:
-
    - **BLOCKFROST_API_KEY_PREPROD**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
      network, you can create this for free
    - **BLOCKFROST_API_KEY_MAINNET**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain

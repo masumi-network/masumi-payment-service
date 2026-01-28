@@ -8,9 +8,10 @@
     "type": "module",
     "scripts": {
         "prepare": "husky",
-        "lint": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs",
-        "lint-ci": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs",
-        "format": "prettier --log-level silent --write \"src/**/*.{ts,js}\"",
+        "lint": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
+        "lint:fix": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint:fix",
+        "lint-ci": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
+        "format": "prettier --log-level silent --write \"src/**/*.{ts,js}\" && pnpm -C frontend run format",
         "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
         "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
         "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
@@ -94,7 +95,6 @@
         "jest": "^30.2.0",
         "jest-mock": "^30.2.0",
         "knip": "^5.81.0",
-        "lint-staged": "^16.2.7",
         "openapi-to-postmanv2": "^5.8.0",
         "pkgroll": "^2.21.5",
         "prettier": "^3.8.0",
@@ -128,12 +128,6 @@
             "prisma",
             "protobufjs",
             "sharp"
-        ]
-    },
-    "lint-staged": {
-        "*.{js,ts}": [
-            "pnpm run lint",
-            "pnpm run format"
         ]
     }
 }

@@ -46,11 +46,7 @@ export function RefreshButton({
         size="icon"
         onClick={onRefresh}
         disabled={isDisabled}
-        className={cn(
-          sizeClasses[size],
-          isRefreshing && 'cursor-not-allowed',
-          className,
-        )}
+        className={cn(sizeClasses[size], isRefreshing && 'cursor-not-allowed', className)}
         title={isRefreshing ? 'Refreshing...' : 'Refresh'}
       >
         <RefreshCw
@@ -66,11 +62,7 @@ export function RefreshButton({
       variant="outline"
       onClick={onRefresh}
       disabled={isDisabled}
-      className={cn(
-        'flex items-center gap-2',
-        isRefreshing && 'cursor-not-allowed',
-        className,
-      )}
+      className={cn('flex items-center gap-2', isRefreshing && 'cursor-not-allowed', className)}
       title={isRefreshing ? 'Refreshing...' : 'Refresh'}
     >
       <RefreshCw

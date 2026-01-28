@@ -21,12 +21,8 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
       <div
         className="absolute bottom-0 h-0.5 bg-primary transition-all duration-300 ease-out"
         style={{
-          left:
-            tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]
-              ?.offsetLeft ?? 0,
-          width:
-            tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]
-              ?.offsetWidth ?? 0,
+          left: tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]?.offsetLeft ?? 0,
+          width: tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]?.offsetWidth ?? 0,
         }}
       />
       {tabs.map((tab, index) => (

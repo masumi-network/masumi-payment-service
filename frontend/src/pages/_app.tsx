@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { AppProvider } from '@/lib/contexts/AppContext';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -30,11 +29,7 @@ function App({ Component, pageProps, router }: AppProps) {
         <AppProvider>
           <SidebarProvider>
             <TooltipProvider delayDuration={200}>
-              <ThemedApp
-                Component={Component}
-                pageProps={pageProps}
-                router={router}
-              />
+              <ThemedApp Component={Component} pageProps={pageProps} router={router} />
             </TooltipProvider>
           </SidebarProvider>
         </AppProvider>
@@ -76,53 +71,33 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const { mainnetPaymentSources, preprodPaymentSources, isLoading } =
-    usePaymentSourceExtendedAll();
+  const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
   useEffect(() => {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
-      const protectedPages = [
-        '/',
-        '/ai-agents',
-        '/wallets',
-        '/transactions',
-        '/api-keys',
-      ];
+      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
       if (protectedPages.includes(router.pathname)) {
-        router.replace(
-          '/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'),
-        );
+        router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
       if (router.pathname === '/setup') {
         router.replace('/');
       }
     }
-  }, [
-    apiKey,
-    isHealthy,
-    router,
-    isLoading,
-    network,
-    mainnetPaymentSources,
-    preprodPaymentSources,
-  ]);
+  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
 
   useEffect(() => {
     const init = async () => {
-      const response = await handleApiCall(
-        () => getHealth({ client: apiClient }),
-        {
-          onError: (error: any) => {
-            console.error('Health check failed:', error);
-            setIsHealthy(false);
-          },
-          errorMessage: 'Health check failed',
+      const response = await handleApiCall(() => getHealth({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('Health check failed:', error);
+          setIsHealthy(false);
         },
-      );
+        errorMessage: 'Health check failed',
+      });
 
       if (!response) {
         setIsHealthy(false);
@@ -142,17 +117,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           token: storedApiKey,
         },
       });
-      const apiKeyStatus = await handleApiCall(
-        () => getApiKeyStatus({ client: apiClient }),
-        {
-          onError: (error: any) => {
-            console.error('API key status check failed:', error);
-            setIsHealthy(true);
-            setAuthorized(false);
-          },
-          errorMessage: 'API key validation failed',
+      const apiKeyStatus = await handleApiCall(() => getApiKeyStatus({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('API key status check failed:', error);
+          setIsHealthy(true);
+          setAuthorized(false);
         },
-      );
+        errorMessage: 'API key validation failed',
+      });
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
@@ -205,8 +177,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid or does not have admin permissions. Please
-            sign out and sign in with an admin API key.
+            Your API key is invalid or does not have admin permissions. Please sign out and sign in
+            with an admin API key.
           </div>
           <Button
             variant="destructive"
@@ -242,8 +214,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="flex-1 flex items-center justify-center bg-background text-foreground">
           <div className="text-center space-y-4 p-4">
             <div className="text-lg text-muted-foreground">
-              Please use a desktop device to <br /> access the Masumi Admin
-              Interface
+              Please use a desktop device to <br /> access the Masumi Admin Interface
             </div>
             <Button variant="muted">
               <Link href="https://docs.masumi.io" target="_blank">

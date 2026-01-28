@@ -21,6 +21,31 @@ The Masumi Payment Service is built using a hexagonal architecture pattern, sepa
 - [**ESLint/Prettier**](https://eslint.org/): Code style and formatting
 - [**Docker**](https://www.docker.com/): Containerization
 
+### Code Formatting
+
+The project uses Prettier for consistent formatting across both backend and frontend:
+
+```bash
+# Format all files
+pnpm run format
+
+# Check formatting without writing (useful for CI)
+pnpm run format:check
+```
+
+#### Formatting Rules
+
+| Rule            | Value    |
+| --------------- | -------- |
+| Indent          | 2 spaces |
+| Quotes          | Single   |
+| Semicolons      | Always   |
+| Trailing Commas | All      |
+| Line Width      | 100      |
+| End of Line     | LF       |
+
+The `.editorconfig` file at the project root ensures your editor applies these settings automatically.
+
 #### Infrastructure
 
 - [**PostgreSQL**](https://www.postgresql.org/): Primary database

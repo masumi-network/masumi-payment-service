@@ -1,12 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import {
-  useState,
-  useCallback,
-  MouseEvent as ReactMouseEvent,
-  useEffect,
-  useRef,
-} from 'react';
+import { useState, useCallback, MouseEvent as ReactMouseEvent, useEffect, useRef } from 'react';
 
 interface Position {
   x: number;
@@ -67,9 +59,7 @@ const getInitialPosition = (initialPosition?: Position): Position => {
 };
 
 export const useDialog = (initialPosition?: Position): UseDialogReturn => {
-  const [position, setPosition] = useState<Position>(
-    getInitialPosition(initialPosition),
-  );
+  const [position, setPosition] = useState<Position>(getInitialPosition(initialPosition));
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<Position>({ x: 0, y: 0 });
   const isDraggingRef = useRef(false);
@@ -85,8 +75,7 @@ export const useDialog = (initialPosition?: Position): UseDialogReturn => {
       if (typeof window === 'undefined' || !dialogRef.current) return;
 
       const dialogWidth = dialogRef.current.offsetWidth ?? DEFAULT_DIALOG_WIDTH;
-      const dialogHeight =
-        dialogRef.current.offsetHeight ?? DEFAULT_DIALOG_HEIGHT;
+      const dialogHeight = dialogRef.current.offsetHeight ?? DEFAULT_DIALOG_HEIGHT;
 
       const newPosition = {
         x: Math.max(0, (window.innerWidth - dialogWidth) / 2),
@@ -115,12 +104,7 @@ export const useDialog = (initialPosition?: Position): UseDialogReturn => {
       };
 
       const onMouseMove = (e: MouseEvent) => {
-        if (
-          !isDraggingRef.current ||
-          !dialogRef.current ||
-          typeof window === 'undefined'
-        )
-          return;
+        if (!isDraggingRef.current || !dialogRef.current || typeof window === 'undefined') return;
 
         const newX = e.clientX - dragStartRef.current.x;
         const newY = e.clientY - dragStartRef.current.y;
@@ -128,10 +112,8 @@ export const useDialog = (initialPosition?: Position): UseDialogReturn => {
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
 
-        const dialogWidth =
-          dialogRef.current.offsetWidth ?? DEFAULT_DIALOG_WIDTH;
-        const dialogHeight =
-          dialogRef.current.offsetHeight ?? DEFAULT_DIALOG_HEIGHT;
+        const dialogWidth = dialogRef.current.offsetWidth ?? DEFAULT_DIALOG_WIDTH;
+        const dialogHeight = dialogRef.current.offsetHeight ?? DEFAULT_DIALOG_HEIGHT;
 
         const margin = 20;
         const minX = margin;

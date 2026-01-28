@@ -42,13 +42,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const {
-    collapsed,
-    setCollapsed,
-    isHovered,
-    setIsHovered,
-    shouldAnimateIcon,
-  } = useSidebar();
+  const { collapsed, setCollapsed, isHovered, setIsHovered, shouldAnimateIcon } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
@@ -140,19 +134,16 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
   const [hasPaymentSources, setHasPaymentSources] = useState(false);
   useEffect(() => {
-    setHasPaymentSources(
-      currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
-    );
+    setHasPaymentSources(currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0);
   }, [currentNetworkPaymentSources]);
   const [navItems, setNavItems] = useState<
     {
@@ -272,10 +263,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          width:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          width: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
           pointerEvents: 'auto',
         }}
       >
@@ -289,9 +277,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div
               className={cn(
                 'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed && !isHovered
-                  ? 'grid-cols-2 w-auto gap-0.5'
-                  : 'grid-cols-2 gap-2',
+                collapsed && !isHovered ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
               )}
             >
               <Button
@@ -301,7 +287,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
-                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
@@ -314,7 +300,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
-                  'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
@@ -341,8 +327,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                 style={
                   shouldAnimateIcon && collapsed && !isHovered
                     ? {
-                      animation: 'rotateIn 0.3s ease-out',
-                    }
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
                     : undefined
                 }
               >
@@ -355,15 +341,11 @@ export function MainLayout({ children }: MainLayoutProps) {
                 size="icon"
                 className={cn(
                   'h-8 w-8',
-                  collapsed
-                    ? 'text-muted-foreground opacity-50'
-                    : 'text-foreground opacity-100',
+                  collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
                 )}
                 onClick={() => setCollapsed(!collapsed)}
               >
-                <PanelLeft
-                  className={cn('h-4 w-4 transition-transform duration-300')}
-                />
+                <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
               </Button>
             )}
           </div>
@@ -382,18 +364,13 @@ export function MainLayout({ children }: MainLayoutProps) {
               className={cn(
                 'flex items-center rounded-lg text-sm transition-all relative',
                 'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed && !isHovered
-                  ? 'h-10 w-10 justify-center'
-                  : 'px-3 h-10 gap-3',
-                router.pathname === item.href &&
-                'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+                router.pathname === item.href && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
               )}
               title={collapsed && !isHovered ? item.name : undefined}
             >
               {item.icon}
-              {!(collapsed && !isHovered) && (
-                <span className="truncate">{item.name}</span>
-              )}
+              {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
               {!(collapsed && !isHovered) && item.badge && (
                 <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
                   {item.badge}
@@ -421,11 +398,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link
-                href="https://www.masumi.network/about"
-                target="_blank"
-                className="truncate"
-              >
+              <Link href="https://www.masumi.network/about" target="_blank" className="truncate">
                 About
               </Link>
               <Link
@@ -447,15 +420,9 @@ export function MainLayout({ children }: MainLayoutProps) {
               variant="ghost"
               size="icon"
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
-              onClick={() =>
-                setThemePreference(theme === 'dark' ? 'light' : 'dark')
-              }
+              onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
         </div>
@@ -464,10 +431,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       <div
         className="flex flex-col min-h-screen w-screen transition-all duration-300"
         style={{
-          paddingLeft:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          paddingLeft: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
         }}
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
@@ -523,9 +487,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full">
-          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">
-            {children}
-          </div>
+          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>
 

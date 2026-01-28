@@ -2,10 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPaymentSourceExtended,
-  PaymentSourceExtended,
-} from '@/lib/api/generated';
+import { getPaymentSourceExtended, PaymentSourceExtended } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
 type UsePaymentSourceExtendedAllParams = {
@@ -64,8 +61,7 @@ function usePaymentSourceExtendedAllInternal({
       }
 
       return aggregated.sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
     },
     enabled: !!apiClient && !!apiKey,
@@ -103,8 +99,6 @@ export function usePaymentSourceExtendedAll() {
   return usePaymentSourceExtendedAllInternal({ apiClient, apiKey });
 }
 
-export function usePaymentSourceExtendedAllWithParams(
-  params: UsePaymentSourceExtendedAllParams,
-) {
+export function usePaymentSourceExtendedAllWithParams(params: UsePaymentSourceExtendedAllParams) {
   return usePaymentSourceExtendedAllInternal(params);
 }

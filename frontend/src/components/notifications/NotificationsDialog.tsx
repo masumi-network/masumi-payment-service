@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { formatDistanceToNow } from 'date-fns';
@@ -14,12 +9,8 @@ interface NotificationsDialogProps {
   onClose: () => void;
 }
 
-export function NotificationsDialog({
-  open,
-  onClose,
-}: NotificationsDialogProps) {
-  const { transactions, newTransactionsCount, markAllAsRead } =
-    useTransactions();
+export function NotificationsDialog({ open, onClose }: NotificationsDialogProps) {
+  const { transactions, newTransactionsCount, markAllAsRead } = useTransactions();
   const router = useRouter();
 
   const handleViewTransactions = () => {
@@ -30,10 +21,7 @@ export function NotificationsDialog({
 
   const newTransactions = transactions
     .slice(0, newTransactionsCount)
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -51,9 +39,7 @@ export function NotificationsDialog({
                   onClick={handleViewTransactions}
                 >
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">
-                      New {transaction.type} transaction
-                    </p>
+                    <p className="text-sm font-medium">New {transaction.type} transaction</p>
                     <p className="text-xs text-muted-foreground">
                       Amount:{' '}
                       {transaction.Amounts?.[0]
@@ -66,9 +52,7 @@ export function NotificationsDialog({
                       })}
                     </p>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {transaction.onChainState}
-                  </span>
+                  <span className="text-xs text-muted-foreground">{transaction.onChainState}</span>
                 </div>
               ))}
             </div>

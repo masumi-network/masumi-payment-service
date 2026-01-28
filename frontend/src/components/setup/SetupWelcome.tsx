@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react/no-unescaped-entities */
 
 import { Button } from '@/components/ui/button';
@@ -26,10 +25,7 @@ import {
   getPaymentSourceExtended,
 } from '@/lib/api/generated';
 import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
-import {
-  DEFAULT_ADMIN_WALLETS,
-  DEFAULT_FEE_CONFIG,
-} from '@/lib/constants/defaultWallets';
+import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -46,8 +42,7 @@ function WelcomeScreen({
   networkType: string;
   ignoreSetup: () => void;
 }) {
-  const networkDisplay =
-    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -59,9 +54,8 @@ function WelcomeScreen({
       </h2>
 
       <p className="text-sm text-muted-foreground mt-4 mb-8 text-center max-w-md">
-        We'll help you set up your payment environment by creating secure
-        wallets, configuring payment sources, and setting up your first AI
-        agent.
+        We'll help you set up your payment environment by creating secure wallets, configuring
+        payment sources, and setting up your first AI agent.
       </p>
 
       <div className="flex items-center justify-center gap-4 mt-8">
@@ -70,9 +64,7 @@ function WelcomeScreen({
             <span>Network:</span>
             <Select
               defaultValue={networkDisplay}
-              onValueChange={(value) =>
-                router.replace(`/setup?network=${value}`)
-              }
+              onValueChange={(value) => router.replace(`/setup?network=${value}`)}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -206,14 +198,11 @@ function SeedPhrasesScreen({
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold">Save seed phrases</h1>
         <p className="text-sm text-muted-foreground">
-          Please save these seed phrases securely. You will need them to access
-          your wallets.
+          Please save these seed phrases securely. You will need them to access your wallets.
         </p>
       </div>
 
-      {error && (
-        <div className="text-sm text-destructive text-center">{error}</div>
-      )}
+      {error && <div className="text-sm text-destructive text-center">{error}</div>}
 
       <div className="space-y-6 w-full">
         <div className="rounded-lg border border-border p-4 space-y-4">
@@ -372,9 +361,7 @@ function SeedPhrasesScreen({
           </Button>
           <Button
             className="text-sm"
-            disabled={
-              isGenerating || !isConfirmed || !buyingWallet || !sellingWallet
-            }
+            disabled={isGenerating || !isConfirmed || !buyingWallet || !sellingWallet}
             onClick={() => {
               if (buyingWallet && sellingWallet) {
                 onNext(buyingWallet, sellingWallet);
@@ -459,10 +446,10 @@ function PaymentSourceSetupScreen({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: [
               {
@@ -506,9 +493,7 @@ function PaymentSourceSetupScreen({
         </p>
       </div>
 
-      {error && (
-        <div className="text-sm text-destructive text-center">{error}</div>
-      )}
+      {error && <div className="text-sm text-destructive text-center">{error}</div>}
 
       <div className="space-y-6">
         {/* Admin Wallets Section */}
@@ -516,10 +501,7 @@ function PaymentSourceSetupScreen({
           <h3 className="text-lg font-semibold">Admin Wallets</h3>
           <div className="space-y-4">
             {adminWallets.map((wallet, index) => (
-              <div
-                key={index}
-                className="rounded-lg border border-border p-4 space-y-4"
-              >
+              <div key={index} className="rounded-lg border border-border p-4 space-y-4">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-black text-white dark:bg-white/10 dark:text-white">
                     Admin Wallet {index + 1}
@@ -556,16 +538,13 @@ function PaymentSourceSetupScreen({
                 placeholder="Enter your Blockfrost API key"
               />
               {errors.blockfrostApiKey && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.blockfrostApiKey.message}
-                </p>
+                <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
               )}
             </div>
 
             <div className="space-y-2">
               <label className="text-sm font-medium">
-                Fee Receiver Wallet Address{' '}
-                <span className="text-destructive">*</span>
+                Fee Receiver Wallet Address <span className="text-destructive">*</span>
               </label>
               <input
                 type="text"
@@ -592,19 +571,12 @@ function PaymentSourceSetupScreen({
                 max="1000"
               />
               {errors.feePermille && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.feePermille.message}
-                </p>
+                <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
               )}
             </div>
 
             <div className="flex items-center justify-center gap-4 pt-4">
-              <Button
-                variant="secondary"
-                className="text-sm"
-                type="button"
-                onClick={ignoreSetup}
-              >
+              <Button variant="secondary" className="text-sm" type="button" onClick={ignoreSetup}>
                 Cancel
               </Button>
               <Button className="text-sm" disabled={isLoading} type="submit">
@@ -648,12 +620,9 @@ function AddAiAgentScreen({
       .string()
       .url('API URL must be a valid URL')
       .min(1, 'API URL is required')
-      .refine(
-        (val) => val.startsWith('http://') || val.startsWith('https://'),
-        {
-          message: 'API URL must start with http:// or https://',
-        },
-      ),
+      .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+        message: 'API URL must start with http:// or https://',
+      }),
     name: z.string().min(1, 'Name is required'),
     description: z
       .string()
@@ -694,11 +663,7 @@ function AddAiAgentScreen({
       .url('Privacy policy URL must be a valid URL')
       .optional()
       .or(z.literal('')),
-    otherUrl: z
-      .string()
-      .url('Other URL must be a valid URL')
-      .optional()
-      .or(z.literal('')),
+    otherUrl: z.string().url('Other URL must be a valid URL').optional().or(z.literal('')),
     capabilityName: z
       .string()
       .max(250, 'Capability name must be less than 250 characters')
@@ -778,9 +743,7 @@ function AddAiAgentScreen({
       }
 
       const paymentSources = response.data?.data?.ExtendedPaymentSources ?? [];
-      const filteredSources = paymentSources.filter(
-        (source: any) => source.network == network,
-      );
+      const filteredSources = paymentSources.filter((source: any) => source.network == network);
 
       if (filteredSources.length === 0) {
         setError('No payment sources found for this network');
@@ -814,18 +777,15 @@ function AddAiAgentScreen({
               : { name: 'Custom Agent', version: '1.0.0' },
           AgentPricing: data.isFree
             ? {
-              pricingType: 'Free',
-            }
+                pricingType: 'Free',
+              }
             : {
-              pricingType: 'Fixed',
-              Pricing: data.prices.map((price) => ({
-                unit:
-                  price.unit === 'lovelace'
-                    ? 'lovelace'
-                    : getUsdmConfig(network).fullAssetId,
-                amount: (parseFloat(price.amount) * 1000000).toString(),
-              })),
-            },
+                pricingType: 'Fixed',
+                Pricing: data.prices.map((price) => ({
+                  unit: price.unit === 'lovelace' ? 'lovelace' : getUsdmConfig(network).fullAssetId,
+                  amount: (parseFloat(price.amount) * 1000000).toString(),
+                })),
+              },
           Author: {
             name: data.authorName || 'Setup User',
             contactEmail: data.authorEmail || '',
@@ -878,9 +838,8 @@ function AddAiAgentScreen({
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold">Add AI Agent</h1>
         <p className="text-sm text-muted-foreground">
-          Create your first AI agent by providing its details below. This agent
-          will be available for users to interact with and generate revenue
-          through your payment system.
+          Create your first AI agent by providing its details below. This agent will be available
+          for users to interact with and generate revenue through your payment system.
         </p>
       </div>
 
@@ -900,9 +859,7 @@ function AddAiAgentScreen({
             placeholder="https://your-agent-api.com"
             className={errors.apiUrl ? 'border-red-500' : ''}
           />
-          {errors.apiUrl && (
-            <p className="text-sm text-red-500">{errors.apiUrl.message}</p>
-          )}
+          {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -914,9 +871,7 @@ function AddAiAgentScreen({
             placeholder="Enter a name for your agent"
             className={errors.name ? 'border-red-500' : ''}
           />
-          {errors.name && (
-            <p className="text-sm text-red-500">{errors.name.message}</p>
-          )}
+          {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -989,18 +944,13 @@ function AddAiAgentScreen({
                     type="number"
                     step="0.01"
                     min="0"
-                    className={
-                      errors.prices?.[index]?.amount ? 'border-red-500' : ''
-                    }
+                    className={errors.prices?.[index]?.amount ? 'border-red-500' : ''}
                   />
                 </div>
                 <Select
                   value={watch(`prices.${index}.unit`)}
                   onValueChange={(value) =>
-                    setValue(
-                      `prices.${index}.unit`,
-                      value as 'lovelace' | 'USDM',
-                    )
+                    setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
                   }
                 >
                   <SelectTrigger className="w-24">
@@ -1032,9 +982,7 @@ function AddAiAgentScreen({
               Add Price
             </Button>
           </div>
-          {errors.prices && (
-            <p className="text-sm text-red-500">{errors.prices.message}</p>
-          )}
+          {errors.prices && <p className="text-sm text-red-500">{errors.prices.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -1059,9 +1007,7 @@ function AddAiAgentScreen({
                 Add
               </Button>
             </div>
-            {errors.tags && (
-              <p className="text-sm text-red-500">{errors.tags.message}</p>
-            )}
+            {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {tags.map((tag: string) => (
@@ -1094,9 +1040,7 @@ function AddAiAgentScreen({
             placeholder="Enter the author's name"
             className={errors.authorName ? 'border-red-500' : ''}
           />
-          {errors.authorName && (
-            <p className="text-sm text-red-500">{errors.authorName.message}</p>
-          )}
+          {errors.authorName && <p className="text-sm text-red-500">{errors.authorName.message}</p>}
         </div>
 
         <div className="space-y-2">
@@ -1120,25 +1064,19 @@ function AddAiAgentScreen({
             className={errors.organization ? 'border-red-500' : ''}
           />
           {errors.organization && (
-            <p className="text-sm text-red-500">
-              {errors.organization.message}
-            </p>
+            <p className="text-sm text-red-500">{errors.organization.message}</p>
           )}
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Contact Other (Website, Phone...)
-          </label>
+          <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
           <Input
             {...register('contactOther')}
             placeholder="Enter other contact"
             className={errors.contactOther ? 'border-red-500' : ''}
           />
           {errors.contactOther && (
-            <p className="text-sm text-red-500">
-              {errors.contactOther.message}
-            </p>
+            <p className="text-sm text-red-500">{errors.contactOther.message}</p>
           )}
         </div>
 
@@ -1150,9 +1088,7 @@ function AddAiAgentScreen({
             className={errors.termsOfUseUrl ? 'border-red-500' : ''}
           />
           {errors.termsOfUseUrl && (
-            <p className="text-sm text-red-500">
-              {errors.termsOfUseUrl.message}
-            </p>
+            <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
           )}
         </div>
 
@@ -1164,9 +1100,7 @@ function AddAiAgentScreen({
             className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
           />
           {errors.privacyPolicyUrl && (
-            <p className="text-sm text-red-500">
-              {errors.privacyPolicyUrl.message}
-            </p>
+            <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
           )}
         </div>
 
@@ -1177,9 +1111,7 @@ function AddAiAgentScreen({
             placeholder="Enter the other URL"
             className={errors.otherUrl ? 'border-red-500' : ''}
           />
-          {errors.otherUrl && (
-            <p className="text-sm text-red-500">{errors.otherUrl.message}</p>
-          )}
+          {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -1191,9 +1123,7 @@ function AddAiAgentScreen({
               className={errors.capabilityName ? 'border-red-500' : ''}
             />
             {errors.capabilityName && (
-              <p className="text-sm text-red-500">
-                {errors.capabilityName.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
             )}
           </div>
           <div className="space-y-2">
@@ -1204,9 +1134,7 @@ function AddAiAgentScreen({
               className={errors.capabilityVersion ? 'border-red-500' : ''}
             />
             {errors.capabilityVersion && (
-              <p className="text-sm text-red-500">
-                {errors.capabilityVersion.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
             )}
           </div>
         </div>
@@ -1232,8 +1160,7 @@ function SuccessScreen({
   networkType: string;
   hasAiAgent?: boolean;
 }) {
-  const networkDisplay =
-    networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -1249,10 +1176,9 @@ function SuccessScreen({
       </h1>
 
       <p className="text-sm text-muted-foreground mt-4 mb-8">
-        You've successfully configured your payment environment and created
-        secure wallets{hasAiAgent ? ' and set up your first AI agent' : ''}. You
-        can now start managing your Agentic AI services and receiving payments
-        through the dashboard.
+        You've successfully configured your payment environment and created secure wallets
+        {hasAiAgent ? ' and set up your first AI agent' : ''}. You can now start managing your
+        Agentic AI services and receiving payments through the dashboard.
       </p>
 
       <div className="flex items-center justify-center">
@@ -1335,9 +1261,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     <div className="min-h-screen flex flex-col w-full">
       <Header />
       <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
-        <div className="flex items-center justify-center ">
-          {steps[currentStep]}
-        </div>
+        <div className="flex items-center justify-center ">{steps[currentStep]}</div>
       </main>
       <Footer />
     </div>

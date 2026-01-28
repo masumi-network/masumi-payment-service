@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -60,18 +57,15 @@ export default function WalletsPage() {
   } = useWallets();
 
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
-  const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>(
-    [],
-  );
+  const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>([]);
 
   const isLoading = isLoadingWallets && allWallets.length === 0;
-  const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(
-    new Set(),
-  );
+  const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(new Set());
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { rate } = useRate();
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -121,15 +115,10 @@ export default function WalletsPage() {
               ),
             );
           } catch (error) {
-            console.error(
-              `Failed to fetch collection balance for wallet ${wallet.id}:`,
-              error,
-            );
+            console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
             setAllWallets((prev) =>
               prev.map((w) =>
-                w.id === wallet.id
-                  ? { ...w, isLoadingCollectionBalance: false }
-                  : w,
+                w.id === wallet.id ? { ...w, isLoadingCollectionBalance: false } : w,
               ),
             );
           }
@@ -179,21 +168,14 @@ export default function WalletsPage() {
           wallet.walletAddress?.toLowerCase().includes(query) ||
           (wallet as any).collectionAddress?.toLowerCase().includes(query) ||
           false;
-        const matchNote =
-          (wallet as any).note?.toLowerCase().includes(query) || false;
+        const matchNote = (wallet as any).note?.toLowerCase().includes(query) || false;
         const matchType = wallet.type?.toLowerCase().includes(query) || false;
         const matchBalance = wallet.balance
           ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
           : false;
         const matchUsdmBalance = wallet.usdmBalance?.includes(query) || false;
 
-        return (
-          matchAddress ||
-          matchNote ||
-          matchType ||
-          matchBalance ||
-          matchUsdmBalance
-        );
+        return matchAddress || matchNote || matchType || matchBalance || matchUsdmBalance;
       });
     }
 
@@ -209,15 +191,9 @@ export default function WalletsPage() {
       try {
         const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
         setRefreshingBalances((prev) => new Set(prev).add(walletId));
-        const address = isCollection
-          ? wallet.collectionAddress!
-          : wallet.walletAddress;
+        const address = isCollection ? wallet.collectionAddress! : wallet.walletAddress;
         const walletNetwork = wallet.network;
-        const balances = await fetchWalletBalance(
-          apiClient,
-          walletNetwork,
-          address,
-        );
+        const balances = await fetchWalletBalance(apiClient, walletNetwork, address);
 
         setFilteredWallets((prev) =>
           prev.map((w) => {
@@ -279,10 +255,7 @@ export default function WalletsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <RefreshButton
-              onRefresh={refetchWallets}
-              isRefreshing={isFetchingWallets}
-            />
+            <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
             <Button
               className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
               onClick={() => setIsAddDialogOpen(true)}
@@ -315,15 +288,9 @@ export default function WalletsPage() {
                 <th className="p-4 text-left text-sm font-medium pl-7">Type</th>
                 <th className="p-4 text-left text-sm font-medium">Note</th>
                 <th className="p-4 text-left text-sm font-medium">Address</th>
-                <th className="p-4 text-left text-sm font-medium">
-                  Collection Address
-                </th>
-                <th className="p-4 text-left text-sm font-medium">
-                  Balance, ADA
-                </th>
-                <th className="p-4 text-left text-sm font-medium">
-                  Balance, USDM
-                </th>
+                <th className="p-4 text-left text-sm font-medium">Collection Address</th>
+                <th className="p-4 text-left text-sm font-medium">Balance, ADA</th>
+                <th className="p-4 text-left text-sm font-medium">Balance, USDM</th>
                 <th className="w-20 p-4 pr-8"></th>
               </tr>
             </thead>
@@ -355,9 +322,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         <div className="text-sm font-medium truncate">
-                          {wallet.type === 'Purchasing'
-                            ? 'Buying wallet'
-                            : 'Selling wallet'}
+                          {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
                           {wallet.note || 'Created by seeding'}
@@ -365,23 +330,16 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          <span
-                            className="font-mono text-sm"
-                            title={wallet.walletAddress}
-                          >
+                          <span className="font-mono text-sm" title={wallet.walletAddress}>
                             {shortenAddress(wallet.walletAddress)}
                           </span>
                           <CopyButton value={wallet.walletAddress} />
                         </div>
                       </td>
                       <td className="p-4">
-                        {wallet.type === 'Selling' &&
-                        wallet.collectionAddress ? (
+                        {wallet.type === 'Selling' && wallet.collectionAddress ? (
                           <div className="flex items-center gap-2">
-                            <span
-                              className="font-mono text-sm"
-                              title={wallet.collectionAddress}
-                            >
+                            <span className="font-mono text-sm" title={wallet.collectionAddress}>
                               {shortenAddress(wallet.collectionAddress)}
                             </span>
                             <CopyButton value={wallet.collectionAddress} />
@@ -395,17 +353,12 @@ export default function WalletsPage() {
                       <td className="p-4">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                            {refreshingBalances.has(wallet.id) ||
-                            wallet.isLoadingBalance ? (
+                            {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
                                 {wallet.balance
-                                  ? formatBalance(
-                                      (
-                                        parseInt(wallet.balance) / 1000000
-                                      ).toFixed(2),
-                                    )
+                                  ? formatBalance((parseInt(wallet.balance) / 1000000).toFixed(2))
                                   : '0'}
                               </span>
                             )}
@@ -417,10 +370,7 @@ export default function WalletsPage() {
                               <span className="text-xs text-muted-foreground">
                                 $
                                 {formatBalance(
-                                  (
-                                    (parseInt(wallet.balance) / 1000000) *
-                                    rate
-                                  ).toFixed(2),
+                                  ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
                                 ) || ''}
                               </span>
                             )}
@@ -428,8 +378,7 @@ export default function WalletsPage() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          {refreshingBalances.has(wallet.id) ||
-                          wallet.isLoadingBalance ? (
+                          {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
                             <Spinner size={16} />
                           ) : (
                             <span>
