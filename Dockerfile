@@ -32,7 +32,6 @@ COPY frontend/src ./src
 COPY frontend/public ./public
 COPY frontend/.env* ./
 COPY frontend/next.config.ts ./
-COPY frontend/tailwind.config.ts ./
 COPY frontend/postcss.config.mjs ./
 COPY frontend/tsconfig.json ./
 COPY frontend/components.json ./
