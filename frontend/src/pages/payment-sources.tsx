@@ -16,7 +16,7 @@ import {
   PaymentSourceExtended,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
@@ -135,7 +135,7 @@ export default function PaymentSourcesPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+
   const [sourceToDelete, setSourceToDelete] =
     useState<PaymentSourceExtended | null>(null);
   const [sourceToUpdate, setSourceToUpdate] =
@@ -199,22 +199,6 @@ export default function PaymentSourcesPage() {
       router.replace('/payment-sources', undefined, { shallow: true });
     }
   }, [router.query.action, router]);
-
-  const handleSelectSource = (id: string) => {
-    setSelectedSources((prev) =>
-      prev.includes(id)
-        ? prev.filter((sourceId) => sourceId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    setSelectedSources(
-      selectedSources.length === paymentSources.length
-        ? []
-        : paymentSources.map((source) => source.id),
-    );
-  };
 
   const handleDeleteSource = async () => {
     if (!sourceToDelete) return;
@@ -308,16 +292,7 @@ export default function PaymentSourcesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="w-12 p-4">
-                    <Checkbox
-                      checked={
-                        paymentSources.length > 0 &&
-                        selectedSources.length === paymentSources.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium truncate">
+                  <th className="p-4 text-left text-sm font-medium truncate pl-6">
                     Contract address
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
@@ -329,7 +304,7 @@ export default function PaymentSourcesPage() {
                     Created at
                   </th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
-                  <th className="w-20 p-4"></th>
+                  <th className="w-20 p-4 pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -337,7 +312,7 @@ export default function PaymentSourcesPage() {
                   <PaymentSourceTableSkeleton rows={5} />
                 ) : filteredPaymentSources.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       No payment sources found
                     </td>
                   </tr>
@@ -348,13 +323,7 @@ export default function PaymentSourcesPage() {
                       className="border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedSources.includes(source.id)}
-                          onCheckedChange={() => handleSelectSource(source.id)}
-                        />
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           {shortenAddress(source.smartContractAddress)}{' '}
                           <CopyButton value={source.smartContractAddress} />
@@ -389,7 +358,10 @@ export default function PaymentSourcesPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                      <td
+                        className="p-4 pr-8"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex gap-2">
                           <Button
                             variant="ghost"

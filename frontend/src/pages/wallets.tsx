@@ -13,7 +13,7 @@ import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { Utxo } from '@/lib/api/generated';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
@@ -50,7 +50,6 @@ export default function WalletsPage() {
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedWallets, setSelectedWallets] = useState<string[]>([]);
 
   // Use React Query for cached wallet data
   const {
@@ -205,27 +204,6 @@ export default function WalletsPage() {
     filterWallets();
   }, [allWallets, searchQuery, activeTab, filterWallets]);
 
-  const handleSelectWallet = (id: string) => {
-    setSelectedWallets((prev) =>
-      prev.includes(id)
-        ? prev.filter((walletId) => walletId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (filteredWallets.length === 0) {
-      setSelectedWallets([]);
-      return;
-    }
-
-    if (selectedWallets.length === filteredWallets.length) {
-      setSelectedWallets([]);
-    } else {
-      setSelectedWallets(filteredWallets.map((wallet) => wallet.id));
-    }
-  };
-
   const refreshWalletBalance = useCallback(
     async (wallet: WalletWithBalance, isCollection: boolean = false) => {
       try {
@@ -334,16 +312,7 @@ export default function WalletsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b">
-                <th className="w-12 p-4">
-                  <Checkbox
-                    checked={
-                      filteredWallets.length > 0 &&
-                      selectedWallets.length === filteredWallets.length
-                    }
-                    onCheckedChange={handleSelectAll}
-                  />
-                </th>
-                <th className="p-4 text-left text-sm font-medium">Type</th>
+                <th className="p-4 text-left text-sm font-medium pl-7">Type</th>
                 <th className="p-4 text-left text-sm font-medium">Note</th>
                 <th className="p-4 text-left text-sm font-medium">Address</th>
                 <th className="p-4 text-left text-sm font-medium">
@@ -355,7 +324,7 @@ export default function WalletsPage() {
                 <th className="p-4 text-left text-sm font-medium">
                   Balance, USDM
                 </th>
-                <th className="w-20 p-4"></th>
+                <th className="w-20 p-4 pr-8"></th>
               </tr>
             </thead>
             <tbody>
@@ -363,7 +332,7 @@ export default function WalletsPage() {
                 <WalletTableSkeleton rows={2} />
               ) : filteredWallets.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-8">
+                  <td colSpan={7} className="text-center py-8">
                     No wallets found
                   </td>
                 </tr>
@@ -375,13 +344,7 @@ export default function WalletsPage() {
                       className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
                       onClick={() => handleWalletClick(wallet)}
                     >
-                      <td className="p-4">
-                        <Checkbox
-                          checked={selectedWallets.includes(wallet.id)}
-                          onCheckedChange={() => handleSelectWallet(wallet.id)}
-                        />
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4 pl-7">
                         {wallet.type === 'Collection' ? (
                           <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
                             Collection
@@ -477,7 +440,7 @@ export default function WalletsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 pr-8">
                         <div className="flex items-center gap-2">
                           <Button
                             variant="ghost"
