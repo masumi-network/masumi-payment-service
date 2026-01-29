@@ -86,7 +86,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let isCurrent = true;
+
     queueMicrotask(() => {
+      if (!isCurrent) return;
+
       if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
         setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
       }
@@ -107,6 +111,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
     });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
 
   useEffect(() => {
