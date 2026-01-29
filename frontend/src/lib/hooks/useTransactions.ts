@@ -224,6 +224,7 @@ export function useTransactions() {
   }, [query.dataUpdatedAt, transactions]);
 
   useEffect(() => {
+    if (!router.isReady) return;
     const normalizedPathname = normalizePathname(router);
     if (normalizedPathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
@@ -231,7 +232,7 @@ export function useTransactions() {
       setLastVisitTimestamp(new Date().toISOString());
       seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
     }
-  }, [router.asPath, router.pathname, newTransactionsCount, transactions]);
+  }, [router.isReady, router.asPath, router.pathname, newTransactionsCount, transactions]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
