@@ -133,11 +133,10 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const currentNetworkPaymentSources = useMemo(
-    () => paymentSources.filter((ps) => ps.network === network),
+  const hasPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
-  const hasPaymentSources = currentNetworkPaymentSources.length > 0;
 
   const navItems = useMemo(() => {
     if (!hasPaymentSources) {

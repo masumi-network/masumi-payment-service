@@ -10,8 +10,8 @@ export function useAgents() {
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const currentNetworkPaymentSources = useMemo(
-    () => paymentSources.filter((ps) => ps.network === network),
+  const hasCurrentNetworkPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
 
@@ -59,7 +59,7 @@ export function useAgents() {
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
-    enabled: currentNetworkPaymentSources.length > 0 && !!selectedPaymentSourceId,
+    enabled: hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId,
     staleTime: 15000,
   });
 
