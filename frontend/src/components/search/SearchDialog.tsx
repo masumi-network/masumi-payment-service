@@ -23,7 +23,6 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
 
   const [searchResults, setSearchResults] = useState<SearchableItem[]>([]);
 
-  // Update search results when query changes or when handleSearch function updates
   useEffect(() => {
     if (!open) return;
 
@@ -38,16 +37,16 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     };
   }, [searchQuery, handleSearch, open]);
 
-  // Clear search when dialog closes
-  useEffect(() => {
-    if (!open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
       setSearchQuery('');
       setSearchResults([]);
     }
-  }, [open]);
+    onOpenChange(nextOpen);
+  };
 
   const handleSearchSelect = (result: SearchableItem) => {
-    onOpenChange(false);
+    handleOpenChange(false);
     router.push(result.href).then(() => {
       if (result.elementId) {
         setTimeout(() => {
@@ -72,7 +71,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <Command className="py-2" shouldFilter={false}>
           <CommandInput

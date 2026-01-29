@@ -12,7 +12,7 @@ import {
   validateCardanoAddress,
 } from '@/lib/utils';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '../ui/spinner';
@@ -67,11 +67,7 @@ type FormSchema = z.infer<typeof formSchema>;
 // Helper functions to avoid duplicated default value construction logic
 const getDefaultCustomAdminWallets = (
   network: 'Mainnet' | 'Preprod',
-): [
-  { walletAddress: string },
-  { walletAddress: string },
-  { walletAddress: string },
-] => [
+): [{ walletAddress: string }, { walletAddress: string }, { walletAddress: string }] => [
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
   { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
@@ -82,11 +78,7 @@ const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
   feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
 });
 
-export function AddPaymentSourceDialog({
-  open,
-  onClose,
-  onSuccess,
-}: AddPaymentSourceDialogProps) {
+export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -105,7 +97,7 @@ export function AddPaymentSourceDialog({
     register,
     handleSubmit,
     control,
-    watch,
+    getValues,
     reset,
     formState: { errors },
     setValue,
@@ -118,9 +110,7 @@ export function AddPaymentSourceDialog({
         walletAddress: '',
       },
       feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
-      purchasingWallets: [
-        { walletMnemonic: '', note: '', collectionAddress: '' },
-      ],
+      purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
       customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
@@ -155,21 +145,17 @@ export function AddPaymentSourceDialog({
           walletAddress: feeConfig.walletAddress,
         },
         feePermille: feeConfig.feePermille,
-        purchasingWallets: [
-          { walletMnemonic: '', note: '', collectionAddress: '' },
-        ],
-        sellingWallets: [
-          { walletMnemonic: '', note: '', collectionAddress: '' },
-        ],
+        purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
+        sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         useCustomAdminWallets: false,
         customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
       });
-      setError('');
+      queueMicrotask(() => setError(''));
     }
   }, [open, currentNetwork, reset]);
 
-  const network = watch('network');
-  const useCustomAdminWallets = watch('useCustomAdminWallets');
+  const network = useWatch({ control, name: 'network' });
+  const useCustomAdminWallets = useWatch({ control, name: 'useCustomAdminWallets' });
 
   // Update network-dependent values when the form's network dropdown changes
   useEffect(() => {
@@ -262,10 +248,7 @@ export function AddPaymentSourceDialog({
       const validation = validateCardanoAddress(wallet.walletAddress.trim(), data.network);
       if (!validation.isValid) {
         toast.error(
-          'Invalid admin wallet address for admin wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+          'Invalid admin wallet address for admin wallet ' + (index + 1) + ': ' + validation.error,
         );
         return;
       }
@@ -276,10 +259,7 @@ export function AddPaymentSourceDialog({
       data.network,
     );
     if (!feeReceiverWalletValidation.isValid) {
-      toast.error(
-        'Invalid fee receiver wallet address: ' +
-          feeReceiverWalletValidation.error,
-      );
+      toast.error('Invalid fee receiver wallet address: ' + feeReceiverWalletValidation.error);
       return;
     }
 
@@ -341,7 +321,7 @@ export function AddPaymentSourceDialog({
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
@@ -373,7 +353,7 @@ export function AddPaymentSourceDialog({
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {

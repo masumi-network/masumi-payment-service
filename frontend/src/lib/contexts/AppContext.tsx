@@ -1,8 +1,16 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource, PaymentSourceExtended } from '../api/generated';
+import { PaymentSource } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -47,13 +55,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     apiKey,
   });
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
   const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -82,6 +87,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing payment source selection with network and available sources requires state updates
       setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
     }
     if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
@@ -90,11 +96,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (foundPaymentSource) {
-        if (foundPaymentSource.network !== network) {
-          setSelectedPaymentSourceIdAndPersist(null);
-        } else {
-          setSelectedPaymentSource(foundPaymentSource);
-        }
+        setSelectedPaymentSource(foundPaymentSource);
       } else {
         setSelectedPaymentSourceIdAndPersist(null);
         setSelectedPaymentSource(null);
@@ -102,9 +104,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
 
-  // Track network changes for transition effect
   useEffect(() => {
     if (previousNetworkRef.current !== network) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Network change animation state must be set synchronously to coordinate with setTimeout cleanup
       setIsChangingNetwork(true);
       setTimeout(() => {
         setIsChangingNetwork(false);

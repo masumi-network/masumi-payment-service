@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +33,6 @@ export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
 
-  const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
@@ -42,22 +41,11 @@ export default function ApiKeys() {
   const [activeTab, setActiveTab] = useState('All');
   const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
 
-  const tabs = [
-    { name: 'All', count: null },
-    { name: 'Read', count: null },
-    { name: 'ReadAndPay', count: null },
-    { name: 'Admin', count: null },
-  ];
-
-  const filterApiKeys = useCallback(() => {
+  const filteredApiKeys = useMemo(() => {
     let filtered = [...allApiKeys];
-
-    // Filter by network first
     filtered = filtered.filter(
       (key) => key.networkLimit.includes(network) || key.permission === 'Admin',
     );
-
-    // Then filter by permission tab
     if (activeTab === 'Read') {
       filtered = filtered.filter((key) => key.permission === 'Read');
     } else if (activeTab === 'ReadAndPay') {
@@ -65,8 +53,6 @@ export default function ApiKeys() {
     } else if (activeTab === 'Admin') {
       filtered = filtered.filter((key) => key.permission === 'Admin');
     }
-
-    // Then filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((key) => {
@@ -75,27 +61,26 @@ export default function ApiKeys() {
         const permissionMatch = key.permission?.toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((network) => network.toLowerCase().includes(query)) || false;
-
+          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
         return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
     }
-
-    setFilteredApiKeys(filtered);
+    return filtered;
   }, [allApiKeys, searchQuery, activeTab, network]);
 
   useEffect(() => {
-    filterApiKeys();
-  }, [filterApiKeys, searchQuery, activeTab]);
-
-  // Handle action query parameter from search
-  useEffect(() => {
     if (router.query.action === 'add_api_key') {
-      setIsAddDialogOpen(true);
-      // Clean up the query parameter
+      queueMicrotask(() => setIsAddDialogOpen(true));
       router.replace('/api-keys', undefined, { shallow: true });
     }
   }, [router.query.action, router]);
+
+  const tabs = [
+    { name: 'All', count: null },
+    { name: 'Read', count: null },
+    { name: 'ReadAndPay', count: null },
+    { name: 'Admin', count: null },
+  ];
 
   const handleLoadMore = () => {
     loadMore();

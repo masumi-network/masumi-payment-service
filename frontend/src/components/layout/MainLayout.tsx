@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -31,7 +31,6 @@ import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { PaymentSourceExtended } from '@/lib/api/generated';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -50,7 +49,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsMac(window.navigator.userAgent.includes('Macintosh'));
+      queueMicrotask(() => setIsMac(window.navigator.userAgent.includes('Macintosh')));
     }
   }, []);
 
@@ -134,75 +133,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const hasPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  const [hasPaymentSources, setHasPaymentSources] = useState(false);
-  useEffect(() => {
-    setHasPaymentSources(currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0);
-  }, [currentNetworkPaymentSources]);
-  const [navItems, setNavItems] = useState<
-    {
-      href: string;
-      name: string;
-      icon: React.ReactNode;
-      badge: React.ReactNode | null;
-    }[]
-  >([]);
-
-  useEffect(() => {
-    if (hasPaymentSources) {
-      setNavItems([
-        {
-          href: '/',
-          name: 'Dashboard',
-          icon: <LayoutDashboard className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/ai-agents',
-          name: 'AI Agents',
-          icon: <Bot className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/wallets',
-          name: 'Wallets',
-          icon: <Wallet className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/transactions',
-          name: 'Transactions',
-          icon: <FileText className="h-4 w-4" />,
-          badge: formatCount(newTransactionsCount),
-        },
+  const navItems = useMemo(() => {
+    if (!hasPaymentSources) {
+      return [
         {
           href: '/payment-sources',
           name: 'Payment sources',
           icon: <FileInput className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/input-schema-validator',
-          name: 'Input Schema Validator',
-          icon: <NotebookPen className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/openapi',
-          name: 'OpenAPI',
-          icon: <Code className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/api-keys',
-          name: 'API keys',
-          icon: <Key className="h-4 w-4" />,
           badge: null,
         },
         {
@@ -211,14 +153,55 @@ export function MainLayout({ children }: MainLayoutProps) {
           icon: <Settings className="h-4 w-4" />,
           badge: null,
         },
-      ]);
-      return;
+      ];
     }
-    setNavItems([
+    return [
+      {
+        href: '/',
+        name: 'Dashboard',
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/ai-agents',
+        name: 'AI Agents',
+        icon: <Bot className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/wallets',
+        name: 'Wallets',
+        icon: <Wallet className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/transactions',
+        name: 'Transactions',
+        icon: <FileText className="h-4 w-4" />,
+        badge: formatCount(newTransactionsCount),
+      },
       {
         href: '/payment-sources',
         name: 'Payment sources',
         icon: <FileInput className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/input-schema-validator',
+        name: 'Input Schema Validator',
+        icon: <NotebookPen className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/openapi',
+        name: 'OpenAPI',
+        icon: <Code className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/api-keys',
+        name: 'API keys',
+        icon: <Key className="h-4 w-4" />,
         badge: null,
       },
       {
@@ -227,7 +210,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Settings className="h-4 w-4" />,
         badge: null,
       },
-    ]);
+    ];
   }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
