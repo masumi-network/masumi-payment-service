@@ -12,6 +12,10 @@ const CERT_PATH = path.resolve('certs/ca-certificate.crt');
 const writeCaCertificate = () => {
 	const cert = process.env.DATABASE_CA_CERT;
 	if (!cert) {
+		// Delete stale certificate file if it exists
+		if (fs.existsSync(CERT_PATH)) {
+			fs.unlinkSync(CERT_PATH);
+		}
 		return;
 	}
 	const pemContent = cert.replace(/\\n/g, '\n');
