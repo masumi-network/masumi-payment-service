@@ -16,11 +16,7 @@ import {
   postPurchase,
   postPaymentResolveBlockchainIdentifier,
   PostPurchaseResponse,
-  PostPaymentResolveBlockchainIdentifierResponse,
 } from '@/lib/api/generated';
-
-// Type for the payment data we receive from resolve-blockchain-identifier
-type PaymentData = PostPaymentResolveBlockchainIdentifierResponse['data'];
 import { toast } from 'react-toastify';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
