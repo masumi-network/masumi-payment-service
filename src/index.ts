@@ -110,8 +110,9 @@ initialize()
 				});
 
 				//serve the static admin files
-				app.use('/admin', express.static('frontend/dist'));
-				app.use('/_next', express.static('frontend/dist/_next'));
+				const adminDistDir = path.resolve(__dirname, 'frontend/dist');
+				app.use('/admin', express.static(adminDistDir));
+				app.use('/_next', express.static(path.join(adminDistDir, '_next')));
 				// Catch all routes for admin and serve the correct HTML file for each route
 				app.get('/admin/*name', (req, res, next) => {
 					// Skip static files (files with extensions)
@@ -119,16 +120,20 @@ initialize()
 						return next();
 					}
 
-					const routeName = req.path.replace('/admin/', '').replace(/\/$/, '') || 'index';
+					const routeName = req.path.replace('/admin/', '').replace(/\/$/, '');
 
 					const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
-					const htmlPath = path.join(__dirname, 'frontend/dist', htmlFile);
+					const requestedPath = path.resolve(adminDistDir, htmlFile);
 
-					if (fs.existsSync(htmlPath)) {
-						res.sendFile(htmlPath);
-					} else {
-						res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+					// Ensure resolved path stays inside frontend/dist (prevents path traversal)
+					const relativeToBase = path.relative(adminDistDir, requestedPath);
+					const isOutsideBase = relativeToBase.startsWith('..') || path.isAbsolute(relativeToBase);
+
+					if (isOutsideBase || !fs.existsSync(requestedPath)) {
+						res.sendFile(path.join(adminDistDir, '404.html'));
+						return;
 					}
+					res.sendFile(requestedPath);
 				});
 			},
 			http: {
