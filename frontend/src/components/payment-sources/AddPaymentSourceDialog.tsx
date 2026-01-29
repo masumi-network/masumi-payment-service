@@ -64,8 +64,29 @@ const formSchema = z
   });
 
 type FormSchema = z.infer<typeof formSchema>;
+// Helper functions to avoid duplicated default value construction logic
+const getDefaultCustomAdminWallets = (
+  network: 'Mainnet' | 'Preprod',
+): [
+  { walletAddress: string },
+  { walletAddress: string },
+  { walletAddress: string },
+] => [
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
+];
 
-export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentSourceDialogProps) {
+const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
+  walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+  feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
+});
+
+export function AddPaymentSourceDialog({
+  open,
+  onClose,
+  onSuccess,
+}: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -96,21 +117,13 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
-      purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
+      feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
+      purchasingWallets: [
+        { walletMnemonic: '', note: '', collectionAddress: '' },
+      ],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
-      customAdminWallets: [
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-        },
-      ],
+      customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
     },
   });
 
@@ -134,27 +147,22 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
 
   useEffect(() => {
     if (open) {
+      const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
+          walletAddress: feeConfig.walletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
-        purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
-        sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
-        useCustomAdminWallets: false,
-        customAdminWallets: [
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-          },
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-          },
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-          },
+        feePermille: feeConfig.feePermille,
+        purchasingWallets: [
+          { walletMnemonic: '', note: '', collectionAddress: '' },
         ],
+        sellingWallets: [
+          { walletMnemonic: '', note: '', collectionAddress: '' },
+        ],
+        useCustomAdminWallets: false,
+        customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
       });
       setError('');
     }
@@ -167,13 +175,10 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
   useEffect(() => {
     if (open && network) {
       if (!useCustomAdminWallets) {
-        setValue('feeReceiverWallet.walletAddress', DEFAULT_FEE_CONFIG[network].feeWalletAddress);
-        setValue('feePermille', DEFAULT_FEE_CONFIG[network].feePermille);
-        setValue('customAdminWallets', [
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
-        ]);
+        const feeConfig = getDefaultFeeConfig(network);
+        setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress);
+        setValue('feePermille', feeConfig.feePermille);
+        setValue('customAdminWallets', getDefaultCustomAdminWallets(network));
       }
     }
   }, [network, open, setValue, useCustomAdminWallets]);
@@ -257,7 +262,10 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       const validation = validateCardanoAddress(wallet.walletAddress.trim(), data.network);
       if (!validation.isValid) {
         toast.error(
-          'Invalid admin wallet address for admin wallet ' + (index + 1) + ': ' + validation.error,
+          'Invalid admin wallet address for admin wallet ' +
+            (index + 1) +
+            ': ' +
+            validation.error,
         );
         return;
       }
@@ -268,7 +276,10 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       data.network,
     );
     if (!feeReceiverWalletValidation.isValid) {
-      toast.error('Invalid fee receiver wallet address: ' + feeReceiverWalletValidation.error);
+      toast.error(
+        'Invalid fee receiver wallet address: ' +
+          feeReceiverWalletValidation.error,
+      );
       return;
     }
 
