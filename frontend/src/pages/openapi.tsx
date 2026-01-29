@@ -25,11 +25,7 @@ export default function OpenAPI() {
           </p>
         </div>
         <div className="flex-1 border rounded-lg overflow-hidden">
-          <iframe
-            src={'/docs'}
-            className="w-full h-full"
-            title="OpenAPI Documentation"
-          />
+          <iframe src={'/docs'} className="w-full h-full" title="OpenAPI Documentation" />
         </div>
       </div>
     </MainLayout>

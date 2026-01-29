@@ -1,4 +1,4 @@
-import { SetupWelcomeContent } from '@/components/setup/SetupWelcome';
+import { SetupWelcome } from '@/components/setup/SetupWelcome';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
@@ -47,7 +47,7 @@ export default function SetupPage() {
                 <title>{network} Setup | Admin Interface</title>
             </Head>
             <MainLayout>
-                <SetupWelcomeContent />
+                <SetupWelcome networkType={network} />
             </MainLayout>
         </>
     );

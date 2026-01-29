@@ -2693,7 +2693,7 @@
                 "summary": "Get the status of the API server",
                 "responses": {
                     "200": {
-                        "description": "Object with status ok, if the server is running",
+                        "description": "Object with status ok, if the server is up and healthy",
                         "content": {
                             "application/json": {
                                 "schema": {
