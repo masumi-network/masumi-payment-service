@@ -11,10 +11,11 @@ import {
 	mapDailyFundsOutput,
 	mapMonthlyFundsOutput,
 	mapTotalFundsOutput,
+	getDayNumberLocal,
+	getMonthNumberLocal,
 } from '@/utils/earnings-helpers';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { ez } from 'express-zod-api';
-import spacetime from 'spacetime';
 
 export const postPaymentIncomeSchemaInput = z.object({
 	agentIdentifier: z
@@ -127,16 +128,6 @@ export const postPaymentIncomeSchemaOutput = z.object({
 		}),
 	),
 });
-
-function getDayNumberLocal(date: Date, timeZone: string): string {
-	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('YYYY-MM-DD');
-}
-
-function getMonthNumberLocal(date: Date, timeZone: string): string {
-	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('YYYY-MM');
-}
 
 export const getPaymentIncome = readAuthenticatedEndpointFactory.build({
 	method: 'post',

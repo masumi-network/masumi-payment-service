@@ -1,12 +1,23 @@
 import createHttpError from 'http-errors';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { logger } from '@/utils/logger';
+import spacetime from 'spacetime';
 
 export function mapUnitAmountToResponse(unit: string, amount: bigint): { unit: string; amount: string } {
 	return {
 		unit: unit === '' ? 'lovelace' : unit,
 		amount: amount.toString(),
 	};
+}
+
+export function getDayNumberLocal(date: Date, timeZone: string): string {
+	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
+	return sp.format('{YYYY}-{MM}-{DD}');
+}
+
+export function getMonthNumberLocal(date: Date, timeZone: string): string {
+	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
+	return sp.format('{YYYY}-{MM}');
 }
 
 export function parseDateRange(
