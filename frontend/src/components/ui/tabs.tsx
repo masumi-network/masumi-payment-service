@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Tab {
@@ -17,13 +17,14 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const index = tabs.findIndex((tab) => tab.name === activeTab);
     const el = index >= 0 ? tabsRef.current[index] : null;
     if (el) {
       const left = el.offsetLeft;
       const width = el.offsetWidth;
-      queueMicrotask(() => setIndicatorStyle({ left, width }));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Measuring DOM requires synchronous state update to prevent visual artifacts
+      setIndicatorStyle({ left, width });
     }
   }, [tabs, activeTab]);
 
