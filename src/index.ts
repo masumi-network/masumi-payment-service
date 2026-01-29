@@ -112,13 +112,25 @@ initialize()
 				//serve the static admin files
 				app.use('/admin', express.static('frontend/dist'));
 				app.use('/_next', express.static('frontend/dist/_next'));
-				// Catch all routes for admin and serve index.html via rerouting (excluding static files)
+				// Catch all routes for admin and serve the correct HTML file for each route
 				app.get('/admin/*name', (req, res, next) => {
 					// Skip static files (files with extensions)
 					if (req.path.match(/\.[a-zA-Z0-9]+$/)) {
 						return next();
 					}
-					res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+
+
+					const routeName = req.path.replace('/admin/', '').replace(/\/$/, '') || 'index';
+
+					const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
+					const htmlPath = path.join(__dirname, 'frontend/dist', htmlFile);
+
+
+					if (fs.existsSync(htmlPath)) {
+						res.sendFile(htmlPath);
+					} else {
+						res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+					}
 				});
 			},
 			http: {
