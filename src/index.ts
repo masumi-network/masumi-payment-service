@@ -119,12 +119,10 @@ initialize()
 						return next();
 					}
 
-
 					const routeName = req.path.replace('/admin/', '').replace(/\/$/, '') || 'index';
 
 					const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
 					const htmlPath = path.join(__dirname, 'frontend/dist', htmlFile);
-
 
 					if (fs.existsSync(htmlPath)) {
 						res.sendFile(htmlPath);
