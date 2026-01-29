@@ -17,7 +17,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, normalizePathname } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -73,21 +73,35 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
+  // Wait for router.isReady so pathname is correct (basePath + static export can be stale on first run).
   useEffect(() => {
-    if (isLoading) return;
+    if (!router.isReady || isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    const normalizedPathname = normalizePathname(router);
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
-      if (protectedPages.includes(router.pathname)) {
+      if (protectedPages.includes(normalizedPathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      if (router.pathname === '/setup') {
+      if (normalizedPathname === '/setup') {
         router.replace('/');
       }
     }
-  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
+    // router.replace is a stable function in Next.js, so it's safe to omit from dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    router.isReady,
+    router.asPath,
+    router.pathname,
+    apiKey,
+    isHealthy,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+  ]);
 
   useEffect(() => {
     const init = async () => {

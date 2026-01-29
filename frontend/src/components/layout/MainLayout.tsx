@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
-import { cn } from '@/lib/utils';
+import { cn, normalizePathname } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
@@ -357,32 +357,35 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center rounded-lg text-sm transition-all relative',
-                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
-                router.pathname === item.href && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
-              )}
-              title={collapsed && !isHovered ? item.name : undefined}
-            >
-              {item.icon}
-              {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
-              {!(collapsed && !isHovered) && item.badge && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-              {collapsed && !isHovered && item.badge && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const normalizedPath = normalizePathname(router);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'flex items-center rounded-lg text-sm transition-all relative',
+                  'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                  collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+                  normalizedPath === item.href && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                )}
+                title={collapsed && !isHovered ? item.name : undefined}
+              >
+                {item.icon}
+                {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
+                {!(collapsed && !isHovered) && item.badge && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    {item.badge}
+                  </span>
+                )}
+                {collapsed && !isHovered && item.badge && (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         <div

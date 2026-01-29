@@ -5,7 +5,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, normalizePathname } from '@/lib/utils';
 
 type PaymentTx = Payment & {
   type: 'payment';
@@ -224,13 +224,15 @@ export function useTransactions() {
   }, [query.dataUpdatedAt, transactions]);
 
   useEffect(() => {
-    if (router.pathname === '/transactions' && newTransactionsCount > 0) {
+    if (!router.isReady) return;
+    const normalizedPathname = normalizePathname(router);
+    if (normalizedPathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);
       setLastVisitTimestamp(new Date().toISOString());
       seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
     }
-  }, [router.pathname, newTransactionsCount, transactions]);
+  }, [router.isReady, router.asPath, router.pathname, newTransactionsCount, transactions]);
 
   const markAllAsRead = useCallback(() => {
     setNewTransactionsCount(0);
