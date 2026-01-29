@@ -12,9 +12,6 @@ const CERT_PATH = path.resolve('certs/ca-certificate.crt');
 const writeCaCertificate = () => {
 	const cert = process.env.DATABASE_CA_CERT;
 	if (!cert) {
-		// Remove stale certificate file if env var is not set
-		// Use force option to avoid race condition with multiple workers
-		fs.rmSync(CERT_PATH, { force: true });
 		return;
 	}
 	const pemContent = cert.replace(/\\n/g, '\n');
