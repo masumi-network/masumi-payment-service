@@ -8,23 +8,23 @@ type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {
-    selectedPaymentSource: PaymentSource | null;
-    apiKey: string | null;
-    updateApiKey: (apiKey: string | null) => void;
-    authorized: boolean;
-    setAuthorized: (authorized: boolean) => void;
-    network: NetworkType;
-    setNetwork: (network: NetworkType) => void;
-    showError: (error: { code?: number; message: string; details?: unknown }) => void;
-    apiClient: Client;
-    setApiClient: React.Dispatch<React.SetStateAction<Client>>;
-    selectedPaymentSourceId: string | null;
-    setSelectedPaymentSourceId: (id: string | null) => void;
-    signOut: () => void;
-    isChangingNetwork: boolean;
-    isSetupMode: boolean;
-    setIsSetupMode: (isSetupMode: boolean) => void;
-  }
+      selectedPaymentSource: PaymentSource | null;
+      apiKey: string | null;
+      updateApiKey: (apiKey: string | null) => void;
+      authorized: boolean;
+      setAuthorized: (authorized: boolean) => void;
+      network: NetworkType;
+      setNetwork: (network: NetworkType) => void;
+      showError: (error: { code?: number; message: string; details?: unknown }) => void;
+      apiClient: Client;
+      setApiClient: React.Dispatch<React.SetStateAction<Client>>;
+      selectedPaymentSourceId: string | null;
+      setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
+      isChangingNetwork: boolean;
+      isSetupMode: boolean;
+      setIsSetupMode: (isSetupMode: boolean) => void;
+    }
   | undefined
 >(undefined);
 
