@@ -157,28 +157,31 @@ export function MainLayout({ children }: MainLayoutProps) {
   >([]);
 
   useEffect(() => {
+    // Shared nav items for setup mode and when no payment sources exist
+    const setupNavItems = [
+      {
+        href: '/setup',
+        name: 'Setup',
+        icon: <Wand2 className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/payment-sources',
+        name: 'Payment sources',
+        icon: <FileInput className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/settings',
+        name: 'Settings',
+        icon: <Settings className="h-4 w-4" />,
+        badge: null,
+      },
+    ];
+
     // During setup mode: show Setup + Payment sources + Settings in nav
     if (isSetupMode) {
-      setNavItems([
-        {
-          href: '/setup',
-          name: 'Setup',
-          icon: <Wand2 className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: <FileInput className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/settings',
-          name: 'Settings',
-          icon: <Settings className="h-4 w-4" />,
-          badge: null,
-        },
-      ]);
+      setNavItems(setupNavItems);
       return;
     }
 
@@ -241,26 +244,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       ]);
       return;
     }
-    setNavItems([
-      {
-        href: '/setup',
-        name: 'Setup',
-        icon: <Wand2 className="h-4 w-4" />,
-        badge: null,
-      },
-      {
-        href: '/payment-sources',
-        name: 'Payment sources',
-        icon: <FileInput className="h-4 w-4" />,
-        badge: null,
-      },
-      {
-        href: '/settings',
-        name: 'Settings',
-        icon: <Settings className="h-4 w-4" />,
-        badge: null,
-      },
-    ]);
+    setNavItems(setupNavItems);
   }, [hasPaymentSources, newTransactionsCount, isSetupMode]);
 
   const handleOpenNotifications = () => {

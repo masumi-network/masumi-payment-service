@@ -1,8 +1,6 @@
 /* eslint-disable react/no-unescaped-entities */
 
 import { Button } from '@/components/ui/button';
-import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -37,10 +35,12 @@ import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 function WelcomeScreen({
   onStart,
   networkType,
+  onNetworkChange,
 }: {
   onStart: () => void;
   networkType: string;
   ignoreSetup: () => void;
+  onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
 }) {
   const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 
@@ -64,7 +64,10 @@ function WelcomeScreen({
             <span>Network:</span>
             <Select
               defaultValue={networkDisplay}
-              onValueChange={(value) => router.replace(`/setup?network=${value}`)}
+              onValueChange={(value) => {
+                const normalized = value === 'Mainnet' ? 'Mainnet' : 'Preprod';
+                onNetworkChange(normalized);
+              }}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -1190,7 +1193,13 @@ function SuccessScreen({
   );
 }
 
-export function SetupWelcome({ networkType }: { networkType: string }) {
+export function SetupWelcome({
+  networkType,
+  onNetworkChange,
+}: {
+  networkType: string;
+  onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
+}) {
   const [currentStep, setCurrentStep] = useState(0);
   const [wallets, setWallets] = useState<{
     buying: { address: string; mnemonic: string } | null;
@@ -1229,6 +1238,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       onStart={() => setCurrentStep(1)}
       networkType={networkType}
       ignoreSetup={handleIgnoreSetup}
+      onNetworkChange={onNetworkChange}
     />,
     <SeedPhrasesScreen
       key="seed"
@@ -1261,12 +1271,8 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col w-full">
-      <Header />
-      <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
-        <div className="flex items-center justify-center ">{steps[currentStep]}</div>
-      </main>
-      <Footer />
+    <div className="flex items-center justify-center w-full min-h-[calc(100vh-200px)] py-8">
+      {steps[currentStep]}
     </div>
   );
 }
