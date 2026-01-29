@@ -63,7 +63,7 @@ export default function Transactions() {
   const allTransactions = useMemo(() => transactions, [transactions]);
 
   const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filterTransactions
+    // Apply the same deduplication logic as filteredTransactions
     const seenHashes = new Set();
     const dedupedTransactions = [...allTransactions].filter((tx) => {
       const id = tx.id;
