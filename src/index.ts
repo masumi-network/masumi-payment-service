@@ -121,7 +121,13 @@ initialize()
 
 					const routeName = req.path.replace('/admin/', '').replace(/\/$/, '') || 'index';
 
-					const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
+					// Prevent path traversal by rejecting any route name with path separators or ..
+					if (routeName.includes('/') || routeName.includes('\\') || routeName.includes('..')) {
+						res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
+						return;
+					}
+
+					const htmlFile = `${routeName}.html`;
 					const htmlPath = path.join(__dirname, 'frontend/dist', htmlFile);
 
 					if (fs.existsSync(htmlPath)) {
