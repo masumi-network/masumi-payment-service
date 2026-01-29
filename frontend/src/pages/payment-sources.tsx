@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
 import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceDialog';
 import Link from 'next/link';
@@ -134,14 +134,19 @@ export default function PaymentSourcesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const { apiClient, selectedPaymentSourceId, network, setSelectedPaymentSourceId } =
     useAppContext();
-  const [filteredPaymentSources, setFilteredPaymentSources] = useState<PaymentSourceExtended[]>([]);
-
   const { paymentSources: ps, isLoading, refetch } = usePaymentSourceExtendedAll();
 
-  const [paymentSources, setPaymentSources] = useState<PaymentSourceExtended[]>([]);
-  useEffect(() => {
-    setPaymentSources(ps.filter((ps) => ps.network === network));
-  }, [ps, network]);
+  const paymentSources = useMemo(() => ps.filter((p) => p.network === network), [ps, network]);
+
+  const filteredPaymentSources = useMemo(() => {
+    if (!searchQuery) return [...paymentSources];
+    const query = searchQuery.toLowerCase();
+    return paymentSources.filter((source) => {
+      const matchAddress = source.smartContractAddress?.toLowerCase().includes(query) || false;
+      const matchNetwork = source.network?.toLowerCase().includes(query) || false;
+      return matchAddress || matchNetwork;
+    });
+  }, [paymentSources, searchQuery]);
 
   const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(
     undefined,
@@ -149,30 +154,9 @@ export default function PaymentSourcesPage() {
   const [selectedPaymentSourceForDetails, setSelectedPaymentSourceForDetails] =
     useState<PaymentSourceExtended | null>(null);
 
-  const filterPaymentSources = useCallback(() => {
-    let filtered = [...paymentSources];
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((source) => {
-        const matchAddress = source.smartContractAddress?.toLowerCase().includes(query) || false;
-        const matchNetwork = source.network?.toLowerCase().includes(query) || false;
-        return matchAddress || matchNetwork;
-      });
-    }
-
-    setFilteredPaymentSources(filtered);
-  }, [paymentSources, searchQuery]);
-
-  useEffect(() => {
-    filterPaymentSources();
-  }, [filterPaymentSources, searchQuery]);
-
-  // Handle action query parameter from search
   useEffect(() => {
     if (router.query.action === 'add_payment_source') {
-      setIsAddDialogOpen(true);
-      // Clean up the query parameter
+      queueMicrotask(() => setIsAddDialogOpen(true));
       router.replace('/payment-sources', undefined, { shallow: true });
     }
   }, [router.query.action, router]);
