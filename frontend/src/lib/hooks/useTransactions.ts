@@ -224,8 +224,7 @@ export function useTransactions() {
   }, [query.dataUpdatedAt, transactions]);
 
   useEffect(() => {
-    const path = router.asPath?.split('?')[0] ?? router.pathname;
-    const normalizedPathname = normalizePathname(path);
+    const normalizedPathname = normalizePathname(router);
     if (normalizedPathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);

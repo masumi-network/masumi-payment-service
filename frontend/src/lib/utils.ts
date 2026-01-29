@@ -303,8 +303,23 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
   return unit ?? '—';
 }
 
-/** Strip basePath for path comparison (basePath + static export). */
-export function normalizePathname(pathname: string, basePath: string = '/admin'): string {
+/**
+ * Strip basePath and query string for path comparison (basePath + static export).
+ * Accepts either a pathname string or an object with asPath and pathname properties.
+ */
+export function normalizePathname(
+  pathnameOrRouter: string | { asPath?: string; pathname: string },
+  basePath: string = '/admin',
+): string {
+  let pathname: string;
+
+  if (typeof pathnameOrRouter === 'string') {
+    pathname = pathnameOrRouter;
+  } else {
+    // Extract pathname and strip query string
+    pathname = pathnameOrRouter.asPath?.split('?')[0] ?? pathnameOrRouter.pathname;
+  }
+
   if (!pathname) return '/';
 
   if (pathname.startsWith(basePath)) {
