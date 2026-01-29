@@ -1,35 +1,24 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import {
-  getRegistry,
-  PaymentSourceExtended,
-  RegistryEntry,
-} from '@/lib/api/generated';
+import { getRegistry, PaymentSourceExtended, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useEffect, useMemo, useState } from 'react';
 
 export function useAgents() {
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } =
-    useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
   const query = useInfiniteQuery({
-    queryKey: [
-      'agents',
-      network,
-      selectedPaymentSourceId,
-      selectedPaymentSource,
-    ],
+    queryKey: ['agents', network, selectedPaymentSourceId, selectedPaymentSource],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSource) {
         return {
@@ -51,9 +40,7 @@ export function useAgents() {
             query: {
               network: network,
               cursorId: pageParam ?? undefined,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
+              filterSmartContractAddress: smartContractAddress ? smartContractAddress : undefined,
             },
           }),
         {
@@ -73,10 +60,8 @@ export function useAgents() {
       };
     },
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage: { nextCursor: string | undefined }) =>
-      lastPage.nextCursor,
-    enabled:
-      currentNetworkPaymentSources.length > 0 && !!selectedPaymentSourceId,
+    getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
+    enabled: currentNetworkPaymentSources.length > 0 && !!selectedPaymentSourceId,
     staleTime: 15000,
   });
 
@@ -94,10 +79,7 @@ export function useAgents() {
       unique.push(tx);
     });
 
-    return unique.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [query.data]);
 
   return {

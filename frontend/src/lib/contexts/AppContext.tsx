@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-} from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
@@ -15,25 +8,21 @@ type NetworkType = 'Preprod' | 'Mainnet';
 
 export const AppContext = createContext<
   | {
-    selectedPaymentSource: PaymentSource | null;
-    apiKey: string | null;
-    updateApiKey: (apiKey: string | null) => void;
-    authorized: boolean;
-    setAuthorized: (authorized: boolean) => void;
-    network: NetworkType;
-    setNetwork: (network: NetworkType) => void;
-    showError: (error: {
-      code?: number;
-      message: string;
-      details?: unknown;
-    }) => void;
-    apiClient: Client;
-    setApiClient: React.Dispatch<React.SetStateAction<Client>>;
-    selectedPaymentSourceId: string | null;
-    setSelectedPaymentSourceId: (id: string | null) => void;
-    signOut: () => void;
-    isChangingNetwork: boolean;
-  }
+      selectedPaymentSource: PaymentSource | null;
+      apiKey: string | null;
+      updateApiKey: (apiKey: string | null) => void;
+      authorized: boolean;
+      setAuthorized: (authorized: boolean) => void;
+      network: NetworkType;
+      setNetwork: (network: NetworkType) => void;
+      showError: (error: { code?: number; message: string; details?: unknown }) => void;
+      apiClient: Client;
+      setApiClient: React.Dispatch<React.SetStateAction<Client>>;
+      selectedPaymentSourceId: string | null;
+      setSelectedPaymentSourceId: (id: string | null) => void;
+      signOut: () => void;
+      isChangingNetwork: boolean;
+    }
   | undefined
 >(undefined);
 
@@ -58,18 +47,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     apiKey,
   });
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
 
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
-  const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<
-    string | null
-  >(() => {
+  const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('selectedPaymentSourceId');
       return stored || null;
@@ -77,8 +63,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
 
-  const [selectedPaymentSource, setSelectedPaymentSource] =
-    useState<PaymentSource | null>(null);
+  const [selectedPaymentSource, setSelectedPaymentSource] = useState<PaymentSource | null>(null);
 
   const [isChangingNetwork, setIsChangingNetwork] = useState(false);
   const previousNetworkRef = useRef<NetworkType>(network);
@@ -128,12 +113,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [network]);
 
-  const showError = useCallback(
-    (error: { code?: number; message: string; details?: unknown }) => {
-      setError(error);
-    },
-    [],
-  );
+  const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
+    setError(error);
+  }, []);
 
   const signOut = useCallback(() => {
     setApiKey(null);
@@ -197,11 +179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-      <ErrorDialog
-        open={!!error}
-        onClose={() => setError(null)}
-        error={error || { message: '' }}
-      />
+      <ErrorDialog open={!!error} onClose={() => setError(null)} error={error || { message: '' }} />
     </AppContext.Provider>
   );
 }

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'react-toastify';
@@ -39,11 +37,7 @@ export function parseError(error: any): string {
 }
 
 export function parseFetchError(errorData: any, response: Response): string {
-  return (
-    errorData.message ||
-    errorData.error ||
-    `HTTP ${response.status}: ${response.statusText}`
-  );
+  return errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
 }
 
 export async function handleApiCall<T>(
@@ -59,12 +53,7 @@ export async function handleApiCall<T>(
     const response = await apiCall();
 
     // Check for API errors (response.error pattern)
-    if (
-      response &&
-      typeof response === 'object' &&
-      'error' in response &&
-      response.error
-    ) {
+    if (response && typeof response === 'object' && 'error' in response && response.error) {
       const error = response.error as { message: string };
       console.error('API Error:', error);
 
@@ -108,9 +97,7 @@ export function getExplorerUrl(
   type: 'address' | 'transaction' = 'address',
 ): string {
   const baseUrl =
-    network === 'Mainnet'
-      ? 'https://cardanoscan.io'
-      : 'https://preprod.cardanoscan.io';
+    network === 'Mainnet' ? 'https://cardanoscan.io' : 'https://preprod.cardanoscan.io';
   return `${baseUrl}/${type}/${address}`;
 }
 
@@ -177,10 +164,7 @@ export const dateRangeUtils = {
       return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
-        year:
-          date.getFullYear() !== new Date().getFullYear()
-            ? 'numeric'
-            : undefined,
+        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
       });
     };
 
@@ -283,10 +267,7 @@ export function hexToAscii(hex: string) {
  * @param network - The network type ('Mainnet' or 'Preprod')
  * @returns Formatted unit string for display (e.g., 'ADA', 'USDM', 'tUSDM')
  */
-export function formatFundUnit(
-  unit: string | undefined,
-  network: string | undefined,
-): string {
+export function formatFundUnit(unit: string | undefined, network: string | undefined): string {
   if (!network) {
     // If no network, fallback to basic unit formatting
     if (unit === 'lovelace' || !unit) {
