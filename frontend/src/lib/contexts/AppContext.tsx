@@ -10,7 +10,7 @@ import {
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource, PaymentSourceExtended } from '../api/generated';
+import { PaymentSource } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 

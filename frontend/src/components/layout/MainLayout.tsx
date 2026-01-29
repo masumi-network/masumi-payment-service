@@ -31,7 +31,6 @@ import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { PaymentSourceExtended } from '@/lib/api/generated';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
