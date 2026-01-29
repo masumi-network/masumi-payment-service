@@ -34,7 +34,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
 
     if (isCollapsing || isHoverEnding) {
-      queueMicrotask(() => setShouldAnimateIcon(true));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Animation state must be set synchronously to coordinate with setTimeout cleanup
+      setShouldAnimateIcon(true);
       const timer = setTimeout(() => {
         setShouldAnimateIcon(false);
       }, 300);
