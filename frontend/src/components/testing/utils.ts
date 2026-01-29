@@ -1,4 +1,5 @@
 import LZString from 'lz-string';
+import stringify from 'canonical-json';
 
 export function extractErrorMessage(error: unknown, fallback: string = 'An error occurred'): string {
   if (!error) return fallback;
@@ -46,6 +47,16 @@ export async function generateSHA256Hex(data: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// MIP-004 Input Hash: SHA256(identifierFromPurchaser + ";" + JCS(input_data))
+export async function generateMIP004InputHash(
+  inputData: Record<string, unknown>,
+  identifierFromPurchaser: string,
+): Promise<string> {
+  const canonicalJson = stringify(inputData);
+  const preImage = identifierFromPurchaser + ';' + canonicalJson;
+  return generateSHA256Hex(preImage);
 }
 
 // Calculate default times with proper offsets

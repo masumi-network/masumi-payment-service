@@ -1,6 +1,9 @@
 import { CopyButton } from '@/components/ui/copy-button';
 import { useState } from 'react';
-import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { ChevronDown, ChevronRight, Terminal } from 'lucide-react';
 
 interface CurlResponseViewerProps {
   curlCommand?: string;
@@ -13,10 +16,8 @@ export function CurlResponseViewer({
   response,
   error,
 }: CurlResponseViewerProps) {
-  // Only show curl tab by default if we have a curl command, otherwise show response
-  const [activeTab, setActiveTab] = useState<'curl' | 'response'>('curl');
+  const [curlExpanded, setCurlExpanded] = useState(false);
 
-  // Don't render if we have nothing to show
   const hasCurl = curlCommand && curlCommand.length > 0;
   const hasResponse = response !== null && response !== undefined;
   const hasError = error !== null && error !== undefined && error.length > 0;
@@ -26,77 +27,80 @@ export function CurlResponseViewer({
   }
 
   return (
-    <div className="mt-4 border rounded-lg overflow-hidden">
-      <div className="flex border-b">
-        <button
-          onClick={() => setActiveTab('curl')}
-          className={cn(
-            'flex-1 py-2 px-4 text-sm font-medium transition-colors',
-            activeTab === 'curl'
-              ? 'bg-background text-foreground border-b-2 border-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Curl Command
-        </button>
-        <button
-          onClick={() => setActiveTab('response')}
-          className={cn(
-            'flex-1 py-2 px-4 text-sm font-medium transition-colors',
-            activeTab === 'response'
-              ? 'bg-background text-foreground border-b-2 border-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          Response
-        </button>
-      </div>
-
-      {activeTab === 'curl' && (
-        <div className="relative bg-muted rounded-b-lg">
-          <div 
-            className="p-4 overflow-y-auto overflow-x-auto" 
-            style={{ height: '220px' }}
+    <div className="space-y-3 mt-4 animate-fade-in-up opacity-0">
+      {/* Curl Command — collapsible */}
+      {hasCurl && (
+        <Card className="overflow-hidden transition-shadow duration-200 hover:shadow-md">
+          <button
+            type="button"
+            onClick={() => setCurlExpanded((v) => !v)}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150"
           >
-            {hasCurl ? (
-              <pre className="text-xs font-mono whitespace-pre-wrap wrap-break-word leading-relaxed pr-12">{curlCommand}</pre>
-            ) : (
-              <p className="text-sm text-muted-foreground">No curl command available yet.</p>
-            )}
-          </div>
-          {hasCurl && (
-            <div className="absolute top-2 right-2 z-10 bg-muted/90 rounded p-1">
-              <CopyButton value={curlCommand} />
+            <span className="transition-transform duration-200">
+              {curlExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </span>
+            <Terminal className="h-3.5 w-3.5" />
+            cURL Command
+          </button>
+          {curlExpanded && (
+            <div className="animate-slide-down">
+              <Separator />
+              <CardContent className="relative p-0">
+                <div className="p-3 overflow-auto max-h-[180px] bg-muted/50">
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed pr-8">
+                    {curlCommand}
+                  </pre>
+                </div>
+                <div className="absolute top-2 right-2">
+                  <CopyButton value={curlCommand} />
+                </div>
+              </CardContent>
             </div>
           )}
-        </div>
+        </Card>
       )}
 
-      {activeTab === 'response' && (
-        <div className="relative bg-muted rounded-b-lg">
-          <div 
-            className="p-4 overflow-y-auto overflow-x-auto" 
-            style={{ height: '220px' }}
-          >
-            {hasError ? (
-              <div className="text-destructive">
-                <div className="font-semibold mb-2">Error</div>
-                <pre className="font-mono text-xs whitespace-pre-wrap">{error}</pre>
-              </div>
-            ) : hasResponse ? (
-              <pre className="text-xs font-mono whitespace-pre-wrap wrap-break-word leading-relaxed pr-12">{JSON.stringify(response, null, 2)}</pre>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No response yet. Submit the request to see the response.
-              </p>
+      {/* Response — always visible */}
+      {(hasResponse || hasError) && (
+        <Card className="overflow-hidden animate-fade-in transition-shadow duration-200 hover:shadow-md">
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                Response
+              </span>
+              {hasError ? (
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                  Error
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  200 OK
+                </Badge>
+              )}
+            </div>
+            {hasResponse && !hasError && (
+              <CopyButton value={JSON.stringify(response, null, 2)} />
             )}
           </div>
-          {hasResponse && !hasError && (
-            <div className="absolute top-2 right-2 z-10 bg-muted/90 rounded p-1">
-              <CopyButton value={JSON.stringify(response, null, 2)} />
+          <Separator />
+          <CardContent className="p-0">
+            <div className="p-3 overflow-auto max-h-[220px] bg-muted/50">
+              {hasError ? (
+                <pre className="font-mono text-xs whitespace-pre-wrap text-destructive">
+                  {error}
+                </pre>
+              ) : (
+                <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">
+                  {JSON.stringify(response, null, 2)}
+                </pre>
+              )}
             </div>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

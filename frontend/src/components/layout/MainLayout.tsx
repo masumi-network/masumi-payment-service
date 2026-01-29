@@ -17,7 +17,6 @@ import {
   PanelLeft,
   Bell,
   Search,
-  NotebookPen,
   Code,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -197,18 +196,6 @@ export function MainLayout({ children }: MainLayoutProps) {
           badge: null,
         },
         {
-          href: '/input-schema-validator',
-          name: 'Input Schema Validator',
-          icon: <NotebookPen className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/openapi',
-          name: 'OpenAPI',
-          icon: <Code className="h-4 w-4" />,
-          badge: null,
-        },
-        {
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
@@ -218,6 +205,12 @@ export function MainLayout({ children }: MainLayoutProps) {
           href: '/settings',
           name: 'Settings',
           icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/developers',
+          name: 'Developers',
+          icon: <Code className="h-4 w-4 text-violet-500" />,
           badge: null,
         },
       ]);
@@ -375,37 +368,54 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center rounded-lg text-sm transition-all relative',
-                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed && !isHovered
-                  ? 'h-10 w-10 justify-center'
-                  : 'px-3 h-10 gap-3',
-                router.pathname === item.href &&
-                'bg-[#F4F4F5] dark:bg-secondary font-bold',
-              )}
-              title={collapsed && !isHovered ? item.name : undefined}
-            >
-              {item.icon}
-              {!(collapsed && !isHovered) && (
-                <span className="truncate">{item.name}</span>
-              )}
-              {!(collapsed && !isHovered) && item.badge && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-              {collapsed && !isHovered && item.badge && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isDev = item.href === '/developers';
+            const isActive = router.pathname === item.href;
+            return (
+              <div key={item.href}>
+                {isDev && (
+                  <div className={cn(
+                    'my-1.5',
+                    collapsed && !isHovered ? 'mx-1' : 'mx-2',
+                    'border-t border-border',
+                  )} />
+                )}
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'flex items-center rounded-lg text-sm transition-all relative',
+                    isDev
+                      ? isActive
+                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300'
+                        : 'hover:bg-violet-500/10 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                      : cn(
+                          'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                        ),
+                    collapsed && !isHovered
+                      ? 'h-10 w-10 justify-center'
+                      : 'px-3 h-10 gap-3',
+                  )}
+                  title={collapsed && !isHovered ? item.name : undefined}
+                >
+                  {item.icon}
+                  {!(collapsed && !isHovered) && (
+                    <span className="truncate">{item.name}</span>
+                  )}
+                  {!(collapsed && !isHovered) && item.badge && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                  {collapsed && !isHovered && item.badge && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              </div>
+            );
+          })}
         </nav>
 
         <div

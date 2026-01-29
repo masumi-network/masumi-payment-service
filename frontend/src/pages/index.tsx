@@ -29,11 +29,6 @@ import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialo
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
-import {
-  MockPaymentDialog,
-  MockPurchaseDialog,
-  FullCycleDialog,
-} from '@/components/testing';
 
 type AIAgent = RegistryEntry;
 
@@ -98,10 +93,6 @@ export default function Overview() {
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
-  // Testing dialogs state
-  const [isMockPaymentDialogOpen, setMockPaymentDialogOpen] = useState(false);
-  const [isMockPurchaseDialogOpen, setMockPurchaseDialogOpen] = useState(false);
-  const [isFullCycleDialogOpen, setFullCycleDialogOpen] = useState(false);
 
   const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
@@ -461,34 +452,6 @@ export default function Overview() {
             </div>
           </div>
 
-          {/* Testing Tools Card */}
-          <div className="border rounded-lg p-6">
-            <div className="flex justify-between items-center mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Testing Tools</span>
-              </div>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Create mock payments and purchases for development and testing.
-            </p>
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setMockPaymentDialogOpen(true)}
-              >
-                Create Mock Payment
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setMockPurchaseDialogOpen(true)}
-              >
-                Create Mock Purchase
-              </Button>
-              <Button onClick={() => setFullCycleDialogOpen(true)}>
-                Full Payment Cycle
-              </Button>
-            </div>
-          </div>
         </div>
       </MainLayout>
 
@@ -544,21 +507,6 @@ export default function Overview() {
         wallet={selectedWalletForDetails}
       />
 
-      {/* Testing Dialogs */}
-      <MockPaymentDialog
-        open={isMockPaymentDialogOpen}
-        onClose={() => setMockPaymentDialogOpen(false)}
-      />
-      
-      <MockPurchaseDialog
-        open={isMockPurchaseDialogOpen}
-        onClose={() => setMockPurchaseDialogOpen(false)}
-      />
-      
-      <FullCycleDialog
-        open={isFullCycleDialogOpen}
-        onClose={() => setFullCycleDialogOpen(false)}
-      />
     </>
   );
 }
