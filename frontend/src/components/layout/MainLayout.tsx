@@ -19,6 +19,7 @@ import {
   Search,
   NotebookPen,
   Code,
+  Wand2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -52,7 +53,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode } = useAppContext();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -155,9 +156,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     );
   }, [currentNetworkPaymentSources]);
 
-  // Detect if we're on the setup page to show minimal navigation
-  const isSetupPage = router.pathname === '/setup';
-
   const [navItems, setNavItems] = useState<
     {
       href: string;
@@ -168,9 +166,21 @@ export function MainLayout({ children }: MainLayoutProps) {
   >([]);
 
   useEffect(() => {
-    // During setup: show only settings in nav
-    if (isSetupPage) {
+    // During setup mode: show Setup + Payment sources + Settings in nav
+    if (isSetupMode) {
       setNavItems([
+        {
+          href: '/setup',
+          name: 'Setup',
+          icon: <Wand2 className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/payment-sources',
+          name: 'Payment sources',
+          icon: <FileInput className="h-4 w-4" />,
+          badge: null,
+        },
         {
           href: '/settings',
           name: 'Settings',
@@ -242,6 +252,12 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
     setNavItems([
       {
+        href: '/setup',
+        name: 'Setup',
+        icon: <Wand2 className="h-4 w-4" />,
+        badge: null,
+      },
+      {
         href: '/payment-sources',
         name: 'Payment sources',
         icon: <FileInput className="h-4 w-4" />,
@@ -254,7 +270,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
       },
     ]);
-  }, [hasPaymentSources, newTransactionsCount, isSetupPage]);
+  }, [hasPaymentSources, newTransactionsCount, isSetupMode]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);

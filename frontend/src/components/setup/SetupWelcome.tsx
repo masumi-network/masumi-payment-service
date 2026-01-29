@@ -1253,14 +1253,17 @@ export function SetupWelcomeContent() {
     selling: null,
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
+  const { setIsSetupMode } = useAppContext();
 
   const handleComplete = () => {
+    setIsSetupMode(false);
     router.push('/');
   };
 
   const handleIgnoreSetup = () => {
-    handleComplete();
+    setIsSetupMode(false);
     localStorage.setItem('userIgnoredSetup', 'true');
+    router.push('/');
   };
 
   const handleCancel = () => {

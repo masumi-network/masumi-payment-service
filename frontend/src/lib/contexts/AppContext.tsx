@@ -33,6 +33,8 @@ export const AppContext = createContext<
     setSelectedPaymentSourceId: (id: string | null) => void;
     signOut: () => void;
     isChangingNetwork: boolean;
+    isSetupMode: boolean;
+    setIsSetupMode: (isSetupMode: boolean) => void;
   }
   | undefined
 >(undefined);
@@ -52,6 +54,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetwork] = useState<NetworkType>('Preprod');
+  const [isSetupMode, setIsSetupMode] = useState(false);
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
     apiClient,
@@ -142,6 +145,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedPaymentSourceId(null);
     setSelectedPaymentSource(null);
     setIsChangingNetwork(false);
+    setIsSetupMode(false);
     setError(null);
 
     // Clear all localStorage items
@@ -186,6 +190,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setNetwork: (network: NetworkType) => {
           setNetwork(network);
           setSelectedPaymentSourceIdAndPersist(null);
+          // Reset setup mode when switching networks so nav re-evaluates for the new network
+          setIsSetupMode(false);
         },
         showError,
         apiClient,
@@ -194,6 +200,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
         signOut,
         isChangingNetwork,
+        isSetupMode,
+        setIsSetupMode,
       }}
     >
       {children}

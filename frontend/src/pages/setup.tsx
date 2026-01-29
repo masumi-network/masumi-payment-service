@@ -6,11 +6,14 @@ import { useRouter } from 'next/router';
 import { useEffect, useRef } from 'react';
 
 export default function SetupPage() {
-    const { apiKey, network, setNetwork } = useAppContext();
+    const { apiKey, network, setNetwork, setIsSetupMode } = useAppContext();
     const router = useRouter();
-    const { network: urlNetwork = 'Preprod' } = router.query;
 
     const initialSyncDone = useRef(false);
+
+    useEffect(() => {
+        setIsSetupMode(true);
+    }, [setIsSetupMode]);
 
     // Sync URL network param to AppContext only once on initial mount
     useEffect(() => {
@@ -19,12 +22,14 @@ export default function SetupPage() {
 
         initialSyncDone.current = true;
 
+
+        const urlNetwork = router.query.network;
         if (typeof urlNetwork === 'string') {
             const normalized =
                 urlNetwork.toLowerCase() === 'mainnet' ? 'Mainnet' : 'Preprod';
             setNetwork(normalized);
         }
-    }, [router.isReady, urlNetwork, setNetwork]);
+    }, [router.isReady, router.query.network, setNetwork]);
 
     useEffect(() => {
         if (!apiKey) {
