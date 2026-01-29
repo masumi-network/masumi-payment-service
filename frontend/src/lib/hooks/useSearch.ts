@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
-import { PaymentSourceExtended } from '../api/generated';
 import { useAppContext } from '../contexts/AppContext';
 
 export interface SearchableItem {
