@@ -96,11 +96,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (foundPaymentSource) {
-        if (foundPaymentSource.network !== network) {
-          setSelectedPaymentSourceIdAndPersist(null);
-        } else {
-          setSelectedPaymentSource(foundPaymentSource);
-        }
+        setSelectedPaymentSource(foundPaymentSource);
       } else {
         setSelectedPaymentSourceIdAndPersist(null);
         setSelectedPaymentSource(null);
