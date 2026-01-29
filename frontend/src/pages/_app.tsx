@@ -78,7 +78,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (!router.isReady || isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
-    const normalizedPathname = normalizePathname(router.asPath?.split('?')[0] ?? router.pathname);
+    const normalizedPathname = normalizePathname(router);
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
       const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
       if (protectedPages.includes(normalizedPathname)) {
@@ -89,13 +89,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.replace('/');
       }
     }
+    // router.replace is a stable function in Next.js, so it's safe to omit from dependencies
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     router.isReady,
     router.asPath,
     router.pathname,
     apiKey,
     isHealthy,
-    router,
     isLoading,
     network,
     mainnetPaymentSources,

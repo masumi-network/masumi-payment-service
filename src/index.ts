@@ -119,7 +119,12 @@ initialize()
 					const subPath = req.path.replace(/^\/admin\/?/, '').replace(/\/$/, '') || 'index';
 					const pagePath = subPath === 'index' ? 'index.html' : `${subPath}.html`;
 					const frontendDist = path.join(__dirname, 'frontend/dist');
-					const filePath = path.join(frontendDist, pagePath);
+					const filePath = path.resolve(frontendDist, pagePath);
+					const resolvedDist = path.resolve(frontendDist);
+					// Prevent path traversal by ensuring resolved path is within frontendDist
+					if (!filePath.startsWith(resolvedDist + path.sep) && filePath !== resolvedDist) {
+						return res.sendFile(path.join(frontendDist, 'index.html'));
+					}
 					if (fs.existsSync(filePath)) {
 						return res.sendFile(filePath);
 					}
