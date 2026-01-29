@@ -86,6 +86,24 @@ const formSchema = z
 
 type FormSchema = z.infer<typeof formSchema>;
 
+// Helper functions to avoid duplicated default value construction logic
+const getDefaultCustomAdminWallets = (
+  network: 'Mainnet' | 'Preprod',
+): [
+  { walletAddress: string },
+  { walletAddress: string },
+  { walletAddress: string },
+] => [
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
+];
+
+const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
+  walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+  feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
+});
+
 export function AddPaymentSourceDialog({
   open,
   onClose,
@@ -121,23 +139,13 @@ export function AddPaymentSourceDialog({
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
+      feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
       purchasingWallets: [
         { walletMnemonic: '', note: '', collectionAddress: '' },
       ],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
-      customAdminWallets: [
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-        },
-      ],
+      customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
     },
   });
 
@@ -164,13 +172,14 @@ export function AddPaymentSourceDialog({
 
   useEffect(() => {
     if (open) {
+      const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
+          walletAddress: feeConfig.walletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
+        feePermille: feeConfig.feePermille,
         purchasingWallets: [
           { walletMnemonic: '', note: '', collectionAddress: '' },
         ],
@@ -178,20 +187,7 @@ export function AddPaymentSourceDialog({
           { walletMnemonic: '', note: '', collectionAddress: '' },
         ],
         useCustomAdminWallets: false,
-        customAdminWallets: [
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-          },
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-          },
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-          },
-        ],
+        customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
       });
       setError('');
     }
@@ -200,16 +196,10 @@ export function AddPaymentSourceDialog({
   useEffect(() => {
     if (open && network) {
       if (!useCustomAdminWallets) {
-        setValue(
-          'feeReceiverWallet.walletAddress',
-          DEFAULT_FEE_CONFIG[network].feeWalletAddress,
-        );
-        setValue('feePermille', DEFAULT_FEE_CONFIG[network].feePermille);
-        setValue('customAdminWallets', [
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
-          { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
-        ]);
+        const feeConfig = getDefaultFeeConfig(network);
+        setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress);
+        setValue('feePermille', feeConfig.feePermille);
+        setValue('customAdminWallets', getDefaultCustomAdminWallets(network));
       }
     }
   }, [network, open, setValue, useCustomAdminWallets]);
@@ -240,9 +230,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for purchasing wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -256,8 +246,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for purchasing wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -272,9 +262,9 @@ export function AddPaymentSourceDialog({
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for selling wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -288,8 +278,8 @@ export function AddPaymentSourceDialog({
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for selling wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -303,9 +293,9 @@ export function AddPaymentSourceDialog({
       if (!validation.isValid) {
         toast.error(
           'Invalid admin wallet address for admin wallet ' +
-          (index + 1) +
-          ': ' +
-          validation.error,
+            (index + 1) +
+            ': ' +
+            validation.error,
         );
         return;
       }
@@ -318,7 +308,7 @@ export function AddPaymentSourceDialog({
     if (!feeReceiverWalletValidation.isValid) {
       toast.error(
         'Invalid fee receiver wallet address: ' +
-        feeReceiverWalletValidation.error,
+          feeReceiverWalletValidation.error,
       );
       return;
     }
@@ -337,10 +327,10 @@ export function AddPaymentSourceDialog({
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
