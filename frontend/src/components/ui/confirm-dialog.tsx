@@ -40,6 +40,7 @@ export function ConfirmDialog({
 
   const handleConfirm = () => {
     if (!requireConfirmation || isConfirmationValid) {
+      setConfirmationInput('');
       onConfirm();
     }
   };
@@ -84,7 +85,7 @@ export function ConfirmDialog({
             left: '0',
           }}
         >
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isLoading}>
             Cancel
           </Button>
           <Button

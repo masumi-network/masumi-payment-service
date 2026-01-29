@@ -27,7 +27,8 @@ export default function JobInputsFormRenderer({
     jobInputSchemas.forEach((schema) => {
       initialData[schema.id] = getDefaultValue(schema);
     });
-    queueMicrotask(() => setFormData(initialData));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFormData(initialData);
   }, [jobInputSchemas]);
 
   useEffect(() => {

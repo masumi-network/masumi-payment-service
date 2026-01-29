@@ -84,7 +84,6 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     register,
     handleSubmit,
     control,
-    watch,
     getValues,
     reset,
     formState: { errors },

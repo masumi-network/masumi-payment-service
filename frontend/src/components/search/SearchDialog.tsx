@@ -46,7 +46,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   };
 
   const handleSearchSelect = (result: SearchableItem) => {
-    onOpenChange(false);
+    handleOpenChange(false);
     router.push(result.href).then(() => {
       if (result.elementId) {
         setTimeout(() => {

@@ -141,7 +141,22 @@ export function MainLayout({ children }: MainLayoutProps) {
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
 
   const navItems = useMemo(() => {
-    if (!hasPaymentSources) return [];
+    if (!hasPaymentSources) {
+      return [
+        {
+          href: '/payment-sources',
+          name: 'Payment sources',
+          icon: <FileInput className="h-4 w-4" />,
+          badge: null,
+        },
+        {
+          href: '/settings',
+          name: 'Settings',
+          icon: <Settings className="h-4 w-4" />,
+          badge: null,
+        },
+      ];
+    }
     return [
       {
         href: '/',
