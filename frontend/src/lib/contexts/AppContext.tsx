@@ -86,40 +86,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    let isCurrent = true;
+    if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing payment source selection with network and available sources requires state updates
+      setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
+    }
+    if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      const foundPaymentSource = currentNetworkPaymentSources.find(
+        (ps) => ps.id === selectedPaymentSourceId,
+      );
 
-    queueMicrotask(() => {
-      if (!isCurrent) return;
-
-      if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-        setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
-      }
-      if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-        const foundPaymentSource = currentNetworkPaymentSources.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-
-        if (foundPaymentSource) {
-          if (foundPaymentSource.network !== network) {
-            setSelectedPaymentSourceIdAndPersist(null);
-          } else {
-            setSelectedPaymentSource(foundPaymentSource);
-          }
-        } else {
+      if (foundPaymentSource) {
+        if (foundPaymentSource.network !== network) {
           setSelectedPaymentSourceIdAndPersist(null);
-          setSelectedPaymentSource(null);
+        } else {
+          setSelectedPaymentSource(foundPaymentSource);
         }
+      } else {
+        setSelectedPaymentSourceIdAndPersist(null);
+        setSelectedPaymentSource(null);
       }
-    });
-
-    return () => {
-      isCurrent = false;
-    };
+    }
   }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
 
   useEffect(() => {
     if (previousNetworkRef.current !== network) {
-      queueMicrotask(() => setIsChangingNetwork(true));
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Network change animation state must be set synchronously to coordinate with setTimeout cleanup
+      setIsChangingNetwork(true);
       setTimeout(() => {
         setIsChangingNetwork(false);
       }, 500);
