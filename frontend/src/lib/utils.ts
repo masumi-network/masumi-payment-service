@@ -304,23 +304,22 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
 }
 
 /**
- * Strip basePath and query string for path comparison (basePath + static export).
- * Accepts either a pathname string or an object with asPath and pathname properties.
+ * Strip basePath, query string, hash fragments, and trailing slashes for path comparison.
+ * Accepts a router object with asPath and pathname properties.
  */
 export function normalizePathname(
-  pathnameOrRouter: string | { asPath?: string; pathname: string },
+  router: { asPath?: string; pathname: string },
   basePath: string = '/admin',
 ): string {
-  let pathname: string;
-
-  if (typeof pathnameOrRouter === 'string') {
-    pathname = pathnameOrRouter;
-  } else {
-    // Extract pathname and strip query string
-    pathname = pathnameOrRouter.asPath?.split('?')[0] ?? pathnameOrRouter.pathname;
-  }
+  // Extract pathname and strip query string and hash fragments
+  let pathname = router.asPath?.split('?')[0]?.split('#')[0] ?? router.pathname;
 
   if (!pathname) return '/';
+
+  // Strip trailing slashes (except for root path)
+  if (pathname !== '/' && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
 
   if (pathname.startsWith(basePath)) {
     const normalized = pathname.slice(basePath.length);
