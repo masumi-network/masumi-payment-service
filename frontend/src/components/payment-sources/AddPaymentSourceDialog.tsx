@@ -167,10 +167,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
   useEffect(() => {
     if (open && network) {
       if (!useCustomAdminWallets) {
-        setValue(
-          'feeReceiverWallet.walletAddress',
-          DEFAULT_FEE_CONFIG[network].feeWalletAddress,
-        );
+        setValue('feeReceiverWallet.walletAddress', DEFAULT_FEE_CONFIG[network].feeWalletAddress);
         setValue('feePermille', DEFAULT_FEE_CONFIG[network].feePermille);
         setValue('customAdminWallets', [
           { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
@@ -204,9 +201,9 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for purchasing wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -220,8 +217,8 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for purchasing wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -233,9 +230,9 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for selling wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+              (index + 1) +
+              ': ' +
+              validation.error,
           );
           return;
         }
@@ -249,8 +246,8 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
         if (balance.error || balance.data?.data?.Utxos?.length === 0) {
           toast.warning(
             'Collection address for selling wallet ' +
-            (index + 1) +
-            ' has not been used yet, please check if this is the correct address',
+              (index + 1) +
+              ' has not been used yet, please check if this is the correct address',
           );
         }
       }
@@ -289,10 +286,10 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
-                { walletAddress: string },
-                { walletAddress: string },
-                { walletAddress: string },
-              ],
+              { walletAddress: string },
+              { walletAddress: string },
+              { walletAddress: string },
+            ],
             FeeReceiverNetworkWallet: data.feeReceiverWallet,
             PurchasingWallets: data.purchasingWallets.map((wallet) => ({
               walletMnemonic: wallet.walletMnemonic,
@@ -324,7 +321,6 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       },
     );
   };
-
 
   // Handler to generate mnemonic for a purchasing wallet
   const handleGeneratePurchasingMnemonic = async (index: number) => {
@@ -800,6 +796,6 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           </div>
         </form>
       </DialogContent>
-    </Dialog >
+    </Dialog>
   );
 }
