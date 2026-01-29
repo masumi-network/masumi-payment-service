@@ -357,9 +357,9 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {(() => {
+          {navItems.map((item) => {
             const normalizedPath = normalizePathname(router);
-            return navItems.map((item) => (
+            return (
               <Link
                 key={item.href}
                 href={item.href}
@@ -384,8 +384,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </span>
                 )}
               </Link>
-            ));
-          })()}
+            );
+          })}
         </nav>
 
         <div
