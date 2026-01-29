@@ -1,8 +1,16 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource, PaymentSourceExtended } from '../api/generated';
+import { PaymentSource } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -47,13 +55,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     apiKey,
   });
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
   const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
@@ -81,31 +86,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
-    }
-    if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
-      const foundPaymentSource = currentNetworkPaymentSources.find(
-        (ps) => ps.id === selectedPaymentSourceId,
-      );
+    let isCurrent = true;
 
-      if (foundPaymentSource) {
-        if (foundPaymentSource.network !== network) {
-          setSelectedPaymentSourceIdAndPersist(null);
-        } else {
-          setSelectedPaymentSource(foundPaymentSource);
-        }
-      } else {
-        setSelectedPaymentSourceIdAndPersist(null);
-        setSelectedPaymentSource(null);
+    queueMicrotask(() => {
+      if (!isCurrent) return;
+
+      if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+        setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
       }
-    }
+      if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+        const foundPaymentSource = currentNetworkPaymentSources.find(
+          (ps) => ps.id === selectedPaymentSourceId,
+        );
+
+        if (foundPaymentSource) {
+          if (foundPaymentSource.network !== network) {
+            setSelectedPaymentSourceIdAndPersist(null);
+          } else {
+            setSelectedPaymentSource(foundPaymentSource);
+          }
+        } else {
+          setSelectedPaymentSourceIdAndPersist(null);
+          setSelectedPaymentSource(null);
+        }
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
 
-  // Track network changes for transition effect
   useEffect(() => {
     if (previousNetworkRef.current !== network) {
-      setIsChangingNetwork(true);
+      queueMicrotask(() => setIsChangingNetwork(true));
       setTimeout(() => {
         setIsChangingNetwork(false);
       }, 500);

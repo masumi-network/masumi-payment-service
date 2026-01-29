@@ -14,7 +14,7 @@ import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -60,7 +60,6 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     handleSubmit,
     control,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<ApiKeyFormValues>({
@@ -73,8 +72,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     },
   });
 
-  const permission = watch('permission');
-  const usageLimited = watch('usageLimited');
+  const permission = useWatch({ control, name: 'permission', defaultValue: 'Read' });
+  const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
 
   useEffect(() => {
     if (permission === 'Admin') {

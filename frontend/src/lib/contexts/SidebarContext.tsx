@@ -34,7 +34,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
 
     if (isCollapsing || isHoverEnding) {
-      setShouldAnimateIcon(true);
+      queueMicrotask(() => setShouldAnimateIcon(true));
       const timer = setTimeout(() => {
         setShouldAnimateIcon(false);
       }, 300);

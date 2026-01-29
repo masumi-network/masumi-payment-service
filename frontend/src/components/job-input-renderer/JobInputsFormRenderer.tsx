@@ -22,16 +22,15 @@ export default function JobInputsFormRenderer({
     Record<string, string | number | boolean | number[] | null>
   >({});
 
-  // Initialize form data with default values
   useEffect(() => {
     const initialData: Record<string, string | number | boolean | number[] | null> = {};
     jobInputSchemas.forEach((schema) => {
       initialData[schema.id] = getDefaultValue(schema);
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFormData(initialData);
   }, [jobInputSchemas]);
 
-  // Notify parent of form data changes
   useEffect(() => {
     if (onFormDataChange) {
       onFormDataChange(formData);

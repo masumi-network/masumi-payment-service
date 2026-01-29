@@ -1,21 +1,19 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { getRegistry, PaymentSourceExtended, RegistryEntry } from '@/lib/api/generated';
+import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 export function useAgents() {
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
   const query = useInfiniteQuery({
     queryKey: ['agents', network, selectedPaymentSourceId, selectedPaymentSource],

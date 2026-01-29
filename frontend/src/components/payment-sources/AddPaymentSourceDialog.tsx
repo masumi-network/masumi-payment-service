@@ -12,7 +12,7 @@ import {
   validateCardanoAddress,
 } from '@/lib/utils';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '../ui/spinner';
@@ -84,7 +84,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     register,
     handleSubmit,
     control,
-    watch,
+    getValues,
     reset,
     formState: { errors },
     setValue,
@@ -156,7 +156,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
           },
         ],
       });
-      setError('');
+      queueMicrotask(() => setError(''));
     }
   }, [open, currentNetwork, reset]);
 
@@ -304,8 +304,12 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     );
   };
 
-  const useCustomAdminWallets = watch('useCustomAdminWallets');
-  const network = watch('network');
+  const useCustomAdminWallets = useWatch({
+    control,
+    name: 'useCustomAdminWallets',
+    defaultValue: false,
+  });
+  const network = useWatch({ control, name: 'network', defaultValue: currentNetwork });
 
   // Handler to generate mnemonic for a purchasing wallet
   const handleGeneratePurchasingMnemonic = async (index: number) => {
@@ -315,7 +319,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
@@ -347,7 +351,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {

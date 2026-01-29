@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -55,7 +55,6 @@ export default function Transactions() {
 
   const [activeTab, setActiveTab] = useState('All');
 
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
@@ -64,7 +63,7 @@ export default function Transactions() {
   const allTransactions = useMemo(() => transactions, [transactions]);
 
   const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filterTransactions
+    // Apply the same deduplication logic as filteredTransactions
     const seenHashes = new Set();
     const dedupedTransactions = [...allTransactions].filter((tx) => {
       const id = tx.id;
@@ -94,7 +93,7 @@ export default function Transactions() {
     ];
   }, [allTransactions]);
 
-  const filterTransactions = useCallback(() => {
+  const filteredTransactions = useMemo(() => {
     const seenHashes = new Set();
     let filtered = [...allTransactions].filter((tx) => {
       const id = tx.id;
@@ -129,16 +128,14 @@ export default function Transactions() {
 
         const matchRequestedFunds =
           transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some((fund) => parseInt(fund.amount) / 1000000)
-            .toString()
-            .toLowerCase()
-            .includes(query);
+          transaction.RequestedFunds?.some((fund) =>
+            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
+          );
         const matchPaidFunds =
           transaction.type === 'purchase' &&
-          transaction.PaidFunds?.some((fund) => parseInt(fund.amount) / 1000000)
-            .toString()
-            .toLowerCase()
-            .includes(query);
+          transaction.PaidFunds?.some((fund) =>
+            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
+          );
 
         return (
           matchId ||
@@ -153,20 +150,15 @@ export default function Transactions() {
       });
     }
 
-    setFilteredTransactions(filtered);
+    return filtered;
   }, [allTransactions, searchQuery, activeTab]);
 
   useEffect(() => {
-    // Set last visit timestamp when user visits transactions page
     if (typeof window !== 'undefined') {
       localStorage.setItem('masumi_last_transactions_visit', new Date().toISOString());
       localStorage.setItem('masumi_new_transactions_count', '0');
     }
   }, [network, apiClient, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    filterTransactions();
-  }, [filterTransactions, searchQuery, activeTab]);
 
   const refreshTransactions = useCallback(() => {
     refetchTransactions?.();

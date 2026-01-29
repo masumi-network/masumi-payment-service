@@ -26,24 +26,27 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedPreference = localStorage.getItem(THEME_PREFERENCE_KEY) as ThemePreference | null;
 
-    if (savedPreference) {
-      setPreference(savedPreference);
-      if (savedPreference !== THEME_AUTO) {
-        setTheme(savedPreference);
-        document.documentElement.classList.remove(THEME_LIGHT, THEME_DARK);
-        document.documentElement.classList.add(savedPreference);
+    const apply = () => {
+      if (savedPreference) {
+        setPreference(savedPreference);
+        if (savedPreference !== THEME_AUTO) {
+          setTheme(savedPreference);
+          document.documentElement.classList.remove(THEME_LIGHT, THEME_DARK);
+          document.documentElement.classList.add(savedPreference);
+        }
       }
-    }
 
-    if (!savedPreference || savedPreference === THEME_AUTO) {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const systemTheme = mediaQuery.matches ? THEME_DARK : THEME_LIGHT;
-      setTheme(systemTheme);
-      document.documentElement.classList.remove(THEME_LIGHT, THEME_DARK);
-      document.documentElement.classList.add(systemTheme);
-    }
+      if (!savedPreference || savedPreference === THEME_AUTO) {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const systemTheme = mediaQuery.matches ? THEME_DARK : THEME_LIGHT;
+        setTheme(systemTheme);
+        document.documentElement.classList.remove(THEME_LIGHT, THEME_DARK);
+        document.documentElement.classList.add(systemTheme);
+      }
 
-    setMounted(true);
+      setMounted(true);
+    };
+    queueMicrotask(apply);
   }, []);
 
   useEffect(() => {
