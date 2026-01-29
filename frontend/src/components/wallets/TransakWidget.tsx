@@ -2,13 +2,7 @@ import { useEffect } from 'react';
 import { Button } from '../ui/button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { CopyButton } from '../ui/copy-button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { shortenAddress } from '@/lib/utils';
 
 interface TransakWidgetProps {
@@ -18,12 +12,7 @@ interface TransakWidgetProps {
   onSuccess?: () => void;
 }
 
-export function TransakWidget({
-  isOpen,
-  onClose,
-  walletAddress,
-  onSuccess,
-}: TransakWidgetProps) {
+export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: TransakWidgetProps) {
   const { network } = useAppContext();
 
   useEffect(() => {
@@ -50,10 +39,7 @@ export function TransakWidget({
 
   if (network === 'Preprod') {
     const handleOpenFaucet = () => {
-      window.open(
-        'https://docs.cardano.org/cardano-testnet/tools/faucet/',
-        '_blank',
-      );
+      window.open('https://docs.cardano.org/cardano-testnet/tools/faucet/', '_blank');
     };
 
     return (
@@ -67,9 +53,7 @@ export function TransakWidget({
           </DialogHeader>
           <div className="space-y-4 mt-2 h-full">
             <div className="bg-muted p-3 rounded-lg break-all flex items-center justify-between">
-              <p className="text-sm font-mono text-foreground">
-                {shortenAddress(walletAddress)}
-              </p>
+              <p className="text-sm font-mono text-foreground">{shortenAddress(walletAddress)}</p>
               <CopyButton value={walletAddress} />
             </div>
             <Button onClick={handleOpenFaucet} className="w-full mt-2">
@@ -84,8 +68,7 @@ export function TransakWidget({
   const transakUrl = new URL('https://global.transak.com');
   transakUrl.searchParams.set(
     'apiKey',
-    process.env.NEXT_PUBLIC_TRANSAK_API_KEY ||
-      '558f0caf-41d4-40fb-a2a9-808283540e40',
+    process.env.NEXT_PUBLIC_TRANSAK_API_KEY || '558f0caf-41d4-40fb-a2a9-808283540e40',
   );
   transakUrl.searchParams.set('environment', 'PRODUCTION');
   transakUrl.searchParams.set('cryptoCurrencyList', 'ADA');
@@ -93,10 +76,7 @@ export function TransakWidget({
   transakUrl.searchParams.set('walletAddress', walletAddress);
   transakUrl.searchParams.set('themeColor', '#000000');
   transakUrl.searchParams.set('hideMenu', 'true');
-  transakUrl.searchParams.set(
-    'exchangeScreenTitle',
-    'Top up your Masumi Wallet with ADA',
-  );
+  transakUrl.searchParams.set('exchangeScreenTitle', 'Top up your Masumi Wallet with ADA');
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

@@ -42,8 +42,7 @@ export default function Overview() {
   const { network, selectedPaymentSource } = useAppContext();
 
   const queryClient = useQueryClient();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
+  const { newTransactionsCount, isLoading: isLoadingTransactions } = useTransactions();
 
   // Use React Query hooks for cached data
   const {
@@ -59,14 +58,8 @@ export default function Overview() {
     isLoading: isLoadingWallets,
   } = useWallets();
 
-  const totalBalance = useMemo(
-    () => totalBalanceValue || '0',
-    [totalBalanceValue],
-  );
-  const totalUsdmBalance = useMemo(
-    () => totalUsdmBalanceValue || '0',
-    [totalUsdmBalanceValue],
-  );
+  const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
+  const totalUsdmBalance = useMemo(() => totalUsdmBalanceValue || '0', [totalUsdmBalanceValue]);
   const isLoadingBalances = isLoadingWallets;
 
   // Refetch functions for after mutations
@@ -78,18 +71,17 @@ export default function Overview() {
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
   };
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
-  const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] =
-    useState(false);
+  const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
   //const [selectedWalletForSwap, setSelectedWalletForSwap] =
   //  useState<WalletWithBalance | null>(null);
 
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const { rate, isLoading: isLoadingRate } = useRate();
 
-  const [selectedAgentForDetails, setSelectedAgentForDetails] =
-    useState<AIAgent | null>(null);
+  const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -118,10 +110,7 @@ export default function Overview() {
               ? shortenAddress(selectedPaymentSource?.smartContractAddress)
               : 'all payment sources'}
             . This can be changed in the{' '}
-            <Link
-              href="/payment-sources"
-              className="text-primary hover:underline"
-            >
+            <Link href="/payment-sources" className="text-primary hover:underline">
               payment sources
             </Link>{' '}
             page.
@@ -134,9 +123,7 @@ export default function Overview() {
               <StatCardSkeleton />
             ) : (
               <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">
-                  Total AI agents
-                </div>
+                <div className="text-sm text-muted-foreground mb-2">Total AI agents</div>
                 <div className="text-2xl font-semibold">
                   {agents.length}
                   {hasMoreAgents ? '+' : ''}
@@ -147,18 +134,11 @@ export default function Overview() {
               <StatCardSkeleton />
             ) : (
               <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">
-                  Total USDM
-                </div>
+                <div className="text-sm text-muted-foreground mb-2">Total USDM</div>
                 <div className="text-2xl font-semibold flex items-center gap-1">
-                  <span className="text-xs font-normal text-muted-foreground">
-                    $
-                  </span>
-                  {formatBalance(
-                    (parseInt(totalUsdmBalance) / 1000000)
-                      .toFixed(2)
-                      ?.toString(),
-                  ) ?? ''}
+                  <span className="text-xs font-normal text-muted-foreground">$</span>
+                  {formatBalance((parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString()) ??
+                    ''}
                 </div>
               </div>
             )}
@@ -166,17 +146,11 @@ export default function Overview() {
               <StatCardSkeleton />
             ) : (
               <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">
-                  Total ada balance
-                </div>
+                <div className="text-sm text-muted-foreground mb-2">Total ada balance</div>
                 <div className="flex flex-col gap-2">
                   <div className="text-2xl font-semibold flex items-center gap-1">
-                    {formatBalance(
-                      (parseInt(totalBalance) / 1000000).toFixed(2)?.toString(),
-                    ) ?? ''}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ADA
-                    </span>
+                    {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ?? ''}
+                    <span className="text-xs font-normal text-muted-foreground">ADA</span>
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {isLoadingRate && !totalUsdmBalance
@@ -190,13 +164,9 @@ export default function Overview() {
               <StatCardSkeleton />
             ) : (
               <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">
-                  New Transactions
-                </div>
+                <div className="text-sm text-muted-foreground mb-2">New Transactions</div>
                 <>
-                  <div className="text-2xl font-semibold">
-                    {newTransactionsCount}
-                  </div>
+                  <div className="text-2xl font-semibold">{newTransactionsCount}</div>
                   <Link
                     href="/transactions"
                     className="text-sm text-primary hover:underline flex justify-items-center items-center"
@@ -214,10 +184,7 @@ export default function Overview() {
             <div className="p-6">
               <div className="flex justify-between items-center mb-2">
                 <div className="flex items-center gap-2">
-                  <Link
-                    href="/ai-agents"
-                    className="font-medium hover:underline"
-                  >
+                  <Link href="/ai-agents" className="font-medium hover:underline">
                     AI agents
                   </Link>
                   <ChevronRight className="h-4 w-4" />
@@ -238,20 +205,15 @@ export default function Overview() {
                       onClick={() => setSelectedAgentForDetails(agent)}
                     >
                       <div className="flex flex-col gap-1 max-w-[80%]">
-                        <div className="text-sm font-medium hover:underline">
-                          {agent.name}
-                        </div>
+                        <div className="text-sm font-medium hover:underline">{agent.name}</div>
                         <div className="text-xs text-muted-foreground truncate">
                           {agent.description}
                         </div>
                       </div>
                       <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing &&
-                          agent.AgentPricing.pricingType == 'Free' && (
-                            <span className="text-xs font-normal text-muted-foreground">
-                              Free
-                            </span>
-                          )}
+                        {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
+                          <span className="text-xs font-normal text-muted-foreground">Free</span>
+                        )}
                         {agent.AgentPricing &&
                         agent.AgentPricing.pricingType == 'Fixed' &&
                         agent.AgentPricing.Pricing?.[0] ? (
@@ -261,23 +223,17 @@ export default function Overview() {
                                 const price = agent.AgentPricing.Pricing[0];
                                 const unit = price.unit;
                                 if (unit === 'free') return 'Free';
-                                const formatted = (
-                                  parseInt(price.amount) / 1_000_000
-                                ).toFixed(2);
-                                if (unit === 'lovelace' || !unit)
-                                  return `${formatted} ADA`;
+                                const formatted = (parseInt(price.amount) / 1_000_000).toFixed(2);
+                                if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
                                 if (unit === getUsdmConfig(network).fullAssetId)
                                   return `${formatted} USDM`;
-                                if (unit === TESTUSDM_CONFIG.unit)
-                                  return `${formatted} tUSDM`;
+                                if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
                                 return `${formatted} ${unit}`;
                               })()}
                             </span>
                           </>
                         ) : (
-                          <span className="text-xs font-normal text-muted-foreground">
-                            —
-                          </span>
+                          <span className="text-xs font-normal text-muted-foreground">—</span>
                         )}
                       </div>
                     </div>
@@ -296,9 +252,7 @@ export default function Overview() {
                   )}
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground mb-4 py-4">
-                  No AI agents found.
-                </div>
+                <div className="text-sm text-muted-foreground mb-4 py-4">No AI agents found.</div>
               )}
 
               <div className="flex items-center justify-between">
@@ -353,9 +307,7 @@ export default function Overview() {
                             </td>
                             <td className="py-3 px-2 max-w-[100px]">
                               <div className="text-sm font-medium truncate">
-                                {wallet.type === 'Purchasing'
-                                  ? 'Buying wallet'
-                                  : 'Selling wallet'}
+                                {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
                               </div>
                               <div className="text-xs text-muted-foreground truncate">
                                 {wallet.note || 'Created by seeding'}
@@ -376,16 +328,11 @@ export default function Overview() {
                                 ) : (
                                   <>
                                     {formatBalance(
-                                      (
-                                        parseInt(wallet.balance || '0') /
-                                        1000000
-                                      )
+                                      (parseInt(wallet.balance || '0') / 1000000)
                                         .toFixed(2)
                                         ?.toString(),
                                     )}{' '}
-                                    <span className="text-xs text-muted-foreground">
-                                      ADA
-                                    </span>
+                                    <span className="text-xs text-muted-foreground">ADA</span>
                                   </>
                                 )}
                               </div>
@@ -393,16 +340,11 @@ export default function Overview() {
                                 {!wallet.isLoadingBalance && (
                                   <>
                                     {formatBalance(
-                                      (
-                                        parseInt(wallet.usdmBalance || '0') /
-                                        1000000
-                                      )
+                                      (parseInt(wallet.usdmBalance || '0') / 1000000)
                                         .toFixed(2)
                                         ?.toString(),
                                     )}{' '}
-                                    <span className="text-xs text-muted-foreground">
-                                      USDM
-                                    </span>
+                                    <span className="text-xs text-muted-foreground">USDM</span>
                                   </>
                                 )}
                               </div>

@@ -1,11 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 interface SidebarContextType {
   collapsed: boolean;
@@ -66,9 +59,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     shouldAnimateIcon,
   };
 
-  return (
-    <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>
-  );
+  return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 }
 
 export function useSidebar() {

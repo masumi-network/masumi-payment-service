@@ -24,9 +24,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [isChangingTheme, setIsChangingTheme] = useState(false);
 
   useEffect(() => {
-    const savedPreference = localStorage.getItem(
-      THEME_PREFERENCE_KEY,
-    ) as ThemePreference | null;
+    const savedPreference = localStorage.getItem(THEME_PREFERENCE_KEY) as ThemePreference | null;
 
     if (savedPreference) {
       setPreference(savedPreference);
@@ -53,9 +51,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-    const handleSystemThemeChange = (
-      e: MediaQueryListEvent | MediaQueryList,
-    ) => {
+    const handleSystemThemeChange = (e: MediaQueryListEvent | MediaQueryList) => {
       if (preference === THEME_AUTO) {
         const newTheme = e.matches ? THEME_DARK : THEME_LIGHT;
         setTheme(newTheme);
@@ -101,9 +97,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider
-      value={{ theme, preference, setThemePreference, isChangingTheme }}
-    >
+    <ThemeContext.Provider value={{ theme, preference, setThemePreference, isChangingTheme }}>
       {children}
     </ThemeContext.Provider>
   );
