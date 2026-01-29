@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { getRegistry, PaymentSourceExtended, RegistryEntry } from '@/lib/api/generated';
+import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
