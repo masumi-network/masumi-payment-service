@@ -17,10 +17,6 @@ const eslintConfig = defineConfig([
     },
     rules: {
       'prettier/prettier': 'error',
-      // Disable React Compiler rules that are too strict for existing codebase
-      'react-hooks/set-state-in-effect': 'off',
-      'react-hooks/refs': 'off',
-      'react-hooks/incompatible-library': 'off',
     },
   },
   {

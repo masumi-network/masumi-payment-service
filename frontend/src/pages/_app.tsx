@@ -57,7 +57,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   useDynamicFavicon();
 
   useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   useEffect(() => {

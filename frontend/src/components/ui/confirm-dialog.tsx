@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -29,24 +29,14 @@ export function ConfirmDialog({
   confirmationLabel,
 }: ConfirmDialogProps) {
   const [confirmationInput, setConfirmationInput] = useState('');
-  const [isConfirmationValid, setIsConfirmationValid] = useState(false);
+  const isConfirmationValid = !requireConfirmation || confirmationInput.trim() === confirmationText;
 
-  // Reset confirmation input when dialog opens/closes
-  useEffect(() => {
-    if (!open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
       setConfirmationInput('');
-      setIsConfirmationValid(false);
+      onClose();
     }
-  }, [open]);
-
-  // Validate confirmation input
-  useEffect(() => {
-    if (requireConfirmation) {
-      setIsConfirmationValid(confirmationInput.trim() === confirmationText);
-    } else {
-      setIsConfirmationValid(true);
-    }
-  }, [confirmationInput, requireConfirmation, confirmationText]);
+  };
 
   const handleConfirm = () => {
     if (!requireConfirmation || isConfirmationValid) {
@@ -55,7 +45,7 @@ export function ConfirmDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title ?? 'Confirm'}</DialogTitle>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
 import { PaymentSourceExtended } from '../api/generated';
 import { useAppContext } from '../contexts/AppContext';
@@ -98,21 +98,16 @@ const searchableItems: SearchableItem[] = [
 ];
 
 export function useSearch() {
-  const [allResults, setAllResults] = useState<SearchableItem[]>([]);
   const { network } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
-    PaymentSourceExtended[]
-  >([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  useEffect(() => {
-    const staticResults = searchableItems;
-
+  const allResults = useMemo(() => {
     const dynamicResults: SearchableItem[] = [];
 
     currentNetworkPaymentSources?.forEach((source) => {
@@ -148,7 +143,7 @@ export function useSearch() {
       });
     });
 
-    setAllResults([...staticResults, ...dynamicResults]);
+    return [...searchableItems, ...dynamicResults];
   }, [currentNetworkPaymentSources]);
 
   const handleSearch = useCallback(
