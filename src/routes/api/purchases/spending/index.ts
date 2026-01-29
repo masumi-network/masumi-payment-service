@@ -130,12 +130,12 @@ export const postPurchaseSpendingSchemaOutput = z.object({
 
 function getDayNumberLocal(date: Date, timeZone: string): string {
 	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('{YYYY}-{MM}-{DD}');
+	return sp.format('YYYY-MM-DD');
 }
 
 function getMonthNumberLocal(date: Date, timeZone: string): string {
 	const sp = spacetime.fromUnixSeconds(date.getTime() / 1000).goto(timeZone);
-	return sp.format('{YYYY}-{MM}');
+	return sp.format('YYYY-MM');
 }
 
 export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
