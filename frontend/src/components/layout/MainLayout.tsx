@@ -242,8 +242,11 @@ export function MainLayout({ children }: MainLayoutProps) {
     setIsNotificationsOpen(true);
   };
 
-  const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    setNetwork(network);
+  const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
+    if (isSetupMode) {
+      return; // Prevent network changes during setup to avoid wallet regeneration
+    }
+    setNetwork(newNetwork);
   };
 
   return (
@@ -296,8 +299,10 @@ export function MainLayout({ children }: MainLayoutProps) {
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
+                disabled={isSetupMode}
               >
                 {collapsed && !isHovered ? 'P' : 'Preprod'}
               </Button>
@@ -309,8 +314,10 @@ export function MainLayout({ children }: MainLayoutProps) {
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
+                disabled={isSetupMode}
               >
                 {collapsed && !isHovered ? 'M' : 'Mainnet'}
               </Button>

@@ -39,7 +39,6 @@ function WelcomeScreen({
 }: {
   onStart: () => void;
   networkType: string;
-  ignoreSetup: () => void;
   onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
 }) {
   const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
@@ -1203,12 +1202,10 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   const { setIsSetupMode, setNetwork } = useAppContext();
 
   const handleComplete = () => {
-    setIsSetupMode(false);
     router.push('/');
   };
 
   const handleIgnoreSetup = () => {
-    setIsSetupMode(false);
     localStorage.setItem('userIgnoredSetup', 'true');
     router.push('/');
   };
@@ -1228,7 +1225,6 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       key="welcome"
       onStart={() => setCurrentStep(1)}
       networkType={networkType}
-      ignoreSetup={handleIgnoreSetup}
       onNetworkChange={setNetwork}
     />,
     <SeedPhrasesScreen
