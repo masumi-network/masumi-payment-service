@@ -39,6 +39,7 @@ export function useTransactions() {
   const seenTransactionIdsRef = useRef<Set<string>>(new Set());
   const lastFetchWasNextPageRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const previousNetworkRef = useRef(network);
 
   // Get last visit timestamp from localStorage
   const getLastVisitTimestamp = (): string | null => {
@@ -174,6 +175,21 @@ export function useTransactions() {
   const isFetchingNextPage = query.isFetchingNextPage;
   const isRefetching = query.isRefetching;
   const refetch = query.refetch;
+
+  useEffect(() => {
+    if (previousNetworkRef.current !== network) {
+      hasInitializedRef.current = false;
+      seenTransactionIdsRef.current = new Set();
+      lastFetchWasNextPageRef.current = false;
+
+      setNewTransactionsCount(0);
+      setNewTransactionsCountInStorage(0);
+
+      setLastVisitTimestamp(new Date().toISOString());
+
+      previousNetworkRef.current = network;
+    }
+  }, [network]);
 
   useEffect(() => {
     const storedCount = getNewTransactionsCount();

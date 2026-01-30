@@ -12,7 +12,7 @@ import {
   validateCardanoAddress,
 } from '@/lib/utils';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '../ui/spinner';
@@ -64,6 +64,19 @@ const formSchema = z
   });
 
 type FormSchema = z.infer<typeof formSchema>;
+// Helper functions to avoid duplicated default value construction logic
+const getDefaultCustomAdminWallets = (
+  network: 'Mainnet' | 'Preprod',
+): [{ walletAddress: string }, { walletAddress: string }, { walletAddress: string }] => [
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
+];
+
+const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
+  walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+  feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
+});
 
 export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
@@ -84,7 +97,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     register,
     handleSubmit,
     control,
-    watch,
+    getValues,
     reset,
     formState: { errors },
     setValue,
@@ -96,21 +109,11 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
+      feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
       purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
-      customAdminWallets: [
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-        },
-      ],
+      customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
     },
   });
 
@@ -134,31 +137,37 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
 
   useEffect(() => {
     if (open) {
+      const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
+          walletAddress: feeConfig.walletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
+        feePermille: feeConfig.feePermille,
         purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         useCustomAdminWallets: false,
-        customAdminWallets: [
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-          },
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-          },
-          {
-            walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-          },
-        ],
+        customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
       });
-      setError('');
+      queueMicrotask(() => setError(''));
     }
   }, [open, currentNetwork, reset]);
+
+  const network = useWatch({ control, name: 'network' });
+  const useCustomAdminWallets = useWatch({ control, name: 'useCustomAdminWallets' });
+
+  // Update network-dependent values when the form's network dropdown changes
+  useEffect(() => {
+    if (open && network) {
+      if (!useCustomAdminWallets) {
+        const feeConfig = getDefaultFeeConfig(network);
+        setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress);
+        setValue('feePermille', feeConfig.feePermille);
+        setValue('customAdminWallets', getDefaultCustomAdminWallets(network));
+      }
+    }
+  }, [network, open, setValue, useCustomAdminWallets]);
 
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
@@ -304,9 +313,6 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     );
   };
 
-  const useCustomAdminWallets = watch('useCustomAdminWallets');
-  const network = watch('network');
-
   // Handler to generate mnemonic for a purchasing wallet
   const handleGeneratePurchasingMnemonic = async (index: number) => {
     setWalletGenError('');
@@ -315,7 +321,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
@@ -347,7 +353,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
@@ -432,6 +438,31 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
                   <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Fee Configuration Section */}
+          <div className="space-y-4 p-4 bg-muted/30 rounded-lg border border-border/50">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Fee Configuration</h3>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Configure fee settings for this payment source</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm">Use Custom Configuration</label>
+                <input type="checkbox" {...register('useCustomAdminWallets')} />
+              </div>
+            </div>
+
+            {/* Fee Settings Grid */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
@@ -448,52 +479,49 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
                 </div>
                 <input
                   type="number"
-                  className="w-full p-2 rounded-md bg-background border"
+                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
                   {...register('feePermille', { valueAsNumber: true })}
                   min="0"
                   max="1000"
+                  disabled={!useCustomAdminWallets}
                 />
                 {errors.feePermille && (
                   <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
                 )}
               </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">
+                    Fee Receiver Wallet <span className="text-red-500">*</span>
+                  </label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <input
+                  type="text"
+                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
+                  {...register('feeReceiverWallet.walletAddress')}
+                  placeholder="Enter fee receiver wallet address"
+                  disabled={!useCustomAdminWallets}
+                />
+                {errors.feeReceiverWallet?.walletAddress && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.feeReceiverWallet.walletAddress.message}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Wallet Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                {...register('feeReceiverWallet.walletAddress')}
-                placeholder="Enter fee receiver wallet address"
-              />
-              {errors.feeReceiverWallet?.walletAddress && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.feeReceiverWallet.walletAddress.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            {/* Admin Wallets Sub-section */}
+            <div className="space-y-4 pt-4 border-t border-border/50">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">Admin Wallets</h3>
+                <h4 className="text-md font-medium">Admin Wallets</h4>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -503,65 +531,61 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm">Use Custom Admin Wallets</label>
-                <input type="checkbox" {...register('useCustomAdminWallets')} />
-              </div>
-            </div>
-            {useCustomAdminWallets ? (
-              <div className="space-y-4">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Admin Wallet {i + 1} <span className="text-destructive">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full p-2 rounded-md bg-background border"
-                      {...register(`customAdminWallets.${i}.walletAddress` as AdminWalletPath)}
-                      placeholder="Enter admin wallet address"
-                    />
-                    {errors.customAdminWallets?.[i]?.walletAddress && (
-                      <p className="text-xs text-destructive mt-1">
-                        {errors.customAdminWallets[i].walletAddress.message}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Using default admin wallets for {network}:
-                </p>
-                {DEFAULT_ADMIN_WALLETS[network].map((wallet, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between text-sm font-mono bg-muted p-2 rounded"
-                  >
-                    <div className="flex flex-col">
-                      <span>{shortenAddress(wallet.walletAddress)}</span>
-                      {wallet.note && (
-                        <span className="text-xs text-muted-foreground">{wallet.note}</span>
+              {useCustomAdminWallets ? (
+                <div className="space-y-4">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Admin Wallet {i + 1} <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 rounded-md bg-background border"
+                        {...register(`customAdminWallets.${i}.walletAddress` as AdminWalletPath)}
+                        placeholder="Enter admin wallet address"
+                      />
+                      {errors.customAdminWallets?.[i]?.walletAddress && (
+                        <p className="text-xs text-destructive mt-1">
+                          {errors.customAdminWallets[i].walletAddress.message}
+                        </p>
                       )}
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleCopy(wallet.walletAddress)}
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Using default admin wallets for {network}:
+                  </p>
+                  {DEFAULT_ADMIN_WALLETS[network].map((wallet, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between text-sm font-mono bg-muted p-2 rounded"
                     >
-                      {copiedAddresses[wallet.walletAddress] ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="flex flex-col">
+                        <span>{shortenAddress(wallet.walletAddress)}</span>
+                        {wallet.note && (
+                          <span className="text-xs text-muted-foreground">{wallet.note}</span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleCopy(wallet.walletAddress)}
+                      >
+                        {copiedAddresses[wallet.walletAddress] ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">
