@@ -1,21 +1,21 @@
 {
-  "name": "masumi-payment",
-  "version": "1.0.0",
-  "main": "index.js",
-  "license": "MIT",
-  "type": "module",
-  "scripts": {
-    "mint": "node lock-example.mjs",
-    "generate-wallet": "node generate-wallet.mjs",
-    "defrag": "node cleanup-utxo.mjs"
-  },
-  "dependencies": {
-    "@emurgo/cardano-serialization-lib-nodejs": "^13.2.1",
-    "@meshsdk/contract": "^1.9.0-beta.94",
-    "@meshsdk/core": "1.9.0-beta.94",
-    "cbor": "^10.0.11",
-    "dotenv": "^17.2.3",
-    "ethereum-cryptography": "^3.2.0",
-    "lucid-cardano": "^0.10.11"
-  }
+	"name": "masumi-payment",
+	"version": "1.0.0",
+	"main": "index.js",
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"mint": "node lock-example.mjs",
+		"generate-wallet": "node generate-wallet.mjs",
+		"defrag": "node cleanup-utxo.mjs"
+	},
+	"dependencies": {
+		"@emurgo/cardano-serialization-lib-nodejs": "^13.2.1",
+		"@meshsdk/contract": "^1.9.0-beta.94",
+		"@meshsdk/core": "1.9.0-beta.94",
+		"cbor": "^10.0.11",
+		"dotenv": "^17.2.3",
+		"ethereum-cryptography": "^3.2.0",
+		"lucid-cardano": "^0.10.11"
+	}
 }

@@ -1,11 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -31,12 +24,7 @@ interface ApiErrorResponse {
   };
 }
 
-export function DeleteApiKeyDialog({
-  open,
-  onClose,
-  onSuccess,
-  apiKey,
-}: DeleteApiKeyDialogProps) {
+export function DeleteApiKeyDialog({ open, onClose, onSuccess, apiKey }: DeleteApiKeyDialogProps) {
   const { apiClient } = useAppContext();
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,8 +77,7 @@ export function DeleteApiKeyDialog({
 
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete this API key? This action cannot be
-            undone.
+            Are you sure you want to delete this API key? This action cannot be undone.
           </p>
 
           {error && (
@@ -103,11 +90,7 @@ export function DeleteApiKeyDialog({
             <Button variant="outline" onClick={onClose} disabled={isDeleting}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </div>

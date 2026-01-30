@@ -1,16 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPayment,
-  getPurchase,
-  Payment,
-  Purchase,
-} from '@/lib/api/generated';
+import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
 type PaymentTx = Payment & {
@@ -45,6 +39,7 @@ export function useTransactions() {
   const seenTransactionIdsRef = useRef<Set<string>>(new Set());
   const lastFetchWasNextPageRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const previousNetworkRef = useRef(network);
 
   // Get last visit timestamp from localStorage
   const getLastVisitTimestamp = (): string | null => {
@@ -134,8 +129,7 @@ export function useTransactions() {
       }
 
       const sortedTransactions = combined.sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
       const purchasesCount = purchases?.data?.data?.Purchases?.length ?? 0;
@@ -173,10 +167,7 @@ export function useTransactions() {
       unique.push(tx);
     });
 
-    return unique.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [query.data]);
 
   const isLoading = query.isLoading || query.isRefetching;
@@ -184,6 +175,21 @@ export function useTransactions() {
   const isFetchingNextPage = query.isFetchingNextPage;
   const isRefetching = query.isRefetching;
   const refetch = query.refetch;
+
+  useEffect(() => {
+    if (previousNetworkRef.current !== network) {
+      hasInitializedRef.current = false;
+      seenTransactionIdsRef.current = new Set();
+      lastFetchWasNextPageRef.current = false;
+
+      setNewTransactionsCount(0);
+      setNewTransactionsCountInStorage(0);
+
+      setLastVisitTimestamp(new Date().toISOString());
+
+      previousNetworkRef.current = network;
+    }
+  }, [network]);
 
   useEffect(() => {
     const storedCount = getNewTransactionsCount();
@@ -194,9 +200,7 @@ export function useTransactions() {
     if (!query.data) return;
 
     if (!hasInitializedRef.current) {
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((tx) => tx.id ?? ''),
-      );
+      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
       hasInitializedRef.current = true;
       return;
     }
@@ -212,9 +216,7 @@ export function useTransactions() {
 
     const lastVisitTimestamp = getLastVisitTimestamp();
     if (!lastVisitTimestamp) {
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((tx) => tx.id ?? ''),
-      );
+      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
       return;
     }
 
@@ -222,8 +224,7 @@ export function useTransactions() {
     const existingIds = seenTransactionIdsRef.current;
     const newOnes = transactions.filter(
       (tx) =>
-        !existingIds.has(tx.id ?? '') &&
-        new Date(tx.createdAt) > new Date(lastVisitTimestamp),
+        !existingIds.has(tx.id ?? '') && new Date(tx.createdAt) > new Date(lastVisitTimestamp),
     );
 
     if (newOnes.length > 0) {
@@ -243,9 +244,7 @@ export function useTransactions() {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);
       setLastVisitTimestamp(new Date().toISOString());
-      seenTransactionIdsRef.current = new Set(
-        transactions.map((tx) => tx.id ?? ''),
-      );
+      seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
     }
   }, [router.pathname, newTransactionsCount, transactions]);
 
@@ -253,9 +252,7 @@ export function useTransactions() {
     setNewTransactionsCount(0);
     setNewTransactionsCountInStorage(0);
     setLastVisitTimestamp(new Date().toISOString());
-    seenTransactionIdsRef.current = new Set(
-      transactions.map((tx) => tx.id ?? ''),
-    );
+    seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
   }, [transactions]);
 
   const loadMore = useCallback(() => {

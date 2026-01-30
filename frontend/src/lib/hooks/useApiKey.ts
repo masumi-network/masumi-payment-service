@@ -33,9 +33,7 @@ export function useApiKeys() {
 
       const apiKeys = response?.data?.data?.ApiKeys ?? [];
       const hasMore = apiKeys.length === PAGE_SIZE;
-      const nextCursor = hasMore
-        ? (apiKeys[apiKeys.length - 1]?.token ?? undefined)
-        : undefined;
+      const nextCursor = hasMore ? (apiKeys[apiKeys.length - 1]?.token ?? undefined) : undefined;
 
       return {
         apiKeys,

@@ -1,11 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -21,7 +14,7 @@ import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -31,20 +24,10 @@ interface AddApiKeyDialogProps {
   onSuccess: () => void;
 }
 
-// Permission presets for convenient selection
-type PermissionPreset = 'Read' | 'ReadAndPay' | 'Admin';
-
 const apiKeySchema = z
   .object({
-    // UI selection for permission preset
-    permissionPreset: z.enum(['Read', 'ReadAndPay', 'Admin']),
-    // Flag-based permissions (derived from preset)
-    canRead: z.boolean(),
-    canPay: z.boolean(),
-    canAdmin: z.boolean(),
-    networks: z
-      .array(z.enum(['Preprod', 'Mainnet']))
-      .min(1, 'Select at least one network'),
+    permission: z.enum(['Read', 'ReadAndPay', 'Admin']),
+    networks: z.array(z.enum(['Preprod', 'Mainnet'])).min(1, 'Select at least one network'),
     usageLimited: z.boolean(),
     credits: z.object({
       lovelace: z.string().optional(),
@@ -53,15 +36,14 @@ const apiKeySchema = z
   })
   .superRefine((val, ctx) => {
     if (
-      val.canPay &&
-      !val.canAdmin &&
+      val.permission === 'ReadAndPay' &&
       val.usageLimited &&
       !val.credits.lovelace &&
       !val.credits.usdm
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Please specify usage credits for payment permission',
+        message: 'Please specify usage credits for Read and Pay permission',
         path: ['credits', 'lovelace'],
       });
     }
@@ -69,30 +51,7 @@ const apiKeySchema = z
 
 type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
 
-/**
- * Maps a permission preset to flag values.
- */
-function presetToFlags(preset: PermissionPreset): {
-  canRead: boolean;
-  canPay: boolean;
-  canAdmin: boolean;
-} {
-  switch (preset) {
-    case 'Admin':
-      return { canRead: true, canPay: true, canAdmin: true };
-    case 'ReadAndPay':
-      return { canRead: true, canPay: true, canAdmin: false };
-    case 'Read':
-    default:
-      return { canRead: true, canPay: false, canAdmin: false };
-  }
-}
-
-export function AddApiKeyDialog({
-  open,
-  onClose,
-  onSuccess,
-}: AddApiKeyDialogProps) {
+export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient } = useAppContext();
 
@@ -101,45 +60,31 @@ export function AddApiKeyDialog({
     handleSubmit,
     control,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<ApiKeyFormValues>({
     resolver: zodResolver(apiKeySchema),
     defaultValues: {
-      permissionPreset: 'Read',
-      canRead: true,
-      canPay: false,
-      canAdmin: false,
+      permission: 'Read',
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
       credits: { lovelace: '', usdm: '' },
     },
   });
 
-  const permissionPreset = watch('permissionPreset');
-  const canAdmin = watch('canAdmin');
-  const canPay = watch('canPay');
-  const usageLimited = watch('usageLimited');
+  const permission = useWatch({ control, name: 'permission', defaultValue: 'Read' });
+  const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
 
-  // Update flags when preset changes
   useEffect(() => {
-    const flags = presetToFlags(permissionPreset);
-    setValue('canRead', flags.canRead);
-    setValue('canPay', flags.canPay);
-    setValue('canAdmin', flags.canAdmin);
-
-    // Auto-adjust usageLimited based on permission
-    if (flags.canAdmin) {
+    if (permission === 'Admin') {
       setValue('usageLimited', false);
-    } else if (!flags.canPay) {
-      // Read-only: always usage limited
+    } else if (permission === 'Read') {
       setValue('usageLimited', true);
     }
-  }, [permissionPreset, setValue]);
+  }, [permission, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
-    const isReadOnly = !data.canPay && !data.canAdmin;
+    const isReadOnly = data.permission === 'Read';
     const defaultCredits = [
       {
         unit: 'lovelace',
@@ -151,10 +96,7 @@ export function AddApiKeyDialog({
         postApiKey({
           client: apiClient,
           body: {
-            // Send flag-based permissions
-            canRead: data.canRead,
-            canPay: data.canPay,
-            canAdmin: data.canAdmin,
+            permission: data.permission,
             usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
             networkLimit: data.networks,
             UsageCredits: isReadOnly
@@ -165,9 +107,7 @@ export function AddApiKeyDialog({
                       ? [
                           {
                             unit: 'lovelace',
-                            amount: (
-                              parseFloat(data.credits.lovelace) * 1000000
-                            ).toString(),
+                            amount: (parseFloat(data.credits.lovelace) * 1000000).toString(),
                           },
                         ]
                       : []),
@@ -202,8 +142,6 @@ export function AddApiKeyDialog({
     onClose();
   };
 
-  const isReadOnly = !canPay && !canAdmin;
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent>
@@ -213,28 +151,26 @@ export function AddApiKeyDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Permission Level</label>
+            <label className="text-sm font-medium">Permission</label>
             <Controller
               control={control}
-              name="permissionPreset"
+              name="permission"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Read">Read Only</SelectItem>
+                    <SelectItem value="Read">Read</SelectItem>
                     <SelectItem value="ReadAndPay">Read and Pay</SelectItem>
                     <SelectItem value="Admin">Admin</SelectItem>
                   </SelectContent>
                 </Select>
               )}
             />
-            <p className="text-xs text-muted-foreground">
-              {permissionPreset === 'Read' && 'Can read data but cannot make payments'}
-              {permissionPreset === 'ReadAndPay' && 'Can read data and make payments/purchases'}
-              {permissionPreset === 'Admin' && 'Full access to all operations'}
-            </p>
+            {errors.permission && (
+              <p className="text-xs text-destructive mt-1">{errors.permission.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -249,9 +185,7 @@ export function AddApiKeyDialog({
                       checked={field.value.includes('Preprod')}
                       onCheckedChange={() => {
                         if (field.value.includes('Preprod')) {
-                          field.onChange(
-                            field.value.filter((n: string) => n !== 'Preprod'),
-                          );
+                          field.onChange(field.value.filter((n: string) => n !== 'Preprod'));
                         } else {
                           field.onChange([...field.value, 'Preprod']);
                         }
@@ -270,9 +204,7 @@ export function AddApiKeyDialog({
                       checked={field.value.includes('Mainnet')}
                       onCheckedChange={() => {
                         if (field.value.includes('Mainnet')) {
-                          field.onChange(
-                            field.value.filter((n: string) => n !== 'Mainnet'),
-                          );
+                          field.onChange(field.value.filter((n: string) => n !== 'Mainnet'));
                         } else {
                           field.onChange([...field.value, 'Mainnet']);
                         }
@@ -284,9 +216,7 @@ export function AddApiKeyDialog({
               </div>
             </div>
             {errors.networks && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.networks.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.networks.message}</p>
             )}
           </div>
 
@@ -299,54 +229,37 @@ export function AddApiKeyDialog({
                   <Checkbox
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    disabled={isReadOnly || canAdmin}
+                    disabled={permission === 'Read'}
                   />
                 )}
               />
               <label className="text-sm font-medium">Limit Usage</label>
             </div>
-            {canAdmin && (
-              <p className="text-xs text-muted-foreground">
-                Admin keys are not usage limited
-              </p>
-            )}
           </div>
 
-          {usageLimited && !isReadOnly && (
+          {usageLimited && permission !== 'Read' && (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ADA Limit</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.lovelace')}
-                />
+                <Input type="number" placeholder="0.00" {...register('credits.lovelace')} />
                 <p className="text-xs text-muted-foreground">
                   Amount in ADA (will be converted to lovelace)
                 </p>
-                {errors.credits &&
-                  'lovelace' in errors.credits &&
-                  errors.credits.lovelace && (
-                    <p className="text-xs text-destructive mt-1">
-                      {(errors.credits.lovelace as any).message}
-                    </p>
-                  )}
+                {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.lovelace as any).message}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">USDM Limit</label>
-                <Input
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.usdm')}
-                />
-                {errors.credits &&
-                  'usdm' in errors.credits &&
-                  errors.credits.usdm && (
-                    <p className="text-xs text-destructive mt-1">
-                      {(errors.credits.usdm as any).message}
-                    </p>
-                  )}
+                <Input type="number" placeholder="0.00" {...register('credits.usdm')} />
+                {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.usdm as any).message}
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -356,11 +269,7 @@ export function AddApiKeyDialog({
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            onClick={handleSubmit(onSubmit)}
-          >
+          <Button type="submit" disabled={isLoading} onClick={handleSubmit(onSubmit)}>
             {isLoading ? 'Creating...' : 'Create'}
           </Button>
         </div>
