@@ -284,10 +284,18 @@ input[type='number'] {
   animation: pulseSuccess 0.4s ease-out forwards;
 }
 
-.animate-stagger-1 { animation-delay: 50ms; }
-.animate-stagger-2 { animation-delay: 100ms; }
-.animate-stagger-3 { animation-delay: 150ms; }
-.animate-stagger-4 { animation-delay: 200ms; }
+.animate-stagger-1 {
+  animation-delay: 50ms;
+}
+.animate-stagger-2 {
+  animation-delay: 100ms;
+}
+.animate-stagger-3 {
+  animation-delay: 150ms;
+}
+.animate-stagger-4 {
+  animation-delay: 200ms;
+}
 
 /* Ensure toast notifications appear above dialog overlays */
 /* Dialog overlay uses z-[999], dialog content uses z-[1000], so toasts need higher */

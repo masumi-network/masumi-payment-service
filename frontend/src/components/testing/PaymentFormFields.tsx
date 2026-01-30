@@ -123,11 +123,7 @@ export function useInputDataHash(
       }
       try {
         const parsed = JSON.parse(data);
-        if (
-          typeof parsed !== 'object' ||
-          parsed === null ||
-          Array.isArray(parsed)
-        ) {
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
           setInputDataError('Input data must be a JSON object');
           setValue('inputHash', '');
           return;
@@ -144,7 +140,9 @@ export function useInputDataHash(
   );
 
   useEffect(() => {
-    recalculateHash(inputData, identifierFromPurchaser);
+    queueMicrotask(() => {
+      recalculateHash(inputData, identifierFromPurchaser);
+    });
   }, [inputData, identifierFromPurchaser, recalculateHash]);
 
   const resetInputData = useCallback((defaultPreset = true) => {
@@ -207,10 +205,7 @@ export function PaymentFormFields({
               </SelectTrigger>
               <SelectContent>
                 {paidAgents.map((agent) => (
-                  <SelectItem
-                    key={agent.id}
-                    value={agent.agentIdentifier || ''}
-                  >
+                  <SelectItem key={agent.id} value={agent.agentIdentifier || ''}>
                     {agent.name}
                   </SelectItem>
                 ))}
@@ -219,14 +214,11 @@ export function PaymentFormFields({
           )}
         />
         {errors.agentIdentifier && (
-          <p className="text-sm text-red-500 animate-fade-in">
-            {errors.agentIdentifier.message}
-          </p>
+          <p className="text-sm text-red-500 animate-fade-in">{errors.agentIdentifier.message}</p>
         )}
         {paidAgents.length === 0 && !isLoadingAgents && (
           <p className="text-xs text-muted-foreground">
-            No paid agents available. Free agents cannot be used with the
-            payment flow.
+            No paid agents available. Free agents cannot be used with the payment flow.
           </p>
         )}
       </div>
@@ -276,9 +268,8 @@ export function PaymentFormFields({
               >
                 MIP-004
                 <ExternalLink className="h-3 w-3" />
-              </a>
-              {' '}&mdash; SHA-256(identifier + &quot;;&quot; +
-              JCS(input_data))
+              </a>{' '}
+              &mdash; SHA-256(identifier + &quot;;&quot; + JCS(input_data))
             </p>
             <Select onValueChange={(value) => setInputData(value)}>
               <SelectTrigger className="w-[160px] h-7 text-xs shrink-0">
@@ -306,16 +297,12 @@ export function PaymentFormFields({
               className={`font-mono text-xs transition-colors duration-200 ${inputDataError ? 'border-red-500' : ''}`}
             />
             {inputDataError && (
-              <p className="text-sm text-red-500 animate-fade-in">
-                {inputDataError}
-              </p>
+              <p className="text-sm text-red-500 animate-fade-in">{inputDataError}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label className="text-muted-foreground font-normal">
-              Input Hash
-            </Label>
+            <Label className="text-muted-foreground font-normal">Input Hash</Label>
             <Input
               {...register('inputHash')}
               readOnly
@@ -323,9 +310,7 @@ export function PaymentFormFields({
               className={`font-mono text-xs bg-muted cursor-default transition-colors duration-200 ${errors.inputHash ? 'border-red-500' : ''}`}
             />
             {errors.inputHash && (
-              <p className="text-sm text-red-500 animate-fade-in">
-                {errors.inputHash.message}
-              </p>
+              <p className="text-sm text-red-500 animate-fade-in">{errors.inputHash.message}</p>
             )}
           </div>
         </CardContent>

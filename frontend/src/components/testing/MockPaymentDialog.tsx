@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -37,9 +32,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   const { agents, isLoading: isLoadingAgents } = useAgents();
   const [isLoading, setIsLoading] = useState(false);
   const [curlCommand, setCurlCommand] = useState<string>('');
-  const [response, setResponse] = useState<PostPaymentResponse['data'] | null>(
-    null,
-  );
+  const [response, setResponse] = useState<PostPaymentResponse['data'] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -67,8 +60,10 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
       agent.AgentPricing?.pricingType !== 'Free',
   );
 
-  const { inputData, setInputData, inputDataError, resetInputData } =
-    useInputDataHash(setValue, watch);
+  const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
+    setValue,
+    watch,
+  );
 
   useEffect(() => {
     if (open) {
@@ -109,9 +104,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         });
 
         if (result.error) {
-          throw new Error(
-            extractErrorMessage(result.error, 'Payment creation failed'),
-          );
+          throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
         }
 
         if (result.data?.data) {
@@ -121,10 +114,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           throw new Error('Invalid response from server - no data returned');
         }
       } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(
-          err,
-          'Failed to create payment',
-        );
+        const errorMessage = extractErrorMessage(err, 'Failed to create payment');
         setError(errorMessage);
         toast.error(errorMessage);
         console.error('Payment creation error:', err);
@@ -175,9 +165,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
               </Button>
               <Button
                 type="submit"
-                disabled={
-                  isLoading || isLoadingAgents || paidAgents.length === 0
-                }
+                disabled={isLoading || isLoadingAgents || paidAgents.length === 0}
               >
                 {isLoading ? (
                   <>
@@ -193,11 +181,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         </div>
 
         <div className="shrink-0">
-          <CurlResponseViewer
-            curlCommand={curlCommand}
-            response={response}
-            error={error}
-          />
+          <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
         </div>
       </DialogContent>
     </Dialog>

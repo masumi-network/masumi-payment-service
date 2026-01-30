@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -51,12 +46,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const [paymentCurl, setPaymentCurl] = useState<string>('');
   const [purchaseCurl, setPurchaseCurl] = useState<string>('');
 
-  const [paymentResponse, setPaymentResponse] = useState<
-    PostPaymentResponse['data'] | null
-  >(null);
-  const [purchaseResponse, setPurchaseResponse] = useState<
-    PostPurchaseResponse['data'] | null
-  >(null);
+  const [paymentResponse, setPaymentResponse] = useState<PostPaymentResponse['data'] | null>(null);
+  const [purchaseResponse, setPurchaseResponse] = useState<PostPurchaseResponse['data'] | null>(
+    null,
+  );
 
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -86,8 +79,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       agent.AgentPricing?.pricingType !== 'Free',
   );
 
-  const { inputData, setInputData, inputDataError, resetInputData } =
-    useInputDataHash(setValue, watch);
+  const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
+    setValue,
+    watch,
+  );
 
   useEffect(() => {
     if (open) {
@@ -104,10 +99,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   }, [open, setValue, resetInputData]);
 
   const createPurchaseAutomatically = useCallback(
-    async (
-      payment: PostPaymentResponse['data'],
-      originalFormData: PaymentFormValues,
-    ) => {
+    async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {
       try {
         setIsLoadingPurchase(true);
         setPurchaseError(null);
@@ -123,17 +115,12 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           payByTime: payment.payByTime || '',
           submitResultTime: payment.submitResultTime || '',
           unlockTime: payment.unlockTime || '',
-          externalDisputeUnlockTime:
-            payment.externalDisputeUnlockTime || '',
+          externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePurchaseCurl(
-          baseUrl,
-          apiKey || '',
-          requestBody,
-        );
+        const curl = generatePurchaseCurl(baseUrl, apiKey || '', requestBody);
         setPurchaseCurl(curl);
 
         const result = await postPurchase({
@@ -142,26 +129,17 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         });
 
         if (result.error) {
-          throw new Error(
-            extractErrorMessage(result.error, 'Purchase creation failed'),
-          );
+          throw new Error(extractErrorMessage(result.error, 'Purchase creation failed'));
         }
 
         if (result.data?.data) {
           setPurchaseResponse(result.data.data);
-          toast.success(
-            'Purchase created successfully - Full cycle complete!',
-          );
+          toast.success('Purchase created successfully - Full cycle complete!');
         } else {
-          throw new Error(
-            'Invalid response from server - no data returned',
-          );
+          throw new Error('Invalid response from server - no data returned');
         }
       } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(
-          err,
-          'Failed to create purchase',
-        );
+        const errorMessage = extractErrorMessage(err, 'Failed to create purchase');
         setPurchaseError(errorMessage);
         toast.error(errorMessage);
         console.error('Purchase creation error:', err);
@@ -192,11 +170,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(
-          baseUrl,
-          apiKey || '',
-          requestBody,
-        );
+        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
         setPaymentCurl(curl);
 
         const result = await postPayment({
@@ -205,9 +179,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         });
 
         if (result.error) {
-          throw new Error(
-            extractErrorMessage(result.error, 'Payment creation failed'),
-          );
+          throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
         }
 
         if (result.data?.data) {
@@ -219,15 +191,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             createPurchaseAutomatically(payment, data);
           }, 500);
         } else {
-          throw new Error(
-            'Invalid response from server - no data returned',
-          );
+          throw new Error('Invalid response from server - no data returned');
         }
       } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(
-          err,
-          'Failed to create payment',
-        );
+        const errorMessage = extractErrorMessage(err, 'Failed to create payment');
         setPaymentError(errorMessage);
         toast.error(errorMessage);
         console.error('Payment creation error:', err);
@@ -266,16 +233,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           <div className="flex items-center gap-2 flex-1">
             <div
               className={`flex items-center justify-center w-7 h-7 rounded-full text-sm transition-all duration-300 ${
-                step >= 1
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
+                step >= 1 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
               }`}
             >
-              {paymentResponse ? (
-                <CheckCircle2 className="h-4 w-4 animate-pulse-success" />
-              ) : (
-                '1'
-              )}
+              {paymentResponse ? <CheckCircle2 className="h-4 w-4 animate-pulse-success" /> : '1'}
             </div>
             <span className="text-sm font-medium">Payment</span>
             {paymentResponse && (
@@ -288,16 +249,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           <div className="flex items-center gap-2 flex-1">
             <div
               className={`flex items-center justify-center w-7 h-7 rounded-full text-sm transition-all duration-300 ${
-                step >= 2
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground'
+                step >= 2 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
               }`}
             >
-              {purchaseResponse ? (
-                <CheckCircle2 className="h-4 w-4 animate-pulse-success" />
-              ) : (
-                '2'
-              )}
+              {purchaseResponse ? <CheckCircle2 className="h-4 w-4 animate-pulse-success" /> : '2'}
             </div>
             <span className="text-sm font-medium">Purchase</span>
             {purchaseResponse && (
@@ -312,10 +267,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         <div className="flex-1 overflow-y-auto min-h-0">
           {/* Step 1: Payment Form */}
           {step === 1 && !paymentResponse && (
-            <form
-              onSubmit={handleSubmit(onSubmitPayment)}
-              className="space-y-6"
-            >
+            <form onSubmit={handleSubmit(onSubmitPayment)} className="space-y-6">
               <PaymentFormFields
                 register={register}
                 setValue={setValue}
@@ -331,20 +283,12 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
               <Separator />
               <div className="flex justify-end items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleClose}
-                  type="button"
-                >
+                <Button variant="outline" onClick={handleClose} type="button">
                   Cancel
                 </Button>
                 <Button
                   type="submit"
-                  disabled={
-                    isLoadingPayment ||
-                    isLoadingAgents ||
-                    paidAgents.length === 0
-                  }
+                  disabled={isLoadingPayment || isLoadingAgents || paidAgents.length === 0}
                 >
                   {isLoadingPayment ? (
                     <>
@@ -386,11 +330,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
               {(purchaseResponse || purchaseError) && (
                 <div className="space-y-2">
                   <h3 className="font-medium flex items-center gap-2 text-sm">
-                    {purchaseResponse ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : null}
-                    Purchase{' '}
-                    {purchaseResponse ? 'Created' : 'Failed'}
+                    {purchaseResponse ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : null}
+                    Purchase {purchaseResponse ? 'Created' : 'Failed'}
                   </h3>
                   <CurlResponseViewer
                     curlCommand={purchaseCurl}

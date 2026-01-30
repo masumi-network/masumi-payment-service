@@ -2,19 +2,10 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
-import {
-  ExternalLink,
-  CreditCard,
-  ShoppingCart,
-  ArrowRightLeft,
-} from 'lucide-react';
+import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
 import { useState } from 'react';
 import { GetStaticProps } from 'next';
-import {
-  MockPaymentDialog,
-  MockPurchaseDialog,
-  FullCycleDialog,
-} from '@/components/testing';
+import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
 
 export const getStaticProps: GetStaticProps = async () => {
@@ -23,11 +14,7 @@ export const getStaticProps: GetStaticProps = async () => {
   };
 };
 
-const TABS = [
-  { name: 'Testing' },
-  { name: 'Schema Validator' },
-  { name: 'OpenAPI' },
-];
+const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAPI' }];
 
 export default function Developers() {
   const [activeTab, setActiveTab] = useState('Testing');
@@ -49,11 +36,7 @@ export default function Developers() {
             </p>
           </div>
 
-          <Tabs
-            tabs={TABS}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-          />
+          <Tabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
           {activeTab === 'Testing' && (
             <div className="space-y-6 animate-fade-in-up opacity-0">
@@ -70,8 +53,7 @@ export default function Developers() {
                     <h2 className="font-medium">Test Payment</h2>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Create a single test payment to simulate a seller-side
-                    payment request.
+                    Create a single test payment to simulate a seller-side payment request.
                   </p>
                 </button>
 
@@ -87,8 +69,7 @@ export default function Developers() {
                     <h2 className="font-medium">Test Purchase</h2>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Create a single test purchase to simulate a buyer-side
-                    purchase request.
+                    Create a single test purchase to simulate a buyer-side purchase request.
                   </p>
                 </button>
 
@@ -104,8 +85,7 @@ export default function Developers() {
                     <h2 className="font-medium">Full Payment Cycle</h2>
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    Run a complete payment-to-purchase cycle in one step for
-                    end-to-end testing.
+                    Run a complete payment-to-purchase cycle in one step for end-to-end testing.
                   </p>
                 </button>
               </div>
@@ -125,42 +105,28 @@ export default function Developers() {
                   Interactive API documentation powered by Swagger UI.
                 </p>
                 <Button variant="outline" size="sm" asChild>
-                  <a
-                    href="/docs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href="/docs" target="_blank" rel="noopener noreferrer">
                     Open in new tab
                     <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
                   </a>
                 </Button>
               </div>
               <div className="flex-1 border rounded-lg overflow-hidden">
-                <iframe
-                  src="/docs"
-                  className="w-full h-full"
-                  title="OpenAPI Documentation"
-                />
+                <iframe src="/docs" className="w-full h-full" title="OpenAPI Documentation" />
               </div>
             </div>
           )}
         </div>
       </MainLayout>
 
-      <MockPaymentDialog
-        open={isPaymentDialogOpen}
-        onClose={() => setPaymentDialogOpen(false)}
-      />
+      <MockPaymentDialog open={isPaymentDialogOpen} onClose={() => setPaymentDialogOpen(false)} />
 
       <MockPurchaseDialog
         open={isPurchaseDialogOpen}
         onClose={() => setPurchaseDialogOpen(false)}
       />
 
-      <FullCycleDialog
-        open={isFullCycleDialogOpen}
-        onClose={() => setFullCycleDialogOpen(false)}
-      />
+      <FullCycleDialog open={isFullCycleDialogOpen} onClose={() => setFullCycleDialogOpen(false)} />
     </>
   );
 }

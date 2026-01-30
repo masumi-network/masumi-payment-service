@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,11 +18,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
-import {
-  generatePurchaseCurl,
-  decodeBlockchainIdentifier,
-  extractErrorMessage,
-} from './utils';
+import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage } from './utils';
 import { Search, ClipboardPaste } from 'lucide-react';
 
 interface MockPurchaseDialogProps {
@@ -40,23 +31,17 @@ const mockPurchaseSchema = z.object({
   sellerVkey: z.string().min(1, 'Seller VKey required'),
   inputHash: z.string().min(1, 'Input hash required'),
   agentIdentifier: z.string().min(1, 'Agent identifier required'),
-  identifierFromPurchaser: z
-    .string()
-    .min(1, 'Purchaser identifier required'),
+  identifierFromPurchaser: z.string().min(1, 'Purchaser identifier required'),
   payByTime: z.string().min(1, 'Pay by time required'),
   submitResultTime: z.string().min(1, 'Submit result time required'),
   unlockTime: z.string().min(1, 'Unlock time required'),
-  externalDisputeUnlockTime: z
-    .string()
-    .min(1, 'External dispute unlock time required'),
+  externalDisputeUnlockTime: z.string().min(1, 'External dispute unlock time required'),
   metadata: z.string().optional(),
 });
 
 type MockPurchaseFormValues = z.infer<typeof mockPurchaseSchema>;
 
-function tryExtractPaymentFields(
-  json: string,
-): Partial<MockPurchaseFormValues> | null {
+function tryExtractPaymentFields(json: string): Partial<MockPurchaseFormValues> | null {
   try {
     let obj = JSON.parse(json);
     // Support wrapped responses: { data: { ... } } or { data: { data: { ... } } }
@@ -64,12 +49,10 @@ function tryExtractPaymentFields(
       obj = obj.data.data ? obj.data.data : obj.data;
     }
     const fields: Partial<MockPurchaseFormValues> = {};
-    if (obj.blockchainIdentifier)
-      fields.blockchainIdentifier = obj.blockchainIdentifier;
+    if (obj.blockchainIdentifier) fields.blockchainIdentifier = obj.blockchainIdentifier;
     if (obj.agentIdentifier) fields.agentIdentifier = obj.agentIdentifier;
     if (obj.inputHash) fields.inputHash = obj.inputHash;
-    if (obj.SmartContractWallet?.walletVkey)
-      fields.sellerVkey = obj.SmartContractWallet.walletVkey;
+    if (obj.SmartContractWallet?.walletVkey) fields.sellerVkey = obj.SmartContractWallet.walletVkey;
     if (obj.payByTime) fields.payByTime = obj.payByTime;
     if (obj.submitResultTime) fields.submitResultTime = obj.submitResultTime;
     if (obj.unlockTime) fields.unlockTime = obj.unlockTime;
@@ -97,9 +80,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [pasteValue, setPasteValue] = useState('');
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [curlCommand, setCurlCommand] = useState<string>('');
-  const [response, setResponse] = useState<
-    PostPurchaseResponse['data'] | null
-  >(null);
+  const [response, setResponse] = useState<PostPurchaseResponse['data'] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const {
@@ -178,27 +159,19 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       });
 
       if (result.error) {
-        throw new Error(
-          extractErrorMessage(result.error, 'Payment lookup failed'),
-        );
+        throw new Error(extractErrorMessage(result.error, 'Payment lookup failed'));
       }
 
       if (result.data?.data) {
         const payment = result.data.data;
 
-        setValue(
-          'sellerVkey',
-          payment.SmartContractWallet?.walletVkey || '',
-        );
+        setValue('sellerVkey', payment.SmartContractWallet?.walletVkey || '');
         setValue('inputHash', payment.inputHash || '');
         setValue('agentIdentifier', payment.agentIdentifier || '');
         setValue('payByTime', payment.payByTime || '');
         setValue('submitResultTime', payment.submitResultTime || '');
         setValue('unlockTime', payment.unlockTime || '');
-        setValue(
-          'externalDisputeUnlockTime',
-          payment.externalDisputeUnlockTime || '',
-        );
+        setValue('externalDisputeUnlockTime', payment.externalDisputeUnlockTime || '');
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
@@ -210,13 +183,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
         toast.success('Payment data loaded successfully');
       } else {
-        throw new Error('Payment not found. Note: Lookup only finds payments created through this service.');
+        throw new Error(
+          'Payment not found. Note: Lookup only finds payments created through this service.',
+        );
       }
     } catch (err: unknown) {
-      const errorMessage = extractErrorMessage(
-        err,
-        'Failed to lookup payment',
-      );
+      const errorMessage = extractErrorMessage(err, 'Failed to lookup payment');
       setError(errorMessage);
       toast.error(errorMessage);
       console.error('Payment lookup error:', err);
@@ -255,9 +227,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         });
 
         if (result.error) {
-          throw new Error(
-            extractErrorMessage(result.error, 'Purchase creation failed'),
-          );
+          throw new Error(extractErrorMessage(result.error, 'Purchase creation failed'));
         }
 
         if (result.data?.data) {
@@ -267,10 +237,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           throw new Error('Invalid response from server - no data returned');
         }
       } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(
-          err,
-          'Failed to create purchase',
-        );
+        const errorMessage = extractErrorMessage(err, 'Failed to create purchase');
         setError(errorMessage);
         toast.error(errorMessage);
         console.error('Purchase creation error:', err);
@@ -297,8 +264,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         <DialogHeader className="shrink-0">
           <DialogTitle>Create Test Purchase</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
-            Create a test purchase from a payment response or blockchain
-            identifier.
+            Create a test purchase from a payment response or blockchain identifier.
           </p>
         </DialogHeader>
 
@@ -313,18 +279,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
               <Textarea
                 value={pasteValue}
                 onChange={(e) => handlePasteResponse(e.target.value)}
-                placeholder='Paste the JSON response from Create Payment to auto-fill all fields...'
+                placeholder="Paste the JSON response from Create Payment to auto-fill all fields..."
                 rows={4}
                 className={`font-mono text-xs transition-colors duration-200 ${pasteError ? 'border-red-500' : ''}`}
               />
-              {pasteError && (
-                <p className="text-sm text-red-500 animate-fade-in">
-                  {pasteError}
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Or fill in the fields manually below.
-              </p>
+              {pasteError && <p className="text-sm text-red-500 animate-fade-in">{pasteError}</p>}
+              <p className="text-xs text-muted-foreground">Or fill in the fields manually below.</p>
             </div>
 
             {/* Blockchain Identifier + Lookup */}
@@ -345,11 +305,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   disabled={isLookingUp || !blockchainIdentifier}
                   className="shrink-0 transition-opacity duration-150"
                 >
-                  {isLookingUp ? (
-                    <Spinner className="h-4 w-4" />
-                  ) : (
-                    <Search className="h-4 w-4" />
-                  )}
+                  {isLookingUp ? <Spinner className="h-4 w-4" /> : <Search className="h-4 w-4" />}
                   Lookup
                 </Button>
               </div>
@@ -359,23 +315,20 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Optionally click Lookup to resolve fields from the API. Only
-                payments created through this service will be found.
+                Optionally click Lookup to resolve fields from the API. Only payments created
+                through this service will be found.
               </p>
             </div>
 
             {/* Payment Data Fields */}
             <Card className="animate-fade-in-up opacity-0 animate-stagger-3 transition-shadow duration-200 hover:shadow-md">
               <CardContent className="p-4 space-y-4">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Payment Data
-                </p>
+                <p className="text-xs font-medium text-muted-foreground">Payment Data</p>
 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                   <div className="space-y-1.5 col-span-2">
                     <Label className="text-xs text-muted-foreground font-normal">
-                      Agent Identifier{' '}
-                      <span className="text-red-500">*</span>
+                      Agent Identifier <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       {...register('agentIdentifier')}
@@ -391,8 +344,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
                   <div className="space-y-1.5 col-span-2">
                     <Label className="text-xs text-muted-foreground font-normal">
-                      Purchaser Identifier{' '}
-                      <span className="text-red-500">*</span>
+                      Purchaser Identifier <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       {...register('identifierFromPurchaser')}
@@ -477,8 +429,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground font-normal">
-                      External Dispute Unlock{' '}
-                      <span className="text-red-500">*</span>
+                      External Dispute Unlock <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       {...register('externalDisputeUnlockTime')}
@@ -521,11 +472,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         </div>
 
         <div className="shrink-0">
-          <CurlResponseViewer
-            curlCommand={curlCommand}
-            response={response}
-            error={error}
-          />
+          <CurlResponseViewer curlCommand={curlCommand} response={response} error={error} />
         </div>
       </DialogContent>
     </Dialog>

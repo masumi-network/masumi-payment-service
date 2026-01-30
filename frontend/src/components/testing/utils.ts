@@ -1,35 +1,37 @@
 import LZString from 'lz-string';
 import stringify from 'canonical-json';
 
-export function extractErrorMessage(error: unknown, fallback: string = 'An error occurred'): string {
+export function extractErrorMessage(
+  error: unknown,
+  fallback: string = 'An error occurred',
+): string {
   if (!error) return fallback;
-  
+
   if (typeof error === 'string') return error;
-  
+
   if (error instanceof Error) return error.message;
-  
+
   if (typeof error === 'object') {
     const err = error as Record<string, unknown>;
-    
+
     if (typeof err.message === 'string') return err.message;
     if (typeof err.error === 'string') return err.error;
     if (typeof err.statusText === 'string') return err.statusText;
-    
+
     if (err.data && typeof err.data === 'object') {
       const data = err.data as Record<string, unknown>;
       if (typeof data.message === 'string') return data.message;
       if (typeof data.error === 'string') return data.error;
     }
-    
+
     try {
       const stringified = JSON.stringify(error);
       if (stringified && stringified !== '{}') {
         return stringified.length > 200 ? stringified.substring(0, 200) + '...' : stringified;
       }
-    } catch {
-    }
+    } catch {}
   }
-  
+
   return fallback;
 }
 
@@ -80,11 +82,7 @@ function getBaseUrl(baseUrl: string): string {
 
 // Generate curl command for payment
 // Note: Payment API accepts dates as ISO strings
-export function generatePaymentCurl(
-  baseUrl: string,
-  apiKey: string,
-  body: object,
-): string {
+export function generatePaymentCurl(baseUrl: string, apiKey: string, body: object): string {
   const url = getBaseUrl(baseUrl);
   return `curl -X POST "${url}/api/v1/payment/" \\
   -H "Content-Type: application/json" \\
@@ -92,12 +90,7 @@ export function generatePaymentCurl(
   -d '${JSON.stringify(body, null, 2)}'`;
 }
 
-
-export function generatePurchaseCurl(
-  baseUrl: string,
-  apiKey: string,
-  body: object,
-): string {
+export function generatePurchaseCurl(baseUrl: string, apiKey: string, body: object): string {
   const url = getBaseUrl(baseUrl);
   return `curl -X POST "${url}/api/v1/purchase/" \\
   -H "Content-Type: application/json" \\
@@ -119,7 +112,7 @@ function isValidHex(str: string): boolean {
 
 export function decodeBlockchainIdentifier(blockchainIdentifier: string): {
   sellerId: string;
-  purchaserId: string; 
+  purchaserId: string;
   signature: string;
   key: string;
   agentIdentifier: string | null;
@@ -136,7 +129,7 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): {
     if (parts.length !== 4) return null;
 
     const sellerId = parts[0];
-    const purchaserId = parts[1]; 
+    const purchaserId = parts[1];
     const signature = parts[2];
     const key = parts[3];
 

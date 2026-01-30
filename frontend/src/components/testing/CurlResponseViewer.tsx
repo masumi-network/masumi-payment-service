@@ -11,11 +11,7 @@ interface CurlResponseViewerProps {
   error?: string | null;
 }
 
-export function CurlResponseViewer({
-  curlCommand,
-  response,
-  error,
-}: CurlResponseViewerProps) {
+export function CurlResponseViewer({ curlCommand, response, error }: CurlResponseViewerProps) {
   const [curlExpanded, setCurlExpanded] = useState(false);
 
   const hasCurl = curlCommand && curlCommand.length > 0;
@@ -69,9 +65,7 @@ export function CurlResponseViewer({
         <Card className="overflow-hidden animate-fade-in transition-shadow duration-200 hover:shadow-md">
           <div className="flex items-center justify-between px-3 py-2.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                Response
-              </span>
+              <span className="text-xs font-medium text-muted-foreground">Response</span>
               {hasError ? (
                 <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
                   Error
@@ -82,9 +76,7 @@ export function CurlResponseViewer({
                 </Badge>
               )}
             </div>
-            {hasResponse && !hasError && (
-              <CopyButton value={JSON.stringify(response, null, 2)} />
-            )}
+            {hasResponse && !hasError && <CopyButton value={JSON.stringify(response, null, 2)} />}
           </div>
           <Separator />
           <CardContent className="p-0">

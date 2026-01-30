@@ -85,7 +85,6 @@ export default function Overview() {
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
-
   const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
@@ -393,7 +392,6 @@ export default function Overview() {
               </Button>
             </div>
           </div>
-
         </div>
       </MainLayout>
 
@@ -448,7 +446,6 @@ export default function Overview() {
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
       />
-
     </>
   );
 }
