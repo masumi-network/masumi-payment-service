@@ -221,6 +221,82 @@ input[type='number'] {
   transition: all 0.2s ease;
 }
 
+/* Testing dialog micro-animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+@keyframes pulseSuccess {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.25s ease-out forwards;
+  overflow: hidden;
+}
+
+.animate-pulse-success {
+  animation: pulseSuccess 0.4s ease-out forwards;
+}
+
+.animate-stagger-1 {
+  animation-delay: 50ms;
+}
+.animate-stagger-2 {
+  animation-delay: 100ms;
+}
+.animate-stagger-3 {
+  animation-delay: 150ms;
+}
+.animate-stagger-4 {
+  animation-delay: 200ms;
+}
+
 /* Ensure toast notifications appear above dialog overlays */
 /* Dialog overlay uses z-[999], dialog content uses z-[1000], so toasts need higher */
 .Toastify {
