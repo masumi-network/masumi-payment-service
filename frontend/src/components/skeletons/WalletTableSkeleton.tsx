@@ -6,9 +6,6 @@ export function WalletTableSkeleton({ rows = 5 }: { rows?: number }) {
       {Array.from({ length: rows }).map((_, index) => (
         <tr key={index} className="border-b last:border-b-0">
           <td className="p-4">
-            <Skeleton className="h-4 w-4" />
-          </td>
-          <td className="p-4">
             <Skeleton className="h-4 w-32" />
           </td>
           <td className="p-4">

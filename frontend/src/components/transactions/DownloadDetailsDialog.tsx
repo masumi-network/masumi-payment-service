@@ -1,9 +1,4 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -18,12 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getPayment,
-  getPurchase,
-  Payment,
-  Purchase,
-} from '@/lib/api/generated';
+import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 
 type Transaction =
@@ -35,11 +25,7 @@ type Transaction =
 interface DownloadDetailsDialogProps {
   open: boolean;
   onClose: () => void;
-  onDownload: (
-    startDate: Date,
-    endDate: Date,
-    transactions: Transaction[],
-  ) => void;
+  onDownload: (startDate: Date, endDate: Date, transactions: Transaction[]) => void;
 }
 
 type PresetOption = '24h' | '7d' | '30d' | '90d' | 'custom';
@@ -52,20 +38,14 @@ const PRESET_OPTIONS = [
   { value: 'custom', label: 'Custom range' },
 ];
 
-export function DownloadDetailsDialog({
-  open,
-  onClose,
-  onDownload,
-}: DownloadDetailsDialogProps) {
+export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDetailsDialogProps) {
   const { apiClient } = useAppContext();
   const [selectedPreset, setSelectedPreset] = useState<PresetOption>('24h');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<
-    Transaction[]
-  >([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
 
   const fetchAllTransactions = useCallback(async () => {
     setIsLoading(true);
@@ -107,9 +87,7 @@ export function DownloadDetailsDialog({
           });
           hasMorePurchases = purchases.data.data.Purchases.length === 100;
           purchaseCursor =
-            purchases.data.data.Purchases[
-              purchases.data.data.Purchases.length - 1
-            ]?.id;
+            purchases.data.data.Purchases[purchases.data.data.Purchases.length - 1]?.id;
         } else {
           hasMorePurchases = false;
         }
@@ -144,9 +122,7 @@ export function DownloadDetailsDialog({
             } as Transaction);
           });
           hasMorePayments = payments.data.data.Payments.length === 100;
-          paymentCursor =
-            payments.data.data.Payments[payments.data.data.Payments.length - 1]
-              ?.id;
+          paymentCursor = payments.data.data.Payments[payments.data.data.Payments.length - 1]?.id;
         } else {
           hasMorePayments = false;
         }
@@ -243,9 +219,7 @@ export function DownloadDetailsDialog({
             <Label className="text-sm font-medium">Select Date Range</Label>
             <Select
               value={selectedPreset}
-              onValueChange={(value) =>
-                setSelectedPreset(value as PresetOption)
-              }
+              onValueChange={(value) => setSelectedPreset(value as PresetOption)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Choose a date range" />
@@ -294,17 +268,8 @@ export function DownloadDetailsDialog({
               {!isLoading && filteredTransactions && (
                 <span className="text-muted-foreground">
                   {' '}
-                  (payments:{' '}
-                  {
-                    filteredTransactions.filter((t) => t.type === 'payment')
-                      .length
-                  }
-                  , purchases:{' '}
-                  {
-                    filteredTransactions.filter((t) => t.type === 'purchase')
-                      .length
-                  }
-                  )
+                  (payments: {filteredTransactions.filter((t) => t.type === 'payment').length},
+                  purchases: {filteredTransactions.filter((t) => t.type === 'purchase').length})
                 </span>
               )}
             </p>
@@ -315,8 +280,7 @@ export function DownloadDetailsDialog({
                   ? customStartDate && customEndDate
                     ? `${customStartDate} to ${customEndDate}`
                     : 'Please select dates'
-                  : PRESET_OPTIONS.find((opt) => opt.value === selectedPreset)
-                      ?.label}
+                  : PRESET_OPTIONS.find((opt) => opt.value === selectedPreset)?.label}
               </span>
             </p>
           </div>
@@ -329,9 +293,7 @@ export function DownloadDetailsDialog({
               <Button
                 onClick={handleDownload}
                 disabled={
-                  isLoading ||
-                  (selectedPreset === 'custom' &&
-                    (!customStartDate || !customEndDate))
+                  isLoading || (selectedPreset === 'custom' && (!customStartDate || !customEndDate))
                 }
               >
                 <Download className="h-4 w-4 mr-2" />

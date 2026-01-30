@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Tab {
@@ -15,19 +15,24 @@ interface TabsProps {
 
 export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+
+  useLayoutEffect(() => {
+    const index = tabs.findIndex((tab) => tab.name === activeTab);
+    const el = index >= 0 ? tabsRef.current[index] : null;
+    if (el) {
+      const left = el.offsetLeft;
+      const width = el.offsetWidth;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Measuring DOM requires synchronous state update to prevent visual artifacts
+      setIndicatorStyle({ left, width });
+    }
+  }, [tabs, activeTab]);
 
   return (
     <div className={cn('flex gap-6 border-b relative', className)}>
       <div
         className="absolute bottom-0 h-0.5 bg-primary transition-all duration-300 ease-out"
-        style={{
-          left:
-            tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]
-              ?.offsetLeft ?? 0,
-          width:
-            tabsRef.current[tabs.findIndex((tab) => tab.name === activeTab)]
-              ?.offsetWidth ?? 0,
-        }}
+        style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
       />
       {tabs.map((tab, index) => (
         <button

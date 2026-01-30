@@ -64,19 +64,16 @@ Each action in the diagram is labeled with who performs it. For example, "Buyer:
 The flow has several key phases:
 
 1. **Job Initiation**:
-
    - Buyer submits a request
    - System provides a job ID
    - Buyer locks funds in the smart contract
 
 2. **Processing**:
-
    - Agent processes the job
    - May request additional input if needed
    - Updates status throughout
 
 3. **Completion**:
-
    - Agent submits results
    - Seller can withdraw funds after unlock period
    - protocol fee goes to admin address
@@ -92,7 +89,6 @@ The flow has several key phases:
 
 1. **Starting a Job**
    First, you tell the service what you want done. You'll get two important things back:
-
    - A job ID (think of it as your receipt number)
    - Payment details (where to send the money and how much)
 
@@ -111,14 +107,14 @@ The flow has several key phases:
    ```typescript
    // This is what gets stored with your payment
    const paymentInfo = {
-     buyer: 'your-address', // Who's paying
-     seller: 'service-address', // Who's doing the work
-     jobId: 'your-encrypted-job-id', // Which job this is for
-     resultHash: '', // Will be filled when work is done
-     unlockTime: 0, // When seller can take the money
-     externalDisputeUnlockTime: 0, // When disputes can be resolved by external entity
-     refundRequested: false, // Has buyer asked for money back
-     refundDenied: false, // Has seller said no to refund
+   	buyer: 'your-address', // Who's paying
+   	seller: 'service-address', // Who's doing the work
+   	jobId: 'your-encrypted-job-id', // Which job this is for
+   	resultHash: '', // Will be filled when work is done
+   	unlockTime: 0, // When seller can take the money
+   	externalDisputeUnlockTime: 0, // When disputes can be resolved by external entity
+   	refundRequested: false, // Has buyer asked for money back
+   	refundDenied: false, // Has seller said no to refund
    };
    ```
 
@@ -158,44 +154,44 @@ When your job is complete, there's a carefully designed process to ensure everyo
    ```typescript
    // First, the service creates a hash of your results
    function hash(data) {
-     return createHash('sha256').update(data).digest('hex');
+   	return createHash('sha256').update(data).digest('hex');
    }
 
    const resultHash = hash('your-actual-results');
 
    // Then they submit this to the smart contract
    const submitResult = {
-     redeemer: {
-       data: {
-         alternative: 6, // SubmitResult action
-         fields: [],
-       },
-     },
-     datum: {
-       value: {
-         alternative: 0,
-         fields: [
-           buyerAddress,
-           sellerAddress,
-           jobId,
-           resultHash, // This proves what you received is real
-           unlockTime,
-           externalDisputeUnlockTime, // When disputes can be resolved by external entity
-           false, // No refund requested
-           false, // No refund denied
-         ],
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 6, // SubmitResult action
+   			fields: [],
+   		},
+   	},
+   	datum: {
+   		value: {
+   			alternative: 0,
+   			fields: [
+   				buyerAddress,
+   				sellerAddress,
+   				jobId,
+   				resultHash, // This proves what you received is real
+   				unlockTime,
+   				externalDisputeUnlockTime, // When disputes can be resolved by external entity
+   				false, // No refund requested
+   				false, // No refund denied
+   			],
+   		},
+   	},
    };
 
    // Submit the transaction
    const tx = new Transaction({ initiator: wallet })
-     .redeemValue({
-       value: utxo,
-       script: script,
-       redeemer: submitResult.redeemer,
-     })
-     .sendValue({ address: scriptAddress, datum: submitResult.datum }, utxo);
+   	.redeemValue({
+   		value: utxo,
+   		script: script,
+   		redeemer: submitResult.redeemer,
+   	})
+   	.sendValue({ address: scriptAddress, datum: submitResult.datum }, utxo);
    ```
 
 3. **Payment Release**
@@ -204,26 +200,26 @@ When your job is complete, there's a carefully designed process to ensure everyo
    ```typescript
    // Service withdraws payment
    const withdraw = {
-     redeemer: {
-       data: {
-         alternative: 0, // Withdraw action
-         fields: [],
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 0, // Withdraw action
+   			fields: [],
+   		},
+   	},
    };
 
    // Build the withdrawal transaction
    const tx = new Transaction({ initiator: wallet })
-     .redeemValue({
-       value: utxo,
-       script: script,
-       redeemer: withdraw,
-     })
-     .sendLovelace(
-       { address: adminAddress },
-       '2500000', // 5% fee for a 50 ADA job
-     )
-     .setChangeAddress(sellerAddress); // Rest goes to seller
+   	.redeemValue({
+   		value: utxo,
+   		script: script,
+   		redeemer: withdraw,
+   	})
+   	.sendLovelace(
+   		{ address: adminAddress },
+   		'2500000', // 5% fee for a 50 ADA job
+   	)
+   	.setChangeAddress(sellerAddress); // Rest goes to seller
    ```
 
 ### Requesting a Refund
@@ -236,38 +232,38 @@ Sometimes things don't go as planned. Here's how the refund process works:
    ```typescript
    // First, prepare the refund request
    const requestRefund = {
-     redeemer: {
-       data: {
-         alternative: 1, // RequestRefund action
-         fields: [],
-       },
-     },
-     // Update the datum to show refund is requested
-     datum: {
-       value: {
-         alternative: 0,
-         fields: [
-           buyerAddress,
-           sellerAddress,
-           jobId,
-           resultHash,
-           unlockTime,
-           currentTime + 3 * 24 * 60 * 60 * 1000, // 3 days from now
-           true, // Refund is now requested
-           false, // Not denied yet
-         ],
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 1, // RequestRefund action
+   			fields: [],
+   		},
+   	},
+   	// Update the datum to show refund is requested
+   	datum: {
+   		value: {
+   			alternative: 0,
+   			fields: [
+   				buyerAddress,
+   				sellerAddress,
+   				jobId,
+   				resultHash,
+   				unlockTime,
+   				currentTime + 3 * 24 * 60 * 60 * 1000, // 3 days from now
+   				true, // Refund is now requested
+   				false, // Not denied yet
+   			],
+   		},
+   	},
    };
 
    // Submit the refund request
    const tx = new Transaction({ initiator: wallet })
-     .redeemValue({
-       value: utxo,
-       script: script,
-       redeemer: requestRefund.redeemer,
-     })
-     .sendValue({ address: scriptAddress, datum: requestRefund.datum }, utxo);
+   	.redeemValue({
+   		value: utxo,
+   		script: script,
+   		redeemer: requestRefund.redeemer,
+   	})
+   	.sendValue({ address: scriptAddress, datum: requestRefund.datum }, utxo);
    ```
 
 2. **What Happens Next?**
@@ -277,32 +273,29 @@ Sometimes things don't go as planned. Here's how the refund process works:
 
    ```typescript
    // Check if refund is auto-approved
-   const isAutoApproved =
-     currentTime > externalDisputeUnlockTime &&
-     datum.refundRequested &&
-     !datum.refundDenied;
+   const isAutoApproved = currentTime > externalDisputeUnlockTime && datum.refundRequested && !datum.refundDenied;
 
    // If approved, you need to withdraw manually
    const withdrawRefund = {
-     redeemer: {
-       data: {
-         alternative: 3, // WithdrawRefund action
-         fields: [],
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 3, // WithdrawRefund action
+   			fields: [],
+   		},
+   	},
    };
 
    // Submit withdrawal transaction
    const tx = new Transaction({ initiator: wallet })
-     .redeemValue({
-       value: utxo,
-       script: script,
-       redeemer: withdrawRefund,
-     })
-     .sendValue(
-       { address: buyerAddress }, // Full amount back to buyer
-       utxo,
-     );
+   	.redeemValue({
+   		value: utxo,
+   		script: script,
+   		redeemer: withdrawRefund,
+   	})
+   	.sendValue(
+   		{ address: buyerAddress }, // Full amount back to buyer
+   		utxo,
+   	);
    ```
 
    b) **Seller Denies Refund**:
@@ -310,18 +303,18 @@ Sometimes things don't go as planned. Here's how the refund process works:
    ```typescript
    // Seller can deny the refund
    const denyRefund = {
-     redeemer: {
-       data: {
-         alternative: 4, // DenyRefund action
-         fields: [],
-       },
-     },
-     datum: {
-       value: {
-         // Previous values stay the same, but:
-         refundDenied: true, // Now refund is denied
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 4, // DenyRefund action
+   			fields: [],
+   		},
+   	},
+   	datum: {
+   		value: {
+   			// Previous values stay the same, but:
+   			refundDenied: true, // Now refund is denied
+   		},
+   	},
    };
    ```
 
@@ -330,18 +323,18 @@ Sometimes things don't go as planned. Here's how the refund process works:
    ```typescript
    // You can cancel your refund request
    const cancelRefund = {
-     redeemer: {
-       data: {
-         alternative: 2, // CancelRefundRequest action
-         fields: [],
-       },
-     },
-     datum: {
-       value: {
-         // Previous values stay the same, but:
-         refundRequested: false, // Remove the refund request
-       },
-     },
+   	redeemer: {
+   		data: {
+   			alternative: 2, // CancelRefundRequest action
+   			fields: [],
+   		},
+   	},
+   	datum: {
+   		value: {
+   			// Previous values stay the same, but:
+   			refundRequested: false, // Remove the refund request
+   		},
+   	},
    };
    ```
 
@@ -356,26 +349,24 @@ The contract supports these actions:
 
 ```typescript
 const Actions = {
-  Withdraw: 0, // Seller takes payment (minus 5% fee)
-  RequestRefund: 1, // Buyer wants money back
-  CancelRefundRequest: 2, // Buyer changes their mind
-  WithdrawRefund: 3, // Buyer takes approved refund
-  DenyRefund: 4, // Seller says no to refund
-  WithdrawDisputed: 5, // Admins resolve argument
-  SubmitResult: 6, // Service submits work proof
+	Withdraw: 0, // Seller takes payment (minus 5% fee)
+	RequestRefund: 1, // Buyer wants money back
+	CancelRefundRequest: 2, // Buyer changes their mind
+	WithdrawRefund: 3, // Buyer takes approved refund
+	DenyRefund: 4, // Seller says no to refund
+	WithdrawDisputed: 5, // Admins resolve argument
+	SubmitResult: 6, // Service submits work proof
 };
 ```
 
 ## Important Tips
 
 1. **Always Keep Your Job Secret Safe**
-
    - You need it to check status
    - It proves you own the job
    - Never share it with others
 
 2. **Watch Your Timing**
-
    - Request refunds before unlock time
    - Withdraw refunds after approval
    - Remember to manually withdraw approved refunds

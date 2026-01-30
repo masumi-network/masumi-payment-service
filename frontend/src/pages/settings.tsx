@@ -51,11 +51,7 @@ export default function Settings() {
                     className="h-8 w-8"
                     onClick={() => setShowApiKey(!showApiKey)}
                   >
-                    {showApiKey ? (
-                      <LuEyeOff className="h-4 w-4" />
-                    ) : (
-                      <LuEye className="h-4 w-4" />
-                    )}
+                    {showApiKey ? <LuEyeOff className="h-4 w-4" /> : <LuEye className="h-4 w-4" />}
                   </Button>
                   <CopyButton value={apiKey || ''} />
                 </div>
@@ -67,9 +63,7 @@ export default function Settings() {
           <div className="space-y-4" id="settings-theme-toggle">
             <div>
               <h2 className="text-sm font-medium">Theme</h2>
-              <p className="text-sm text-muted-foreground">
-                Select your preferred theme
-              </p>
+              <p className="text-sm text-muted-foreground">Select your preferred theme</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="relative bg-[#F4F4F5] dark:bg-secondary rounded-full p-1 flex items-center w-[110px] h-8 gap-1">
@@ -85,9 +79,7 @@ export default function Settings() {
                   onClick={() => setThemePreference('light')}
                   className={cn(
                     'relative flex items-center justify-center h-6 w-[32px] rounded-full transition-colors z-10',
-                    preference === 'light'
-                      ? 'text-primary'
-                      : 'text-muted-foreground',
+                    preference === 'light' ? 'text-primary' : 'text-muted-foreground',
                   )}
                 >
                   <LuSun className="h-3.5 w-3.5" />
@@ -96,9 +88,7 @@ export default function Settings() {
                   onClick={() => setThemePreference('auto')}
                   className={cn(
                     'relative flex items-center justify-center h-6 w-[32px] rounded-full transition-colors z-10',
-                    preference === 'auto'
-                      ? 'text-primary'
-                      : 'text-muted-foreground',
+                    preference === 'auto' ? 'text-primary' : 'text-muted-foreground',
                   )}
                 >
                   <LuMonitor className="h-3.5 w-3.5" />
@@ -107,9 +97,7 @@ export default function Settings() {
                   onClick={() => setThemePreference('dark')}
                   className={cn(
                     'relative flex items-center justify-center h-6 w-[32px] rounded-full transition-colors z-10',
-                    preference === 'dark'
-                      ? 'text-primary'
-                      : 'text-muted-foreground',
+                    preference === 'dark' ? 'text-primary' : 'text-muted-foreground',
                   )}
                 >
                   <LuMoon className="h-3.5 w-3.5" />
