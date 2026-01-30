@@ -1,8 +1,6 @@
 /* eslint-disable react/no-unescaped-entities */
 
 import { Button } from '@/components/ui/button';
-import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -34,15 +32,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
+function formatNetworkDisplay(networkType: string): string {
+  return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+}
+
 function WelcomeScreen({
   onStart,
   networkType,
+  onNetworkChange,
 }: {
   onStart: () => void;
   networkType: string;
-  ignoreSetup: () => void;
+  onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
 }) {
-  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -63,8 +66,8 @@ function WelcomeScreen({
           <div className="text-sm flex items-center gap-2">
             <span>Network:</span>
             <Select
-              defaultValue={networkDisplay}
-              onValueChange={(value) => router.replace(`/setup?network=${value}`)}
+              value={networkDisplay}
+              onValueChange={(value) => onNetworkChange(value as 'Preprod' | 'Mainnet')}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue />
@@ -1160,7 +1163,7 @@ function SuccessScreen({
   networkType: string;
   hasAiAgent?: boolean;
 }) {
-  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -1200,14 +1203,15 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     selling: null,
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
+  const { setNetwork } = useAppContext();
 
   const handleComplete = () => {
     router.push('/');
   };
 
   const handleIgnoreSetup = () => {
-    handleComplete();
     localStorage.setItem('userIgnoredSetup', 'true');
+    router.push('/');
   };
 
   const handleCancel = () => {
@@ -1225,7 +1229,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
       key="welcome"
       onStart={() => setCurrentStep(1)}
       networkType={networkType}
-      ignoreSetup={handleIgnoreSetup}
+      onNetworkChange={setNetwork}
     />,
     <SeedPhrasesScreen
       key="seed"
@@ -1258,12 +1262,10 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col w-full">
-      <Header />
-      <main className="flex-1 container w-full max-w-[1200px] min-h-[calc(100vh-200px)] overflow-y-auto mx-auto py-32 px-4">
-        <div className="flex items-center justify-center ">{steps[currentStep]}</div>
-      </main>
-      <Footer />
+    <div className="w-full">
+      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
+        {steps[currentStep]}
+      </div>
     </div>
   );
 }
