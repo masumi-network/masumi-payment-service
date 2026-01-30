@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { Network, PricingType } from '@/generated/prisma/client';
+import { Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -9,113 +9,12 @@ import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-ident
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { metadataSchema } from '@/routes/api/registry/wallet';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { agentMetadataObjectSchema } from '@/utils/shared/schemas';
+import { transformParsedMetadataToResponse } from '@/utils/shared/transformers';
 
 export const queryAgentByIdentifierSchemaInput = z.object({
 	agentIdentifier: z.string().min(57).max(250).describe('Full agent identifier (policy ID + asset name in hex)'),
 	network: z.nativeEnum(Network).describe('The Cardano network (Preprod or Mainnet)'),
-});
-
-const agentMetadataObjectSchema = z.object({
-	name: z.string().max(250).describe('Name of the agent'),
-	description: z.string().max(250).nullable().optional().describe('Description of the agent. Null if not provided'),
-	apiBaseUrl: z.string().max(250).describe('Base URL of the agent API for interactions'),
-	ExampleOutputs: z
-		.array(
-			z.object({
-				name: z.string().max(60).describe('Name of the example output'),
-				mimeType: z.string().max(60).describe('MIME type of the example output (e.g., image/png, text/plain)'),
-				url: z.string().max(250).describe('URL to the example output'),
-			}),
-		)
-		.max(25)
-		.describe('List of example outputs from the agent'),
-	Tags: z.array(z.string().max(250)).describe('List of tags categorizing the agent'),
-	Capability: z
-		.object({
-			name: z.string().max(250).nullable().optional().describe('Name of the AI model/capability. Null if not provided'),
-			version: z
-				.string()
-				.max(250)
-				.nullable()
-				.optional()
-				.describe('Version of the AI model/capability. Null if not provided'),
-		})
-		.nullable()
-		.optional()
-		.describe('Information about the AI model and version used by the agent. Null if not provided'),
-	Author: z
-		.object({
-			name: z.string().max(250).describe('Name of the agent author'),
-			contactEmail: z
-				.string()
-				.max(250)
-				.nullable()
-				.optional()
-				.describe('Contact email of the author. Null if not provided'),
-			contactOther: z
-				.string()
-				.max(250)
-				.nullable()
-				.optional()
-				.describe('Other contact information for the author. Null if not provided'),
-			organization: z
-				.string()
-				.max(250)
-				.nullable()
-				.optional()
-				.describe('Organization of the author. Null if not provided'),
-		})
-		.describe('Author information for the agent'),
-	Legal: z
-		.object({
-			privacyPolicy: z
-				.string()
-				.max(250)
-				.nullable()
-				.optional()
-				.describe('URL to the privacy policy. Null if not provided'),
-			terms: z.string().max(250).nullable().optional().describe('URL to the terms of service. Null if not provided'),
-			other: z.string().max(250).nullable().optional().describe('Other legal information. Null if not provided'),
-		})
-		.nullable()
-		.optional()
-		.describe('Legal information about the agent. Null if not provided'),
-	AgentPricing: z
-		.object({
-			pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed)'),
-			Pricing: z
-				.array(
-					z.object({
-						amount: z
-							.string()
-							.describe(
-								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-							),
-						unit: z
-							.string()
-							.max(250)
-							.describe(
-								'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-							),
-					}),
-				)
-				.min(1)
-				.describe('List of assets and amounts for fixed pricing'),
-		})
-		.or(
-			z.object({
-				pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
-			}),
-		)
-		.describe('Pricing information for the agent'),
-	image: z.string().max(250).describe('URL to the agent image/logo'),
-	metadataVersion: z.coerce
-		.number()
-		.int()
-		.min(1)
-		.max(1)
-		.describe('Version of the metadata schema (currently only version 1 is supported)'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -204,51 +103,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			policyId: policyId,
 			assetName: extractAssetName(input.agentIdentifier),
 			agentIdentifier: input.agentIdentifier,
-			Metadata: {
-				name: metadataToString(parsedMetadata.data.name)!,
-				description: metadataToString(parsedMetadata.data.description),
-				apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
-				ExampleOutputs:
-					parsedMetadata.data.example_output?.map((exampleOutput) => ({
-						name: metadataToString(exampleOutput.name)!,
-						mimeType: metadataToString(exampleOutput.mime_type)!,
-						url: metadataToString(exampleOutput.url)!,
-					})) ?? [],
-				Capability: parsedMetadata.data.capability
-					? {
-							name: metadataToString(parsedMetadata.data.capability.name)!,
-							version: metadataToString(parsedMetadata.data.capability.version)!,
-						}
-					: undefined,
-				Author: {
-					name: metadataToString(parsedMetadata.data.author.name)!,
-					contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
-					contactOther: metadataToString(parsedMetadata.data.author.contact_other),
-					organization: metadataToString(parsedMetadata.data.author.organization),
-				},
-				Legal: parsedMetadata.data.legal
-					? {
-							privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
-							terms: metadataToString(parsedMetadata.data.legal.terms),
-							other: metadataToString(parsedMetadata.data.legal.other),
-						}
-					: undefined,
-				Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-				AgentPricing:
-					parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: parsedMetadata.data.agentPricing.pricingType,
-								Pricing: parsedMetadata.data.agentPricing.fixedPricing.map((price) => ({
-									amount: price.amount.toString(),
-									unit: metadataToString(price.unit)!,
-								})),
-							}
-						: {
-								pricingType: parsedMetadata.data.agentPricing.pricingType,
-							},
-				image: metadataToString(parsedMetadata.data.image)!,
-				metadataVersion: parsedMetadata.data.metadata_version,
-			},
+			Metadata: transformParsedMetadataToResponse(parsedMetadata.data),
 		};
 	},
 });

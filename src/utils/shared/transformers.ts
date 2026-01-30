@@ -1,4 +1,96 @@
-import { HotWalletType } from '@/generated/prisma/client';
+import { HotWalletType, PricingType } from '@/generated/prisma/client';
+import { metadataToString } from '@/utils/converter/metadata-string-convert';
+import { AgentMetadataObject } from '@/utils/shared/schemas';
+
+/**
+ * Transforms parsed on-chain metadata to the API response format.
+ * Converts snake_case fields to camelCase and handles string/array metadata values.
+ */
+export function transformParsedMetadataToResponse(parsedData: {
+	name: string | string[];
+	description?: string | string[];
+	api_base_url: string | string[];
+	example_output?: Array<{
+		name: string | string[];
+		mime_type: string | string[];
+		url: string | string[];
+	}>;
+	capability?: {
+		name: string | string[];
+		version: string | string[];
+	};
+	author: {
+		name: string | string[];
+		contact_email?: string | string[];
+		contact_other?: string | string[];
+		organization?: string | string[];
+	};
+	legal?: {
+		privacy_policy?: string | string[];
+		terms?: string | string[];
+		other?: string | string[];
+	};
+	tags: Array<string | string[]>;
+	agentPricing:
+		| {
+				pricingType: typeof PricingType.Fixed;
+				fixedPricing: Array<{
+					amount: number;
+					unit: string | string[];
+				}>;
+		  }
+		| {
+				pricingType: typeof PricingType.Free;
+		  };
+	image: string | string[];
+	metadata_version: number;
+}): AgentMetadataObject {
+	return {
+		name: metadataToString(parsedData.name)!,
+		description: metadataToString(parsedData.description),
+		apiBaseUrl: metadataToString(parsedData.api_base_url)!,
+		ExampleOutputs:
+			parsedData.example_output?.map((exampleOutput) => ({
+				name: metadataToString(exampleOutput.name)!,
+				mimeType: metadataToString(exampleOutput.mime_type)!,
+				url: metadataToString(exampleOutput.url)!,
+			})) ?? [],
+		Capability: parsedData.capability
+			? {
+					name: metadataToString(parsedData.capability.name)!,
+					version: metadataToString(parsedData.capability.version)!,
+				}
+			: undefined,
+		Author: {
+			name: metadataToString(parsedData.author.name)!,
+			contactEmail: metadataToString(parsedData.author.contact_email),
+			contactOther: metadataToString(parsedData.author.contact_other),
+			organization: metadataToString(parsedData.author.organization),
+		},
+		Legal: parsedData.legal
+			? {
+					privacyPolicy: metadataToString(parsedData.legal.privacy_policy),
+					terms: metadataToString(parsedData.legal.terms),
+					other: metadataToString(parsedData.legal.other),
+				}
+			: undefined,
+		Tags: parsedData.tags.map((tag) => metadataToString(tag)!),
+		AgentPricing:
+			parsedData.agentPricing.pricingType == PricingType.Fixed
+				? {
+						pricingType: parsedData.agentPricing.pricingType,
+						Pricing: parsedData.agentPricing.fixedPricing.map((price) => ({
+							amount: price.amount.toString(),
+							unit: metadataToString(price.unit)!,
+						})),
+					}
+				: {
+						pricingType: parsedData.agentPricing.pricingType,
+					},
+		image: metadataToString(parsedData.image)!,
+		metadataVersion: parsedData.metadata_version,
+	};
+}
 
 export function splitWalletsByType<T extends { type: HotWalletType }>(wallets: T[]) {
 	return {
