@@ -303,7 +303,6 @@ export function InputSchemaValidator() {
 
   // Memoize validation for performance
   const validation = useMemo(() => validateSchemaWithZod(jsonInput), [jsonInput]);
-  tend / src / pages / input - schema - validator.tsx;
 
   const handleSelectExample = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
