@@ -3,7 +3,8 @@ import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
 import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
@@ -18,6 +19,8 @@ const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAP
 
 export default function Developers() {
   const [activeTab, setActiveTab] = useState('Testing');
+  const [isIframeLoaded, setIsIframeLoaded] = useState(false);
+  const handleIframeLoad = useCallback(() => setIsIframeLoaded(true), []);
   const [isPaymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [isFullCycleDialogOpen, setFullCycleDialogOpen] = useState(false);
@@ -111,8 +114,9 @@ export default function Developers() {
                   </a>
                 </Button>
               </div>
-              <div className="flex-1 border rounded-lg overflow-hidden">
-                <iframe src="/docs" className="w-full h-full" title="OpenAPI Documentation" />
+              <div className="flex-1 border rounded-lg overflow-hidden relative">
+                {!isIframeLoaded && <Skeleton className="absolute inset-0 w-full h-full rounded-none" />}
+                <iframe src="/docs" className="w-full h-full" title="OpenAPI Documentation" onLoad={handleIframeLoad} />
               </div>
             </div>
           )}
