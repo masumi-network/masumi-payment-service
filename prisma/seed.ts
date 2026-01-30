@@ -1,11 +1,4 @@
-import {
-	ApiKeyStatus,
-	HotWalletType,
-	Network,
-	Permission,
-	PrismaClient,
-	RPCProvider,
-} from '../src/generated/prisma/client';
+import { ApiKeyStatus, HotWalletType, Network, PrismaClient, RPCProvider } from '../src/generated/prisma/client';
 import dotenv from 'dotenv';
 import {
 	resolvePaymentKeyHash,
@@ -60,13 +53,17 @@ export const seed = async (prisma: PrismaClient) => {
 		create: {
 			token: adminKey,
 			tokenHash: generateSHA256Hash(adminKey),
-			permission: Permission.Admin,
+			canRead: true,
+			canPay: true,
+			canAdmin: true,
 			status: ApiKeyStatus.Active,
 		},
 		update: {
 			token: adminKey,
 			tokenHash: generateSHA256Hash(adminKey),
-			permission: Permission.Admin,
+			canRead: true,
+			canPay: true,
+			canAdmin: true,
 			status: ApiKeyStatus.Active,
 		},
 		where: { token: adminKey },

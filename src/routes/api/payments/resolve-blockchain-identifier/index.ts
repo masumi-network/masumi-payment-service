@@ -32,7 +32,7 @@ export const resolvePaymentRequestPost = readAuthenticatedEndpointFactory.build(
 	input: postPaymentRequestSchemaInput,
 	output: postPaymentRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof postPaymentRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const result = await prisma.paymentRequest.findUnique({
 			where: {

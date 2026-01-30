@@ -134,7 +134,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 	input: queryRegistryRequestSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const result = await prisma.registryRequest.findMany({
 			where: {
@@ -304,7 +304,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof registerAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 			const sellingWallet = await prisma.hotWallet.findUnique({
 				where: {
@@ -335,7 +335,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 			if (sellingWallet == null) {
 				recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Selling wallet not found', {

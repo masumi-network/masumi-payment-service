@@ -63,7 +63,7 @@ export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
 	input: getUTXOSchemaInput,
 	output: getUTXOSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getUTXOSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 		const paymentSource = await prisma.paymentSource.findFirst({
 			where: { network: input.network, deletedAt: null },
 			include: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },

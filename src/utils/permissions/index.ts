@@ -23,9 +23,9 @@ export type LegacyPermission = 'Read' | 'ReadAndPay' | 'Admin';
  * Permission flags structure used throughout the application.
  */
 export interface PermissionFlags {
-  canRead: boolean;
-  canPay: boolean;
-  canAdmin: boolean;
+	canRead: boolean;
+	canPay: boolean;
+	canAdmin: boolean;
 }
 
 /**
@@ -42,14 +42,10 @@ export interface PermissionFlags {
  * @param canAdmin - Whether the user has admin access
  * @returns The legacy permission string
  */
-export function computePermissionFromFlags(
-  canRead: boolean,
-  canPay: boolean,
-  canAdmin: boolean,
-): LegacyPermission {
-  if (canAdmin) return 'Admin';
-  if (canPay) return 'ReadAndPay';
-  return 'Read';
+export function computePermissionFromFlags(canRead: boolean, canPay: boolean, canAdmin: boolean): LegacyPermission {
+	if (canAdmin) return 'Admin';
+	if (canPay) return 'ReadAndPay';
+	return 'Read';
 }
 
 /**
@@ -59,18 +55,16 @@ export function computePermissionFromFlags(
  * @param permission - The legacy permission string
  * @returns The corresponding permission flags
  */
-export function flagsFromLegacyPermission(
-  permission: LegacyPermission,
-): PermissionFlags {
-  switch (permission) {
-    case 'Admin':
-      return { canRead: true, canPay: true, canAdmin: true };
-    case 'ReadAndPay':
-      return { canRead: true, canPay: true, canAdmin: false };
-    case 'Read':
-    default:
-      return { canRead: true, canPay: false, canAdmin: false };
-  }
+export function flagsFromLegacyPermission(permission: LegacyPermission): PermissionFlags {
+	switch (permission) {
+		case 'Admin':
+			return { canRead: true, canPay: true, canAdmin: true };
+		case 'ReadAndPay':
+			return { canRead: true, canPay: true, canAdmin: false };
+		case 'Read':
+		default:
+			return { canRead: true, canPay: false, canAdmin: false };
+	}
 }
 
 /**
@@ -90,28 +84,28 @@ export function flagsFromLegacyPermission(
  * @returns True if the user has sufficient permissions
  */
 export function hasPermission(
-  required: RequiredPermission,
-  canRead: boolean,
-  canPay: boolean,
-  canAdmin: boolean,
+	required: RequiredPermission,
+	canRead: boolean,
+	canPay: boolean,
+	canAdmin: boolean,
 ): boolean {
-  // Admin has all permissions
-  if (canAdmin) return true;
+	// Admin has all permissions
+	if (canAdmin) return true;
 
-  switch (required) {
-    case 'admin':
-      // Only canAdmin grants admin access (already checked above)
-      return false;
-    case 'pay':
-      // canPay or canAdmin (canAdmin already returned true)
-      return canPay;
-    case 'read':
-      // canRead, canPay, or canAdmin all grant read access
-      // canAdmin already returned true, canPay implies read access
-      return canRead || canPay;
-    default:
-      return false;
-  }
+	switch (required) {
+		case 'admin':
+			// Only canAdmin grants admin access (already checked above)
+			return false;
+		case 'pay':
+			// canPay or canAdmin (canAdmin already returned true)
+			return canPay;
+		case 'read':
+			// canRead, canPay, or canAdmin all grant read access
+			// canAdmin already returned true, canPay implies read access
+			return canRead || canPay;
+		default:
+			return false;
+	}
 }
 
 /**
@@ -121,14 +115,14 @@ export function hasPermission(
  * @returns Human-readable permission name
  */
 export function getPermissionName(required: RequiredPermission): string {
-  switch (required) {
-    case 'admin':
-      return 'admin';
-    case 'pay':
-      return 'payment';
-    case 'read':
-      return 'read';
-    default:
-      return 'unknown';
-  }
+	switch (required) {
+		case 'admin':
+			return 'admin';
+		case 'pay':
+			return 'payment';
+		case 'read':
+			return 'read';
+		default:
+			return 'unknown';
+	}
 }

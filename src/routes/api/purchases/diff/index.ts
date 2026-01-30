@@ -133,7 +133,7 @@ async function queryPurchaseDiffByMode({
 	ctx: AuthContext;
 	mode: PurchaseDiffMode;
 }) {
-	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+	await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 	const since = input.lastUpdate;
 	const sinceId = input.cursorId;
