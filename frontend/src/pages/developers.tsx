@@ -115,8 +115,15 @@ export default function Developers() {
                 </Button>
               </div>
               <div className="flex-1 border rounded-lg overflow-hidden relative">
-                {!isIframeLoaded && <Skeleton className="absolute inset-0 w-full h-full rounded-none" />}
-                <iframe src="/docs" className="w-full h-full" title="OpenAPI Documentation" onLoad={handleIframeLoad} />
+                {!isIframeLoaded && (
+                  <Skeleton className="absolute inset-0 w-full h-full rounded-none" />
+                )}
+                <iframe
+                  src="/docs"
+                  className="w-full h-full"
+                  title="OpenAPI Documentation"
+                  onLoad={handleIframeLoad}
+                />
               </div>
             </div>
           )}
