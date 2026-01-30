@@ -832,7 +832,7 @@ export type AgentMetadata = {
          */
         AgentPricing: {
             /**
-             * Pricing type for the agent (Fixed or Free)
+             * Pricing type for the agent (Fixed)
              */
             pricingType: 'Fixed';
             /**
@@ -850,7 +850,7 @@ export type AgentMetadata = {
             }>;
         } | {
             /**
-             * Pricing type for the agent (Fixed or Free)
+             * Pricing type for the agent (Free)
              */
             pricingType: 'Free';
         };

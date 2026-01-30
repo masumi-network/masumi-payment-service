@@ -1562,7 +1562,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Fixed'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed or Free)'
+                                    description: 'Pricing type for the agent (Fixed)'
                                 },
                                 Pricing: {
                                     type: 'array',
@@ -1601,7 +1601,7 @@ export const AgentMetadataSchema = {
                                     enum: [
                                         'Free'
                                     ],
-                                    description: 'Pricing type for the agent (Fixed or Free)'
+                                    description: 'Pricing type for the agent (Free)'
                                 }
                             },
                             required: [
