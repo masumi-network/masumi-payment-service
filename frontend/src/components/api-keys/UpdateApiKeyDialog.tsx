@@ -1,11 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useState } from 'react';
@@ -85,12 +78,7 @@ const updateApiKeySchema = z
 
 type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
 
-export function UpdateApiKeyDialog({
-  open,
-  onClose,
-  onSuccess,
-  apiKey,
-}: UpdateApiKeyDialogProps) {
+export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient } = useAppContext();
 
@@ -100,10 +88,7 @@ export function UpdateApiKeyDialog({
     control,
     reset,
     formState: { errors },
-  } = useForm<
-    UpdateApiKeyFormValues,
-    { apiKeyContext: { apiKey: typeof apiKey } }
-  >({
+  } = useForm<UpdateApiKeyFormValues, { apiKeyContext: { apiKey: typeof apiKey } }>({
     resolver: zodResolver(updateApiKeySchema),
     defaultValues: {
       newToken: '',
@@ -144,9 +129,7 @@ export function UpdateApiKeyDialog({
         onSuccess: (response) => {
           const responseData = response?.data as PatchApiKeyResponse;
           if (!responseData?.data?.id) {
-            toast.error(
-              'Failed to update API key: Invalid response from server',
-            );
+            toast.error('Failed to update API key: Invalid response from server');
             return;
           }
           toast.success('API key updated successfully');
@@ -182,9 +165,7 @@ export function UpdateApiKeyDialog({
               {...register('newToken')}
             />
             {errors.newToken && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.newToken.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.newToken.message}</p>
             )}
             <p className="text-xs text-muted-foreground">
               Must be at least 15 characters if provided
@@ -209,50 +190,40 @@ export function UpdateApiKeyDialog({
               )}
             />
             {errors.status && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.status.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.status.message}</p>
             )}
           </div>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Add/Remove ADA Credits
-              </label>
+              <label className="text-sm font-medium">Add/Remove ADA Credits</label>
               <Input
                 type="number"
                 placeholder="Enter amount (positive to add, negative to remove)"
                 {...register('credits.lovelace')}
               />
-              {errors.credits &&
-                'lovelace' in errors.credits &&
-                errors.credits.lovelace && (
-                  <p className="text-xs text-destructive mt-1">
-                    {(errors.credits.lovelace as any).message}
-                  </p>
-                )}
+              {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
+                <p className="text-xs text-destructive mt-1">
+                  {(errors.credits.lovelace as any).message}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 Amount in ADA (will be converted to lovelace)
               </p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Add/Remove USDM Credits
-              </label>
+              <label className="text-sm font-medium">Add/Remove USDM Credits</label>
               <Input
                 type="number"
                 placeholder="Enter amount (positive to add, negative to remove)"
                 {...register('credits.usdm')}
               />
-              {errors.credits &&
-                'usdm' in errors.credits &&
-                errors.credits.usdm && (
-                  <p className="text-xs text-destructive mt-1">
-                    {(errors.credits.usdm as any).message}
-                  </p>
-                )}
+              {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                <p className="text-xs text-destructive mt-1">
+                  {(errors.credits.usdm as any).message}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -261,11 +232,7 @@ export function UpdateApiKeyDialog({
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            onClick={handleSubmit(onSubmit)}
-          >
+          <Button type="submit" disabled={isLoading} onClick={handleSubmit(onSubmit)}>
             {isLoading ? 'Updating...' : 'Update'}
           </Button>
         </div>

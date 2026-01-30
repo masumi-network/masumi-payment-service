@@ -1,18 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  getUtxos,
-  postPaymentSourceExtended,
-  postWallet,
-} from '@/lib/api/generated';
+import { getUtxos, postPaymentSourceExtended, postWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { X, Copy, Check } from 'lucide-react';
 import {
@@ -21,19 +11,12 @@ import {
   handleApiCall,
   validateCardanoAddress,
 } from '@/lib/utils';
-import {
-  DEFAULT_ADMIN_WALLETS,
-  DEFAULT_FEE_CONFIG,
-} from '@/lib/constants/defaultWallets';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
+import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Spinner } from '../ui/spinner';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { HelpCircle } from 'lucide-react';
 
@@ -64,11 +47,7 @@ const formSchema = z
     purchasingWallets: z.array(walletSchema).min(1),
     sellingWallets: z.array(walletSchema).min(1),
     useCustomAdminWallets: z.boolean(),
-    customAdminWallets: z.tuple([
-      adminWalletSchema,
-      adminWalletSchema,
-      adminWalletSchema,
-    ]),
+    customAdminWallets: z.tuple([adminWalletSchema, adminWalletSchema, adminWalletSchema]),
   })
   .superRefine((data, ctx) => {
     if (data.useCustomAdminWallets) {
@@ -85,12 +64,21 @@ const formSchema = z
   });
 
 type FormSchema = z.infer<typeof formSchema>;
+// Helper functions to avoid duplicated default value construction logic
+const getDefaultCustomAdminWallets = (
+  network: 'Mainnet' | 'Preprod',
+): [{ walletAddress: string }, { walletAddress: string }, { walletAddress: string }] => [
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][0].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][1].walletAddress },
+  { walletAddress: DEFAULT_ADMIN_WALLETS[network][2].walletAddress },
+];
 
-export function AddPaymentSourceDialog({
-  open,
-  onClose,
-  onSuccess,
-}: AddPaymentSourceDialogProps) {
+const getDefaultFeeConfig = (network: 'Mainnet' | 'Preprod') => ({
+  walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+  feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
+});
+
+export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentSourceDialogProps) {
   const { apiClient, network: currentNetwork } = useAppContext();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -109,7 +97,7 @@ export function AddPaymentSourceDialog({
     register,
     handleSubmit,
     control,
-    watch,
+    getValues,
     reset,
     formState: { errors },
     setValue,
@@ -121,23 +109,11 @@ export function AddPaymentSourceDialog({
       feeReceiverWallet: {
         walletAddress: '',
       },
-      feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
-      purchasingWallets: [
-        { walletMnemonic: '', note: '', collectionAddress: '' },
-      ],
+      feePermille: getDefaultFeeConfig(currentNetwork).feePermille,
+      purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
       useCustomAdminWallets: false,
-      customAdminWallets: [
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-        },
-        {
-          walletAddress: DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-        },
-      ],
+      customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
     },
   });
 
@@ -161,38 +137,37 @@ export function AddPaymentSourceDialog({
 
   useEffect(() => {
     if (open) {
+      const feeConfig = getDefaultFeeConfig(currentNetwork);
       reset({
         network: currentNetwork,
         blockfrostApiKey: '',
         feeReceiverWallet: {
-          walletAddress: DEFAULT_FEE_CONFIG[currentNetwork].feeWalletAddress,
+          walletAddress: feeConfig.walletAddress,
         },
-        feePermille: DEFAULT_FEE_CONFIG[currentNetwork].feePermille,
-        purchasingWallets: [
-          { walletMnemonic: '', note: '', collectionAddress: '' },
-        ],
-        sellingWallets: [
-          { walletMnemonic: '', note: '', collectionAddress: '' },
-        ],
+        feePermille: feeConfig.feePermille,
+        purchasingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
+        sellingWallets: [{ walletMnemonic: '', note: '', collectionAddress: '' }],
         useCustomAdminWallets: false,
-        customAdminWallets: [
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][0].walletAddress,
-          },
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][1].walletAddress,
-          },
-          {
-            walletAddress:
-              DEFAULT_ADMIN_WALLETS[currentNetwork][2].walletAddress,
-          },
-        ],
+        customAdminWallets: getDefaultCustomAdminWallets(currentNetwork),
       });
-      setError('');
+      queueMicrotask(() => setError(''));
     }
   }, [open, currentNetwork, reset]);
+
+  const network = useWatch({ control, name: 'network' });
+  const useCustomAdminWallets = useWatch({ control, name: 'useCustomAdminWallets' });
+
+  // Update network-dependent values when the form's network dropdown changes
+  useEffect(() => {
+    if (open && network) {
+      if (!useCustomAdminWallets) {
+        const feeConfig = getDefaultFeeConfig(network);
+        setValue('feeReceiverWallet.walletAddress', feeConfig.walletAddress);
+        setValue('feePermille', feeConfig.feePermille);
+        setValue('customAdminWallets', getDefaultCustomAdminWallets(network));
+      }
+    }
+  }, [network, open, setValue, useCustomAdminWallets]);
 
   const handleCopy = async (address: string) => {
     await copyToClipboard(address);
@@ -213,10 +188,7 @@ export function AddPaymentSourceDialog({
     for (let index = 0; index < data.purchasingWallets.length; index++) {
       const wallet = data.purchasingWallets[index];
       if (wallet.collectionAddress) {
-        const validation = validateCardanoAddress(
-          wallet.collectionAddress.trim(),
-          data.network,
-        );
+        const validation = validateCardanoAddress(wallet.collectionAddress.trim(), data.network);
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for purchasing wallet ' +
@@ -245,10 +217,7 @@ export function AddPaymentSourceDialog({
     for (let index = 0; index < data.sellingWallets.length; index++) {
       const wallet = data.sellingWallets[index];
       if (wallet.collectionAddress) {
-        const validation = validateCardanoAddress(
-          wallet.collectionAddress.trim(),
-          data.network,
-        );
+        const validation = validateCardanoAddress(wallet.collectionAddress.trim(), data.network);
         if (!validation.isValid) {
           toast.error(
             'Invalid collection address for selling wallet ' +
@@ -276,16 +245,10 @@ export function AddPaymentSourceDialog({
     }
     for (let index = 0; index < adminWallets.length; index++) {
       const wallet = adminWallets[index];
-      const validation = validateCardanoAddress(
-        wallet.walletAddress.trim(),
-        data.network,
-      );
+      const validation = validateCardanoAddress(wallet.walletAddress.trim(), data.network);
       if (!validation.isValid) {
         toast.error(
-          'Invalid admin wallet address for admin wallet ' +
-            (index + 1) +
-            ': ' +
-            validation.error,
+          'Invalid admin wallet address for admin wallet ' + (index + 1) + ': ' + validation.error,
         );
         return;
       }
@@ -296,10 +259,7 @@ export function AddPaymentSourceDialog({
       data.network,
     );
     if (!feeReceiverWalletValidation.isValid) {
-      toast.error(
-        'Invalid fee receiver wallet address: ' +
-          feeReceiverWalletValidation.error,
-      );
+      toast.error('Invalid fee receiver wallet address: ' + feeReceiverWalletValidation.error);
       return;
     }
 
@@ -342,9 +302,7 @@ export function AddPaymentSourceDialog({
         },
         onError: (error: any) => {
           const errorMessage =
-            error.message ||
-            error.error?.message ||
-            'Failed to create payment source';
+            error.message || error.error?.message || 'Failed to create payment source';
           setError(errorMessage);
         },
         onFinally: () => {
@@ -355,9 +313,6 @@ export function AddPaymentSourceDialog({
     );
   };
 
-  const useCustomAdminWallets = watch('useCustomAdminWallets');
-  const network = watch('network');
-
   // Handler to generate mnemonic for a purchasing wallet
   const handleGeneratePurchasingMnemonic = async (index: number) => {
     setWalletGenError('');
@@ -366,14 +321,13 @@ export function AddPaymentSourceDialog({
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
           if (response.data?.data?.walletMnemonic) {
             // Set the mnemonic in the form
-            const fieldName =
-              `purchasingWallets.${index}.walletMnemonic` as const;
+            const fieldName = `purchasingWallets.${index}.walletMnemonic` as const;
             setValue(fieldName, response.data.data.walletMnemonic);
           } else {
             setWalletGenError('Failed to generate mnemonic phrase');
@@ -399,7 +353,7 @@ export function AddPaymentSourceDialog({
       () =>
         postWallet({
           client: apiClient,
-          body: { network: watch('network') },
+          body: { network: getValues('network') },
         }),
       {
         onSuccess: (response: any) => {
@@ -457,16 +411,13 @@ export function AddPaymentSourceDialog({
                   <option value="Mainnet">Mainnet</option>
                 </select>
                 {errors.network && (
-                  <p className="text-xs text-destructive mt-1">
-                    {errors.network.message}
-                  </p>
+                  <p className="text-xs text-destructive mt-1">{errors.network.message}</p>
                 )}
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Blockfrost API Key{' '}
-                    <span className="text-destructive">*</span>
+                    Blockfrost API Key <span className="text-destructive">*</span>
                   </label>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -484,11 +435,34 @@ export function AddPaymentSourceDialog({
                   placeholder="Enter your Blockfrost API key"
                 />
                 {errors.blockfrostApiKey && (
-                  <p className="text-xs text-destructive mt-1">
-                    {errors.blockfrostApiKey.message}
-                  </p>
+                  <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Fee Configuration Section */}
+          <div className="space-y-4 p-4 bg-muted/30 rounded-lg border border-border/50">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Fee Configuration</h3>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Configure fee settings for this payment source</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm">Use Custom Configuration</label>
+                <input type="checkbox" {...register('useCustomAdminWallets')} />
+              </div>
+            </div>
+
+            {/* Fee Settings Grid */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
@@ -505,54 +479,49 @@ export function AddPaymentSourceDialog({
                 </div>
                 <input
                   type="number"
-                  className="w-full p-2 rounded-md bg-background border"
+                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
                   {...register('feePermille', { valueAsNumber: true })}
                   min="0"
                   max="1000"
+                  disabled={!useCustomAdminWallets}
                 />
                 {errors.feePermille && (
+                  <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">
+                    Fee Receiver Wallet <span className="text-red-500">*</span>
+                  </label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <input
+                  type="text"
+                  className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
+                  {...register('feeReceiverWallet.walletAddress')}
+                  placeholder="Enter fee receiver wallet address"
+                  disabled={!useCustomAdminWallets}
+                />
+                {errors.feeReceiverWallet?.walletAddress && (
                   <p className="text-xs text-destructive mt-1">
-                    {errors.feePermille.message}
+                    {errors.feeReceiverWallet.walletAddress.message}
                   </p>
                 )}
               </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold">Fee Receiver Wallet</h3>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{TOOLTIP_TEXTS.FEE_RECEIVER_WALLET}</p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Wallet Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                {...register('feeReceiverWallet.walletAddress')}
-                placeholder="Enter fee receiver wallet address"
-              />
-              {errors.feeReceiverWallet?.walletAddress && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.feeReceiverWallet.walletAddress.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            {/* Admin Wallets Sub-section */}
+            <div className="space-y-4 pt-4 border-t border-border/50">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">Admin Wallets</h3>
+                <h4 className="text-md font-medium">Admin Wallets</h4>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -562,70 +531,61 @@ export function AddPaymentSourceDialog({
                   </TooltipContent>
                 </Tooltip>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm">Use Custom Admin Wallets</label>
-                <input type="checkbox" {...register('useCustomAdminWallets')} />
-              </div>
-            </div>
-            {useCustomAdminWallets ? (
-              <div className="space-y-4">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Admin Wallet {i + 1}{' '}
-                      <span className="text-destructive">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full p-2 rounded-md bg-background border"
-                      {...register(
-                        `customAdminWallets.${i}.walletAddress` as AdminWalletPath,
-                      )}
-                      placeholder="Enter admin wallet address"
-                    />
-                    {errors.customAdminWallets?.[i]?.walletAddress && (
-                      <p className="text-xs text-destructive mt-1">
-                        {errors.customAdminWallets[i].walletAddress.message}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Using default admin wallets for {network}:
-                </p>
-                {DEFAULT_ADMIN_WALLETS[network].map((wallet, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between text-sm font-mono bg-muted p-2 rounded"
-                  >
-                    <div className="flex flex-col">
-                      <span>{shortenAddress(wallet.walletAddress)}</span>
-                      {wallet.note && (
-                        <span className="text-xs text-muted-foreground">
-                          {wallet.note}
-                        </span>
+              {useCustomAdminWallets ? (
+                <div className="space-y-4">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Admin Wallet {i + 1} <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full p-2 rounded-md bg-background border"
+                        {...register(`customAdminWallets.${i}.walletAddress` as AdminWalletPath)}
+                        placeholder="Enter admin wallet address"
+                      />
+                      {errors.customAdminWallets?.[i]?.walletAddress && (
+                        <p className="text-xs text-destructive mt-1">
+                          {errors.customAdminWallets[i].walletAddress.message}
+                        </p>
                       )}
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => handleCopy(wallet.walletAddress)}
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Using default admin wallets for {network}:
+                  </p>
+                  {DEFAULT_ADMIN_WALLETS[network].map((wallet, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between text-sm font-mono bg-muted p-2 rounded"
                     >
-                      {copiedAddresses[wallet.walletAddress] ? (
-                        <Check className="h-4 w-4" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+                      <div className="flex flex-col">
+                        <span>{shortenAddress(wallet.walletAddress)}</span>
+                        {wallet.note && (
+                          <span className="text-xs text-muted-foreground">{wallet.note}</span>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleCopy(wallet.walletAddress)}
+                      >
+                        {copiedAddresses[wallet.walletAddress] ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -675,9 +635,7 @@ export function AddPaymentSourceDialog({
                   <input
                     type="text"
                     className="w-full p-2 rounded-md bg-background border"
-                    {...register(
-                      `purchasingWallets.${index}.walletMnemonic` as const,
-                    )}
+                    {...register(`purchasingWallets.${index}.walletMnemonic` as const)}
                     placeholder="Enter wallet mnemonic"
                   />
                   <Button
@@ -706,9 +664,7 @@ export function AddPaymentSourceDialog({
                 <input
                   type="text"
                   className="w-full p-2 rounded-md bg-background border"
-                  {...register(
-                    `purchasingWallets.${index}.collectionAddress` as const,
-                  )}
+                  {...register(`purchasingWallets.${index}.collectionAddress` as const)}
                   placeholder="Collection Address (optional)"
                 />
               </div>
@@ -762,9 +718,7 @@ export function AddPaymentSourceDialog({
                   <input
                     type="text"
                     className="w-full p-2 rounded-md bg-background border"
-                    {...register(
-                      `sellingWallets.${index}.walletMnemonic` as const,
-                    )}
+                    {...register(`sellingWallets.${index}.walletMnemonic` as const)}
                     placeholder="Enter wallet mnemonic"
                   />
                   <Button
@@ -793,65 +747,38 @@ export function AddPaymentSourceDialog({
                 <input
                   type="text"
                   className="w-full p-2 rounded-md bg-background border"
-                  {...register(
-                    `sellingWallets.${index}.collectionAddress` as const,
-                  )}
+                  {...register(`sellingWallets.${index}.collectionAddress` as const)}
                   placeholder="Collection Address (optional)"
                 />
               </div>
             ))}
           </div>
 
-          {walletGenError && (
-            <div className="text-xs text-destructive mt-1">
-              {walletGenError}
-            </div>
-          )}
+          {walletGenError && <div className="text-xs text-destructive mt-1">{walletGenError}</div>}
 
           {Object.keys(errors).length > 0 && (
             <div className="text-sm text-destructive mt-4 p-3 bg-destructive/10 rounded-md">
-              <p className="font-medium mb-1">
-                Please fix the following errors:
-              </p>
+              <p className="font-medium mb-1">Please fix the following errors:</p>
               <ul className="list-disc list-inside space-y-1">
                 {errors.network && <li>{errors.network.message}</li>}
-                {errors.blockfrostApiKey && (
-                  <li>{errors.blockfrostApiKey.message}</li>
-                )}
+                {errors.blockfrostApiKey && <li>{errors.blockfrostApiKey.message}</li>}
                 {errors.feeReceiverWallet?.walletAddress && (
-                  <li>
-                    Fee receiver wallet:{' '}
-                    {errors.feeReceiverWallet.walletAddress.message}
-                  </li>
+                  <li>Fee receiver wallet: {errors.feeReceiverWallet.walletAddress.message}</li>
                 )}
                 {errors.feePermille && <li>{errors.feePermille.message}</li>}
-                {errors.purchasingWallets && (
-                  <li>At least one purchasing wallet is required</li>
-                )}
-                {errors.sellingWallets && (
-                  <li>At least one selling wallet is required</li>
-                )}
+                {errors.purchasingWallets && <li>At least one purchasing wallet is required</li>}
+                {errors.sellingWallets && <li>At least one selling wallet is required</li>}
                 {errors.customAdminWallets && (
-                  <li>
-                    All admin wallet addresses are required when using custom
-                    admin wallets
-                  </li>
+                  <li>All admin wallet addresses are required when using custom admin wallets</li>
                 )}
               </ul>
             </div>
           )}
 
-          {error && (
-            <div className="text-md text-destructive mt-4">{error}</div>
-          )}
+          {error && <div className="text-md text-destructive mt-4">{error}</div>}
 
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>

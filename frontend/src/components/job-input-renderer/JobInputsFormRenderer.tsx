@@ -22,19 +22,14 @@ export default function JobInputsFormRenderer({
     Record<string, string | number | boolean | number[] | null>
   >({});
 
-  // Initialize form data with default values
   useEffect(() => {
-    const initialData: Record<
-      string,
-      string | number | boolean | number[] | null
-    > = {};
+    const initialData: Record<string, string | number | boolean | number[] | null> = {};
     jobInputSchemas.forEach((schema) => {
       initialData[schema.id] = getDefaultValue(schema);
     });
-    setFormData(initialData);
+    queueMicrotask(() => setFormData(initialData));
   }, [jobInputSchemas]);
 
-  // Notify parent of form data changes
   useEffect(() => {
     if (onFormDataChange) {
       onFormDataChange(formData);
@@ -52,10 +47,7 @@ export default function JobInputsFormRenderer({
   };
 
   const handleClear = () => {
-    const clearedData: Record<
-      string,
-      string | number | boolean | number[] | null
-    > = {};
+    const clearedData: Record<string, string | number | boolean | number[] | null> = {};
     jobInputSchemas.forEach((schema) => {
       clearedData[schema.id] = getDefaultValue(schema);
     });
@@ -92,20 +84,13 @@ export default function JobInputsFormRenderer({
                 onChange={(value) => handleFieldChange(schema.id, value)}
                 disabled={disabled}
               />
-              {index < jobInputSchemas.length - 1 && (
-                <Separator className="my-4" />
-              )}
+              {index < jobInputSchemas.length - 1 && <Separator className="my-4" />}
             </div>
           ))}
         </form>
 
         <div className="flex justify-between items-center pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleClear}
-            disabled={disabled}
-          >
+          <Button type="button" variant="outline" onClick={handleClear} disabled={disabled}>
             Clear Form
           </Button>
 

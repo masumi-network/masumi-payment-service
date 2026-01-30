@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
+import { MainLayout } from '@/components/layout/MainLayout';
+import Head from 'next/head';
 import { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -301,10 +301,9 @@ export function InputSchemaValidator() {
     setSelectedExample('');
   };
 
-  const validation = useMemo(
-    () => validateSchemaWithZod(jsonInput),
-    [jsonInput],
-  );
+  // Memoize validation for performance
+  const validation = useMemo(() => validateSchemaWithZod(jsonInput), [jsonInput]);
+  tend / src / pages / input - schema - validator.tsx;
 
   const handleSelectExample = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -371,9 +370,7 @@ export function InputSchemaValidator() {
                 Schema is valid!
               </div>
               <div className="flex-1 overflow-auto">
-                <JobInputsFormRenderer
-                  jobInputSchemas={validation.parsedSchemas || []}
-                />
+                <JobInputsFormRenderer jobInputSchemas={validation.parsedSchemas || []} />
               </div>
             </div>
           ) : (
@@ -387,9 +384,7 @@ export function InputSchemaValidator() {
                     {validation.errors.map((err, i) => (
                       <li key={i} className="text-sm">
                         {err.line ? (
-                          <span className="text-xs text-muted-foreground">
-                            (line {err.line}){' '}
-                          </span>
+                          <span className="text-xs text-muted-foreground">(line {err.line}) </span>
                         ) : null}
                         {err.message}
                       </li>
