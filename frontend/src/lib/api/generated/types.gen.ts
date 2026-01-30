@@ -865,6 +865,145 @@ export type AgentMetadata = {
     };
 };
 
+export type AgentIdentifierMetadata = {
+    /**
+     * Policy ID of the agent registry NFT
+     */
+    policyId: string;
+    /**
+     * Asset name of the agent registry NFT
+     */
+    assetName: string;
+    /**
+     * Full agent identifier (policy ID + asset name)
+     */
+    agentIdentifier: string;
+    /**
+     * On-chain metadata for the agent
+     */
+    Metadata: {
+        /**
+         * Name of the agent
+         */
+        name: string;
+        /**
+         * Description of the agent. Null if not provided
+         */
+        description?: string | null;
+        /**
+         * Base URL of the agent API for interactions
+         */
+        apiBaseUrl: string;
+        /**
+         * List of example outputs from the agent
+         */
+        ExampleOutputs: Array<{
+            /**
+             * Name of the example output
+             */
+            name: string;
+            /**
+             * MIME type of the example output (e.g., image/png, text/plain)
+             */
+            mimeType: string;
+            /**
+             * URL to the example output
+             */
+            url: string;
+        }>;
+        /**
+         * List of tags categorizing the agent
+         */
+        Tags: Array<string>;
+        /**
+         * Information about the AI model and version used by the agent. Null if not provided
+         */
+        Capability?: {
+            /**
+             * Name of the AI model/capability. Null if not provided
+             */
+            name?: string | null;
+            /**
+             * Version of the AI model/capability. Null if not provided
+             */
+            version?: string | null;
+        } | null;
+        /**
+         * Author information for the agent
+         */
+        Author: {
+            /**
+             * Name of the agent author
+             */
+            name: string;
+            /**
+             * Contact email of the author. Null if not provided
+             */
+            contactEmail?: string | null;
+            /**
+             * Other contact information for the author. Null if not provided
+             */
+            contactOther?: string | null;
+            /**
+             * Organization of the author. Null if not provided
+             */
+            organization?: string | null;
+        };
+        /**
+         * Legal information about the agent. Null if not provided
+         */
+        Legal?: {
+            /**
+             * URL to the privacy policy. Null if not provided
+             */
+            privacyPolicy?: string | null;
+            /**
+             * URL to the terms of service. Null if not provided
+             */
+            terms?: string | null;
+            /**
+             * Other legal information. Null if not provided
+             */
+            other?: string | null;
+        } | null;
+        /**
+         * Pricing information for the agent
+         */
+        AgentPricing: {
+            /**
+             * Pricing type for the agent (Fixed)
+             */
+            pricingType: 'Fixed';
+            /**
+             * List of assets and amounts for fixed pricing
+             */
+            Pricing: Array<{
+                /**
+                 * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+                 */
+                amount: string;
+                /**
+                 * Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+                 */
+                unit: string;
+            }>;
+        } | {
+            /**
+             * Pricing type for the agent (Free)
+             */
+            pricingType: 'Free';
+        };
+        /**
+         * URL to the agent image/logo
+         */
+        image: string;
+        /**
+         * Version of the metadata schema (currently only version 1 is supported)
+         */
+        metadataVersion: number;
+    };
+};
+
 export type RegistryEntry = {
     /**
      * Error message if registration failed. Null if no error
@@ -4781,6 +4920,57 @@ export type GetRegistryWalletResponses = {
 };
 
 export type GetRegistryWalletResponse = GetRegistryWalletResponses[keyof GetRegistryWalletResponses];
+
+export type GetRegistryAgentIdentifierData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Full agent identifier (policy ID + asset name in hex)
+         */
+        agentIdentifier: string;
+        /**
+         * The Cardano network (Preprod or Mainnet)
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/registry/agent-identifier';
+};
+
+export type GetRegistryAgentIdentifierErrors = {
+    /**
+     * Bad Request (agent identifier is not a valid hex string)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Agent identifier not found or network/policyId combination not supported
+     */
+    404: unknown;
+    /**
+     * Agent metadata is invalid or malformed
+     */
+    422: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type GetRegistryAgentIdentifierResponses = {
+    /**
+     * Agent metadata retrieved successfully
+     */
+    200: {
+        status: string;
+        data: AgentIdentifierMetadata;
+    };
+};
+
+export type GetRegistryAgentIdentifierResponse = GetRegistryAgentIdentifierResponses[keyof GetRegistryAgentIdentifierResponses];
 
 export type DeleteRegistryData = {
     body?: {
