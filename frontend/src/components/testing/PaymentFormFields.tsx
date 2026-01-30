@@ -98,7 +98,6 @@ interface PaidAgent {
 interface PaymentFormFieldsProps {
   register: UseFormRegister<PaymentFormValues>;
   setValue: UseFormSetValue<PaymentFormValues>;
-  watch: UseFormWatch<PaymentFormValues>;
   control: Control<PaymentFormValues>;
   errors: FieldErrors<PaymentFormValues>;
   paidAgents: PaidAgent[];
@@ -111,39 +110,49 @@ export function useInputDataHash(
 ) {
   const [inputData, setInputData] = useState('');
   const [inputDataError, setInputDataError] = useState<string | null>(null);
+  const versionRef = useState({ current: 0 })[0];
 
   const identifierFromPurchaser = watch('identifierFromPurchaser');
 
-  const recalculateHash = useCallback(
-    async (data: string, identifier: string) => {
-      if (!data.trim()) {
-        setValue('inputHash', '');
-        setInputDataError(null);
+  useEffect(() => {
+    versionRef.current += 1;
+    const currentVersion = versionRef.current;
+
+    const recalculateHash = async () => {
+      if (!inputData.trim()) {
+        if (versionRef.current === currentVersion) {
+          setValue('inputHash', '');
+          setInputDataError(null);
+        }
         return;
       }
       try {
-        const parsed = JSON.parse(data);
+        const parsed = JSON.parse(inputData);
         if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          setInputDataError('Input data must be a JSON object');
-          setValue('inputHash', '');
+          if (versionRef.current === currentVersion) {
+            setInputDataError('Input data must be a JSON object');
+            setValue('inputHash', '');
+          }
           return;
         }
         setInputDataError(null);
-        const hash = await generateMIP004InputHash(parsed, identifier);
-        setValue('inputHash', hash);
+        const hash = await generateMIP004InputHash(parsed, identifierFromPurchaser);
+        if (versionRef.current === currentVersion) {
+          setValue('inputHash', hash);
+        }
       } catch {
-        setInputDataError('Invalid JSON');
-        setValue('inputHash', '');
+        if (versionRef.current === currentVersion) {
+          setInputDataError('Invalid JSON');
+          setValue('inputHash', '');
+        }
       }
-    },
-    [setValue],
-  );
+    };
 
-  useEffect(() => {
     queueMicrotask(() => {
-      recalculateHash(inputData, identifierFromPurchaser);
+      recalculateHash();
     });
-  }, [inputData, identifierFromPurchaser, recalculateHash]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputData, identifierFromPurchaser, setValue]);
 
   const resetInputData = useCallback((defaultPreset = true) => {
     setInputData(defaultPreset ? INPUT_DATA_PRESETS[0].value : '');
@@ -156,7 +165,6 @@ export function useInputDataHash(
 export function PaymentFormFields({
   register,
   setValue,
-  watch: _watch,
   control,
   errors,
   paidAgents,

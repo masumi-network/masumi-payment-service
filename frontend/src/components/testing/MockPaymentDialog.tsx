@@ -2,19 +2,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
+import { PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAgents } from '@/lib/queries/useAgents';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
-import {
-  generateRandomHex,
-  calculateDefaultTimes,
-  generatePaymentCurl,
-  extractErrorMessage,
-} from './utils';
+import { generateRandomHex, extractErrorMessage, filterPaidAgents, createPayment } from './utils';
 import {
   PaymentFormFields,
   useInputDataHash,
@@ -53,12 +48,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     },
   });
 
-  const paidAgents = agents.filter(
-    (agent) =>
-      agent.state === 'RegistrationConfirmed' &&
-      agent.agentIdentifier !== null &&
-      agent.AgentPricing?.pricingType !== 'Free',
-  );
+  const paidAgents = filterPaidAgents(agents);
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
     setValue,
@@ -69,6 +59,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
     if (open) {
       resetInputData();
       setValue('identifierFromPurchaser', generateRandomHex(16));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResponse(null);
       setError(null);
       setCurlCommand('');
@@ -77,50 +68,32 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
 
   const onSubmit = useCallback(
     async (data: PaymentFormValues) => {
-      try {
-        setIsLoading(true);
-        setError(null);
+      setIsLoading(true);
+      setError(null);
 
-        const times = calculateDefaultTimes();
-        const requestBody = {
-          network: network,
-          agentIdentifier: data.agentIdentifier,
-          inputHash: data.inputHash,
-          identifierFromPurchaser: data.identifierFromPurchaser,
-          payByTime: times.payByTime,
-          submitResultTime: times.submitResultTime,
-          unlockTime: times.unlockTime,
-          externalDisputeUnlockTime: times.externalDisputeUnlockTime,
-          metadata: data.metadata || undefined,
-        };
+      const result = await createPayment({
+        apiClient,
+        network,
+        agentIdentifier: data.agentIdentifier,
+        inputHash: data.inputHash,
+        identifierFromPurchaser: data.identifierFromPurchaser,
+        metadata: data.metadata,
+        apiKey: apiKey || '',
+      });
 
-        const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
-        setCurlCommand(curl);
+      setCurlCommand(result.curlCommand);
 
-        const result = await postPayment({
-          client: apiClient,
-          body: requestBody,
-        });
-
-        if (result.error) {
-          throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
-        }
-
-        if (result.data?.data) {
-          setResponse(result.data.data);
-          toast.success('Test payment created successfully');
-        } else {
-          throw new Error('Invalid response from server - no data returned');
-        }
-      } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(err, 'Failed to create payment');
+      if (result.success && result.data) {
+        setResponse(result.data);
+        toast.success('Test payment created successfully');
+      } else {
+        const errorMessage = result.error || 'Failed to create payment';
         setError(errorMessage);
         toast.error(errorMessage);
-        console.error('Payment creation error:', err);
-      } finally {
-        setIsLoading(false);
+        console.error('Payment creation error:', errorMessage);
       }
+
+      setIsLoading(false);
     },
     [apiClient, apiKey, network],
   );
@@ -149,7 +122,6 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
             <PaymentFormFields
               register={register}
               setValue={setValue}
-              watch={watch}
               control={control}
               errors={errors}
               paidAgents={paidAgents}

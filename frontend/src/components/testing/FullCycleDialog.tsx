@@ -1,13 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import {
-  postPayment,
-  postPurchase,
-  PostPaymentResponse,
-  PostPurchaseResponse,
-} from '@/lib/api/generated';
+import { postPurchase, PostPaymentResponse, PostPurchaseResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -16,10 +11,10 @@ import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
 import {
   generateRandomHex,
-  calculateDefaultTimes,
-  generatePaymentCurl,
   generatePurchaseCurl,
   extractErrorMessage,
+  filterPaidAgents,
+  createPayment,
 } from './utils';
 import {
   PaymentFormFields,
@@ -53,6 +48,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const purchaseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const {
     register,
@@ -72,12 +68,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
     },
   });
 
-  const paidAgents = agents.filter(
-    (agent) =>
-      agent.state === 'RegistrationConfirmed' &&
-      agent.agentIdentifier !== null &&
-      agent.AgentPricing?.pricingType !== 'Free',
-  );
+  const paidAgents = filterPaidAgents(agents);
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
     setValue,
@@ -152,60 +143,46 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   const onSubmitPayment = useCallback(
     async (data: PaymentFormValues) => {
-      try {
-        setIsLoadingPayment(true);
-        setPaymentError(null);
+      setIsLoadingPayment(true);
+      setPaymentError(null);
 
-        const times = calculateDefaultTimes();
-        const requestBody = {
-          network: network,
-          agentIdentifier: data.agentIdentifier,
-          inputHash: data.inputHash,
-          identifierFromPurchaser: data.identifierFromPurchaser,
-          payByTime: times.payByTime,
-          submitResultTime: times.submitResultTime,
-          unlockTime: times.unlockTime,
-          externalDisputeUnlockTime: times.externalDisputeUnlockTime,
-          metadata: data.metadata || undefined,
-        };
+      const result = await createPayment({
+        apiClient,
+        network,
+        agentIdentifier: data.agentIdentifier,
+        inputHash: data.inputHash,
+        identifierFromPurchaser: data.identifierFromPurchaser,
+        metadata: data.metadata,
+        apiKey: apiKey || '',
+      });
 
-        const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
-        const curl = generatePaymentCurl(baseUrl, apiKey || '', requestBody);
-        setPaymentCurl(curl);
+      setPaymentCurl(result.curlCommand);
 
-        const result = await postPayment({
-          client: apiClient,
-          body: requestBody,
-        });
+      if (result.success && result.data) {
+        const payment = result.data;
+        setPaymentResponse(payment);
+        toast.success('Payment created successfully');
 
-        if (result.error) {
-          throw new Error(extractErrorMessage(result.error, 'Payment creation failed'));
-        }
-
-        if (result.data?.data) {
-          const payment = result.data.data;
-          setPaymentResponse(payment);
-          toast.success('Payment created successfully');
-
-          setTimeout(() => {
-            createPurchaseAutomatically(payment, data);
-          }, 500);
-        } else {
-          throw new Error('Invalid response from server - no data returned');
-        }
-      } catch (err: unknown) {
-        const errorMessage = extractErrorMessage(err, 'Failed to create payment');
+        purchaseTimeoutRef.current = setTimeout(() => {
+          createPurchaseAutomatically(payment, data);
+        }, 500);
+      } else {
+        const errorMessage = result.error || 'Failed to create payment';
         setPaymentError(errorMessage);
         toast.error(errorMessage);
-        console.error('Payment creation error:', err);
-      } finally {
-        setIsLoadingPayment(false);
+        console.error('Payment creation error:', errorMessage);
       }
+
+      setIsLoadingPayment(false);
     },
     [apiClient, apiKey, network, createPurchaseAutomatically],
   );
 
   const handleClose = () => {
+    if (purchaseTimeoutRef.current) {
+      clearTimeout(purchaseTimeoutRef.current);
+      purchaseTimeoutRef.current = null;
+    }
     reset();
     resetInputData(false);
     setStep(1);
@@ -271,7 +248,6 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
               <PaymentFormFields
                 register={register}
                 setValue={setValue}
-                watch={watch}
                 control={control}
                 errors={errors}
                 paidAgents={paidAgents}

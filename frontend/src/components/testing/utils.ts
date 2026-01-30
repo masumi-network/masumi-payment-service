@@ -1,5 +1,7 @@
 import LZString from 'lz-string';
 import stringify from 'canonical-json';
+import type { Client, PostPaymentResponse } from '@/lib/api/generated';
+import { postPayment } from '@/lib/api/generated';
 
 export function extractErrorMessage(
   error: unknown,
@@ -140,5 +142,94 @@ export function decodeBlockchainIdentifier(blockchainIdentifier: string): {
     return { sellerId, purchaserId, signature, key, agentIdentifier };
   } catch {
     return null;
+  }
+}
+
+// Filter agents to only include paid agents
+interface AgentForFiltering {
+  state: string;
+  agentIdentifier: string | null;
+  AgentPricing?: {
+    pricingType: string;
+  } | null;
+}
+
+export function filterPaidAgents<T extends AgentForFiltering>(agents: T[]): T[] {
+  return agents.filter(
+    (agent) =>
+      agent.state === 'RegistrationConfirmed' &&
+      agent.agentIdentifier !== null &&
+      agent.AgentPricing?.pricingType !== 'Free',
+  );
+}
+
+// Create payment with standardized error handling and curl generation
+export interface CreatePaymentParams {
+  apiClient: Client;
+  network: string;
+  agentIdentifier: string;
+  inputHash: string;
+  identifierFromPurchaser: string;
+  metadata?: string;
+  apiKey: string;
+}
+
+export interface CreatePaymentResult {
+  success: boolean;
+  data?: PostPaymentResponse['data'];
+  error?: string;
+  curlCommand: string;
+}
+
+export async function createPayment(params: CreatePaymentParams): Promise<CreatePaymentResult> {
+  const times = calculateDefaultTimes();
+  const requestBody = {
+    network: params.network,
+    agentIdentifier: params.agentIdentifier,
+    inputHash: params.inputHash,
+    identifierFromPurchaser: params.identifierFromPurchaser,
+    payByTime: times.payByTime,
+    submitResultTime: times.submitResultTime,
+    unlockTime: times.unlockTime,
+    externalDisputeUnlockTime: times.externalDisputeUnlockTime,
+    metadata: params.metadata || undefined,
+  };
+
+  const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
+  const curlCommand = generatePaymentCurl(baseUrl, params.apiKey, requestBody);
+
+  try {
+    const result = await postPayment({
+      client: params.apiClient,
+      body: requestBody,
+    });
+
+    if (result.error) {
+      return {
+        success: false,
+        error: extractErrorMessage(result.error, 'Payment creation failed'),
+        curlCommand,
+      };
+    }
+
+    if (result.data?.data) {
+      return {
+        success: true,
+        data: result.data.data,
+        curlCommand,
+      };
+    }
+
+    return {
+      success: false,
+      error: 'Invalid response from server - no data returned',
+      curlCommand,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: extractErrorMessage(err, 'Failed to create payment'),
+      curlCommand,
+    };
   }
 }
