@@ -309,6 +309,10 @@ import {
 } from '@/routes/api/payment-source-extended';
 import { queryAgentFromWalletSchemaInput, queryAgentFromWalletSchemaOutput } from '@/routes/api/registry/wallet';
 import {
+	queryAgentByIdentifierSchemaInput,
+	queryAgentByIdentifierSchemaOutput,
+} from '@/routes/api/registry/agent-identifier';
+import {
 	postPaymentRequestSchemaInput,
 	postPaymentRequestSchemaOutput,
 } from '@/routes/api/payments/resolve-blockchain-identifier';
@@ -2051,6 +2055,95 @@ export function generateOpenAPI() {
 							}),
 					},
 				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/registry/agent-identifier',
+		description: 'Gets the on-chain metadata for a specific agent by its identifier.',
+		summary: 'Fetch the current metadata for a given agentIdentifier. (READ access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryAgentByIdentifierSchemaInput.openapi({
+				example: {
+					agentIdentifier: 'policy_id_56_chars_hex_asset_name_hex',
+					network: Network.Preprod,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Agent metadata retrieved successfully',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryAgentByIdentifierSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										policyId: 'policy_id',
+										assetName: 'asset_name',
+										agentIdentifier: 'policy_id_asset_name',
+										Metadata: {
+											name: 'Agent Name',
+											description: 'Agent Description',
+											apiBaseUrl: 'https://api.example.com',
+											ExampleOutputs: [],
+											Tags: ['tag1', 'tag2'],
+											Capability: {
+												name: 'capability_name',
+												version: 'capability_version',
+											},
+											Legal: {
+												privacyPolicy: 'privacy_policy',
+												terms: 'terms',
+												other: 'other',
+											},
+											Author: {
+												name: 'author_name',
+												contactEmail: 'author_contact_email',
+												contactOther: 'author_contact_other',
+												organization: 'author_organization',
+											},
+											image: 'ipfs://...',
+											AgentPricing: {
+												pricingType: PricingType.Fixed,
+												Pricing: [
+													{
+														unit: '',
+														amount: '10000000',
+													},
+												],
+											},
+											metadataVersion: 1,
+										},
+									},
+								},
+							}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (agent identifier is not a valid hex string)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Agent identifier not found or network/policyId combination not supported',
+			},
+			422: {
+				description: 'Agent metadata is invalid or malformed',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});
