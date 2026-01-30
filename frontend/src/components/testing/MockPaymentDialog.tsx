@@ -159,7 +159,6 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
             <PaymentFormFields
               register={register}
               setValue={setValue}
-              watch={watch}
               control={control}
               errors={errors}
               paidAgents={paidAgents}

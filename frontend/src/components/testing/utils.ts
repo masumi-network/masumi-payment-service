@@ -41,7 +41,7 @@ export function generateRandomHex(length: number = 16): string {
 }
 
 // Generate SHA256 hash using Web Crypto API (browser-compatible)
-export async function generateSHA256Hex(data: string): Promise<string> {
+async function generateSHA256Hex(data: string): Promise<string> {
   const encoder = new TextEncoder();
   const dataBuffer = encoder.encode(data);
   const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
