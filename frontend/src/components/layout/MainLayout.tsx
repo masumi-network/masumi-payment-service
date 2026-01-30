@@ -157,31 +157,6 @@ export function MainLayout({ children }: MainLayoutProps) {
   >([]);
 
   useEffect(() => {
-    // During setup mode: show Setup + Payment sources + Settings in nav
-    if (isSetupMode) {
-      setNavItems([
-        {
-          href: '/setup',
-          name: 'Setup',
-          icon: <Wand2 className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: <FileInput className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/settings',
-          name: 'Settings',
-          icon: <Settings className="h-4 w-4" />,
-          badge: null,
-        },
-      ]);
-      return;
-    }
-
     if (hasPaymentSources) {
       setNavItems([
         {
@@ -261,7 +236,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
       },
     ]);
-  }, [hasPaymentSources, newTransactionsCount, isSetupMode]);
+  }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);

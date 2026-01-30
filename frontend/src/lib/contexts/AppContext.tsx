@@ -172,8 +172,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setNetwork: (network: NetworkType) => {
           setNetwork(network);
           setSelectedPaymentSourceIdAndPersist(null);
-          // Reset setup mode when switching networks so nav re-evaluates for the new network
-          setIsSetupMode(false);
         },
         showError,
         apiClient,
