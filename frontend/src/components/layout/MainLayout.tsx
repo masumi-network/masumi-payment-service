@@ -45,7 +45,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode } = useAppContext();
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -236,6 +236,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
+    if (isSetupMode) return;
     setNetwork(network);
   };
 
@@ -284,11 +285,13 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm2"
+                disabled={isSetupMode}
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
@@ -297,11 +300,13 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm2"
+                disabled={isSetupMode}
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
+                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
