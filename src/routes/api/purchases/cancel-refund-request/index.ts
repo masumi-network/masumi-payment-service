@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { Network, PurchasingAction, OnChainState, Permission } from '@/generated/prisma/client';
+import { Network, PurchasingAction, OnChainState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
@@ -29,7 +29,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 		input: z.infer<typeof cancelPurchaseRefundRequestSchemaInput>;
 		ctx: AuthContext;
 	}) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const purchase = await prisma.purchaseRequest.findUnique({
 			where: {
@@ -58,7 +58,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 			throw createHttpError(404, 'Purchase not found or in invalid state');
 		}
 
-		if (purchase.requestedById != ctx.id && ctx.permission != Permission.Admin) {
+		if (purchase.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
 		}
 

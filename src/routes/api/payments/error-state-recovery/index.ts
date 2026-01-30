@@ -33,7 +33,7 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 		ctx: AuthContext;
 	}) => {
 		// Check network permission
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		// Find payment request
 		const paymentRequest = await prisma.paymentRequest.findFirst({

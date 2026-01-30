@@ -1,6 +1,6 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { Network, OnChainState, PaymentAction, Permission } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentAction } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
@@ -29,7 +29,7 @@ export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.
 	input: submitPaymentResultSchemaInput,
 	output: submitPaymentResultSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof submitPaymentResultSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const payment = await prisma.paymentRequest.findUnique({
 			where: {
@@ -58,7 +58,7 @@ export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.
 			throw createHttpError(404, 'Payment not found or in invalid state');
 		}
 
-		if (payment.requestedById != ctx.id && ctx.permission != Permission.Admin) {
+		if (payment.requestedById != ctx.id && !ctx.canAdmin) {
 			throw createHttpError(403, 'You are not authorized to submit results for this payment');
 		}
 

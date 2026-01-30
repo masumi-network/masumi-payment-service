@@ -249,7 +249,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentsSchemaInput,
 	output: queryPaymentsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const result = await prisma.paymentRequest.findMany({
 			where: {
@@ -452,7 +452,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 		const policyId = extractPolicyId(input.agentIdentifier);
 
 		const specifiedPaymentContract = await prisma.paymentSource.findFirst({
@@ -470,7 +470,7 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
 			throw createHttpError(400, 'Purchaser identifier is not a valid hex string');

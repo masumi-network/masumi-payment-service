@@ -1,6 +1,6 @@
 import { prisma } from '@/utils/db';
 import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
-import { Network, Permission, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import { Network, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
 
 async function handlePurchaseCreditInit({
 	id,
@@ -65,7 +65,7 @@ async function handlePurchaseCreditInit({
 			if (!result) {
 				throw Error('Invalid id: ' + id);
 			}
-			if (result.permission != Permission.Admin && !result.networkLimit.includes(network)) {
+			if (!result.canAdmin && !result.networkLimit.includes(network)) {
 				throw Error('No permission for network: ' + network + ' for id: ' + id);
 			}
 
