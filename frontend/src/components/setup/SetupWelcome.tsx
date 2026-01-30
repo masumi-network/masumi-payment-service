@@ -32,6 +32,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 
+function formatNetworkDisplay(networkType: string): string {
+  return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+}
+
 function WelcomeScreen({
   onStart,
   networkType,
@@ -41,7 +45,7 @@ function WelcomeScreen({
   networkType: string;
   onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
 }) {
-  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -1159,7 +1163,7 @@ function SuccessScreen({
   networkType: string;
   hasAiAgent?: boolean;
 }) {
-  const networkDisplay = networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
+  const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
     <div className="text-center space-y-4 max-w-[600px]">
@@ -1199,7 +1203,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     selling: null,
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
-  const { setIsSetupMode, setNetwork } = useAppContext();
+  const { setNetwork } = useAppContext();
 
   const handleComplete = () => {
     router.push('/');
