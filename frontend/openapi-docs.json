@@ -3302,7 +3302,9 @@
                                             "amount": "10000000"
                                         }
                                     ],
-                                    "permission": "Admin"
+                                    "canAdmin": true,
+                                    "canPay": true,
+                                    "canRead": true
                                 }
                             }
                         }
