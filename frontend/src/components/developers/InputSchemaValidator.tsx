@@ -183,7 +183,7 @@ const EXAMPLES = [
     },
     {
       "id": "description",
-      "type": "string", 
+      "type": "string",
       "name": "Description",
       "data": {
         "placeholder": "Describe your project",
@@ -229,7 +229,6 @@ function validateSchemaWithZod(input: string): {
   try {
     parsed = JSON.parse(input);
   } catch (e: any) {
-    // Try to extract line number from error message
     const match = e.message.match(/at position (\d+)/);
     let line;
     if (match) {
@@ -245,23 +244,18 @@ function validateSchemaWithZod(input: string): {
   const errors: { message: string; line?: number }[] = [];
   const schemas: JobInputSchemaType[] = [];
 
-  // Helper to get line number for a key
   const getLine = (key: string) => {
     const idx = input.indexOf('"' + key + '"');
     if (idx === -1) return undefined;
     return input.slice(0, idx).split('\n').length;
   };
 
-  // Handle wrapped format, single schema, and array of schemas
   let schemasToValidate: any[];
   if (parsed.input_data && Array.isArray(parsed.input_data)) {
-    // Handle wrapped format: { "input_data": [...] }
     schemasToValidate = parsed.input_data;
   } else if (Array.isArray(parsed)) {
-    // Handle array format: [...]
     schemasToValidate = parsed;
   } else {
-    // Handle single schema format: { ... }
     schemasToValidate = [parsed];
   }
 
@@ -297,7 +291,7 @@ function validateSchemaWithZod(input: string): {
   };
 }
 
-export default function InputSchemaValidatorPage() {
+export function InputSchemaValidator() {
   const [jsonInput, setJsonInput] = useState<string>(DEFAULT_SCHEMA);
   const { theme } = useTheme();
   const [selectedExample, setSelectedExample] = useState<string>('');
@@ -318,99 +312,89 @@ export default function InputSchemaValidatorPage() {
   };
 
   return (
-    <MainLayout>
-      <Head>
-        <title>Input Schema Validator | Admin Interface</title>
-      </Head>
-      <div className="space-y-6">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold mb-1">Input Schema Validator</h1>
-          <p className="text-sm text-muted-foreground">
-            Validate your Masumi input schemas against the{' '}
-            <a
-              href="https://github.com/masumi-network/masumi-improvement-proposals/blob/main/MIPs/MIP-003/MIP-003-Attachement-01.md"
-              target="_blank"
-              className="font-medium text-foreground hover:underline"
-            >
-              MIP-003
-            </a>{' '}
-            specification and see how they will render in Sokosumi.
-          </p>
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Validate your Masumi input schemas against the{' '}
+        <a
+          href="https://github.com/masumi-network/masumi-improvement-proposals/blob/main/MIPs/MIP-003/MIP-003-Attachement-01.md"
+          target="_blank"
+          className="font-medium text-foreground hover:underline"
+        >
+          MIP-003
+        </a>{' '}
+        specification and see how they will render in Sokosumi.
+      </p>
+      <div className="flex flex-col md:flex-row gap-6 min-h-[700px]">
+        <div className="flex-1 border rounded-lg p-4 bg-background overflow-hidden flex flex-col gap-2 h-full">
+          <div className="flex justify-between items-center mb-2 h-[30px]">
+            <div className="text-sm text-muted-foreground">Input Schema</div>
+            <div className="flex gap-2 items-center">
+              <select
+                className="border rounded px-2 py-1 text-sm bg-background"
+                value={selectedExample}
+                onChange={handleSelectExample}
+              >
+                <option value="">Load Example...</option>
+                {EXAMPLES.map((ex) => (
+                  <option key={ex.label} value={ex.label}>
+                    {ex.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="bg-muted rounded border text-xs overflow-x-auto flex-1 h-full">
+            <MonacoEditor
+              height="600px"
+              defaultLanguage="json"
+              value={jsonInput}
+              onChange={(value) => handleJsonInputChange(value ?? '')}
+              theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                formatOnPaste: true,
+                formatOnType: true,
+                automaticLayout: true,
+              }}
+            />
+          </div>
         </div>
-        <div className="flex flex-col md:flex-row gap-6 min-h-[700px]">
-          <div className="flex-1 border rounded-lg p-4 bg-background overflow-hidden flex flex-col gap-2 h-full">
-            <div className="flex justify-between items-center mb-2 h-[30px]">
-              <div className="text-sm text-muted-foreground">Input Schema</div>
-              <div className="flex gap-2 items-center">
-                <select
-                  className="border rounded px-2 py-1 text-sm bg-background"
-                  value={selectedExample}
-                  onChange={handleSelectExample}
-                >
-                  <option value="">Load Example...</option>
-                  {EXAMPLES.map((ex) => (
-                    <option key={ex.label} value={ex.label}>
-                      {ex.label}
-                    </option>
-                  ))}
-                </select>
+        <div className="flex-1 border rounded-lg p-4 bg-background overflow-auto flex flex-col gap-2 h-full">
+          {validation.valid ? (
+            <div className="flex-1 flex flex-col gap-2 h-full">
+              <div className="text-green-600 font-semibold mb-2 h-[30px] flex items-center">
+                Schema is valid!
+              </div>
+              <div className="flex-1 overflow-auto">
+                <JobInputsFormRenderer jobInputSchemas={validation.parsedSchemas || []} />
               </div>
             </div>
-            <div className="bg-muted rounded border text-xs overflow-x-auto flex-1 h-full">
-              <MonacoEditor
-                height="600px"
-                defaultLanguage="json"
-                value={jsonInput}
-                onChange={(value) => handleJsonInputChange(value ?? '')}
-                theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  scrollBeyondLastLine: false,
-                  wordWrap: 'on',
-                  formatOnPaste: true,
-                  formatOnType: true,
-                  automaticLayout: true,
-                }}
-              />
+          ) : (
+            <div className="flex-1 flex flex-col gap-2 h-full">
+              <div className="text-destructive font-semibold mb-2 h-[30px] flex items-center">
+                Schema is invalid:
+              </div>
+              <div className="flex-1 overflow-auto">
+                <div className="bg-muted rounded border p-4">
+                  <ul className="list-disc pl-5 space-y-1">
+                    {validation.errors.map((err, i) => (
+                      <li key={i} className="text-sm">
+                        {err.line ? (
+                          <span className="text-xs text-muted-foreground">(line {err.line}) </span>
+                        ) : null}
+                        {err.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex-1 border rounded-lg p-4 bg-background overflow-auto flex flex-col gap-2 h-full">
-            {validation.valid ? (
-              <div className="flex-1 flex flex-col gap-2 h-full">
-                <div className="text-green-600 font-semibold mb-2 h-[30px] flex items-center">
-                  Schema is valid! ✓
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <JobInputsFormRenderer jobInputSchemas={validation.parsedSchemas || []} />
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col gap-2 h-full">
-                <div className="text-destructive font-semibold mb-2 h-[30px] flex items-center">
-                  Schema is invalid:
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <div className="bg-muted rounded border p-4">
-                    <ul className="list-disc pl-5 space-y-1">
-                      {validation.errors.map((err, i) => (
-                        <li key={i} className="text-sm">
-                          {err.line ? (
-                            <span className="text-xs text-muted-foreground">
-                              (line {err.line}){' '}
-                            </span>
-                          ) : null}
-                          {err.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
-    </MainLayout>
+    </div>
   );
 }
