@@ -2497,6 +2497,161 @@
                     "network"
                 ]
             },
+            "WalletMonitorConfig": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the monitoring config"
+                    },
+                    "paymentSourceId": {
+                        "type": "string",
+                        "description": "Payment source this monitoring config belongs to"
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "Whether monitoring is enabled for this payment source"
+                    },
+                    "checkIntervalSeconds": {
+                        "type": "number",
+                        "description": "How often to check balances (in seconds)"
+                    },
+                    "lastCheckedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Last time balances were checked"
+                    },
+                    "lastCheckStatus": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Status of last check (success, partial_failure, error)"
+                    },
+                    "lastCheckError": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Error message from last check, if any"
+                    },
+                    "WalletThresholds": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Unique identifier for the wallet threshold"
+                                },
+                                "hotWalletId": {
+                                    "type": "string",
+                                    "description": "ID of the hot wallet being monitored"
+                                },
+                                "enabled": {
+                                    "type": "boolean",
+                                    "description": "Whether monitoring is enabled for this wallet"
+                                },
+                                "adaThresholdLovelace": {
+                                    "type": "string",
+                                    "description": "ADA threshold in lovelace (1 ADA = 1,000,000 lovelace)"
+                                },
+                                "HotWallet": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "description": "Hot wallet ID"
+                                        },
+                                        "walletAddress": {
+                                            "type": "string",
+                                            "description": "Cardano address of the wallet"
+                                        },
+                                        "walletVkey": {
+                                            "type": "string",
+                                            "description": "Payment key hash"
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "description": "Wallet type (Selling or Purchasing)"
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "walletAddress",
+                                        "walletVkey",
+                                        "type"
+                                    ]
+                                },
+                                "AssetThresholds": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "string",
+                                                "description": "Unique identifier for the asset threshold"
+                                            },
+                                            "policyId": {
+                                                "type": "string",
+                                                "description": "Policy ID of the asset"
+                                            },
+                                            "assetName": {
+                                                "type": "string",
+                                                "description": "Asset name (hex encoded)"
+                                            },
+                                            "displayName": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "description": "Human-readable name of the asset"
+                                            },
+                                            "displaySymbol": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "description": "Display symbol for the asset (e.g., USDM)"
+                                            },
+                                            "decimals": {
+                                                "type": "number",
+                                                "description": "Number of decimal places for this asset"
+                                            },
+                                            "minAmount": {
+                                                "type": "string",
+                                                "description": "Minimum amount threshold (as string for large numbers)"
+                                            }
+                                        },
+                                        "required": [
+                                            "id",
+                                            "policyId",
+                                            "assetName",
+                                            "displayName",
+                                            "displaySymbol",
+                                            "decimals",
+                                            "minAmount"
+                                        ]
+                                    },
+                                    "description": "Thresholds for other assets (USDM, etc.)"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "hotWalletId",
+                                "enabled",
+                                "adaThresholdLovelace",
+                                "HotWallet",
+                                "AssetThresholds"
+                            ]
+                        },
+                        "description": "Individual wallet thresholds"
+                    }
+                },
+                "required": [
+                    "id",
+                    "paymentSourceId",
+                    "enabled",
+                    "checkIntervalSeconds",
+                    "lastCheckedAt",
+                    "lastCheckStatus",
+                    "lastCheckError",
+                    "WalletThresholds"
+                ]
+            },
             "MonitoringStatus": {
                 "type": "object",
                 "properties": {
@@ -14182,6 +14337,457 @@
                     },
                     "404": {
                         "description": "Webhook endpoint not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/wallet-monitoring/": {
+            "get": {
+                "description": "Get wallet monitoring configurations for payment sources",
+                "summary": "Get wallet monitoring configurations. (admin access required)",
+                "tags": [
+                    "wallet-monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter by specific payment source ID"
+                        },
+                        "required": false,
+                        "description": "Filter by specific payment source ID",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Filter by network (Preprod or Mainnet)"
+                        },
+                        "required": false,
+                        "description": "Filter by network (Preprod or Mainnet)",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of wallet monitoring configurations",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "WalletMonitorConfigs": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/WalletMonitorConfig"
+                                                    },
+                                                    "description": "List of wallet monitoring configurations"
+                                                }
+                                            },
+                                            "required": [
+                                                "WalletMonitorConfigs"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "WalletMonitorConfigs": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a wallet monitoring configuration for a payment source",
+                "summary": "Create wallet monitoring configuration. (admin access required)",
+                "tags": [
+                    "wallet-monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Wallet monitoring configuration to create",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "paymentSourceId": {
+                                        "type": "string",
+                                        "description": "Payment source ID to add monitoring to"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Whether monitoring is enabled (default: false for safety)"
+                                    },
+                                    "checkIntervalSeconds": {
+                                        "type": "number",
+                                        "minimum": 60,
+                                        "maximum": 86400,
+                                        "default": 3600,
+                                        "description": "How often to check balances in seconds (min: 60, max: 86400, default: 3600 = 1 hour)"
+                                    },
+                                    "walletThresholds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "hotWalletId": {
+                                                    "type": "string",
+                                                    "description": "Hot wallet ID to monitor"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean",
+                                                    "default": true,
+                                                    "description": "Whether this wallet threshold is enabled"
+                                                },
+                                                "adaThresholdLovelace": {
+                                                    "type": "string",
+                                                    "maxLength": 25,
+                                                    "default": "10000000",
+                                                    "description": "ADA threshold in lovelace (default: 10 ADA = 10,000,000)"
+                                                },
+                                                "assetThresholds": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "policyId": {
+                                                                "type": "string",
+                                                                "minLength": 56,
+                                                                "maxLength": 56,
+                                                                "description": "Policy ID of the asset (56 hex characters)"
+                                                            },
+                                                            "assetName": {
+                                                                "type": "string",
+                                                                "description": "Asset name in hex (can be empty string)"
+                                                            },
+                                                            "displayName": {
+                                                                "type": "string",
+                                                                "description": "Human-readable name (e.g., \"USD Masumi\")"
+                                                            },
+                                                            "displaySymbol": {
+                                                                "type": "string",
+                                                                "description": "Display symbol (e.g., \"USDM\")"
+                                                            },
+                                                            "decimals": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "minimum": 0,
+                                                                "maximum": 18,
+                                                                "default": 0,
+                                                                "description": "Number of decimal places (0 for no decimals, 6 for USDM)"
+                                                            },
+                                                            "minAmount": {
+                                                                "type": "string",
+                                                                "maxLength": 25,
+                                                                "description": "Minimum amount threshold in smallest unit"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "policyId",
+                                                            "assetName",
+                                                            "minAmount"
+                                                        ]
+                                                    },
+                                                    "description": "Optional asset thresholds for tokens like USDM"
+                                                }
+                                            },
+                                            "required": [
+                                                "hotWalletId"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "description": "At least one wallet threshold is required"
+                                    }
+                                },
+                                "required": [
+                                    "paymentSourceId",
+                                    "walletThresholds"
+                                ],
+                                "example": {
+                                    "paymentSourceId": "payment_source_id",
+                                    "enabled": true,
+                                    "checkIntervalSeconds": 3600,
+                                    "walletThresholds": [
+                                        {
+                                            "hotWalletId": "hot_wallet_id",
+                                            "enabled": true,
+                                            "adaThresholdLovelace": "10000000",
+                                            "assetThresholds": [
+                                                {
+                                                    "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                                    "assetName": "0014df105553444d",
+                                                    "displayName": "USDM",
+                                                    "displaySymbol": "USDM",
+                                                    "decimals": 6,
+                                                    "minAmount": "100000000"
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet monitoring configuration created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/WalletMonitorConfig"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "config_id",
+                                            "paymentSourceId": "payment_source_id",
+                                            "enabled": true,
+                                            "checkIntervalSeconds": 3600,
+                                            "lastCheckedAt": null,
+                                            "lastCheckStatus": null,
+                                            "lastCheckError": null,
+                                            "WalletThresholds": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (possible parameters missing or invalid)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment source not found"
+                    },
+                    "409": {
+                        "description": "Monitoring config already exists for this payment source"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update a wallet monitoring configuration",
+                "summary": "Update wallet monitoring configuration. (admin access required)",
+                "tags": [
+                    "wallet-monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Wallet monitoring configuration updates",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Monitoring config ID to update"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "description": "Enable or disable monitoring"
+                                    },
+                                    "checkIntervalSeconds": {
+                                        "type": "number",
+                                        "minimum": 60,
+                                        "maximum": 86400,
+                                        "description": "Update check interval in seconds"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "config_id",
+                                    "enabled": false,
+                                    "checkIntervalSeconds": 1800
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet monitoring configuration updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/WalletMonitorConfig"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "config_id",
+                                            "paymentSourceId": "payment_source_id",
+                                            "enabled": false,
+                                            "checkIntervalSeconds": 1800,
+                                            "lastCheckedAt": null,
+                                            "lastCheckStatus": null,
+                                            "lastCheckError": null,
+                                            "WalletThresholds": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Monitoring config not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a wallet monitoring configuration",
+                "summary": "Delete wallet monitoring configuration. (admin access required)",
+                "tags": [
+                    "wallet-monitoring"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Wallet monitoring configuration to delete",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Monitoring config ID to delete"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "config_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Wallet monitoring configuration deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/WalletMonitorConfig"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "config_id",
+                                            "paymentSourceId": "payment_source_id",
+                                            "enabled": false,
+                                            "checkIntervalSeconds": 3600,
+                                            "lastCheckedAt": null,
+                                            "lastCheckStatus": null,
+                                            "lastCheckError": null,
+                                            "WalletThresholds": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Monitoring config not found"
                     },
                     "500": {
                         "description": "Internal Server Error"
