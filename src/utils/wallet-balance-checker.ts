@@ -1,6 +1,6 @@
 import { BlockfrostProvider } from '@meshsdk/core';
 import { logger } from './logger';
-import { Network, Prisma } from '@prisma/client';
+import { Network, Prisma, RPCProvider } from '@prisma/client';
 import { updateWalletBalance, updateAssetBalance } from './metrics';
 import { prisma } from './db';
 
@@ -104,6 +104,26 @@ async function checkPaymentSourceWallets(config: ConfigWithRelations): Promise<v
 	const { id, PaymentSource, WalletThresholds } = config;
 
 	try {
+		const rpcProvider = PaymentSource.PaymentSourceConfig?.rpcProvider;
+		if (rpcProvider !== RPCProvider.Blockfrost) {
+			logger.warn('Unsupported RPC provider for wallet monitoring - skipping', {
+				component: 'wallet_monitoring',
+				payment_source_id: PaymentSource.id,
+				provider: rpcProvider || 'none',
+				supported_providers: [RPCProvider.Blockfrost],
+			});
+
+			await prisma.walletMonitorConfig.update({
+				where: { id },
+				data: {
+					lastCheckedAt: new Date(),
+					lastCheckStatus: 'skipped',
+					lastCheckError: `Unsupported RPC provider: ${String(rpcProvider ?? 'none')}`,
+				},
+			});
+			return;
+		}
+
 		if (!PaymentSource.PaymentSourceConfig?.rpcProviderApiKey) {
 			throw new Error('Missing Blockfrost API key');
 		}

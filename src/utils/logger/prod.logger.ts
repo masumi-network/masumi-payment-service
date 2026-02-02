@@ -16,25 +16,44 @@ class OpenTelemetryTransport extends transports.Console {
 		// Fetch logger lazily so it uses the provider registered after SDK start
 		const otelLogger = logs.getLogger('winston-otel-bridge', '1.0.0');
 
-		// Send to OpenTelemetry
+		// Extract known Winston internal fields, preserve all custom attributes
+		const { level, message, timestamp: _winstonTimestamp, error, ...customAttributes } = info;
+
+		const sanitizedAttributes: Record<string, string | number | boolean> = {};
+		for (const [key, value] of Object.entries(customAttributes)) {
+			if (value === undefined || value === null) continue;
+			if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+				sanitizedAttributes[key] = value;
+			} else if (typeof value === 'bigint') {
+				sanitizedAttributes[key] = value.toString();
+			} else if (value instanceof Date) {
+				sanitizedAttributes[key] = value.toISOString();
+			} else {
+				try {
+					sanitizedAttributes[key] = JSON.stringify(value);
+				} catch {
+					sanitizedAttributes[key] = '[non-serializable]';
+				}
+			}
+		}
+
 		otelLogger.emit({
-			severityNumber: this.getSeverityNumber(info.level),
-			severityText: info.level.toUpperCase(),
-			body: String(info.message),
+			severityNumber: this.getSeverityNumber(level),
+			severityText: level.toUpperCase(),
+			body: String(message),
 			attributes: {
-				level: info.level,
+				level: level,
 				timestamp: new Date().toISOString(),
 				service: CONFIG.OTEL_SERVICE_NAME,
-				...(info.error && {
-					error_name: info.error.name,
-					error_message: info.error.message,
-					error_stack: info.error.stack,
+				...sanitizedAttributes,
+				...(error && {
+					error_name: error.name,
+					error_message: error.message,
+					error_stack: error.stack,
 				}),
 			},
 			timestamp: Date.now(),
 		});
-
-		// Call parent log method for console output
 		const parentCallback = callback || (() => {});
 		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		const parentLog = transports.Console.prototype.log as (info: LogInfo, callback: () => void) => void;
