@@ -29,16 +29,29 @@ As this project handles financial transactions:
 
 ### Code Style
 
-- Run `npm run lint` before committing
-- Run `npm run format` to format code
+- Run `pnpm run lint` before committing
+- Run `pnpm run format` to format all code (backend + frontend)
+- Run `pnpm run format:check` to verify formatting in CI
 - Follow TypeScript best practices
 - Write clear, self-documenting code
 - Add comments for complex logic
 
+#### Formatting Configuration
+
+This project uses Prettier with consistent settings across backend and frontend:
+
+- 2-space indentation (no tabs)
+- Single quotes
+- Trailing commas
+- 100 character line width
+- LF line endings
+
+The `.editorconfig` file ensures your editor applies these settings automatically.
+
 ### Testing
 
 - Add tests for new features
-- Run `npm run test` to ensure all tests pass
+- Run `pnpm run test` to ensure all tests pass
 - Aim for good test coverage
 - Include both happy and error paths
 

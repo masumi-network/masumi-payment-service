@@ -5,22 +5,18 @@ const nextConfig: NextConfig = {
   distDir: 'dist',
   basePath: '/admin',
   env: {
-    NEXT_PUBLIC_PAYMENT_API_BASE_URL:
-      process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '/api/v1',
+    NEXT_PUBLIC_PAYMENT_API_BASE_URL: process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '/api/v1',
   },
   images: {
     unoptimized: true,
   },
-  // Ensure TypeScript and ESLint errors are caught during build
+  // Ensure TypeScript errors are caught during build
   // This matches CI behavior where caches don't exist
   typescript: {
     // Don't ignore build errors - fail the build on TypeScript errors
     ignoreBuildErrors: false,
   },
-  eslint: {
-    // Don't ignore ESLint errors during build - fail the build on lint errors
-    ignoreDuringBuilds: false,
-  },
+  // Note: eslint config was removed as it's no longer supported in Next.js 16
 };
 
 export default nextConfig;

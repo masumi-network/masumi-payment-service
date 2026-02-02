@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -17,7 +17,7 @@ import {
   PanelLeft,
   Bell,
   Search,
-  NotebookPen,
+  Code,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -30,7 +30,6 @@ import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { PaymentSourceExtended } from '@/lib/api/generated';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -41,13 +40,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const {
-    collapsed,
-    setCollapsed,
-    isHovered,
-    setIsHovered,
-    shouldAnimateIcon,
-  } = useSidebar();
+  const { collapsed, setCollapsed, isHovered, setIsHovered, shouldAnimateIcon } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
@@ -55,7 +48,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsMac(window.navigator.userAgent.includes('Macintosh'));
+      queueMicrotask(() => setIsMac(window.navigator.userAgent.includes('Macintosh')));
     }
   }, []);
 
@@ -139,66 +132,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
-  }, [paymentSources, network]);
+  const hasPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  const [hasPaymentSources, setHasPaymentSources] = useState(false);
-  useEffect(() => {
-    setHasPaymentSources(
-      currentNetworkPaymentSources && currentNetworkPaymentSources.length > 0,
-    );
-  }, [currentNetworkPaymentSources]);
-  const [navItems, setNavItems] = useState<
-    {
-      href: string;
-      name: string;
-      icon: React.ReactNode;
-      badge: React.ReactNode | null;
-    }[]
-  >([]);
-
-  useEffect(() => {
-    if (hasPaymentSources) {
-      setNavItems([
-        {
-          href: '/',
-          name: 'Dashboard',
-          icon: <LayoutDashboard className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/ai-agents',
-          name: 'AI Agents',
-          icon: <Bot className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/wallets',
-          name: 'Wallets',
-          icon: <Wallet className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/transactions',
-          name: 'Transactions',
-          icon: <FileText className="h-4 w-4" />,
-          badge: formatCount(newTransactionsCount),
-        },
+  const navItems = useMemo(() => {
+    if (!hasPaymentSources) {
+      return [
         {
           href: '/payment-sources',
           name: 'Payment sources',
           icon: <FileInput className="h-4 w-4" />,
-          badge: null,
-        },
-        {
-          href: '/input-schema-validator',
-          name: 'Input Schema Validator',
-          icon: <NotebookPen className="h-4 w-4" />,
           badge: null,
         },
         {
@@ -213,14 +158,49 @@ export function MainLayout({ children }: MainLayoutProps) {
           icon: <Settings className="h-4 w-4" />,
           badge: null,
         },
-      ]);
-      return;
+        {
+          href: '/developers',
+          name: 'Developers',
+          icon: <Code className="h-4 w-4 text-violet-500" />,
+          badge: null,
+        },
+      ];
     }
-    setNavItems([
+    return [
+      {
+        href: '/',
+        name: 'Dashboard',
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/ai-agents',
+        name: 'AI Agents',
+        icon: <Bot className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/wallets',
+        name: 'Wallets',
+        icon: <Wallet className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/transactions',
+        name: 'Transactions',
+        icon: <FileText className="h-4 w-4" />,
+        badge: formatCount(newTransactionsCount),
+      },
       {
         href: '/payment-sources',
         name: 'Payment sources',
         icon: <FileInput className="h-4 w-4" />,
+        badge: null,
+      },
+      {
+        href: '/api-keys',
+        name: 'API keys',
+        icon: <Key className="h-4 w-4" />,
         badge: null,
       },
       {
@@ -229,7 +209,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         icon: <Settings className="h-4 w-4" />,
         badge: null,
       },
-    ]);
+      {
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+      },
+    ];
   }, [hasPaymentSources, newTransactionsCount]);
 
   const handleOpenNotifications = () => {
@@ -265,10 +251,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          width:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          width: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
           pointerEvents: 'auto',
         }}
       >
@@ -282,9 +265,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             <div
               className={cn(
                 'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed && !isHovered
-                  ? 'grid-cols-2 w-auto gap-0.5'
-                  : 'grid-cols-2 gap-2',
+                collapsed && !isHovered ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
               )}
             >
               <Button
@@ -348,15 +329,11 @@ export function MainLayout({ children }: MainLayoutProps) {
                 size="icon"
                 className={cn(
                   'h-8 w-8',
-                  collapsed
-                    ? 'text-muted-foreground opacity-50'
-                    : 'text-foreground opacity-100',
+                  collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
                 )}
                 onClick={() => setCollapsed(!collapsed)}
               >
-                <PanelLeft
-                  className={cn('h-4 w-4 transition-transform duration-300')}
-                />
+                <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
               </Button>
             )}
           </div>
@@ -368,37 +345,52 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center rounded-lg text-sm transition-all relative',
-                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed && !isHovered
-                  ? 'h-10 w-10 justify-center'
-                  : 'px-3 h-10 gap-3',
-                router.pathname === item.href &&
-                  'bg-[#F4F4F5] dark:bg-secondary font-bold',
-              )}
-              title={collapsed && !isHovered ? item.name : undefined}
-            >
-              {item.icon}
-              {!(collapsed && !isHovered) && (
-                <span className="truncate">{item.name}</span>
-              )}
-              {!(collapsed && !isHovered) && item.badge && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-              {collapsed && !isHovered && item.badge && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const isDev = item.href === '/developers';
+            const isActive = router.pathname === item.href;
+            return (
+              <div key={item.href}>
+                {isDev && (
+                  <div
+                    className={cn(
+                      'my-1.5',
+                      collapsed && !isHovered ? 'mx-1' : 'mx-2',
+                      'border-t border-border',
+                    )}
+                  />
+                )}
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'flex items-center rounded-lg text-sm transition-all relative',
+                    isDev
+                      ? isActive
+                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300'
+                        : 'hover:bg-violet-500/10 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                      : cn(
+                          'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                        ),
+                    collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+                  )}
+                  title={collapsed && !isHovered ? item.name : undefined}
+                >
+                  {item.icon}
+                  {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
+                  {!(collapsed && !isHovered) && item.badge && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                  {collapsed && !isHovered && item.badge && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              </div>
+            );
+          })}
         </nav>
 
         <div
@@ -414,11 +406,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                 collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link
-                href="https://www.masumi.network/about"
-                target="_blank"
-                className="truncate"
-              >
+              <Link href="https://www.masumi.network/about" target="_blank" className="truncate">
                 About
               </Link>
               <Link
@@ -440,27 +428,18 @@ export function MainLayout({ children }: MainLayoutProps) {
               variant="ghost"
               size="icon"
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
-              onClick={() =>
-                setThemePreference(theme === 'dark' ? 'light' : 'dark')
-              }
+              onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
         </div>
       </aside>
 
       <div
-        className="flex flex-col min-h-screen w-[100vw] transition-all duration-300"
+        className="flex flex-col min-h-screen w-screen transition-all duration-300"
         style={{
-          paddingLeft:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          paddingLeft: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
         }}
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
@@ -516,9 +495,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full">
-          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">
-            {children}
-          </div>
+          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>
 

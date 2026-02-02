@@ -357,6 +357,82 @@ export const PaymentSchema = {
             ],
             description: 'Next action required for this payment'
         },
+        ActionHistory: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Unique identifier for the action'
+                    },
+                    createdAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was created'
+                    },
+                    updatedAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'Timestamp when the action was last updated'
+                    },
+                    submittedTxHash: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Cardano transaction hash'
+                    },
+                    requestedAction: {
+                        type: 'string',
+                        enum: [
+                            'None',
+                            'Ignore',
+                            'WaitingForManualAction',
+                            'WaitingForExternalAction',
+                            'SubmitResultRequested',
+                            'SubmitResultInitiated',
+                            'WithdrawRequested',
+                            'WithdrawInitiated',
+                            'AuthorizeRefundRequested',
+                            'AuthorizeRefundInitiated'
+                        ],
+                        description: 'Next action required for this payment'
+                    },
+                    errorType: {
+                        type: 'string',
+                        nullable: true,
+                        enum: [
+                            'NetworkError',
+                            'Unknown',
+                            null
+                        ],
+                        description: 'Type of error that occurred, if any'
+                    },
+                    errorNote: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Additional details about the error, if any'
+                    },
+                    resultHash: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'SHA256 hash of the result to be submitted (hex string). Null if not applicable'
+                    }
+                },
+                required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
+                    'submittedTxHash',
+                    'requestedAction',
+                    'errorType',
+                    'errorNote',
+                    'resultHash'
+                ],
+                description: 'Next action required for this payment'
+            },
+            description: 'Historical list of all actions for this payment. Null if includeHistory is false'
+        },
         CurrentTransaction: {
             type: 'object',
             nullable: true,
@@ -561,7 +637,7 @@ export const PaymentSchema = {
                     'confirmations'
                 ]
             },
-            description: 'Historical list of all transactions for this payment. Null or empty if includeHistory is false'
+            description: 'Historical list of all transactions for this payment. Null if includeHistory is false'
         },
         RequestedFunds: {
             type: 'array',
@@ -731,6 +807,7 @@ export const PaymentSchema = {
         'cooldownTimeOtherParty',
         'onChainState',
         'NextAction',
+        'ActionHistory',
         'CurrentTransaction',
         'TransactionHistory',
         'RequestedFunds',
@@ -902,6 +979,56 @@ export const PurchaseSchema = {
             ],
             description: 'Next action required for this purchase'
         },
+        ActionHistory: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    requestedAction: {
+                        type: 'string',
+                        enum: [
+                            'None',
+                            'Ignore',
+                            'WaitingForManualAction',
+                            'WaitingForExternalAction',
+                            'FundsLockingRequested',
+                            'FundsLockingInitiated',
+                            'SetRefundRequestedRequested',
+                            'SetRefundRequestedInitiated',
+                            'UnSetRefundRequestedRequested',
+                            'UnSetRefundRequestedInitiated',
+                            'WithdrawRefundRequested',
+                            'WithdrawRefundInitiated'
+                        ],
+                        description: 'Next action required for this purchase'
+                    },
+                    errorType: {
+                        type: 'string',
+                        nullable: true,
+                        enum: [
+                            'NetworkError',
+                            'InsufficientFunds',
+                            'Unknown',
+                            null
+                        ],
+                        description: 'Type of error that occurred, if any'
+                    },
+                    errorNote: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Additional details about the error, if any'
+                    }
+                },
+                required: [
+                    'requestedAction',
+                    'errorType',
+                    'errorNote'
+                ],
+                description: 'Next action required for this purchase'
+            },
+            description: 'Historical list of all actions for this purchase. Null if includeHistory is false'
+        },
         CurrentTransaction: {
             type: 'object',
             nullable: true,
@@ -1006,6 +1133,7 @@ export const PurchaseSchema = {
         },
         TransactionHistory: {
             type: 'array',
+            nullable: true,
             items: {
                 type: 'object',
                 properties: {
@@ -1263,6 +1391,7 @@ export const PurchaseSchema = {
         'inputHash',
         'resultHash',
         'NextAction',
+        'ActionHistory',
         'CurrentTransaction',
         'TransactionHistory',
         'PaidFunds',
@@ -2363,158 +2492,190 @@ export const RpcProviderKeySchema = {
     ]
 } as const;
 
-export const WalletMonitorConfigSchema = {
+export const MonitoringStatusSchema = {
     type: 'object',
     properties: {
-        id: {
-            type: 'string',
-            description: 'Unique identifier for the monitoring config'
-        },
-        paymentSourceId: {
-            type: 'string',
-            description: 'Payment source this monitoring config belongs to'
-        },
-        enabled: {
-            type: 'boolean',
-            description: 'Whether monitoring is enabled for this payment source'
-        },
-        checkIntervalSeconds: {
-            type: 'number',
-            description: 'How often to check balances (in seconds)'
-        },
-        lastCheckedAt: {
-            type: 'string',
-            nullable: true,
-            format: 'date-time',
-            description: 'Last time balances were checked'
-        },
-        lastCheckStatus: {
-            type: 'string',
-            nullable: true,
-            description: 'Status of last check (success, partial_failure, error)'
-        },
-        lastCheckError: {
-            type: 'string',
-            nullable: true,
-            description: 'Error message from last check, if any'
-        },
-        WalletThresholds: {
-            type: 'array',
-            items: {
-                type: 'object',
-                properties: {
-                    id: {
-                        type: 'string',
-                        description: 'Unique identifier for the wallet threshold'
-                    },
-                    hotWalletId: {
-                        type: 'string',
-                        description: 'ID of the hot wallet being monitored'
-                    },
-                    enabled: {
-                        type: 'boolean',
-                        description: 'Whether monitoring is enabled for this wallet'
-                    },
-                    adaThresholdLovelace: {
-                        type: 'string',
-                        description: 'ADA threshold in lovelace (1 ADA = 1,000,000 lovelace)'
-                    },
-                    HotWallet: {
-                        type: 'object',
-                        properties: {
-                            id: {
-                                type: 'string',
-                                description: 'Hot wallet ID'
-                            },
-                            walletAddress: {
-                                type: 'string',
-                                description: 'Cardano address of the wallet'
-                            },
-                            walletVkey: {
-                                type: 'string',
-                                description: 'Payment key hash'
-                            },
-                            type: {
-                                type: 'string',
-                                description: 'Wallet type (Selling or Purchasing)'
-                            }
+        monitoringStatus: {
+            type: 'object',
+            properties: {
+                isMonitoring: {
+                    type: 'boolean',
+                    description: 'Whether the blockchain state monitoring service is currently running'
+                },
+                stats: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        trackedEntities: {
+                            type: 'number',
+                            description: 'Number of entities being tracked by the monitoring service'
                         },
-                        required: [
-                            'id',
-                            'walletAddress',
-                            'walletVkey',
-                            'type'
-                        ]
-                    },
-                    AssetThresholds: {
-                        type: 'array',
-                        items: {
+                        purchaseCursor: {
                             type: 'object',
                             properties: {
-                                id: {
+                                timestamp: {
                                     type: 'string',
-                                    description: 'Unique identifier for the asset threshold'
+                                    description: 'Last processed purchase timestamp'
                                 },
-                                policyId: {
-                                    type: 'string',
-                                    description: 'Policy ID of the asset'
-                                },
-                                assetName: {
-                                    type: 'string',
-                                    description: 'Asset name (hex encoded)'
-                                },
-                                displayName: {
+                                lastId: {
                                     type: 'string',
                                     nullable: true,
-                                    description: 'Human-readable name of the asset'
-                                },
-                                displaySymbol: {
-                                    type: 'string',
-                                    nullable: true,
-                                    description: 'Display symbol for the asset (e.g., USDM)'
-                                },
-                                decimals: {
-                                    type: 'number',
-                                    description: 'Number of decimal places for this asset'
-                                },
-                                minAmount: {
-                                    type: 'string',
-                                    description: 'Minimum amount threshold (as string for large numbers)'
+                                    description: 'Last processed purchase ID'
                                 }
                             },
                             required: [
-                                'id',
-                                'policyId',
-                                'assetName',
-                                'displayName',
-                                'displaySymbol',
-                                'decimals',
-                                'minAmount'
-                            ]
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for purchase diff tracking'
                         },
-                        description: 'Thresholds for other assets (USDM, etc.)'
-                    }
-                },
-                required: [
-                    'id',
-                    'hotWalletId',
-                    'enabled',
-                    'adaThresholdLovelace',
-                    'HotWallet',
-                    'AssetThresholds'
-                ]
+                        paymentCursor: {
+                            type: 'object',
+                            properties: {
+                                timestamp: {
+                                    type: 'string',
+                                    description: 'Last processed payment timestamp'
+                                },
+                                lastId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Last processed payment ID'
+                                }
+                            },
+                            required: [
+                                'timestamp',
+                                'lastId'
+                            ],
+                            description: 'Cursor position for payment diff tracking'
+                        },
+                        memoryUsage: {
+                            type: 'object',
+                            properties: {
+                                heapUsed: {
+                                    type: 'string',
+                                    description: 'Heap memory currently used by the monitoring service '
+                                },
+                                heapTotal: {
+                                    type: 'string',
+                                    description: 'Total heap memory allocated for the monitoring service '
+                                },
+                                external: {
+                                    type: 'string',
+                                    description: 'External memory used by the monitoring service '
+                                }
+                            },
+                            required: [
+                                'heapUsed',
+                                'heapTotal',
+                                'external'
+                            ],
+                            description: 'Memory usage statistics for the monitoring service'
+                        }
+                    },
+                    required: [
+                        'trackedEntities',
+                        'purchaseCursor',
+                        'paymentCursor',
+                        'memoryUsage'
+                    ],
+                    description: 'Monitoring statistics. Null if monitoring is not active'
+                }
             },
-            description: 'Individual wallet thresholds'
+            required: [
+                'isMonitoring',
+                'stats'
+            ],
+            description: 'Current status of the blockchain state monitoring service'
         }
     },
     required: [
-        'id',
-        'paymentSourceId',
-        'enabled',
-        'checkIntervalSeconds',
-        'lastCheckedAt',
-        'lastCheckStatus',
-        'lastCheckError',
-        'WalletThresholds'
-    ]
+        'monitoringStatus'
+    ],
+    example: {
+        monitoringStatus: {
+            isMonitoring: true,
+            stats: {
+                trackedEntities: 42,
+                purchaseCursor: {
+                    timestamp: '2024-01-01T00:00:00.000Z',
+                    lastId: 'cuid_v2_auto_generated'
+                },
+                paymentCursor: {
+                    timestamp: '2024-01-01T00:00:00.000Z',
+                    lastId: 'cuid_v2_auto_generated'
+                },
+                memoryUsage: {
+                    heapUsed: '50MB',
+                    heapTotal: '100MB',
+                    external: '10MB'
+                }
+            }
+        }
+    }
+} as const;
+
+export const TriggeredMonitoringCycleSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about the monitoring cycle trigger'
+        },
+        triggered: {
+            type: 'boolean',
+            description: 'Whether the monitoring cycle was successfully triggered'
+        }
+    },
+    required: [
+        'message',
+        'triggered'
+    ],
+    example: {
+        message: 'Manual monitoring cycle completed successfully',
+        triggered: true
+    }
+} as const;
+
+export const StartedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about starting the monitoring service'
+        },
+        started: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully started'
+        }
+    },
+    required: [
+        'message',
+        'started'
+    ],
+    example: {
+        message: 'Monitoring service started with 30000ms interval',
+        started: true
+    }
+} as const;
+
+export const StoppedMonitoringSchema = {
+    type: 'object',
+    properties: {
+        message: {
+            type: 'string',
+            description: 'Status message about stopping the monitoring service'
+        },
+        stopped: {
+            type: 'boolean',
+            description: 'Whether the monitoring service was successfully stopped'
+        }
+    },
+    required: [
+        'message',
+        'stopped'
+    ],
+    example: {
+        message: 'Monitoring service stopped successfully',
+        stopped: true
+    }
 } as const;

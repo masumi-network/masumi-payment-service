@@ -1,10 +1,5 @@
-import { useState, useEffect } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
@@ -34,42 +29,31 @@ export function ConfirmDialog({
   confirmationLabel,
 }: ConfirmDialogProps) {
   const [confirmationInput, setConfirmationInput] = useState('');
-  const [isConfirmationValid, setIsConfirmationValid] = useState(false);
+  const isConfirmationValid = !requireConfirmation || confirmationInput.trim() === confirmationText;
 
-  // Reset confirmation input when dialog opens/closes
-  useEffect(() => {
-    if (!open) {
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
       setConfirmationInput('');
-      setIsConfirmationValid(false);
+      onClose();
     }
-  }, [open]);
-
-  // Validate confirmation input
-  useEffect(() => {
-    if (requireConfirmation) {
-      setIsConfirmationValid(confirmationInput.trim() === confirmationText);
-    } else {
-      setIsConfirmationValid(true);
-    }
-  }, [confirmationInput, requireConfirmation, confirmationText]);
+  };
 
   const handleConfirm = () => {
     if (!requireConfirmation || isConfirmationValid) {
+      setConfirmationInput('');
       onConfirm();
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title ?? 'Confirm'}</DialogTitle>
         </DialogHeader>
 
         <div className="py-4 mb-20">
-          <p className="text-sm text-muted-foreground">
-            {description ?? '...'}
-          </p>
+          <p className="text-sm text-muted-foreground">{description ?? '...'}</p>
 
           {requireConfirmation && (
             <div className="mt-4 space-y-2">
@@ -87,9 +71,7 @@ export function ConfirmDialog({
                 disabled={isLoading}
               />
               {confirmationInput.trim() && !isConfirmationValid && (
-                <p className="text-xs text-destructive">
-                  The entered text does not match
-                </p>
+                <p className="text-xs text-destructive">The entered text does not match</p>
               )}
             </div>
           )}
@@ -103,15 +85,13 @@ export function ConfirmDialog({
             left: '0',
           }}
         >
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isLoading}>
             Cancel
           </Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={
-              isLoading || (requireConfirmation && !isConfirmationValid)
-            }
+            disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
           >
             {isLoading ? <Spinner size={16} /> : 'Confirm'}
           </Button>

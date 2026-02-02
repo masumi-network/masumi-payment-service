@@ -13,14 +13,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install
 
       - name: Create Neon Database Branch
         id: create-branch
@@ -109,44 +114,44 @@ jobs:
           fi
 
       - name: Generate Prisma Client
-        run: npm run prisma:generate
+        run: pnpm run prisma:generate
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Run Database Migrations
-        run: npx prisma migrate deploy
+        run: pnpm exec prisma migrate deploy --config prisma/prisma.config.ts
         env:
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
 
       - name: Seed Database
-        run: npx prisma db seed
+        run: pnpm exec prisma db seed --config prisma/prisma.config.ts
         env:
-          DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
-          PURCHASE_WALLET_PREPROD_MNEMONIC: "${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}"
-          SELLING_WALLET_PREPROD_MNEMONIC: "${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}"
-          BLOCKFROST_API_KEY_PREPROD: "${{ secrets.BLOCKFROST_API_KEY_PREPROD }}"
-          ENCRYPTION_KEY: "${{ secrets.ENCRYPTION_KEY }}"
-          ADMIN_KEY: "${{ secrets.ADMIN_KEY }}"
+          DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
+          PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
+          SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
+          BLOCKFROST_API_KEY_PREPROD: '${{ secrets.BLOCKFROST_API_KEY_PREPROD }}'
+          ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
+          ADMIN_KEY: '${{ secrets.ADMIN_KEY }}'
 
       - name: Start API Server
         run: |
           echo "Starting API server..."
-          npx tsx ./src/index.ts > server.log 2>&1 &
+          pnpm exec tsx ./src/index.ts > server.log 2>&1 &
           SERVER_PID=$!
           echo "Server PID: $SERVER_PID"
           echo "$SERVER_PID" > server.pid
 
         env:
-          DATABASE_URL: "${{ steps.create-branch.outputs.connection_uri }}"
-          ENCRYPTION_KEY: "${{ secrets.ENCRYPTION_KEY }}"
-          NODE_ENV: "test"
+          DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
+          ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
+          NODE_ENV: 'test'
           PORT: 3001
 
       - name: Wait for Server Ready
         run: |
           echo "Waiting for server to start..."
           # Continuously poll health endpoint until ready or timeout
-          npx wait-on http://127.0.0.1:3001/api/v1/health -t 180000 --interval 2000 || {
+          pnpm exec wait-on http://127.0.0.1:3001/api/v1/health -t 180000 --interval 2000 || {
             echo "=== Server failed to become healthy ==="
             if [ -f server.pid ]; then
               echo "Process status:"
@@ -160,7 +165,7 @@ jobs:
           tail -50 server.log || true
 
       - name: Run E2E Test Suite
-        run: npm run test:e2e
+        run: pnpm run test:e2e
         env:
           TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
           TEST_API_URL: http://127.0.0.1:3001

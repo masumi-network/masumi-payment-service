@@ -1,11 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 interface SidebarContextType {
   collapsed: boolean;
@@ -41,6 +34,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
 
     if (isCollapsing || isHoverEnding) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Animation state must be set synchronously to coordinate with setTimeout cleanup
       setShouldAnimateIcon(true);
       const timer = setTimeout(() => {
         setShouldAnimateIcon(false);
@@ -66,9 +60,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     shouldAnimateIcon,
   };
 
-  return (
-    <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>
-  );
+  return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 }
 
 export function useSidebar() {

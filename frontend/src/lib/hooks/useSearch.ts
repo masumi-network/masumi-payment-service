@@ -1,19 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
-import { PaymentSourceExtended } from '../api/generated';
 import { useAppContext } from '../contexts/AppContext';
 
 export interface SearchableItem {
   id: string;
   title: string;
   description?: string;
-  type:
-    | 'page'
-    | 'action'
-    | 'wallet'
-    | 'agent'
-    | 'payment-source'
-    | 'transaction';
+  type: 'page' | 'action' | 'wallet' | 'agent' | 'payment-source' | 'transaction';
   href: string;
   keywords?: string[];
   elementId?: string;
@@ -104,22 +97,16 @@ const searchableItems: SearchableItem[] = [
 ];
 
 export function useSearch() {
-  const [allResults, setAllResults] = useState<SearchableItem[]>([]);
   const { network } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
-  }, [paymentSources, network]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  useEffect(() => {
-    const staticResults = searchableItems;
-
+  const allResults = useMemo(() => {
     const dynamicResults: SearchableItem[] = [];
 
     currentNetworkPaymentSources?.forEach((source) => {
@@ -127,8 +114,7 @@ export function useSearch() {
         dynamicResults.push({
           id: wallet.walletAddress,
           title: 'Buying Wallet',
-          description:
-            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
+          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
           href: `/wallets?searched=${wallet.walletAddress}`,
           elementId: `wallet-${wallet.walletAddress}`,
@@ -139,8 +125,7 @@ export function useSearch() {
         dynamicResults.push({
           id: wallet.walletAddress,
           title: 'Selling Wallet',
-          description:
-            (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
+          description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
           type: 'wallet',
           href: `/wallets?searched=${wallet.walletAddress}`,
           elementId: `wallet-${wallet.walletAddress}`,
@@ -157,7 +142,7 @@ export function useSearch() {
       });
     });
 
-    setAllResults([...staticResults, ...dynamicResults]);
+    return [...searchableItems, ...dynamicResults];
   }, [currentNetworkPaymentSources]);
 
   const handleSearch = useCallback(
@@ -171,9 +156,7 @@ export function useSearch() {
         (item) =>
           item.title.toLowerCase().includes(queryLower) ||
           item.description?.toLowerCase().includes(queryLower) ||
-          item.keywords?.some((keyword) =>
-            keyword.toLowerCase().includes(queryLower),
-          ),
+          item.keywords?.some((keyword) => keyword.toLowerCase().includes(queryLower)),
       );
 
       return filteredResults;

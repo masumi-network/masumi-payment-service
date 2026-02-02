@@ -1,157 +1,107 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { Network } from '@prisma/client';
+import { Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { errorToString } from 'advanced-retry';
-import {
-  AuthContext,
-  checkIsAllowedNetworkOrThrowUnauthorized,
-} from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const getUTXOSchemaInput = z.object({
-  address: z.string().max(150).describe('The address to get the UTXOs for'),
-  network: z.nativeEnum(Network).describe('The Cardano network'),
-  count: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .default(10)
-    .optional()
-    .describe('The number of UTXOs to get'),
-  page: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .default(1)
-    .optional()
-    .describe('The page number to get'),
-  order: z
-    .enum(['asc', 'desc'])
-    .default('desc')
-    .optional()
-    .describe('The order to get the UTXOs in'),
+	address: z.string().max(150).describe('The address to get the UTXOs for'),
+	network: z.nativeEnum(Network).describe('The Cardano network'),
+	count: z.coerce.number().int().min(1).max(100).default(10).optional().describe('The number of UTXOs to get'),
+	page: z.coerce.number().int().min(1).max(100).default(1).optional().describe('The page number to get'),
+	order: z.enum(['asc', 'desc']).default('desc').optional().describe('The order to get the UTXOs in'),
 });
 
 // Standalone UTXO amount schema
 export const utxoAmountSchema = z
-  .object({
-    unit: z
-      .string()
-      .describe(
-        'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
-      ),
-    quantity: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(100000000000000)
-      .describe(
-        'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
-      ),
-  })
-  .openapi('UtxoAmount');
+	.object({
+		unit: z
+			.string()
+			.describe(
+				'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+			),
+		quantity: z.coerce
+			.number()
+			.int()
+			.min(0)
+			.max(100000000000000)
+			.describe(
+				'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+			),
+	})
+	.openapi('UtxoAmount');
 
 export const utxoOutputSchema = z
-  .object({
-    txHash: z.string().describe('Transaction hash containing this UTXO'),
-    address: z.string().describe('Cardano address holding this UTXO'),
-    Amounts: z
-      .array(utxoAmountSchema)
-      .describe('List of assets and amounts in this UTXO'),
-    dataHash: z
-      .string()
-      .nullable()
-      .describe('Hash of the datum attached to this UTXO. Null if no datum'),
-    inlineDatum: z
-      .string()
-      .nullable()
-      .describe(
-        'Inline datum data in CBOR hex format. Null if no inline datum',
-      ),
-    referenceScriptHash: z
-      .string()
-      .nullable()
-      .describe(
-        'Hash of the reference script attached to this UTXO. Null if no reference script',
-      ),
-    outputIndex: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .max(1000000000)
-      .describe('Output index of this UTXO in the transaction'),
-    block: z.string().describe('Block hash where this UTXO was created'),
-  })
-  .openapi('Utxo');
+	.object({
+		txHash: z.string().describe('Transaction hash containing this UTXO'),
+		address: z.string().describe('Cardano address holding this UTXO'),
+		Amounts: z.array(utxoAmountSchema).describe('List of assets and amounts in this UTXO'),
+		dataHash: z.string().nullable().describe('Hash of the datum attached to this UTXO. Null if no datum'),
+		inlineDatum: z.string().nullable().describe('Inline datum data in CBOR hex format. Null if no inline datum'),
+		referenceScriptHash: z
+			.string()
+			.nullable()
+			.describe('Hash of the reference script attached to this UTXO. Null if no reference script'),
+		outputIndex: z.coerce
+			.number()
+			.int()
+			.min(0)
+			.max(1000000000)
+			.describe('Output index of this UTXO in the transaction'),
+		block: z.string().describe('Block hash where this UTXO was created'),
+	})
+	.openapi('Utxo');
 export const getUTXOSchemaOutput = z.object({
-  Utxos: z
-    .array(utxoOutputSchema)
-    .describe('List of UTXOs for the specified address'),
+	Utxos: z.array(utxoOutputSchema).describe('List of UTXOs for the specified address'),
 });
 
 export const queryUTXOEndpointGet = readAuthenticatedEndpointFactory.build({
-  method: 'get',
-  input: getUTXOSchemaInput,
-  output: getUTXOSchemaOutput,
-  handler: async ({
-    input,
-    ctx,
-  }: {
-    input: z.infer<typeof getUTXOSchemaInput>;
-    ctx: AuthContext;
-  }) => {
-    await checkIsAllowedNetworkOrThrowUnauthorized(
-      ctx.networkLimit,
-      input.network,
-      ctx.permission,
-    );
-    const paymentSource = await prisma.paymentSource.findFirst({
-      where: { network: input.network, deletedAt: null },
-      include: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
-    });
-    if (paymentSource == null) {
-      throw createHttpError(404, 'Network not found');
-    }
-    try {
-      const blockfrost = getBlockfrostInstance(
-        input.network,
-        paymentSource.PaymentSourceConfig.rpcProviderApiKey,
-      );
-      const utxos = await blockfrost.addressesUtxos(input.address, {
-        count: input.count,
-        page: input.page,
-        order: input.order,
-      });
-      return {
-        Utxos: utxos.map((utxo) => ({
-          txHash: utxo.tx_hash,
-          address: utxo.address,
-          Amounts: utxo.amount.map((amount) => ({
-            unit: amount.unit,
-            quantity: parseInt(amount.quantity),
-          })),
-          outputIndex: utxo.output_index,
-          block: utxo.block,
-          dataHash: utxo.data_hash,
-          inlineDatum: utxo.inline_datum,
-          referenceScriptHash: utxo.reference_script_hash,
-        })),
-      };
-    } catch (error) {
-      if (
-        errorToString(error).includes('ValueNotConservedUTxO') ||
-        (errorToString(error).toLowerCase().includes('not') &&
-          errorToString(error).toLowerCase().includes('found')) ||
-        ((error as { statusCode?: number | string })
-          .statusCode as unknown as number) == 404
-      ) {
-        throw createHttpError(404, 'Address not found');
-      }
-      throw createHttpError(500, 'Failed to get UTXOs');
-    }
-  },
+	method: 'get',
+	input: getUTXOSchemaInput,
+	output: getUTXOSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof getUTXOSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		const paymentSource = await prisma.paymentSource.findFirst({
+			where: { network: input.network, deletedAt: null },
+			include: { PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
+		});
+		if (paymentSource == null) {
+			throw createHttpError(404, 'Network not found');
+		}
+		try {
+			const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+			const utxos = await blockfrost.addressesUtxos(input.address, {
+				count: input.count,
+				page: input.page,
+				order: input.order,
+			});
+			return {
+				Utxos: utxos.map((utxo) => ({
+					txHash: utxo.tx_hash,
+					address: utxo.address,
+					Amounts: utxo.amount.map((amount) => ({
+						unit: amount.unit,
+						quantity: parseInt(amount.quantity),
+					})),
+					outputIndex: utxo.output_index,
+					block: utxo.block,
+					dataHash: utxo.data_hash,
+					inlineDatum: utxo.inline_datum,
+					referenceScriptHash: utxo.reference_script_hash,
+				})),
+			};
+		} catch (error) {
+			if (
+				errorToString(error).includes('ValueNotConservedUTxO') ||
+				(errorToString(error).toLowerCase().includes('not') && errorToString(error).toLowerCase().includes('found')) ||
+				((error as { statusCode?: number | string }).statusCode as unknown as number) == 404
+			) {
+				throw createHttpError(404, 'Address not found');
+			}
+			throw createHttpError(500, 'Failed to get UTXOs');
+		}
+	},
 });
