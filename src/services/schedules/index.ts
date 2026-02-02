@@ -15,6 +15,8 @@ import { authorizeRefundV1 } from '@/services/cardano-authorize-refund-handler/'
 import { handleAutomaticDecisions } from '@/services/automatic-decision-handler';
 import { checkRegistryTransactions } from '@/services/cardano-registry-tx-sync-handler/cardano-registry-tx-sync-handler.service';
 import { webhookQueueService } from '@/services/webhook-handler/webhook-queue.service';
+import { checkAllWalletBalances } from '@/utils/wallet-balance-checker';
+import { checkFailedTransactions } from '@/utils/failed-transaction-checker';
 
 export async function initJobs() {
 	const start = new Date();
@@ -186,6 +188,26 @@ export async function initJobs() {
 			},
 			24 * 60 * 60 * 1000,
 		);
+	});
+
+	// Wallet balance monitoring interval
+	void new Promise((resolve) => setTimeout(resolve, 55000)).then(() => {
+		AsyncInterval.start(async () => {
+			logger.info('Starting wallet balance monitoring');
+			const start = new Date();
+			await checkAllWalletBalances();
+			logger.info('Finished wallet balance monitoring in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
+		}, CONFIG.WALLET_MONITORING_INTERVAL * 1000);
+	});
+
+	// Failed transaction monitoring interval
+	void new Promise((resolve) => setTimeout(resolve, 60000)).then(() => {
+		AsyncInterval.start(async () => {
+			logger.info('Starting failed transaction monitoring');
+			const start = new Date();
+			await checkFailedTransactions();
+			logger.info('Finished failed transaction monitoring in ' + (new Date().getTime() - start.getTime()) / 1000 + 's');
+		}, CONFIG.FAILED_TRANSACTION_MONITORING_INTERVAL * 1000);
 	});
 
 	await new Promise((resolve) => setTimeout(resolve, 200));
