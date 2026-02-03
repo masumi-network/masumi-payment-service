@@ -117,6 +117,8 @@ export default function TransactionDetailsDialog({
   const [agentNameLoading, setAgentNameLoading] = React.useState(false);
 
   React.useEffect(() => {
+    let isCancelled = false;
+
     setAgentName(null);
     setAgentNameLoading(false);
 
@@ -135,16 +137,22 @@ export default function TransactionDetailsDialog({
           },
         });
 
-        if (response.data?.data?.Metadata?.name) {
+        if (!isCancelled && response.data?.data?.Metadata?.name) {
           setAgentName(response.data.data.Metadata.name);
         }
       } catch {
       } finally {
-        setAgentNameLoading(false);
+        if (!isCancelled) {
+          setAgentNameLoading(false);
+        }
       }
     };
 
     fetchAgentName();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [transaction?.id, transaction?.agentIdentifier, apiClient]);
   const clearTransactionError = async () => {
     try {
@@ -478,10 +486,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
@@ -502,10 +510,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
