@@ -23,8 +23,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 type Transaction =
   | (Payment & { type: 'payment' })
   | (Purchase & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -117,6 +117,8 @@ export default function TransactionDetailsDialog({
   const [agentNameLoading, setAgentNameLoading] = React.useState(false);
 
   React.useEffect(() => {
+    let isCancelled = false;
+
     setAgentName(null);
     setAgentNameLoading(false);
 
@@ -135,16 +137,22 @@ export default function TransactionDetailsDialog({
           },
         });
 
-        if (response.data?.data?.Metadata?.name) {
+        if (!isCancelled && response.data?.data?.Metadata?.name) {
           setAgentName(response.data.data.Metadata.name);
         }
       } catch {
       } finally {
-        setAgentNameLoading(false);
+        if (!isCancelled) {
+          setAgentNameLoading(false);
+        }
       }
     };
 
     fetchAgentName();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [transaction?.id, transaction?.agentIdentifier, apiClient]);
   const clearTransactionError = async () => {
     try {
@@ -462,8 +470,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds &&
-                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds &&
+                    transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
@@ -478,10 +486,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
@@ -502,10 +510,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
                         </p>
                       );
                     })
