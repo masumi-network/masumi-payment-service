@@ -197,7 +197,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								.describe('Legal information about the agent. Null if not provided'),
 							AgentPricing: z
 								.object({
-									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed or Free)'),
+									pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent (Fixed)'),
 									Pricing: z
 										.array(
 											z.object({
@@ -219,7 +219,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								})
 								.or(
 									z.object({
-										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Fixed or Free)'),
+										pricingType: z.enum([PricingType.Free]).describe('Pricing type for the agent (Free)'),
 									}),
 								)
 								.describe('Pricing information for the agent'),
