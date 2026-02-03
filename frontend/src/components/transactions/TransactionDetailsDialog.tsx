@@ -23,8 +23,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 type Transaction =
   | (Payment & { type: 'payment' })
   | (Purchase & {
-    type: 'purchase';
-  });
+      type: 'purchase';
+    });
 
 interface ApiError {
   message: string;
@@ -470,8 +470,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                    transaction.RequestedFunds &&
-                    transaction.RequestedFunds.length > 0 ? (
+                  transaction.RequestedFunds &&
+                  transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
