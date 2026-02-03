@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
@@ -15,14 +16,15 @@ import {
   postPaymentAuthorizeRefund,
   postPurchaseErrorStateRecovery,
   postPaymentErrorStateRecovery,
+  getRegistryAgentIdentifier,
 } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
 type Transaction =
   | (Payment & { type: 'payment' })
   | (Purchase & {
-      type: 'purchase';
-    });
+    type: 'purchase';
+  });
 
 interface ApiError {
   message: string;
@@ -111,6 +113,39 @@ export default function TransactionDetailsDialog({
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [agentName, setAgentName] = React.useState<string | null>(null);
+  const [agentNameLoading, setAgentNameLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    setAgentName(null);
+    setAgentNameLoading(false);
+
+    if (!transaction?.agentIdentifier) {
+      return;
+    }
+
+    const fetchAgentName = async () => {
+      setAgentNameLoading(true);
+      try {
+        const response = await getRegistryAgentIdentifier({
+          client: apiClient,
+          query: {
+            agentIdentifier: transaction.agentIdentifier!,
+            network: transaction.PaymentSource.network,
+          },
+        });
+
+        if (response.data?.data?.Metadata?.name) {
+          setAgentName(response.data.data.Metadata.name);
+        }
+      } catch {
+      } finally {
+        setAgentNameLoading(false);
+      }
+    };
+
+    fetchAgentName();
+  }, [transaction?.id, transaction?.agentIdentifier, apiClient]);
   const clearTransactionError = async () => {
     try {
       setIsLoading(true);
@@ -283,10 +318,26 @@ export default function TransactionDetailsDialog({
               </div>
             </div>
 
-            <div className="col-span-2 my-4">
+            <div>
               <h4 className="font-semibold mb-1">Network</h4>
               <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
             </div>
+
+
+            {transaction.agentIdentifier ? (
+              <div>
+                <h4 className="font-semibold mb-1">Agent Name</h4>
+                {agentNameLoading ? (
+                  <Skeleton className="h-5 w-32" />
+                ) : agentName ? (
+                  <p className="text-sm">{agentName}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not available</p>
+                )}
+              </div>
+            ) : (
+              <div />
+            )}
 
             <div className="col-span-2 w-full mb-4">
               <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
@@ -412,8 +463,8 @@ export default function TransactionDetailsDialog({
                 <h5 className="text-sm font-medium mb-1">Amount</h5>
                 <div className="text-sm">
                   {transaction.type === 'payment' &&
-                  transaction.RequestedFunds &&
-                  transaction.RequestedFunds.length > 0 ? (
+                    transaction.RequestedFunds &&
+                    transaction.RequestedFunds.length > 0 ? (
                     transaction.RequestedFunds.map((fund, index) => {
                       const usdmConfig = getUsdmConfig(network);
                       const isUsdm =
@@ -428,10 +479,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
                         </p>
                       );
                     })
@@ -452,10 +503,10 @@ export default function TransactionDetailsDialog({
                           {fund.unit === 'lovelace' || !fund.unit
                             ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
                             : isUsdm
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
+                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'} `
                               : isTestUsdm
                                 ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
+                                : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit} `}
                         </p>
                       );
                     })
