@@ -128,7 +128,12 @@ async function processTransactionData(
 		logger.info('Skipping invalid tx: ', tx.tx.tx_hash, extractedData.error);
 		return;
 	} else if (extractedData.type == 'Initial') {
-		await updateInitialTransactions(extractedData.valueOutputs, paymentContract, tx);
+		await updateInitialTransactions(
+			extractedData.valueOutputs,
+			paymentContract,
+			tx,
+			paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		);
 	} else if (extractedData.type == 'Transaction') {
 		await updateTransaction(paymentContract, extractedData, blockfrost, tx);
 	}
