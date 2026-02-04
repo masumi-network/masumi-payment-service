@@ -43,7 +43,6 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	invalidBefore: number,
 	invalidAfter: number,
 ) {
-
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
