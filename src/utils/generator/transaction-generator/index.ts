@@ -12,6 +12,9 @@ import {
 import { resolvePlutusScriptAddress } from '@meshsdk/core-cst';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { Network as PrismaNetwork } from '@/generated/prisma/client';
+import { logger } from '@/utils/logger';
+import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
+import { CONSTANTS } from '@/utils/config';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -109,6 +112,44 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 		throw new TypeError(`Expected resolvePlutusScriptAddress to return a string, got: ${typeof smartContractAddress}`);
 	}
 
+	const nativeTokenCount = getNativeTokenCount(smartContractUtxo.output.amount);
+	const minUtxoResult = calculateMinUtxo({
+		datum: newInlineDatum,
+		nativeTokenCount,
+		coinsPerUtxoSize: CONSTANTS.COINS_PER_UTXO_SIZE,
+		includeBuffers: true,
+	});
+
+	const currentLovelace = getLovelaceFromAmounts(smartContractUtxo.output.amount);
+	const topUpAmount = calculateTopUpAmount(currentLovelace, minUtxoResult.minUtxoLovelace);
+
+	const outputAmount: Asset[] = [...smartContractUtxo.output.amount];
+
+	if (topUpAmount > 0n) {
+		logger.info('Applying min-UTXO top-up for smart contract interaction', {
+			type,
+			currentLovelace: currentLovelace.toString(),
+			requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
+			topUpAmount: topUpAmount.toString(),
+			nativeTokenCount,
+			txHash: smartContractUtxo.input.txHash,
+		});
+
+		const lovelaceIndex = outputAmount.findIndex((a) => a.unit === '' || a.unit.toLowerCase() === 'lovelace');
+
+		if (lovelaceIndex >= 0) {
+			outputAmount[lovelaceIndex] = {
+				...outputAmount[lovelaceIndex],
+				quantity: minUtxoResult.minUtxoLovelace.toString(),
+			};
+		} else {
+			outputAmount.push({
+				unit: 'lovelace',
+				quantity: minUtxoResult.minUtxoLovelace.toString(),
+			});
+		}
+	}
+
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
 	txBuilder
 		.spendingPlutusScript(script.version)
@@ -124,7 +165,7 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 		.txInInlineDatumPresent()
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral('3000000')
-		.txOut(smartContractAddress, smartContractUtxo.output.amount)
+		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
 	for (const utxo of walletUtxos) {
