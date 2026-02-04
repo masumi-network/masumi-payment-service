@@ -46,7 +46,9 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
 	try {
 		const protocolParams = await blockchainProvider.fetchProtocolParameters();
-		coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
+		if (protocolParams.coinsPerUtxoSize != null) {
+			coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
+		}
 		logger.debug('Fetched protocol parameters for min-UTXO calculation', {
 			coinsPerUtxoSize,
 			type,
