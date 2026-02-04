@@ -43,6 +43,23 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 	invalidBefore: number,
 	invalidAfter: number,
 ) {
+
+	let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+	try {
+		const protocolParams = await blockchainProvider.fetchProtocolParameters();
+		coinsPerUtxoSize = protocolParams.coinsPerUtxoSize;
+		logger.debug('Fetched protocol parameters for min-UTXO calculation', {
+			coinsPerUtxoSize,
+			type,
+		});
+	} catch (error) {
+		logger.warn('Failed to fetch protocol parameters, using fallback value for min-UTXO calculation', {
+			fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+			error: error instanceof Error ? error.message : String(error),
+			type,
+		});
+	}
+
 	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
 		type,
 		blockchainProvider,
@@ -55,6 +72,8 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		newInlineDatum,
 		invalidBefore,
 		invalidAfter,
+		undefined,
+		coinsPerUtxoSize,
 	);
 
 	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
@@ -74,6 +93,7 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		invalidBefore,
 		invalidAfter,
 		estimatedFee[0].budget,
+		coinsPerUtxoSize,
 	);
 }
 
@@ -99,6 +119,8 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 		mem: 7e6,
 		steps: 3e9,
 	},
+
+	coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
 ) {
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
@@ -116,7 +138,7 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 	const minUtxoResult = calculateMinUtxo({
 		datum: newInlineDatum,
 		nativeTokenCount,
-		coinsPerUtxoSize: CONSTANTS.COINS_PER_UTXO_SIZE,
+		coinsPerUtxoSize,
 		includeBuffers: true,
 	});
 
@@ -132,7 +154,9 @@ export async function generateMasumiSmartContractInteractionTransactionCustomFee
 			requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
 			topUpAmount: topUpAmount.toString(),
 			nativeTokenCount,
+			coinsPerUtxoSize,
 			txHash: smartContractUtxo.input.txHash,
+			note: 'UTxO may have been created with different protocol parameters or underfunded externally',
 		});
 
 		const lovelaceIndex = outputAmount.findIndex((a) => a.unit === '' || a.unit.toLowerCase() === 'lovelace');

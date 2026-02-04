@@ -30,6 +30,7 @@ import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
 import { TransactionMetadata } from '@/services/cardano-tx-handler/blockchain';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export type UpdateTransactionInput = {
 	blockTime: number;
@@ -481,6 +482,7 @@ export async function updateInitialTransactions(
 		network: Network;
 	},
 	tx: UpdateTransactionInput,
+	rpcProviderApiKey: string,
 ) {
 	for (const output of valueOutputs) {
 		const outputDatum = output.inline_datum;
@@ -519,6 +521,7 @@ export async function updateInitialTransactions(
 			tx.metadata,
 			buyerCardanoFees,
 			sellerCardanoFees,
+			rpcProviderApiKey,
 		);
 	}
 }
@@ -842,6 +845,7 @@ export async function updateInitialPaymentTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	rpcProviderApiKey: string,
 ) {
 	await prisma.$transaction(
 		async (prisma) => {
@@ -1077,6 +1081,25 @@ export async function updateInitialPaymentTransaction(
 			}
 
 			try {
+				let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+				try {
+					const blockfrost = getBlockfrostInstance(paymentContract.network, rpcProviderApiKey);
+					const protocolParams = await blockfrost.epochsLatestParameters();
+					if (protocolParams.coins_per_utxo_size != null) {
+						coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+					}
+					logger.debug('Fetched protocol parameters for min-UTXO validation', {
+						coinsPerUtxoSize,
+						paymentRequestId: dbEntry.id,
+					});
+				} catch (protocolFetchError) {
+					logger.warn('Failed to fetch protocol parameters for validation, using fallback', {
+						fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+						paymentRequestId: dbEntry.id,
+						error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
+					});
+				}
+
 				const datumWithResultHash = getDatumFromBlockchainIdentifier({
 					buyerAddress: decodedNewContract.buyerAddress,
 					sellerAddress: decodedNewContract.sellerAddress,
@@ -1097,7 +1120,7 @@ export async function updateInitialPaymentTransaction(
 				const minUtxoResult = calculateMinUtxo({
 					datum: datumWithResultHash.value,
 					nativeTokenCount,
-					coinsPerUtxoSize: CONSTANTS.COINS_PER_UTXO_SIZE,
+					coinsPerUtxoSize,
 					includeBuffers: true,
 				});
 
@@ -1111,6 +1134,7 @@ export async function updateInitialPaymentTransaction(
 						requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
 						shortfall: shortfall.toString(),
 						nativeTokenCount,
+						coinsPerUtxoSize,
 						collateralReturnLovelace: decodedNewContract.collateralReturnLovelace.toString(),
 						note: 'Option A (auto top-up) will handle this during result submission',
 					});
