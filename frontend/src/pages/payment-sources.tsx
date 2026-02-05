@@ -281,12 +281,16 @@ export default function PaymentSourcesPage() {
                       key={source.id}
                       className={cn(
                         'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors',
-                        selectedPaymentSourceId === source.id &&
-                          'bg-green-50 dark:bg-green-950/20 border-l-4 border-l-green-500',
+                        selectedPaymentSourceId === source.id && 'bg-green-50 dark:bg-green-950/20',
                       )}
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
-                      <td className="p-4 pl-6">
+                      <td
+                        className={cn(
+                          'p-4 pl-6',
+                          selectedPaymentSourceId === source.id && 'border-l-4 border-l-green-500',
+                        )}
+                      >
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           {shortenAddress(source.smartContractAddress)}{' '}
                           <CopyButton value={source.smartContractAddress} />
