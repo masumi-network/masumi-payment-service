@@ -280,9 +280,9 @@ export default function PaymentSourcesPage() {
                     <tr
                       key={source.id}
                       className={cn(
-                        "border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors",
+                        'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedPaymentSourceId === source.id &&
-                        "bg-green-50 dark:bg-green-950/20 border-l-4 border-l-green-500"
+                          'bg-green-50 dark:bg-green-950/20 border-l-4 border-l-green-500',
                       )}
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
