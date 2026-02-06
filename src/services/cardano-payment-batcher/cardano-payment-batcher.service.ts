@@ -408,6 +408,7 @@ export async function batchLatestPaymentEntriesV1() {
 								break;
 							}
 							const paymentRequest = paymentRequestsRemaining[index];
+							const originalPaidFundsArray = paymentRequest.PaidFunds.map((f) => ({ ...f }));
 							const sellerAddress = paymentRequest.SellerWallet.walletAddress;
 							const buyerAddress = potentialAddresses[0];
 							const tmpDatum = getDatumFromBlockchainIdentifier({
@@ -528,14 +529,21 @@ export async function batchLatestPaymentEntriesV1() {
 								});
 							}
 							let isFulfilled = true;
+							const needsFeeBuffer = batchedPaymentRequests.length === 0;
 							for (const paymentAmount of paymentRequest.PaidFunds) {
 								const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
-								if (walletAmount == null || paymentAmount.amount > walletAmount.quantity) {
+								const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
+								const requiredAmount =
+									isLovelace && needsFeeBuffer
+										? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
+										: paymentAmount.amount;
+								if (walletAmount == null || requiredAmount > walletAmount.quantity) {
 									isFulfilled = false;
 									break;
 								}
 							}
 							if (isFulfilled) {
+								const wasFirstRequest = batchedPaymentRequests.length === 0;
 								batchedPaymentRequests.push({
 									paymentRequest,
 									overpaidLovelace,
@@ -543,10 +551,17 @@ export async function batchLatestPaymentEntriesV1() {
 								//deduct amounts from wallet
 								for (const paymentAmount of paymentRequest.PaidFunds) {
 									const walletAmount = amounts.find((amount) => amount.unit == paymentAmount.unit);
-									walletAmount!.quantity -= paymentAmount.amount;
+									const isLovelace = paymentAmount.unit === '' || paymentAmount.unit.toLowerCase() === 'lovelace';
+									const deductAmount =
+										isLovelace && wasFirstRequest
+											? paymentAmount.amount + CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE
+											: paymentAmount.amount;
+									walletAmount!.quantity -= deductAmount;
 								}
 								paymentRequestsRemaining.splice(index, 1);
 							} else {
+								paymentRequest.PaidFunds.length = 0;
+								paymentRequest.PaidFunds.push(...originalPaidFundsArray);
 								index++;
 							}
 						}

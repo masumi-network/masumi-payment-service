@@ -15,7 +15,7 @@ import {
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 
-import { shortenAddress, cn } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -27,9 +27,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { Badge } from '@/components/ui/badge';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
 import { handleApiCall } from '@/lib/utils';
 import { useRouter } from 'next/router';
@@ -279,18 +277,10 @@ export default function PaymentSourcesPage() {
                   filteredPaymentSources.map((source) => (
                     <tr
                       key={source.id}
-                      className={cn(
-                        'border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors',
-                        selectedPaymentSourceId === source.id && 'bg-green-50 dark:bg-green-950/20',
-                      )}
+                      className="border-b last:border-b-0 cursor-pointer hover:bg-muted/50"
                       onClick={() => setSelectedPaymentSourceForDetails(source)}
                     >
-                      <td
-                        className={cn(
-                          'p-4 pl-6',
-                          selectedPaymentSourceId === source.id && 'border-l-4 border-l-green-500',
-                        )}
-                      >
+                      <td className="p-4 pl-6">
                         <div className="text-xs text-muted-foreground font-mono truncate max-w-[200px] flex items-center gap-2">
                           {shortenAddress(source.smartContractAddress)}{' '}
                           <CopyButton value={source.smartContractAddress} />
@@ -343,30 +333,21 @@ export default function PaymentSourcesPage() {
                           </Button>
 
                           {selectedPaymentSourceId === source.id ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge
-                                  variant="success"
-                                  className="flex items-center gap-1.5 px-3 py-1 cursor-help"
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 dark:bg-green-400" />
-                                  Active
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-sm max-w-[200px]">
-                                  This payment source is currently active. All agents, wallets, and
-                                  transactions shown are from this source.
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled
+                              className="text-green-600 border-green-600"
+                            >
+                              Active
+                            </Button>
                           ) : (
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => setSourceToSelect(source)}
                             >
-                              Set as Active
+                              Select
                             </Button>
                           )}
                         </div>
@@ -412,8 +393,8 @@ export default function PaymentSourcesPage() {
         <ConfirmDialog
           open={sourceToSelect !== undefined}
           onClose={() => setSourceToSelect(undefined)}
-          title="Set as Active Payment Source"
-          description={`Setting this as the active source will change which agents, wallets, and transactions are displayed across the admin interface.\n\nContract Address: ${sourceToSelect?.smartContractAddress ? shortenAddress(sourceToSelect.smartContractAddress) : ''}`}
+          title="Switch Payment Source"
+          description="Switching payment source will update the displayed agents, wallets, and related content. Continue?"
           onConfirm={() => {
             if (sourceToSelect?.id) {
               setSelectedPaymentSourceId(sourceToSelect.id);

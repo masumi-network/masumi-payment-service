@@ -53,9 +53,7 @@ export function ConfirmDialog({
         </DialogHeader>
 
         <div className="py-4 mb-20">
-          <p className="text-sm text-muted-foreground whitespace-pre-line">
-            {description ?? '...'}
-          </p>
+          <p className="text-sm text-muted-foreground">{description ?? '...'}</p>
 
           {requireConfirmation && (
             <div className="mt-4 space-y-2">
