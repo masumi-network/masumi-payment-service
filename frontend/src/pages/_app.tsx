@@ -51,6 +51,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     network,
     setNetwork,
     authorized,
+    isSetupMode,
   } = useAppContext();
 
   // Add dynamic favicon functionality
@@ -82,12 +83,21 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
-    } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      if (router.pathname === '/setup') {
-        router.replace('/');
-      }
     }
-  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
+    // If setup mode is active (persisted from before reload), redirect back to setup
+    if (apiKey && isHealthy && isSetupMode && router.pathname !== '/setup') {
+      router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
+    }
+  }, [
+    apiKey,
+    isHealthy,
+    router,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+    isSetupMode,
+  ]);
 
   useEffect(() => {
     const init = async () => {
@@ -148,18 +158,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     init();
   }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
-  // Watch for network changes in URL and update state
+  // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
+  // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
+  // this effect does not re-run with stale router.query and overwrite the new value.
   useEffect(() => {
     const networkParam = router.query.network as string;
-
-    if (networkParam && networkParam !== network) {
-      if (networkParam.toLowerCase() === 'mainnet') {
-        setNetwork('Mainnet');
-      } else if (networkParam.toLowerCase() === 'preprod') {
-        setNetwork('Preprod');
-      }
+    if (!networkParam) return;
+    if (networkParam.toLowerCase() === 'mainnet') {
+      setNetwork('Mainnet');
+    } else if (networkParam.toLowerCase() === 'preprod') {
+      setNetwork('Preprod');
     }
-  }, [router.query.network, network, setNetwork]);
+  }, [router.query.network, setNetwork]);
 
   if (isHealthy === null) {
     return (

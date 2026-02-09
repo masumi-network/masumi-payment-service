@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -18,6 +18,7 @@ import {
   Bell,
   Search,
   Code,
+  Wand2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -25,6 +26,13 @@ import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
@@ -44,7 +52,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
+  const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
+  const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -52,73 +62,39 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
   }, []);
 
-  useEffect(() => {
-    if (isChangingTheme) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
+  const applyBlurTransition = useCallback((isActive: boolean) => {
+    if (!isActive) return;
+    const app = document.getElementById('__next');
+    if (!app) return;
+
+    app.style.transition = 'all 0.2s ease';
+    app.style.filter = 'blur(10px)';
+    app.style.pointerEvents = 'none';
+    app.style.opacity = '1';
+    app.style.scale = '1.1';
+
+    const timer = setTimeout(() => {
+      app.style.filter = '';
+      app.style.pointerEvents = 'auto';
+      app.style.opacity = '1';
+      app.style.scale = '1';
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      const el = document.getElementById('__next');
+      if (el) {
+        el.style.filter = '';
+        el.style.transition = '';
+        el.style.pointerEvents = 'auto';
+        el.style.opacity = '1';
+        el.style.scale = '1';
       }
+    };
+  }, []);
 
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
-    }
-  }, [isChangingTheme]);
-
-  useEffect(() => {
-    if (isChangingNetwork) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
-      }
-
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
-    }
-  }, [isChangingNetwork]);
+  useEffect(() => applyBlurTransition(isChangingTheme), [isChangingTheme, applyBlurTransition]);
+  useEffect(() => applyBlurTransition(isChangingNetwork), [isChangingNetwork, applyBlurTransition]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -138,8 +114,15 @@ export function MainLayout({ children }: MainLayoutProps) {
   );
 
   const navItems = useMemo(() => {
-    if (!hasPaymentSources) {
+    // While in setup mode, show only the setup sidebar
+    if (isSetupMode || !hasPaymentSources) {
       return [
+        {
+          href: '/setup',
+          name: 'Setup',
+          icon: <Wand2 className="h-4 w-4" />,
+          badge: null,
+        },
         {
           href: '/payment-sources',
           name: 'Payment sources',
@@ -216,14 +199,32 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
       },
     ];
-  }, [hasPaymentSources, newTransactionsCount]);
+  }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
 
-  const handleOpenNotifications = () => {
-    setIsNotificationsOpen(true);
+  const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
+    if (newNetwork === network) return;
+    if (router.pathname === '/setup') {
+      if (setupWizardStep > 0) {
+        setPendingNetwork(newNetwork);
+        setShowNetworkSwitchConfirm(true);
+        return;
+      }
+      setNetwork(newNetwork);
+      router.replace('/setup?network=' + newNetwork, undefined, { shallow: true });
+      return;
+    }
+    setNetwork(newNetwork);
   };
 
-  const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    setNetwork(network);
+  const confirmNetworkSwitch = () => {
+    const targetNetwork = pendingNetwork;
+    setShowNetworkSwitchConfirm(false);
+    setPendingNetwork(null);
+    if (targetNetwork === null) return;
+    setNetwork(targetNetwork);
+    if (router.pathname === '/setup') {
+      router.replace('/setup?network=' + targetNetwork, undefined, { shallow: true });
+    }
   };
 
   return (
@@ -484,7 +485,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                       ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-500 dark:text-white dark:hover:bg-red-600'
                       : '',
                   )}
-                  onClick={handleOpenNotifications}
+                  onClick={() => setIsNotificationsOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
                   {formatCount(newTransactionsCount)}
@@ -500,6 +501,36 @@ export function MainLayout({ children }: MainLayoutProps) {
       </div>
 
       <SearchDialog open={isSearchOpen} onOpenChange={setIsSearchOpen} />
+
+      <Dialog
+        open={showNetworkSwitchConfirm}
+        onOpenChange={(open) => {
+          setShowNetworkSwitchConfirm(open);
+          if (!open) setPendingNetwork(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch network?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Switching network will cancel the current setup. You will need to start again for the
+            new network. Do you want to continue?
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowNetworkSwitchConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmNetworkSwitch}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isNotificationsOpen && (
         <NotificationsDialog
