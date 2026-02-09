@@ -280,16 +280,19 @@ export default function ApiKeys() {
                               <span className="sr-only">Actions</span>
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setKeyToUpdate(key)}>
-                              <Pencil className="mr-2 h-4 w-4" />
+                          <DropdownMenuContent align="end" className="min-w-[120px]">
+                            <DropdownMenuItem
+                              onClick={() => setKeyToUpdate(key)}
+                              className="whitespace-nowrap"
+                            >
+                              <Pencil className="mr-2 h-4 w-4 shrink-0" />
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               disabled={key.token === apiKey}
                               onClick={() => setKeyToDelete(key)}
-                              className="text-destructive focus:text-destructive"
+                              className="whitespace-nowrap text-destructive focus:text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4 shrink-0" />
                               <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
