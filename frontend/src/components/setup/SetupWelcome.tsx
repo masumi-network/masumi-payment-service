@@ -1875,6 +1875,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset wizard state when network changes (user switched network during setup)
     setCurrentStep(0);
     setWallets({ buying: null, selling: null });
+    setHasAiAgent(false);
   }, [networkType]);
 
   // If the current network already has payment sources and we're on the welcome step,
@@ -1903,6 +1904,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   const handleCancel = () => {
     setWallets({ buying: null, selling: null });
     setCurrentStep(0);
+    setHasAiAgent(false);
   };
 
   const steps = [
@@ -1975,7 +1977,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
                       <div
                         className={cn(
                           'h-0.5 w-6 rounded-full transition-all duration-500',
-                          currentStep > stepIndex + 1 ? 'bg-primary' : 'bg-muted',
+                          currentStep > stepIndex ? 'bg-primary' : 'bg-muted',
                         )}
                       />
                     )}

@@ -280,97 +280,49 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             {errors.status && <p className="text-xs text-destructive">{errors.status.message}</p>}
           </div>
 
-          {apiKey.usageLimited && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-sm">Adjust Usage Credits</Label>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  Enter a positive value to add credits, or negative to remove.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                      ADA
-                    </Label>
-                    <Input
-                      id="credits-ada"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.lovelace')}
-                    />
-                    {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.lovelace as any).message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
-                    </Label>
-                    <Input
-                      id="credits-usdm"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.usdm')}
-                    />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
-                      </p>
-                    )}
-                  </div>
-                </div>
+          <Separator />
+          <div>
+            <Label className="text-sm">
+              {apiKey.usageLimited ? 'Adjust Usage Credits' : 'Add Usage Credits'}
+            </Label>
+            <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+              {apiKey.usageLimited
+                ? 'Enter a positive value to add credits, or negative to remove.'
+                : 'This key is unlimited, but you can still add tracked credits.'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
+                  ADA
+                </Label>
+                <Input
+                  id="credits-ada"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.lovelace')}
+                />
+                {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
+                  <p className="text-xs text-destructive">
+                    {(errors.credits.lovelace as any).message}
+                  </p>
+                )}
               </div>
-            </>
-          )}
-
-          {!apiKey.usageLimited && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-sm">Add Usage Credits</Label>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  This key is unlimited, but you can still add tracked credits.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                      ADA
-                    </Label>
-                    <Input
-                      id="credits-ada"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.lovelace')}
-                    />
-                    {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.lovelace as any).message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
-                    </Label>
-                    <Input
-                      id="credits-usdm"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.usdm')}
-                    />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
-                      </p>
-                    )}
-                  </div>
-                </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
+                  USDM
+                </Label>
+                <Input
+                  id="credits-usdm"
+                  type="number"
+                  placeholder="0.00"
+                  {...register('credits.usdm')}
+                />
+                {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
+                  <p className="text-xs text-destructive">{(errors.credits.usdm as any).message}</p>
+                )}
               </div>
-            </>
-          )}
+            </div>
+          </div>
         </div>
 
         <DialogFooter className="mt-2">
