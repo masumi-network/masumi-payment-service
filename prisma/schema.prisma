@@ -549,3 +549,136 @@ enum WebhookDeliveryStatus {
   Retrying
   Cancelled
 }
+
+// ============================================================
+// HYDRA L2 MODELS
+// ============================================================
+
+enum HydraHeadStatus {
+  Idle
+  Initializing
+  Open
+  Closed
+  FanoutPossible
+  Final
+}
+
+/// Represents a Hydra L2 head between N participants.
+/// Each head has its own Hydra node connection and tracks lifecycle state.
+/// Not tied to PaymentSource; routing is based on participant agent IDs.
+model HydraHead {
+  id                   String             @id @default(cuid())
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  /// Hydra protocol head ID (assigned by Hydra node after Init)
+  headId               String?            @unique
+
+  /// Cardano network this head operates on
+  network              Network
+
+  /// Current status of the Hydra head (null before head is initialized)
+  status               HydraHeadStatus?
+
+  /// Contestation period in seconds (configured on the Hydra node)
+  contestationPeriod   Int                @default(60)
+
+  /// Lifecycle timestamps
+  openedAt             DateTime?
+  closedAt             DateTime?
+  finalizedAt          DateTime?
+
+  /// Last activity timestamp for idle detection / auto-close
+  lastActivityAt       DateTime?
+
+  /// Latest confirmed snapshot number
+  lastSnapshotNumber   Int                @default(0)
+
+  /// Hash of the latest confirmed snapshot UTXOs
+  lastSnapshotUtxoHash String?
+
+  /// Last error message (if any)
+  lastError            String?
+  lastErrorAt          DateTime?
+
+  /// Participants in this head
+  Participants         HydraParticipant[]
+
+  /// Channels (2-agent pairings) that reference this head
+  Channels             HydraChannel[]
+
+  @@index([status])
+  @@index([network, status])
+}
+
+/// A participant in a Hydra head.
+/// Join table between HydraHead and agents, supporting N participants per head.
+/// The same agent can participate in multiple heads simultaneously.
+model HydraParticipant {
+  id                     String    @id @default(cuid())
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  /// Which head this participant belongs to
+  hydraHeadId            String
+  HydraHead              HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// Agent identifier (not buyer/seller specific; participants are symmetric)
+  agentId                String
+
+  /// Participant order/index in the head (0-based)
+  participantIndex       Int
+
+  /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
+  nodeUrl                String
+
+  /// HTTP URL for this participant's Hydra node (e.g. http://127.0.0.1:4001)
+  nodeHttpUrl            String
+
+  /// Cardano verification key for this participant in the head
+  cardanoVerificationKey String?
+
+  /// Hydra verification key for this participant in the head
+  hydraVerificationKey   String?
+
+  /// Whether this participant has committed funds to the head
+  hasCommitted           Boolean   @default(false)
+
+  /// Same agent cannot join the same head twice
+  @@unique([hydraHeadId, agentId])
+
+  /// Index for "find all heads where agent X participates"
+  @@index([agentId])
+  @@index([agentId, hydraHeadId])
+}
+
+/// A Hydra channel between exactly 2 agents, backed by a Hydra head.
+/// Provides a fast indexed lookup: "find all heads between agent A and agent B."
+///
+/// Agents are stored in deterministic order (agentIdA < agentIdB lexicographically)
+/// so the same pair is never duplicated with swapped columns.
+/// The same pair can have multiple channels (e.g. one closing while a new one opens).
+model HydraChannel {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  /// The Hydra head backing this channel
+  hydraHeadId   String
+  HydraHead     HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// First agent (lexicographically smaller agentId)
+  agentIdA      String
+
+  /// Second agent (lexicographically larger agentId)
+  agentIdB      String
+
+  /// Each head appears at most once per agent pair
+  @@unique([hydraHeadId, agentIdA, agentIdB])
+
+  /// Primary lookup: find all channels between two specific agents
+  @@index([agentIdA, agentIdB])
+
+  /// Reverse lookup: find all channels where agent B is the second participant
+  @@index([agentIdB, agentIdA])
+}

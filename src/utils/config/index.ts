@@ -145,6 +145,70 @@ export const SERVICE_CONSTANTS = {
 	},
 } as const;
 
+// ============================================================
+// HYDRA L2 CONFIGURATION
+// ============================================================
+
+const hydraEnabled = process.env.HYDRA_ENABLED === 'true';
+const hydraAutoOpenThreshold = parseInt(process.env.HYDRA_AUTO_OPEN_THRESHOLD ?? '10', 10);
+const hydraAutoCloseIdleSeconds = parseInt(process.env.HYDRA_AUTO_CLOSE_IDLE_SECONDS ?? '3600', 10);
+const hydraReconnectIntervalMs = parseInt(process.env.HYDRA_RECONNECT_INTERVAL_MS ?? '5000', 10);
+const hydraMaxReconnectAttempts = parseInt(process.env.HYDRA_MAX_RECONNECT_ATTEMPTS ?? '10', 10);
+
+export const HYDRA_CONFIG = {
+	/**
+	 * Enable/disable Hydra L2 routing globally
+	 * When disabled, all transactions go to L1
+	 */
+	ENABLED: hydraEnabled,
+
+	/**
+	 * Default Hydra node WebSocket URL
+	 * Can be overridden per PaymentSource
+	 */
+	DEFAULT_NODE_URL: process.env.HYDRA_NODE_URL ?? 'ws://127.0.0.1:4001',
+
+	/**
+	 * Default Hydra node HTTP URL
+	 * Used for UTXO queries and commit operations
+	 */
+	DEFAULT_NODE_HTTP_URL: process.env.HYDRA_NODE_HTTP_URL ?? 'http://127.0.0.1:4001',
+
+	/**
+	 * Auto-open Hydra head after N transactions between same agents
+	 * Set to 0 to disable auto-open
+	 */
+	AUTO_OPEN_THRESHOLD: hydraAutoOpenThreshold,
+
+	/**
+	 * Auto-close Hydra head after N seconds of inactivity
+	 * Set to 0 to disable auto-close
+	 */
+	AUTO_CLOSE_IDLE_SECONDS: hydraAutoCloseIdleSeconds,
+
+	/**
+	 * WebSocket reconnection interval in milliseconds
+	 */
+	RECONNECT_INTERVAL_MS: hydraReconnectIntervalMs,
+
+	/**
+	 * Maximum WebSocket reconnection attempts
+	 */
+	MAX_RECONNECT_ATTEMPTS: hydraMaxReconnectAttempts,
+
+	/**
+	 * Enable debug logging for routing decisions
+	 */
+	DEBUG_LOGGING: process.env.HYDRA_DEBUG_LOGGING === 'true',
+
+	/**
+	 * Contestation period in seconds (for head closing)
+	 * This is configured on the Hydra node, not here
+	 * Listed for documentation purposes
+	 */
+	CONTESTATION_PERIOD_INFO: 'Configured on Hydra node (default: 60 seconds for testnet)',
+} as const;
+
 export const DEFAULTS = {
 	DEFAULT_ADMIN_KEY: 'DefaultUnsecureAdminKey',
 	TX_TIMEOUT_INTERVAL: 1000 * 60 * 7, // 7 minutes in seconds
