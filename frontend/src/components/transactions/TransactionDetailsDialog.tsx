@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -113,47 +114,22 @@ export default function TransactionDetailsDialog({
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [agentName, setAgentName] = React.useState<string | null>(null);
-  const [agentNameLoading, setAgentNameLoading] = React.useState(false);
 
-  React.useEffect(() => {
-    let isCancelled = false;
-
-    setAgentName(null);
-    setAgentNameLoading(false);
-
-    if (!transaction?.agentIdentifier) {
-      return;
-    }
-
-    const fetchAgentName = async () => {
-      setAgentNameLoading(true);
-      try {
-        const response = await getRegistryAgentIdentifier({
-          client: apiClient,
-          query: {
-            agentIdentifier: transaction.agentIdentifier!,
-            network: transaction.PaymentSource.network,
-          },
-        });
-
-        if (!isCancelled && response.data?.data?.Metadata?.name) {
-          setAgentName(response.data.data.Metadata.name);
-        }
-      } catch {
-      } finally {
-        if (!isCancelled) {
-          setAgentNameLoading(false);
-        }
-      }
-    };
-
-    fetchAgentName();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [transaction?.id, transaction?.agentIdentifier, apiClient]);
+  const agentIdentifier = transaction?.agentIdentifier;
+  const agentNetwork = transaction?.PaymentSource?.network;
+  const { data: agentName, isFetching: agentNameLoading } = useQuery({
+    queryKey: ['registry-agent-identifier', agentIdentifier, agentNetwork],
+    queryFn: async () => {
+      if (!agentIdentifier || !agentNetwork) return null;
+      const response = await getRegistryAgentIdentifier({
+        client: apiClient,
+        query: { agentIdentifier, network: agentNetwork },
+      });
+      return response.data?.data?.Metadata?.name ?? null;
+    },
+    enabled: Boolean(agentIdentifier && agentNetwork),
+    staleTime: 60_000,
+  });
   const clearTransactionError = async () => {
     try {
       setIsLoading(true);
@@ -331,6 +307,14 @@ export default function TransactionDetailsDialog({
               <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
             </div>
 
+            <div className="col-span-1 w-full mb-4">
+              <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
+              <div className="text-sm font-mono break-all flex gap-2 items-center">
+                <span>{shortenAddress(transaction.blockchainIdentifier)}</span>
+                <CopyButton value={transaction.blockchainIdentifier} />
+              </div>
+            </div>
+
             {transaction.agentIdentifier ? (
               <div>
                 <h4 className="font-semibold mb-1">Agent Name</h4>
@@ -345,14 +329,17 @@ export default function TransactionDetailsDialog({
             ) : (
               <div />
             )}
-
-            <div className="col-span-2 w-full mb-4">
-              <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
-              <div className="text-sm font-mono break-all flex gap-2 items-center">
-                <span>{shortenAddress(transaction.blockchainIdentifier)}</span>
-                <CopyButton value={transaction.blockchainIdentifier} />
+            {transaction.agentIdentifier ? (
+              <div>
+                <h4 className="font-semibold mb-1">Agent Identifier</h4>
+                <div className="text-sm font-mono break-all flex gap-2 items-center">
+                  <span>{shortenAddress(transaction.agentIdentifier)}</span>
+                  <CopyButton value={transaction.agentIdentifier} />
+                </div>
               </div>
-            </div>
+            ) : (
+              <div />
+            )}
 
             <div>
               <h4 className="font-semibold mb-1">Type</h4>
