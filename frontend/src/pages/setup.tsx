@@ -6,16 +6,16 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
 export default function SetupPage() {
-  const { apiKey, network, setIsSetupMode } = useAppContext();
+  const { apiKey, network, setIsSetupMode, setSetupWizardStep } = useAppContext();
   const router = useRouter();
 
   useEffect(() => {
     setIsSetupMode(true);
     return () => {
-      // Cleanup: Reset setup mode when leaving the setup page
       setIsSetupMode(false);
+      setSetupWizardStep(0);
     };
-  }, [setIsSetupMode]);
+  }, [setIsSetupMode, setSetupWizardStep]);
 
   useEffect(() => {
     if (!apiKey) {

@@ -258,7 +258,7 @@ export default function PaymentSourcesPage() {
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium truncate">Fee rate</th>
+                  <th className="p-4 text-left text-sm font-medium truncate">Fee rate (%)</th>
                   <th className="p-4 text-left text-sm font-medium truncate">Created at</th>
                   <th className="p-4 text-left text-sm font-medium">Wallets</th>
                   <th className="w-20 p-4 pr-8"></th>

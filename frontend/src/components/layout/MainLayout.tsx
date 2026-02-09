@@ -26,6 +26,13 @@ import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
@@ -45,7 +52,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, setupWizardStep } = useAppContext();
+  const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
+  const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -235,9 +244,30 @@ export function MainLayout({ children }: MainLayoutProps) {
     setIsNotificationsOpen(true);
   };
 
-  const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    if (isSetupMode) return;
-    setNetwork(network);
+  const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
+    if (newNetwork === network) return;
+    if (router.pathname === '/setup') {
+      if (setupWizardStep > 0) {
+        setPendingNetwork(newNetwork);
+        setShowNetworkSwitchConfirm(true);
+        return;
+      }
+      setNetwork(newNetwork);
+      router.replace('/setup?network=' + newNetwork, undefined, { shallow: true });
+      return;
+    }
+    setNetwork(newNetwork);
+  };
+
+  const confirmNetworkSwitch = () => {
+    const targetNetwork = pendingNetwork;
+    setShowNetworkSwitchConfirm(false);
+    setPendingNetwork(null);
+    if (targetNetwork === null) return;
+    setNetwork(targetNetwork);
+    if (router.pathname === '/setup') {
+      router.replace('/setup?network=' + targetNetwork, undefined, { shallow: true });
+    }
   };
 
   return (
@@ -285,13 +315,11 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm2"
-                disabled={isSetupMode}
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Preprod' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Preprod')}
               >
@@ -300,13 +328,11 @@ export function MainLayout({ children }: MainLayoutProps) {
               <Button
                 variant="ghost"
                 size="sm2"
-                disabled={isSetupMode}
                 className={cn(
                   'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
                   collapsed && !isHovered && 'px-2',
                   network === 'Mainnet' &&
                     'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                  isSetupMode && 'opacity-50 cursor-not-allowed',
                 )}
                 onClick={() => handleNetworkChange('Mainnet')}
               >
@@ -518,6 +544,36 @@ export function MainLayout({ children }: MainLayoutProps) {
       </div>
 
       <SearchDialog open={isSearchOpen} onOpenChange={setIsSearchOpen} />
+
+      <Dialog
+        open={showNetworkSwitchConfirm}
+        onOpenChange={(open) => {
+          setShowNetworkSwitchConfirm(open);
+          if (!open) setPendingNetwork(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch network?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Switching network will cancel the current setup. You will need to start again for the
+            new network. Do you want to continue?
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowNetworkSwitchConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmNetworkSwitch}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isNotificationsOpen && (
         <NotificationsDialog

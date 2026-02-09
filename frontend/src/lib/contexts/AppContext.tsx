@@ -32,6 +32,8 @@ export const AppContext = createContext<
       isChangingNetwork: boolean;
       isSetupMode: boolean;
       setIsSetupMode: (isSetupMode: boolean) => void;
+      setupWizardStep: number;
+      setSetupWizardStep: (step: number) => void;
     }
   | undefined
 >(undefined);
@@ -52,6 +54,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetwork] = useState<NetworkType>('Preprod');
   const [isSetupMode, setIsSetupMode] = useState(false);
+  const [setupWizardStep, setSetupWizardStep] = useState(0);
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
     apiClient,
@@ -184,6 +187,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isChangingNetwork,
         isSetupMode,
         setIsSetupMode,
+        setupWizardStep,
+        setSetupWizardStep,
       }}
     >
       {children}

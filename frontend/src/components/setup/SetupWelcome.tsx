@@ -1,21 +1,37 @@
-/* eslint-disable react/no-unescaped-entities */
-
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { toast } from 'react-toastify';
-import { Download, Copy, ArrowRight, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { toast } from 'react-toastify';
+import {
+  Download,
+  Copy,
+  ArrowRight,
+  Trash2,
+  Wand2,
+  Wallet,
+  Key,
+  Bot,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  ExternalLink,
+} from 'lucide-react';
 import router from 'next/router';
 import { Spinner } from '@/components/ui/spinner';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { cn } from '@/lib/utils';
 import {
   postWallet,
   postPaymentSourceExtended,
@@ -31,59 +47,54 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function formatNetworkDisplay(networkType: string): string {
   return networkType?.toUpperCase() === 'MAINNET' ? 'Mainnet' : 'Preprod';
 }
 
-function WelcomeScreen({
-  onStart,
-  networkType,
-  onNetworkChange,
-}: {
-  onStart: () => void;
-  networkType: string;
-  onNetworkChange: (network: 'Preprod' | 'Mainnet') => void;
-}) {
+const STEP_LABELS = ['Welcome', 'Seed phrases', 'Payment source', 'AI Agent', 'Complete'];
+
+function WelcomeScreen({ onStart, networkType }: { onStart: () => void; networkType: string }) {
   const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
-    <div className="text-center space-y-4 max-w-[600px]">
-      <h1 className="text-4xl font-bold">Welcome!</h1>
-      <h2 className="text-3xl font-bold">
-        Let&apos;s set up your
-        <br />
-        {networkDisplay} environment
-      </h2>
-
-      <p className="text-sm text-muted-foreground mt-4 mb-8 text-center max-w-md">
-        We'll help you set up your payment environment by creating secure wallets, configuring
-        payment sources, and setting up your first AI agent.
-      </p>
-
-      <div className="flex items-center justify-center gap-4 mt-8">
-        <div className="relative">
-          <div className="text-sm flex items-center gap-2">
-            <span>Network:</span>
-            <Select
-              value={networkDisplay}
-              onValueChange={(value) => onNetworkChange(value as 'Preprod' | 'Mainnet')}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectItem value="Preprod">Preprod</SelectItem>
-                <SelectItem value="Mainnet">Mainnet</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+    <Card className="w-full max-w-lg border-0 shadow-lg bg-card/50">
+      <CardHeader className="text-center pb-2">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+          <Wand2 className="h-7 w-7 text-primary" />
         </div>
-        <Button className="text-sm" onClick={onStart}>
-          Start setup <ArrowRight className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
+        <CardTitle className="text-2xl">Welcome!</CardTitle>
+        <CardDescription className="text-base mt-1">
+          Let&apos;s set up your{' '}
+          <span className="font-medium text-foreground">{networkDisplay}</span> environment
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6 pt-2">
+        <p className="text-sm text-muted-foreground text-center">
+          We&apos;ll create secure wallets, configure a payment source, and optionally register your
+          first AI agent.
+        </p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="text-sm flex items-center gap-2">
+            <span className="text-muted-foreground">Network:</span>
+            <Badge variant="secondary" className="font-normal">
+              {networkDisplay}
+            </Badge>
+          </div>
+          <Button onClick={onStart} className="gap-2">
+            Start setup <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -197,63 +208,81 @@ function SeedPhrasesScreen({
   }, [apiClient, network]);
 
   return (
-    <div className="space-y-6 max-w-[600px] w-full">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Save seed phrases</h1>
-        <p className="text-sm text-muted-foreground">
-          Please save these seed phrases securely. You will need them to access your wallets.
+    <div className="space-y-6 w-full max-w-2xl">
+      <div className="text-center space-y-2">
+        <div className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2 mb-2">
+          <Wallet className="h-5 w-5 text-primary" />
+        </div>
+        <h1 className="text-2xl font-bold">Save seed phrases</h1>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto">
+          Store these phrases securely. You need them to access your wallets—we cannot recover them.
         </p>
       </div>
 
-      {error && <div className="text-sm text-destructive text-center">{error}</div>}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
-      <div className="space-y-6 w-full">
-        <div className="rounded-lg border border-border p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-black text-white dark:bg-white/10 dark:text-white">
+      <div className="rounded-lg border border-amber-500/50 bg-amber-500/5 dark:bg-amber-500/10 px-4 py-3 flex gap-3">
+        <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+        <p className="text-sm text-amber-800 dark:text-amber-200">
+          Never share seed phrases or store them online. Anyone with a phrase can control that
+          wallet.
+        </p>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <Badge variant="secondary" className="w-fit">
               Buying
-            </span>
-            <h3 className="text-sm font-medium">Buying wallet</h3>
-          </div>
-          {isGenerating ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner size={16} />
-              Generating...
-            </div>
-          ) : (
-            buyingWallet && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleCopy(buyingWallet.address)}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  {shortenAddress(buyingWallet.address, 10)}
-                </div>
-                <div className="border-t border-border my-4" />
-                <div>
-                  <div className="text-sm font-medium mb-2">Seed phrase</div>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-2">
+            </Badge>
+            <CardTitle className="text-base mt-2">Buying wallet</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isGenerating ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner size={16} />
+                Generating...
+              </div>
+            ) : (
+              buyingWallet && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => handleCopy(buyingWallet.address)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <span className="font-mono text-muted-foreground truncate">
+                      {shortenAddress(buyingWallet.address, 10)}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Seed phrase</p>
+                    <p className="font-mono text-xs text-muted-foreground break-all">
+                      {buyingWallet.mnemonic}
+                    </p>
+                    <div className="flex gap-2 pt-1">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => handleCopy(buyingWallet.mnemonic)}
                       >
-                        <Copy className="h-4 w-4" />
+                        <Copy className="h-3.5 w-3.5" /> Copy
                       </Button>
-                      <div className="flex-1 font-mono text-sm text-muted-foreground">
-                        {buyingWallet.mnemonic}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
                       <Button
-                        className="text-sm flex items-center gap-2 bg-black text-white hover:bg-black/90"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => {
                           const blob = new Blob([buyingWallet.mnemonic], {
                             type: 'text/plain',
@@ -266,63 +295,62 @@ function SeedPhrasesScreen({
                           window.URL.revokeObjectURL(url);
                         }}
                       >
-                        <Download className="h-4 w-4" />
-                        Download
+                        <Download className="h-3.5 w-3.5" /> Download
                       </Button>
                     </div>
                   </div>
                 </div>
-              </div>
-            )
-          )}
-        </div>
+              )
+            )}
+          </CardContent>
+        </Card>
 
-        <div className="rounded-lg border border-border p-4 space-y-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FFF7ED] text-[#C2410C] dark:bg-[#C2410C]/10 dark:text-[#FFF7ED]">
-              Selling
-            </span>
-            <h3 className="text-sm font-medium">Selling wallet</h3>
-          </div>
-          {isGenerating ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner size={16} />
-              Generating...
-            </div>
-          ) : (
-            sellingWallet && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleCopy(sellingWallet.address)}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  {shortenAddress(sellingWallet.address, 10)}
-                </div>
-                <div className="border-t border-border my-4" />
-                <div>
-                  <div className="text-sm font-medium mb-2">Seed phrase</div>
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <Badge className="w-fit bg-orange-600 hover:bg-orange-700">Selling</Badge>
+            <CardTitle className="text-base mt-2">Selling wallet</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isGenerating ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner size={16} />
+                Generating...
+              </div>
+            ) : (
+              sellingWallet && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => handleCopy(sellingWallet.address)}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <span className="font-mono text-muted-foreground truncate">
+                      {shortenAddress(sellingWallet.address, 10)}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Seed phrase</p>
+                    <p className="font-mono text-xs text-muted-foreground break-all">
+                      {sellingWallet.mnemonic}
+                    </p>
+                    <div className="flex gap-2 pt-1">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => handleCopy(sellingWallet.mnemonic)}
                       >
-                        <Copy className="h-4 w-4" />
+                        <Copy className="h-3.5 w-3.5" /> Copy
                       </Button>
-                      <div className="flex-1 font-mono text-sm text-muted-foreground">
-                        {sellingWallet.mnemonic}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
                       <Button
-                        className="text-sm flex items-center gap-2 bg-black text-white hover:bg-black/90"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
                         onClick={() => {
                           const blob = new Blob([sellingWallet.mnemonic], {
                             type: 'text/plain',
@@ -335,46 +363,53 @@ function SeedPhrasesScreen({
                           window.URL.revokeObjectURL(url);
                         }}
                       >
-                        <Download className="h-4 w-4" />
-                        Download
+                        <Download className="h-3.5 w-3.5" /> Download
                       </Button>
                     </div>
                   </div>
                 </div>
-              </div>
-            )
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="confirm"
-            checked={isConfirmed}
-            onCheckedChange={(checked) => setIsConfirmed(checked as boolean)}
-            disabled={isGenerating}
-          />
-          <label htmlFor="confirm" className="text-sm text-muted-foreground">
-            I saved both seed phrases in a secure place
-          </label>
-        </div>
-
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm" onClick={ignoreSetup}>
-            Cancel
-          </Button>
-          <Button
-            className="text-sm"
-            disabled={isGenerating || !isConfirmed || !buyingWallet || !sellingWallet}
-            onClick={() => {
-              if (buyingWallet && sellingWallet) {
-                onNext(buyingWallet, sellingWallet);
-              }
-            }}
-          >
-            {isGenerating ? 'Generating...' : 'Next'}
-          </Button>
-        </div>
+              )
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="confirm"
+              checked={isConfirmed}
+              onCheckedChange={(checked) => setIsConfirmed(checked as boolean)}
+              disabled={isGenerating}
+              className="mt-0.5"
+            />
+            <Label
+              htmlFor="confirm"
+              className="text-sm text-muted-foreground cursor-pointer leading-tight"
+            >
+              I have saved both seed phrases in a secure place and understand they cannot be
+              recovered if lost.
+            </Label>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-6">
+            <Button variant="outline" onClick={ignoreSetup}>
+              Cancel
+            </Button>
+            <Button
+              disabled={isGenerating || !isConfirmed || !buyingWallet || !sellingWallet}
+              onClick={() => {
+                if (buyingWallet && sellingWallet) {
+                  onNext(buyingWallet, sellingWallet);
+                }
+              }}
+              className="gap-2"
+            >
+              {isGenerating ? 'Generating...' : 'Continue'} <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -403,27 +438,50 @@ function PaymentSourceSetupScreen({
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [customSetup, setCustomSetup] = useState(false);
+  const [showCustomSetupDialog, setShowCustomSetupDialog] = useState(false);
+  const [feePercentInput, setFeePercentInput] = useState('');
+  const [customConfigOpen, setCustomConfigOpen] = useState(false);
 
   const adminWallets = DEFAULT_ADMIN_WALLETS[network];
+  const defaultFeeConfig = DEFAULT_FEE_CONFIG[network];
 
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<PaymentSourceFormValues>({
     resolver: zodResolver(paymentSourceSchema),
     defaultValues: {
       blockfrostApiKey: '',
       feeReceiverWallet: {
-        walletAddress: DEFAULT_FEE_CONFIG[network].feeWalletAddress,
+        walletAddress: defaultFeeConfig.feeWalletAddress,
       },
-      feePermille: DEFAULT_FEE_CONFIG[network].feePermille,
+      feePermille: defaultFeeConfig.feePermille,
     },
   });
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
+  };
+
+  const handleCustomSetupChecked = (checked: boolean | 'indeterminate') => {
+    if (checked === true) {
+      setShowCustomSetupDialog(true);
+    } else {
+      setCustomSetup(false);
+      setValue('feeReceiverWallet.walletAddress', defaultFeeConfig.feeWalletAddress);
+      setValue('feePermille', defaultFeeConfig.feePermille);
+    }
+  };
+
+  const handleConfirmCustomSetup = () => {
+    setCustomSetup(true);
+    setShowCustomSetupDialog(false);
+    setFeePercentInput((defaultFeeConfig.feePermille / 10).toFixed(1));
   };
 
   const onSubmit = async (data: PaymentSourceFormValues) => {
@@ -435,6 +493,11 @@ function PaymentSourceSetupScreen({
     setIsLoading(true);
     setError('');
 
+    const feeReceiverWallet = customSetup
+      ? data.feeReceiverWallet
+      : { walletAddress: defaultFeeConfig.feeWalletAddress };
+    const feePermille = customSetup ? data.feePermille : defaultFeeConfig.feePermille;
+
     await handleApiCall(
       () =>
         postPaymentSourceExtended({
@@ -445,7 +508,7 @@ function PaymentSourceSetupScreen({
               rpcProviderApiKey: data.blockfrostApiKey,
               rpcProvider: 'Blockfrost',
             },
-            feeRatePermille: data.feePermille,
+            feeRatePermille: feePermille,
             AdminWallets: adminWallets.map((w) => ({
               walletAddress: w.walletAddress,
             })) as [
@@ -453,7 +516,7 @@ function PaymentSourceSetupScreen({
               { walletAddress: string },
               { walletAddress: string },
             ],
-            FeeReceiverNetworkWallet: data.feeReceiverWallet,
+            FeeReceiverNetworkWallet: feeReceiverWallet,
             PurchasingWallets: [
               {
                 walletMnemonic: buyingWallet.mnemonic,
@@ -475,9 +538,13 @@ function PaymentSourceSetupScreen({
           toast.success('Payment source created successfully');
           onNext();
         },
-        onError: (error: any) => {
-          setError(error.message || 'Failed to create payment source');
-          toast.error(error.message || 'Failed to create payment source');
+        onError: (error: unknown) => {
+          const msg =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message: string }).message)
+              : 'Failed to create payment source';
+          setError(msg);
+          toast.error(msg);
         },
         onFinally: () => {
           setIsLoading(false);
@@ -488,107 +555,239 @@ function PaymentSourceSetupScreen({
   };
 
   return (
-    <div className="space-y-6 max-w-[600px] w-full">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Setup Payment Source</h1>
+    <div className="space-y-6 w-full max-w-2xl">
+      <div className="text-center space-y-2">
+        <div className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2 mb-2">
+          <Key className="h-5 w-5 text-primary" />
+        </div>
+        <h1 className="text-2xl font-bold">Payment source</h1>
         <p className="text-sm text-muted-foreground">
-          Configure your payment source with the generated wallets.
+          Configure Blockfrost and fee settings. Wallets from the previous step will be linked.
         </p>
       </div>
 
-      {error && <div className="text-sm text-destructive text-center">{error}</div>}
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
-      <div className="space-y-6">
-        {/* Admin Wallets Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Admin Wallets</h3>
-          <div className="space-y-4">
-            {adminWallets.map((wallet, index) => (
-              <div key={index} className="rounded-lg border border-border p-4 space-y-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-black text-white dark:bg-white/10 dark:text-white">
-                    Admin Wallet {index + 1}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleCopy(wallet.walletAddress)}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  {shortenAddress(wallet.walletAddress, 10)}
-                </div>
-              </div>
-            ))}
+      <Dialog open={showCustomSetupDialog} onOpenChange={setShowCustomSetupDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Custom network setup</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground">
+              A custom network setup is required. There may not be registered agents on other
+              contracts, and customer support is limited. Only enable this if you need to use
+              different fee or admin settings.
+            </p>
           </div>
-        </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowCustomSetupDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmCustomSetup}>I understand, enable custom setup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* Configuration Section */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Configuration</h3>
-          <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Blockfrost API key</CardTitle>
+            <CardDescription>
+              Provide your Blockfrost API key to connect to the Cardano blockchain.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Blockfrost API Key <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                {...register('blockfrostApiKey')}
-                placeholder="Enter your Blockfrost API key"
-              />
+              <div className="flex items-center gap-2">
+                <Label htmlFor="blockfrostApiKey">
+                  Blockfrost API key <span className="text-destructive">*</span>
+                </Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex text-muted-foreground hover:text-foreground">
+                      <Info className="h-4 w-4" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>You can sign up for free at Blockfrost.</TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                <Input
+                  id="blockfrostApiKey"
+                  type="text"
+                  placeholder="Enter your Blockfrost API key"
+                  {...register('blockfrostApiKey')}
+                  className={cn('sm:max-w-sm', errors.blockfrostApiKey && 'border-destructive')}
+                />
+                <a
+                  href="https://blockfrost.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                >
+                  blockfrost.io <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
               {errors.blockfrostApiKey && (
-                <p className="text-xs text-destructive mt-1">{errors.blockfrostApiKey.message}</p>
+                <p className="text-xs text-destructive">{errors.blockfrostApiKey.message}</p>
               )}
             </div>
+          </CardContent>
+        </Card>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Fee Receiver Wallet Address <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 rounded-md bg-background border"
-                {...register('feeReceiverWallet.walletAddress')}
-                placeholder="Enter fee receiver wallet address"
-              />
-              {errors.feeReceiverWallet?.walletAddress && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.feeReceiverWallet.walletAddress.message}
-                </p>
-              )}
+        <div className="rounded-lg border">
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full justify-between rounded-b-none px-4 py-3 hover:bg-muted/50"
+            onClick={() => setCustomConfigOpen((o) => !o)}
+          >
+            <span className="font-medium">Custom configuration</span>
+            {customConfigOpen ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+          {customConfigOpen && (
+            <div className="border-t px-4 pb-4 pt-2">
+              <Card className={cn('border-0 shadow-none', !customSetup && 'opacity-90')}>
+                <CardHeader className="space-y-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-base">Fee & admin wallets</CardTitle>
+                      <CardDescription>
+                        Default fee receiver and admin addresses. Enable custom setup to change
+                        them.
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Checkbox
+                        id="customSetup"
+                        checked={customSetup}
+                        onCheckedChange={handleCustomSetupChecked}
+                      />
+                      <Label htmlFor="customSetup" className="text-sm font-medium cursor-pointer">
+                        Custom setup
+                      </Label>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Admin wallets
+                    </Label>
+                    <div className="space-y-2">
+                      {adminWallets.map((wallet, index) => (
+                        <div
+                          key={index}
+                          className={cn(
+                            'flex items-center justify-between rounded-lg border px-3 py-2',
+                            customSetup ? 'bg-muted/30' : 'bg-muted/20 opacity-80',
+                          )}
+                        >
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Admin wallet {index + 1}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-sm truncate max-w-[180px]">
+                              {shortenAddress(wallet.walletAddress, 8)}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleCopy(wallet.walletAddress)}
+                              disabled={!customSetup}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="feeReceiverWallet">
+                      Fee receiver wallet address <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="feeReceiverWallet"
+                      type="text"
+                      placeholder="Enter fee receiver wallet address"
+                      {...register('feeReceiverWallet.walletAddress')}
+                      disabled={!customSetup}
+                      className={cn(
+                        errors.feeReceiverWallet?.walletAddress && 'border-destructive',
+                        !customSetup && 'cursor-not-allowed opacity-70',
+                      )}
+                    />
+                    {errors.feeReceiverWallet?.walletAddress && (
+                      <p className="text-xs text-destructive">
+                        {errors.feeReceiverWallet.walletAddress.message}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="feePermille">
+                      Fee (%) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="feePermille"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={
+                        customSetup
+                          ? feePercentInput
+                          : (defaultFeeConfig.feePermille / 10).toFixed(1)
+                      }
+                      onChange={(e) => setFeePercentInput(e.target.value)}
+                      onBlur={() => {
+                        const percent = parseFloat(feePercentInput);
+                        if (!Number.isNaN(percent)) {
+                          const permille = Math.round(Math.min(100, Math.max(0, percent)) * 10);
+                          setValue('feePermille', permille, { shouldValidate: true });
+                          setFeePercentInput((permille / 10).toFixed(1));
+                        } else {
+                          setFeePercentInput((watch('feePermille') / 10).toFixed(1));
+                        }
+                      }}
+                      disabled={!customSetup}
+                      className={cn(
+                        errors.feePermille && 'border-destructive',
+                        !customSetup && 'cursor-not-allowed opacity-70',
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground">0–100%, one decimal.</p>
+                    {errors.feePermille && (
+                      <p className="text-xs text-destructive">{errors.feePermille.message}</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Fee Permille <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="number"
-                className="w-full p-2 rounded-md bg-background border"
-                {...register('feePermille', { valueAsNumber: true })}
-                min="0"
-                max="1000"
-              />
-              {errors.feePermille && (
-                <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
-              )}
-            </div>
-
-            <div className="flex items-center justify-center gap-4 pt-4">
-              <Button variant="secondary" className="text-sm" type="button" onClick={ignoreSetup}>
-                Cancel
-              </Button>
-              <Button className="text-sm" disabled={isLoading} type="submit">
-                {isLoading ? 'Creating...' : 'Create Payment Source'}
-              </Button>
-            </div>
-          </form>
+          )}
         </div>
-      </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button type="button" variant="outline" onClick={ignoreSetup}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isLoading} className="gap-2">
+            {isLoading ? 'Creating...' : 'Create payment source'} <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -837,74 +1036,102 @@ function AddAiAgentScreen({
   };
 
   return (
-    <div className="space-y-6 max-w-[600px] w-full">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Add AI Agent</h1>
-        <p className="text-sm text-muted-foreground">
-          Create your first AI agent by providing its details below. This agent will be available
-          for users to interact with and generate revenue through your payment system.
+    <div className="space-y-6 w-full max-w-2xl">
+      <div className="text-center space-y-2">
+        <div className="inline-flex items-center justify-center rounded-full bg-primary/10 p-2 mb-2">
+          <Bot className="h-5 w-5 text-primary" />
+        </div>
+        <h1 className="text-2xl font-bold">Add AI agent</h1>
+        <p className="text-sm text-muted-foreground max-w-md mx-auto">
+          Register your first agent so users can discover it and pay for usage. You can skip and add
+          one later.
         </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {error && (
-          <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-md">
+          <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
             {error}
           </div>
         )}
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            API URL <span className="text-red-500">*</span>
-          </label>
-          <Input
-            {...register('apiUrl')}
-            placeholder="https://your-agent-api.com"
-            className={errors.apiUrl ? 'border-red-500' : ''}
-          />
-          {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Name <span className="text-red-500">*</span>
-          </label>
-          <Input
-            {...register('name')}
-            placeholder="Enter a name for your agent"
-            className={errors.name ? 'border-red-500' : ''}
-          />
-          {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Description <span className="text-red-500">*</span>
-          </label>
-          <Textarea
-            {...register('description')}
-            placeholder="Describe what your agent does"
-            className={`min-h-[100px] ${errors.description ? 'border-red-500' : ''}`}
-          />
-          {errors.description && (
-            <p className="text-sm text-red-500">{errors.description.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Linked Wallet</label>
-          <div className="rounded-lg border border-border p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#FFF7ED] text-[#C2410C] dark:bg-[#C2410C]/10 dark:text-[#FFF7ED]">
-                Selling
-              </span>
-              <span className="text-sm font-medium">Selling wallet</span>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Agent details</CardTitle>
+            <CardDescription>Required fields for registry listing.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="apiUrl">
+                API URL <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="apiUrl"
+                {...register('apiUrl')}
+                placeholder="https://your-agent-api.com"
+                className={errors.apiUrl ? 'border-destructive' : ''}
+              />
+              {errors.apiUrl && <p className="text-xs text-destructive">{errors.apiUrl.message}</p>}
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="space-y-2">
+              <Label htmlFor="agentName">
+                Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="agentName"
+                {...register('name')}
+                placeholder="Enter a name for your agent"
+                className={errors.name ? 'border-destructive' : ''}
+              />
+              {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">
+                Description <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="description"
+                {...register('description')}
+                placeholder="Describe what your agent does"
+                className={cn('min-h-[100px]', errors.description && 'border-destructive')}
+              />
+              {errors.description && (
+                <p className="text-xs text-destructive">{errors.description.message}</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Linked wallet</CardTitle>
+            <CardDescription>
+              Payments for this agent will be sent to this selling wallet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Badge className="shrink-0 bg-orange-600 hover:bg-orange-700">Selling</Badge>
+                {sellingWallet?.address ? (
+                  <a
+                    href={getExplorerUrl(sellingWallet.address, network)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm truncate hover:underline text-primary"
+                  >
+                    {shortenAddress(sellingWallet.address, 8)}
+                  </a>
+                ) : (
+                  <span className="text-sm text-muted-foreground">No wallet</span>
+                )}
+              </div>
               <Button
+                type="button"
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8"
+                className="h-7 w-7 shrink-0"
                 onClick={() => {
                   if (sellingWallet?.address) {
                     navigator.clipboard.writeText(sellingWallet.address);
@@ -912,242 +1139,217 @@ function AddAiAgentScreen({
                   }
                 }}
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-3.5 w-3.5" />
               </Button>
-              {sellingWallet?.address ? (
-                <a
-                  href={getExplorerUrl(sellingWallet.address, network)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-sm break-all hover:underline text-primary"
-                >
-                  {shortenAddress(sellingWallet.address, 6)}
-                </a>
-              ) : (
-                'No wallet available'
-              )}
             </div>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            All payments for using this AI agent will be credited to this wallet
-          </p>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Pricing <span className="text-red-500">*</span>
-          </label>
-          <div className="space-y-3">
-            {priceFields.map((field, index) => (
-              <div key={field.id} className="flex gap-2">
-                <div className="flex-1">
-                  <Input
-                    {...register(`prices.${index}.amount`)}
-                    placeholder="0.00"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className={errors.prices?.[index]?.amount ? 'border-red-500' : ''}
-                  />
-                </div>
-                <Select
-                  value={watch(`prices.${index}.unit`)}
-                  onValueChange={(value) =>
-                    setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
-                  }
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pricing & tags</CardTitle>
+            <CardDescription>At least one price and one tag are required.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Pricing</Label>
+              <div className="space-y-3">
+                {priceFields.map((field, index) => (
+                  <div key={field.id} className="flex gap-2 items-center">
+                    <Input
+                      {...register(`prices.${index}.amount`)}
+                      placeholder="0.00"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      className={cn(
+                        'flex-1',
+                        errors.prices?.[index]?.amount && 'border-destructive',
+                      )}
+                    />
+                    <Select
+                      value={watch(`prices.${index}.unit`)}
+                      onValueChange={(value) =>
+                        setValue(`prices.${index}.unit`, value as 'lovelace' | 'USDM')
+                      }
+                    >
+                      <SelectTrigger className="w-24">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="lovelace">ADA</SelectItem>
+                        <SelectItem value="USDM">USDM</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {priceFields.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removePrice(index)}
+                        aria-label="Remove price"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
                 >
-                  <SelectTrigger className="w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="lovelace">ADA</SelectItem>
-                    <SelectItem value="USDM">USDM</SelectItem>
-                  </SelectContent>
-                </Select>
-                {priceFields.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removePrice(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  Add price
+                </Button>
+              </div>
+              {errors.prices && <p className="text-xs text-destructive">{errors.prices.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add a tag"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddTag();
+                    }
+                  }}
+                  className={errors.tags ? 'border-destructive' : ''}
+                />
+                <Button type="button" variant="outline" onClick={handleAddTag}>
+                  Add
+                </Button>
+              </div>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag: string) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="cursor-pointer"
+                      onClick={() => handleRemoveTag(tag)}
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {errors.tags && <p className="text-xs text-destructive">{errors.tags.message}</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Additional fields</CardTitle>
+            <CardDescription>Optional author, legal, and capability info.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="authorName">Author name</Label>
+                <Input
+                  id="authorName"
+                  {...register('authorName')}
+                  placeholder="Author's name"
+                  className={errors.authorName ? 'border-destructive' : ''}
+                />
+                {errors.authorName && (
+                  <p className="text-xs text-destructive">{errors.authorName.message}</p>
                 )}
               </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
-            >
-              Add Price
-            </Button>
-          </div>
-          {errors.prices && <p className="text-sm text-red-500">{errors.prices.message}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            Tags <span className="text-red-500">*</span>
-          </label>
-          <div>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Add a tag"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-                className={errors.tags ? 'border-red-500' : ''}
-              />
-              <Button type="button" variant="outline" onClick={handleAddTag}>
-                Add
-              </Button>
-            </div>
-            {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {tags.map((tag: string) => (
-                  <Badge
-                    key={tag}
-                    variant="secondary"
-                    className="cursor-pointer"
-                    onClick={() => handleRemoveTag(tag)}
-                  >
-                    {tag}
-                  </Badge>
-                ))}
+              <div className="space-y-2">
+                <Label htmlFor="authorEmail">Author email</Label>
+                <Input
+                  id="authorEmail"
+                  {...register('authorEmail')}
+                  type="email"
+                  placeholder="author@example.com"
+                  className={errors.authorEmail ? 'border-destructive' : ''}
+                />
+                {errors.authorEmail && (
+                  <p className="text-xs text-destructive">{errors.authorEmail.message}</p>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="organization">Organization</Label>
+              <Input
+                id="organization"
+                {...register('organization')}
+                placeholder="Organization name"
+                className={errors.organization ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contactOther">Contact (website, phone)</Label>
+              <Input
+                id="contactOther"
+                {...register('contactOther')}
+                placeholder="Other contact"
+                className={errors.contactOther ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="termsOfUseUrl">Terms of use URL</Label>
+              <Input
+                id="termsOfUseUrl"
+                {...register('termsOfUseUrl')}
+                placeholder="https://..."
+                className={errors.termsOfUseUrl ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="privacyPolicyUrl">Privacy policy URL</Label>
+              <Input
+                id="privacyPolicyUrl"
+                {...register('privacyPolicyUrl')}
+                placeholder="https://..."
+                className={errors.privacyPolicyUrl ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="otherUrl">Other URL (support, etc.)</Label>
+              <Input
+                id="otherUrl"
+                {...register('otherUrl')}
+                placeholder="https://..."
+                className={errors.otherUrl ? 'border-destructive' : ''}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="capabilityName">Capability name</Label>
+                <Input
+                  id="capabilityName"
+                  {...register('capabilityName')}
+                  placeholder="e.g. Text Generation"
+                  className={errors.capabilityName ? 'border-destructive' : ''}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="capabilityVersion">Capability version</Label>
+                <Input
+                  id="capabilityVersion"
+                  {...register('capabilityVersion')}
+                  placeholder="e.g. 1.0.0"
+                  className={errors.capabilityVersion ? 'border-destructive' : ''}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        <div className="flex items-center gap-4 pt-2">
-          <Separator className="flex-1" />
-          <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-            Additional Fields
-          </h3>
-          <Separator className="flex-1" />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Author Name</label>
-          <Input
-            {...register('authorName')}
-            placeholder="Enter the author's name"
-            className={errors.authorName ? 'border-red-500' : ''}
-          />
-          {errors.authorName && <p className="text-sm text-red-500">{errors.authorName.message}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Author Email</label>
-          <Input
-            {...register('authorEmail')}
-            type="email"
-            placeholder="Enter the author's email address"
-            className={errors.authorEmail ? 'border-red-500' : ''}
-          />
-          {errors.authorEmail && (
-            <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Organization</label>
-          <Input
-            {...register('organization')}
-            placeholder="Enter the organization name"
-            className={errors.organization ? 'border-red-500' : ''}
-          />
-          {errors.organization && (
-            <p className="text-sm text-red-500">{errors.organization.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
-          <Input
-            {...register('contactOther')}
-            placeholder="Enter other contact"
-            className={errors.contactOther ? 'border-red-500' : ''}
-          />
-          {errors.contactOther && (
-            <p className="text-sm text-red-500">{errors.contactOther.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Terms of Use URL</label>
-          <Input
-            {...register('termsOfUseUrl')}
-            placeholder="Enter the terms of use URL"
-            className={errors.termsOfUseUrl ? 'border-red-500' : ''}
-          />
-          {errors.termsOfUseUrl && (
-            <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Privacy Policy URL</label>
-          <Input
-            {...register('privacyPolicyUrl')}
-            placeholder="Enter the privacy policy URL"
-            className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
-          />
-          {errors.privacyPolicyUrl && (
-            <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Other URL (Support...)</label>
-          <Input
-            {...register('otherUrl')}
-            placeholder="Enter the other URL"
-            className={errors.otherUrl ? 'border-red-500' : ''}
-          />
-          {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Capability Name</label>
-            <Input
-              {...register('capabilityName')}
-              placeholder="e.g., Text Generation"
-              className={errors.capabilityName ? 'border-red-500' : ''}
-            />
-            {errors.capabilityName && (
-              <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Capability Version</label>
-            <Input
-              {...register('capabilityVersion')}
-              placeholder="e.g., 1.0.0"
-              className={errors.capabilityVersion ? 'border-red-500' : ''}
-            />
-            {errors.capabilityVersion && (
-              <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <Button variant="secondary" className="text-sm" onClick={ignoreSetup}>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Button type="button" variant="outline" onClick={ignoreSetup}>
             Skip for now
           </Button>
-          <Button type="submit" className="text-sm" disabled={isLoading}>
-            {isLoading ? 'Adding...' : 'Add Agent'}
+          <Button type="submit" disabled={isLoading} className="gap-2">
+            {isLoading ? 'Adding...' : 'Add agent'} <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </form>
@@ -1166,34 +1368,49 @@ function SuccessScreen({
   const networkDisplay = formatNetworkDisplay(networkType);
 
   return (
-    <div className="text-center space-y-4 max-w-[600px]">
-      <div className="flex justify-center mb-6">
-        <span role="img" aria-label="celebration" className="text-4xl">
-          🎉
-        </span>
-      </div>
-      <h1 className="text-4xl font-bold">
-        Your {networkDisplay} environment
-        <br />
-        is all set!
-      </h1>
-
-      <p className="text-sm text-muted-foreground mt-4 mb-8">
-        You've successfully configured your payment environment and created secure wallets
-        {hasAiAgent ? ' and set up your first AI agent' : ''}. You can now start managing your
-        Agentic AI services and receiving payments through the dashboard.
-      </p>
-
-      <div className="flex items-center justify-center">
-        <Button className="text-sm" onClick={onComplete}>
-          Complete
-        </Button>
-      </div>
-    </div>
+    <Card className="w-full max-w-lg border-0 shadow-lg bg-card/50">
+      <CardHeader className="text-center pb-2">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-500/15">
+          <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-500" />
+        </div>
+        <CardTitle className="text-2xl">You&apos;re all set!</CardTitle>
+        <CardDescription className="text-base mt-1">
+          Your <span className="font-medium text-foreground">{networkDisplay}</span> environment is
+          ready.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6 pt-2">
+        <ul className="text-sm text-muted-foreground space-y-2 text-left max-w-xs mx-auto">
+          <li className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 shrink-0" />
+            Wallets created and saved
+          </li>
+          <li className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 shrink-0" />
+            Payment source configured
+          </li>
+          {hasAiAgent && (
+            <li className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500 shrink-0" />
+              First AI agent registered
+            </li>
+          )}
+        </ul>
+        <p className="text-sm text-muted-foreground text-center">
+          Head to the dashboard to manage payment sources, agents, and transactions.
+        </p>
+        <div className="flex justify-center">
+          <Button onClick={onComplete} className="gap-2">
+            Go to dashboard <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 export function SetupWelcome({ networkType }: { networkType: string }) {
+  const { setSetupWizardStep } = useAppContext();
   const [currentStep, setCurrentStep] = useState(0);
   const [wallets, setWallets] = useState<{
     buying: { address: string; mnemonic: string } | null;
@@ -1203,7 +1420,15 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     selling: null,
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
-  const { setNetwork } = useAppContext();
+
+  useEffect(() => {
+    setCurrentStep(0);
+    setWallets({ buying: null, selling: null });
+  }, [networkType]);
+
+  useEffect(() => {
+    setSetupWizardStep(currentStep);
+  }, [currentStep, setSetupWizardStep]);
 
   const handleComplete = () => {
     router.push('/');
@@ -1225,12 +1450,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   };
 
   const steps = [
-    <WelcomeScreen
-      key="welcome"
-      onStart={() => setCurrentStep(1)}
-      networkType={networkType}
-      onNetworkChange={setNetwork}
-    />,
+    <WelcomeScreen key="welcome" onStart={() => setCurrentStep(1)} networkType={networkType} />,
     <SeedPhrasesScreen
       key="seed"
       onNext={(buying, selling) => {
@@ -1261,9 +1481,39 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     />,
   ];
 
+  const totalSteps = steps.length;
+  const showStepper = currentStep > 0 && currentStep < totalSteps - 1;
+
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-center min-h-[calc(100vh-200px)] py-8">
+    <div className="w-full max-w-2xl mx-auto px-4">
+      {showStepper && (
+        <div className="mb-8">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+            Step {currentStep + 1} of {totalSteps}
+          </p>
+          <div className="flex gap-1">
+            {STEP_LABELS.slice(1, -1).map((_label, i) => {
+              const stepIndex = i + 1;
+              const isComplete = currentStep > stepIndex;
+              const isCurrent = currentStep === stepIndex;
+              return (
+                <div
+                  key={stepIndex}
+                  className={cn(
+                    'h-1.5 flex-1 rounded-full transition-colors',
+                    isComplete && 'bg-primary',
+                    isCurrent && 'bg-primary',
+                    !isComplete && !isCurrent && 'bg-muted',
+                  )}
+                  title={STEP_LABELS[stepIndex]}
+                />
+              );
+            })}
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">{STEP_LABELS[currentStep]}</p>
+        </div>
+      )}
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-240px)] py-8">
         {steps[currentStep]}
       </div>
     </div>

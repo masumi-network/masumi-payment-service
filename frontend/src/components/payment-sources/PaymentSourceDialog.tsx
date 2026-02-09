@@ -50,7 +50,7 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                 <div className="text-sm">{paymentSource.network}</div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Fee Rate</label>
+                <label className="text-sm font-medium text-muted-foreground">Fee rate (%)</label>
                 <div className="text-sm">{(paymentSource.feeRatePermille / 10).toFixed(1)}%</div>
               </div>
               <div className="space-y-2">

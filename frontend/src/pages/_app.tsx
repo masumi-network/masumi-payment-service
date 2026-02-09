@@ -148,18 +148,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     init();
   }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
-  // Watch for network changes in URL and update state
+  // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
+  // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
+  // this effect does not re-run with stale router.query and overwrite the new value.
   useEffect(() => {
     const networkParam = router.query.network as string;
-
-    if (networkParam && networkParam !== network) {
-      if (networkParam.toLowerCase() === 'mainnet') {
-        setNetwork('Mainnet');
-      } else if (networkParam.toLowerCase() === 'preprod') {
-        setNetwork('Preprod');
-      }
+    if (!networkParam) return;
+    if (networkParam.toLowerCase() === 'mainnet') {
+      setNetwork('Mainnet');
+    } else if (networkParam.toLowerCase() === 'preprod') {
+      setNetwork('Preprod');
     }
-  }, [router.query.network, network, setNetwork]);
+  }, [router.query.network, setNetwork]);
 
   if (isHealthy === null) {
     return (
