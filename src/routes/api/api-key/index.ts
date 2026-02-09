@@ -1,12 +1,13 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { ApiKeyStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { createId } from '@paralleldrive/cuid2';
 import createHttpError from 'http-errors';
 import { generateSHA256Hash } from '@/utils/crypto';
 import { CONSTANTS } from '@/utils/config';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { computePermissionFromFlags, flagsFromLegacyPermission, LegacyPermission } from '@/utils/permissions';
 
 export const getAPIKeySchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of API keys to return'),
@@ -17,7 +18,14 @@ export const apiKeyOutputSchema = z
 	.object({
 		id: z.string().describe('Unique identifier for the API key'),
 		token: z.string().describe('The API key token'),
-		permission: z.nativeEnum(Permission).describe('Permission level of the API key'),
+		// Flag-based permissions (new system)
+		canRead: z.boolean().describe('Whether this API key can access read endpoints'),
+		canPay: z.boolean().describe('Whether this API key can access payment/purchase endpoints'),
+		canAdmin: z.boolean().describe('Whether this API key has admin access'),
+		// Legacy permission (computed from flags for backward compatibility)
+		permission: z
+			.enum(['Read', 'ReadAndPay', 'Admin'])
+			.describe('Permission level of the API key (computed from flags for backward compatibility)'),
 		usageLimited: z.boolean().describe('Whether the API key has usage limits'),
 		networkLimit: z.array(z.nativeEnum(Network)).describe('List of Cardano networks this API key is allowed to access'),
 		RemainingUsageCredits: z
@@ -59,6 +67,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 		return {
 			ApiKeys: result.map((data) => ({
 				...data,
+				permission: computePermissionFromFlags(data.canRead, data.canPay, data.canAdmin),
 				RemainingUsageCredits: transformBigIntAmounts(data.RemainingUsageCredits),
 			})),
 		};
@@ -95,7 +104,15 @@ export const addAPIKeySchemaInput = z.object({
 		.max(3)
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
-	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key'),
+	// Flag-based permissions (new system)
+	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
+	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
+	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
+	// Legacy permission input (for backward compatibility)
+	permission: z
+		.enum(['Read', 'ReadAndPay', 'Admin'])
+		.optional()
+		.describe('Legacy permission field (use canRead/canPay/canAdmin instead)'),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -105,16 +122,31 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	input: addAPIKeySchemaInput,
 	output: addAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
-		const isAdmin = input.permission == Permission.Admin;
-		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
+		// Determine permission flags
+		let canRead = input.canRead ?? true;
+		let canPay = input.canPay ?? false;
+		let canAdmin = input.canAdmin ?? false;
+
+		// If legacy permission is provided, use it (for backward compatibility)
+		if (input.permission) {
+			const flags = flagsFromLegacyPermission(input.permission as LegacyPermission);
+			canRead = flags.canRead;
+			canPay = flags.canPay;
+			canAdmin = flags.canAdmin;
+		}
+
+		const apiKey = 'masumi-payment-' + (canAdmin ? 'admin-' : '') + createId();
+
 		const result = await prisma.apiKey.create({
 			data: {
 				token: apiKey,
 				tokenHash: generateSHA256Hash(apiKey),
 				status: ApiKeyStatus.Active,
-				permission: input.permission,
-				usageLimited: isAdmin ? false : input.usageLimited,
-				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
+				canRead: canRead,
+				canPay: canPay,
+				canAdmin: canAdmin,
+				usageLimited: canAdmin ? false : input.usageLimited,
+				networkLimit: canAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
 				RemainingUsageCredits: {
 					createMany: {
 						data: input.UsageCredits.map((usageCredit) => {
@@ -133,6 +165,8 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		});
 		return {
 			...result,
+			// Compute permission for backward compatibility in response
+			permission: computePermissionFromFlags(result.canRead, result.canPay, result.canAdmin),
 			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
 		};
 	},
@@ -168,6 +202,10 @@ export const updateAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.optional()
 		.describe('The networks the API key is allowed to use'),
+	// Flag-based permissions (new system)
+	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
+	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
+	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -225,6 +263,12 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 				}
+
+				// Determine new permission flags
+				const newCanRead = input.canRead !== undefined ? input.canRead : apiKey.canRead;
+				const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
+				const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
+
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
@@ -232,6 +276,9 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						usageLimited: input.usageLimited,
 						status: input.status,
 						networkLimit: input.networkLimit,
+						canRead: newCanRead,
+						canPay: newCanPay,
+						canAdmin: newCanAdmin,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
@@ -247,6 +294,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 		);
 		return {
 			...apiKey,
+			// Compute permission for backward compatibility in response
+			permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin),
 			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
 		};
 	},
@@ -272,6 +321,8 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 		});
 		return {
 			...apiKey,
+			// Compute permission for backward compatibility in response
+			permission: computePermissionFromFlags(apiKey.canRead, apiKey.canPay, apiKey.canAdmin),
 			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
 		};
 	},
