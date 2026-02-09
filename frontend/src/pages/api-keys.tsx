@@ -14,15 +14,24 @@ import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
@@ -174,60 +183,73 @@ export default function ApiKeys() {
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-6">ID</th>
-                  <th className="p-4 text-left text-sm font-medium">Key</th>
-                  <th className="p-4 text-left text-sm font-medium">Permission</th>
-                  <th className="p-4 text-left text-sm font-medium">Networks</th>
-                  <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
-                  <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="w-12 p-4 pr-8"></th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">ID</TableHead>
+                  <TableHead>Key</TableHead>
+                  <TableHead>Permission</TableHead>
+                  <TableHead>Network Limits</TableHead>
+                  <TableHead>Usage Limits</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {isLoading ? (
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-8">
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <tr key={index} className="border-b" onClick={() => {}}>
-                      <td className="p-4 pl-6">
-                        <div className="text-sm">{key.id}</div>
-                      </td>
-                      <td className="p-4 truncate">
+                    <TableRow key={index}>
+                      <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
+                        {shortenAddress(key.id)}
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm text-muted-foreground">
                             {shortenAddress(key.token)}
                           </span>
                           <CopyButton value={key.token} />
                         </div>
-                      </td>
-                      <td className="p-4 text-sm">{key.permission}</td>
-                      <td className="p-4 text-sm">
-                        <div className="flex gap-1">
-                          {key.networkLimit.map((network) => (
-                            <span
-                              key={network}
-                              className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-100/10 px-2 py-1 text-xs"
-                            >
-                              {network}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            key.permission === 'Admin'
+                              ? 'default'
+                              : key.permission === 'ReadAndPay'
+                                ? 'secondary'
+                                : 'outline'
+                          }
+                        >
+                          {key.permission}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {key.networkLimit.length > 0 ? (
+                          <div className="flex gap-1">
+                            {key.networkLimit.map((net) => (
+                              <Badge key={net} variant="outline" className="font-normal">
+                                {net}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Unlimited</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
                         {key.usageLimited ? (
-                          <div className="space-y-1">
-                            {key.RemainingUsageCredits.map((credit, index) => (
-                              <div key={index}>
+                          <div className="space-y-0.5">
+                            {key.RemainingUsageCredits.map((credit, i) => (
+                              <div key={i} className="text-muted-foreground">
                                 {credit.unit === 'lovelace'
                                   ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
                                   : `${credit.amount} ${credit.unit}`}
@@ -235,51 +257,51 @@ export default function ApiKeys() {
                             ))}
                           </div>
                         ) : (
-                          'Unlimited'
+                          <span className="text-muted-foreground">Unlimited</span>
                         )}
-                      </td>
-                      <td className="p-4 text-sm">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-1 text-xs ${
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={key.status === 'Active' ? 'default' : 'destructive'}
+                          className={
                             key.status === 'Active'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
+                              : ''
+                          }
                         >
                           {key.status}
-                        </span>
-                      </td>
-                      <td className="p-4 pr-8">
-                        <Select
-                          onValueChange={(value) => {
-                            if (value === 'update') {
-                              setKeyToUpdate(key);
-                            } else if (value === 'delete') {
-                              setKeyToDelete(key);
-                            }
-                          }}
-                          value=""
-                        >
-                          <SelectTrigger className="w-[100px]">
-                            <SelectValue placeholder="Actions" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="update">Update</SelectItem>
-                            <SelectItem
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setKeyToUpdate(key)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
                               disabled={key.token === apiKey}
-                              value="delete"
-                              className="text-red-600"
+                              onClick={() => setKeyToDelete(key)}
+                              className="text-destructive focus:text-destructive"
                             >
-                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                    </tr>
+                              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
+                              <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           <div className="flex flex-col gap-4 items-center">

@@ -51,6 +51,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     network,
     setNetwork,
     authorized,
+    isSetupMode,
   } = useAppContext();
 
   // Add dynamic favicon functionality
@@ -82,12 +83,21 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
-    } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      if (router.pathname === '/setup') {
-        router.replace('/');
-      }
     }
-  }, [apiKey, isHealthy, router, isLoading, network, mainnetPaymentSources, preprodPaymentSources]);
+    // If setup mode is active (persisted from before reload), redirect back to setup
+    if (apiKey && isHealthy && isSetupMode && router.pathname !== '/setup') {
+      router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
+    }
+  }, [
+    apiKey,
+    isHealthy,
+    router,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+    isSetupMode,
+  ]);
 
   useEffect(() => {
     const init = async () => {

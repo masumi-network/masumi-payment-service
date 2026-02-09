@@ -53,7 +53,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetwork] = useState<NetworkType>('Preprod');
-  const [isSetupMode, setIsSetupMode] = useState(false);
+  const [isSetupMode, setIsSetupModeState] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('masumi_setup_mode') === 'true';
+    }
+    return false;
+  });
+  const setIsSetupMode = useCallback((value: boolean) => {
+    setIsSetupModeState(value);
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('masumi_setup_mode', 'true');
+      } else {
+        localStorage.removeItem('masumi_setup_mode');
+      }
+    }
+  }, []);
   const [setupWizardStep, setSetupWizardStep] = useState(0);
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
@@ -80,7 +95,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const previousNetworkRef = useRef<NetworkType>(network);
 
   // Persist selectedPaymentSourceId to localStorage whenever it changes
-  const setSelectedPaymentSourceIdAndPersist = (id: string | null) => {
+  const setSelectedPaymentSourceIdAndPersist = useCallback((id: string | null) => {
     setSelectedPaymentSourceId(id);
     if (typeof window !== 'undefined') {
       if (id) {
@@ -89,7 +104,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('selectedPaymentSourceId');
       }
     }
-  };
+  }, []);
+
+  // Memoized network setter to prevent infinite re-render loops
+  // (unstable reference caused URL sync effect in _app.tsx to re-run every render)
+  const setNetworkWithReset = useCallback(
+    (newNetwork: NetworkType) => {
+      setNetwork(newNetwork);
+      setSelectedPaymentSourceIdAndPersist(null);
+    },
+    [setSelectedPaymentSourceIdAndPersist],
+  );
 
   useEffect(() => {
     if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
@@ -108,7 +133,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedPaymentSource(null);
       }
     }
-  }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
+  }, [
+    selectedPaymentSourceId,
+    currentNetworkPaymentSources,
+    network,
+    setSelectedPaymentSourceIdAndPersist,
+  ]);
 
   useEffect(() => {
     if (previousNetworkRef.current !== network) {
@@ -141,7 +171,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
-  }, []);
+  }, [setIsSetupMode]);
 
   return (
     <AppContext.Provider
@@ -174,10 +204,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthorized,
         authorized,
         network,
-        setNetwork: (network: NetworkType) => {
-          setNetwork(network);
-          setSelectedPaymentSourceIdAndPersist(null);
-        },
+        setNetwork: setNetworkWithReset,
         showError,
         apiClient,
         setApiClient,

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   LayoutDashboard,
   Bot,
@@ -52,7 +52,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, setupWizardStep } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
 
@@ -62,73 +62,39 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
   }, []);
 
-  useEffect(() => {
-    if (isChangingTheme) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
+  const applyBlurTransition = useCallback((isActive: boolean) => {
+    if (!isActive) return;
+    const app = document.getElementById('__next');
+    if (!app) return;
+
+    app.style.transition = 'all 0.2s ease';
+    app.style.filter = 'blur(10px)';
+    app.style.pointerEvents = 'none';
+    app.style.opacity = '1';
+    app.style.scale = '1.1';
+
+    const timer = setTimeout(() => {
+      app.style.filter = '';
+      app.style.pointerEvents = 'auto';
+      app.style.opacity = '1';
+      app.style.scale = '1';
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      const el = document.getElementById('__next');
+      if (el) {
+        el.style.filter = '';
+        el.style.transition = '';
+        el.style.pointerEvents = 'auto';
+        el.style.opacity = '1';
+        el.style.scale = '1';
       }
+    };
+  }, []);
 
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
-    }
-  }, [isChangingTheme]);
-
-  useEffect(() => {
-    if (isChangingNetwork) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
-      }
-
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
-    }
-  }, [isChangingNetwork]);
+  useEffect(() => applyBlurTransition(isChangingTheme), [isChangingTheme, applyBlurTransition]);
+  useEffect(() => applyBlurTransition(isChangingNetwork), [isChangingNetwork, applyBlurTransition]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -148,7 +114,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   );
 
   const navItems = useMemo(() => {
-    if (!hasPaymentSources) {
+    // While in setup mode, show only the setup sidebar
+    if (isSetupMode || !hasPaymentSources) {
       return [
         {
           href: '/setup',
@@ -208,12 +175,6 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: formatCount(newTransactionsCount),
       },
       {
-        href: '/setup',
-        name: 'Setup',
-        icon: <Wand2 className="h-4 w-4" />,
-        badge: null,
-      },
-      {
         href: '/payment-sources',
         name: 'Payment sources',
         icon: <FileInput className="h-4 w-4" />,
@@ -238,11 +199,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
       },
     ];
-  }, [hasPaymentSources, newTransactionsCount]);
-
-  const handleOpenNotifications = () => {
-    setIsNotificationsOpen(true);
-  };
+  }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
@@ -528,7 +485,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                       ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-500 dark:text-white dark:hover:bg-red-600'
                       : '',
                   )}
-                  onClick={handleOpenNotifications}
+                  onClick={() => setIsNotificationsOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
                   {formatCount(newTransactionsCount)}
