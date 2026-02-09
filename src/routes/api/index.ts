@@ -46,6 +46,12 @@ import {
 	queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
+import {
+	walletMonitoringGet,
+	walletMonitoringPost,
+	walletMonitoringPatch,
+	walletMonitoringDelete,
+} from './wallet-monitoring';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -168,6 +174,12 @@ export const apiRouter: Routing = {
 			stop: {
 				post: stopMonitoring,
 			},
+		},
+		'wallet-monitoring': {
+			get: walletMonitoringGet,
+			post: walletMonitoringPost,
+			patch: walletMonitoringPatch,
+			delete: walletMonitoringDelete,
 		},
 	},
 };

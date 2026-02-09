@@ -334,6 +334,14 @@ import {
 	deleteWebhookSchemaOutput,
 } from '@/routes/api/webhooks';
 import {
+	getWalletMonitoringInputSchema,
+	getWalletMonitoringOutputSchema,
+	createWalletMonitoringInputSchema,
+	walletMonitorConfigSchema,
+	updateWalletMonitoringInputSchema,
+	deleteWalletMonitoringInputSchema,
+} from '@/routes/api/wallet-monitoring';
+import {
 	monitoringStatusResponseSchema,
 	triggerMonitoringCycleResponseSchema,
 	startMonitoringSchemaInput,
@@ -3281,6 +3289,248 @@ export function generateOpenAPI() {
 		},
 	});
 
+	/********************* WALLET MONITORING *****************************/
+
+	registry.registerPath({
+		method: 'get',
+		path: '/wallet-monitoring/',
+		description: 'Get wallet monitoring configurations for payment sources',
+		summary: 'Get wallet monitoring configurations. (admin access required)',
+		tags: ['wallet-monitoring'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getWalletMonitoringInputSchema.openapi({
+				example: {
+					paymentSourceId: 'payment_source_id',
+					network: Network.Preprod,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of wallet monitoring configurations',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: getWalletMonitoringOutputSchema,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										WalletMonitorConfigs: [],
+									},
+								},
+							}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/wallet-monitoring/',
+		description: 'Create a wallet monitoring configuration for a payment source',
+		summary: 'Create wallet monitoring configuration. (admin access required)',
+		tags: ['wallet-monitoring'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Wallet monitoring configuration to create',
+				content: {
+					'application/json': {
+						schema: createWalletMonitoringInputSchema.openapi({
+							example: {
+								paymentSourceId: 'payment_source_id',
+								enabled: true,
+								checkIntervalSeconds: 3600,
+								walletThresholds: [
+									{
+										hotWalletId: 'hot_wallet_id',
+										enabled: true,
+										adaThresholdLovelace: '10000000',
+										assetThresholds: [
+											{
+												policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+												assetName: '0014df105553444d',
+												displayName: 'USDM',
+												displaySymbol: 'USDM',
+												decimals: 6,
+												minAmount: '100000000',
+											},
+										],
+									},
+								],
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Wallet monitoring configuration created',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: walletMonitorConfigSchema }).openapi({
+							example: {
+								status: 'success',
+								data: {
+									id: 'config_id',
+									paymentSourceId: 'payment_source_id',
+									enabled: true,
+									checkIntervalSeconds: 3600,
+									lastCheckedAt: null,
+									lastCheckStatus: null,
+									lastCheckError: null,
+									WalletThresholds: [],
+								},
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (possible parameters missing or invalid)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Payment source not found',
+			},
+			409: {
+				description: 'Monitoring config already exists for this payment source',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'patch',
+		path: '/wallet-monitoring/',
+		description: 'Update a wallet monitoring configuration',
+		summary: 'Update wallet monitoring configuration. (admin access required)',
+		tags: ['wallet-monitoring'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Wallet monitoring configuration updates',
+				content: {
+					'application/json': {
+						schema: updateWalletMonitoringInputSchema.openapi({
+							example: {
+								id: 'config_id',
+								enabled: false,
+								checkIntervalSeconds: 1800,
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Wallet monitoring configuration updated',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: walletMonitorConfigSchema }).openapi({
+							example: {
+								status: 'success',
+								data: {
+									id: 'config_id',
+									paymentSourceId: 'payment_source_id',
+									enabled: false,
+									checkIntervalSeconds: 1800,
+									lastCheckedAt: null,
+									lastCheckStatus: null,
+									lastCheckError: null,
+									WalletThresholds: [],
+								},
+							},
+						}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Monitoring config not found',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'delete',
+		path: '/wallet-monitoring/',
+		description: 'Delete a wallet monitoring configuration',
+		summary: 'Delete wallet monitoring configuration. (admin access required)',
+		tags: ['wallet-monitoring'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Wallet monitoring configuration to delete',
+				content: {
+					'application/json': {
+						schema: deleteWalletMonitoringInputSchema.openapi({
+							example: {
+								id: 'config_id',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Wallet monitoring configuration deleted',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: walletMonitorConfigSchema }).openapi({
+							example: {
+								status: 'success',
+								data: {
+									id: 'config_id',
+									paymentSourceId: 'payment_source_id',
+									enabled: false,
+									checkIntervalSeconds: 3600,
+									lastCheckedAt: null,
+									lastCheckStatus: null,
+									lastCheckError: null,
+									WalletThresholds: [],
+								},
+							},
+						}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Monitoring config not found',
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
 	/********************* MONITORING *****************************/
 	registry.registerPath({
 		method: 'get',
@@ -3441,7 +3691,6 @@ export function generateOpenAPI() {
 			description:
 				'A comprehensive payment service API for the Masumi ecosystem, providing secure payment processing, agent registry management, and wallet operations.',
 		},
-
 		servers: [{ url: './../api/v1/' }],
 	});
 }

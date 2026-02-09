@@ -56,7 +56,7 @@ exporters:
     tls:
       insecure: false
     headers:
-      'signoz-ingestion-key': 'AyZNRnPlB30hf1ukSFbLprn42RPhT7TulD6W'
+      'signoz-ingestion-key': '${env:SIGNOZ_INGESTION_KEY}'
   debug:
     verbosity: normal
 service:
