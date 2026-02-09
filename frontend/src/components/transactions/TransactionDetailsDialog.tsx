@@ -1,7 +1,9 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { toast } from 'react-toastify';
 import { parseError } from '@/lib/utils';
@@ -15,6 +17,7 @@ import {
   postPaymentAuthorizeRefund,
   postPurchaseErrorStateRecovery,
   postPaymentErrorStateRecovery,
+  getRegistryAgentIdentifier,
 } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -111,6 +114,22 @@ export default function TransactionDetailsDialog({
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+
+  const agentIdentifier = transaction?.agentIdentifier;
+  const agentNetwork = transaction?.PaymentSource?.network;
+  const { data: agentName, isFetching: agentNameLoading } = useQuery({
+    queryKey: ['registry-agent-identifier', agentIdentifier, agentNetwork],
+    queryFn: async () => {
+      if (!agentIdentifier || !agentNetwork) return null;
+      const response = await getRegistryAgentIdentifier({
+        client: apiClient,
+        query: { agentIdentifier, network: agentNetwork },
+      });
+      return response.data?.data?.Metadata?.name ?? null;
+    },
+    enabled: Boolean(agentIdentifier && agentNetwork),
+    staleTime: 60_000,
+  });
   const clearTransactionError = async () => {
     try {
       setIsLoading(true);
@@ -283,18 +302,44 @@ export default function TransactionDetailsDialog({
               </div>
             </div>
 
-            <div className="col-span-2 my-4">
+            <div>
               <h4 className="font-semibold mb-1">Network</h4>
               <p className="text-sm capitalize">{transaction.PaymentSource.network}</p>
             </div>
 
-            <div className="col-span-2 w-full mb-4">
+            <div className="col-span-1 w-full mb-4">
               <h4 className="font-semibold mb-1">Blockchain Identifier</h4>
               <div className="text-sm font-mono break-all flex gap-2 items-center">
                 <span>{shortenAddress(transaction.blockchainIdentifier)}</span>
                 <CopyButton value={transaction.blockchainIdentifier} />
               </div>
             </div>
+
+            {transaction.agentIdentifier ? (
+              <div>
+                <h4 className="font-semibold mb-1">Agent Name</h4>
+                {agentNameLoading ? (
+                  <Skeleton className="h-5 w-32" />
+                ) : agentName ? (
+                  <p className="text-sm">{agentName}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not available</p>
+                )}
+              </div>
+            ) : (
+              <div />
+            )}
+            {transaction.agentIdentifier ? (
+              <div>
+                <h4 className="font-semibold mb-1">Agent Identifier</h4>
+                <div className="text-sm font-mono break-all flex gap-2 items-center">
+                  <span>{shortenAddress(transaction.agentIdentifier)}</span>
+                  <CopyButton value={transaction.agentIdentifier} />
+                </div>
+              </div>
+            ) : (
+              <div />
+            )}
 
             <div>
               <h4 className="font-semibold mb-1">Type</h4>

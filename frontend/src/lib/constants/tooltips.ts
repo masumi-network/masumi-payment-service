@@ -9,8 +9,7 @@ export const TOOLTIP_TEXTS = {
     'Choose between Mainnet (live transactions with real ADA) or Preprod (testnet for development and testing). Make sure your Blockfrost API key matches the selected network.',
   BLOCKFROST_API_KEY:
     'Your Blockfrost API key is required to interact with the Cardano blockchain. Get your free API key from blockfrost.io/dashboard and ensure it matches your selected network (Mainnet or Preprod).',
-  FEE_PERMILLE:
-    'The fee percentage charged per transaction, expressed in permille (parts per thousand). For example, 25 permille = 2.5% fee. Maximum allowed is 1000 permille (100%).',
+  FEE_PERMILLE: 'The fee percentage charged per transaction (0–100%). One decimal place.',
   ADMIN_WALLETS:
     'Admin wallets have special permissions to manage this payment source, including updating configurations and handling administrative tasks. You can use default wallets or specify custom ones.',
   PURCHASING_WALLETS:
