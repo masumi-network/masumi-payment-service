@@ -29,7 +29,7 @@ interface RateLimitWindow {
 
 /**
  * Wraps a SpanExporter and filters Prisma spans: only exports "outlier" Prisma spans
- * (duration >= threshold) and enforces a per-minute cap to limit log volume.
+ * (duration >= threshold) and enforces a per-minute hard cap to limit log volume.
  */
 export class PrismaOutlierFilterSpanExporter implements SpanExporter {
 	private readonly delegate: SpanExporter;
