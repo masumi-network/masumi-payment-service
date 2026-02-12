@@ -72,7 +72,7 @@ function buildAgentMetadata(request: {
 	};
 	metadataVersion: number;
 }): AgentMetadata {
-	return {
+	const metadata = {
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
 		api_base_url: stringToMetadata(request.apiBaseUrl),
@@ -116,6 +116,27 @@ function buildAgentMetadata(request: {
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
 	};
+	// Clean undefined values from metadata - MeshSDK cannot serialize undefined
+	return cleanMetadata(metadata) as AgentMetadata;
+}
+
+function cleanMetadata(obj: unknown): unknown {
+	if (obj === undefined || obj === null) {
+		return obj;
+	}
+	if (Array.isArray(obj)) {
+		return obj.map(cleanMetadata);
+	}
+	if (typeof obj === 'object') {
+		const cleaned: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(obj)) {
+			if (value !== undefined) {
+				cleaned[key] = cleanMetadata(value);
+			}
+		}
+		return cleaned;
+	}
+	return obj;
 }
 
 export async function registerAgentV1() {
