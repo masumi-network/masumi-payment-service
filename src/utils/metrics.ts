@@ -1,6 +1,5 @@
 import { metrics, trace } from '@opentelemetry/api';
 import type { Counter, Histogram, UpDownCounter } from '@opentelemetry/api';
-import { logger } from './logger';
 
 const meterName = 'masumi-payment-metrics';
 const meterVersion = '1.0.0';
@@ -119,6 +118,22 @@ const getBusinessEndpoint = (url: string): BusinessEndpoint => {
 	return 'unknown';
 };
 
+// Normalize URL to low-cardinality path for metrics (avoids unbounded series from query/IDs).
+export const normalizeEndpointForMetrics = (url: string): string => {
+	const pathname = url.includes('?') ? url.slice(0, url.indexOf('?')) : url;
+	// Replace ID-like path segments (CUID, UUID, hex) with placeholder to keep cardinality bounded
+	return pathname
+		.split('/')
+		.map((seg) => {
+			if (!seg) return seg;
+			// CUID2: 24+ alphanumeric; UUID: 8-4-4-4-12 hex; short hex
+			if (/^[0-9a-z]{20,}$/i.test(seg) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg))
+				return ':id';
+			return seg;
+		})
+		.join('/');
+};
+
 // Helper function to extract business error details from error messages
 const extractBusinessErrorDetails = (error: Error | string, endpoint: BusinessEndpoint) => {
 	const errorMessage = typeof error === 'string' ? error : error.message;
@@ -203,6 +218,27 @@ const extractBusinessErrorDetails = (error: Error | string, endpoint: BusinessEn
 	return { error_code: 'UNKNOWN_ERROR', error_category: 'unknown' };
 };
 
+// Only these attribute keys are safe for OTEL (low cardinality). Never pass IDs or raw messages.
+const BUSINESS_METRIC_ATTRIBUTE_KEYS = new Set<string>([
+	'network',
+	'operation',
+	'step',
+	'field',
+	'validation_type',
+	'wallet_type',
+]);
+
+const filterToAllowlist = (
+	attrs: Record<string, string | number>,
+	allowlist: Set<string>,
+): Record<string, string | number> => {
+	const out: Record<string, string | number> = {};
+	for (const [k, v] of Object.entries(attrs)) {
+		if (allowlist.has(k)) out[k] = v;
+	}
+	return out;
+};
+
 // Main recording functions for the new system
 export const recordBusinessEndpointError = (
 	endpoint: string,
@@ -213,33 +249,31 @@ export const recordBusinessEndpointError = (
 ) => {
 	const businessEndpoint = getBusinessEndpoint(endpoint);
 	const errorDetails = extractBusinessErrorDetails(error, businessEndpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 
 	getBusinessEndpointErrorCounter().add(1, {
-		...attributes,
+		...safeAttrs,
 		endpoint: businessEndpoint,
-		full_endpoint: endpoint,
 		method: method.toLowerCase(),
 		status_code: statusCode,
 		error_code: errorDetails.error_code,
 		error_category: errorDetails.error_category,
-		error_message: typeof error === 'string' ? error : error.message,
 	});
 };
 
 export const recordBusinessEndpointSuccess = (
 	endpoint: string,
 	method: string,
-	duration: number,
+	_duration: number,
 	attributes: Record<string, string | number> = {},
 ) => {
 	const businessEndpoint = getBusinessEndpoint(endpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 
 	getBusinessEndpointSuccessCounter().add(1, {
-		...attributes,
+		...safeAttrs,
 		endpoint: businessEndpoint,
-		full_endpoint: endpoint,
 		method: method.toLowerCase(),
-		duration_ms: duration,
 	});
 };
 
@@ -251,18 +285,18 @@ export const recordBusinessEndpointDuration = (
 	attributes: Record<string, string | number> = {},
 ) => {
 	const businessEndpoint = getBusinessEndpoint(endpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 
 	getBusinessEndpointDuration().record(duration, {
-		...attributes,
+		...safeAttrs,
 		endpoint: businessEndpoint,
-		full_endpoint: endpoint,
 		method: method.toLowerCase(),
 		status_code: statusCode,
 		status: statusCode < 400 ? 'success' : 'failed',
 	});
 };
 
-// Keep existing API error recording for general HTTP errors
+// Keep existing API error recording for general HTTP errors. Use normalized endpoint to avoid high cardinality.
 export const recordApiError = (
 	endpoint: string,
 	method: string,
@@ -270,10 +304,12 @@ export const recordApiError = (
 	errorType: string,
 	attributes: Record<string, string | number> = {},
 ) => {
+	const safeEndpoint = normalizeEndpointForMetrics(endpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 	getApiErrorCounter().add(1, {
-		...attributes,
-		endpoint,
-		method,
+		...safeAttrs,
+		endpoint: safeEndpoint,
+		method: method.toLowerCase(),
 		status_code: statusCode,
 		error_type: errorType,
 	});
@@ -318,18 +354,18 @@ export const recordBusinessProcessingDuration = (
 	attributes: Record<string, string | number> = {},
 ) => {
 	const businessEndpoint = getBusinessEndpoint(endpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 
 	getBusinessEndpointDuration().record(duration, {
-		...attributes,
+		...safeAttrs,
 		endpoint: businessEndpoint,
-		full_endpoint: endpoint,
 		method: method.toLowerCase(),
 		status,
 		operation: `${businessEndpoint}_${method.toLowerCase()}`,
 	});
 };
 
-// Keep the existing API request duration recording (this one works)
+// Keep the existing API request duration recording. Use normalized endpoint to avoid high cardinality.
 export const recordApiRequestDuration = (
 	duration: number,
 	endpoint: string,
@@ -337,15 +373,16 @@ export const recordApiRequestDuration = (
 	statusCode: number,
 	attributes: Record<string, string | number> = {},
 ) => {
+	const safeEndpoint = normalizeEndpointForMetrics(endpoint);
+	const safeAttrs = filterToAllowlist(attributes, BUSINESS_METRIC_ATTRIBUTE_KEYS);
 	getApiRequestDuration().record(duration, {
-		...attributes,
-		endpoint,
-		method,
+		...safeAttrs,
+		endpoint: safeEndpoint,
+		method: method.toLowerCase(),
 		status_code: statusCode,
 		status: statusCode < 400 ? 'success' : 'failed',
 	});
 
-	// Also record business endpoint duration if it's a business endpoint
 	const businessEndpoint = getBusinessEndpoint(endpoint);
 	if (businessEndpoint !== 'unknown') {
 		recordBusinessEndpointDuration(endpoint, method, duration, statusCode, attributes);
@@ -360,26 +397,29 @@ export const isBusinessEndpoint = (endpoint: string): boolean => {
 // Export the endpoint classifier for use in middleware
 export { getBusinessEndpoint };
 
-// Blockchain State Transition Recording Functions
+// Only these keys are safe for blockchain metrics (no entity_id to avoid unbounded cardinality).
+const BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS = new Set<string>(['network']);
+
+// Blockchain State Transition Recording Functions. Do not add entity_id to attributes.
 export const recordStateTransition = (
 	entityType: 'registration' | 'purchase' | 'payment',
 	fromState: string,
 	toState: string,
 	duration: number,
-	entityId: string,
+	_entityId: string,
 	attributes: Record<string, string | number> = {},
 ) => {
+	const safeAttrs = filterToAllowlist(attributes, BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS);
 	getBlockchainStateTransitionDuration().record(duration, {
-		...attributes,
+		...safeAttrs,
 		entity_type: entityType,
-		entity_id: entityId,
 		from_state: fromState,
 		to_state: toState,
 		transition: `${fromState}_to_${toState}`,
 	});
 
 	getBlockchainStateTransitionCounter().add(1, {
-		...attributes,
+		...safeAttrs,
 		entity_type: entityType,
 		from_state: fromState,
 		to_state: toState,
@@ -391,75 +431,16 @@ export const recordBlockchainJourney = (
 	entityType: 'registration' | 'purchase' | 'payment',
 	totalDuration: number,
 	finalState: string,
-	entityId: string,
+	_entityId: string,
 	attributes: Record<string, string | number> = {},
 ) => {
+	const safeAttrs = filterToAllowlist(attributes, BLOCKCHAIN_METRIC_ATTRIBUTE_KEYS);
 	getBlockchainJourneyDuration().record(totalDuration, {
-		...attributes,
+		...safeAttrs,
 		entity_type: entityType,
-		entity_id: entityId,
 		final_state: finalState,
 		status: finalState.includes('Confirmed') || finalState.includes('Completed') ? 'success' : 'failed',
 	});
-};
-
-let prismaDataTransferSize: Histogram | null = null;
-let prismaQueryCounter: Counter | null = null;
-
-// Create Prisma metrics lazily to avoid NoopHistogramMetric
-const getPrismaMetrics = (): {
-	prismaDataTransferSize: Histogram;
-	prismaQueryCounter: Counter;
-} => {
-	if (!prismaDataTransferSize || !prismaQueryCounter) {
-		const prismaMeter = metrics.getMeter('masumi-payment-metrics', '1.0.0');
-		prismaDataTransferSize = prismaMeter.createHistogram('prisma_data_transfer_size_bytes', {
-			description: 'Size of data transferred from Prisma queries in bytes',
-			unit: 'bytes',
-		});
-
-		prismaQueryCounter = prismaMeter.createCounter('prisma_queries_total', {
-			description: 'Total number of Prisma queries executed',
-		});
-	}
-
-	if (!prismaDataTransferSize || !prismaQueryCounter) {
-		throw new Error('Failed to initialize Prisma metrics');
-	}
-
-	return { prismaDataTransferSize, prismaQueryCounter };
-};
-
-// Record Prisma data transfer size
-export const recordPrismaDataTransfer = (
-	model: string,
-	action: string,
-	sizeBytes: number,
-	rowCount?: number,
-	attributes: Record<string, string | number> = {},
-) => {
-	// Match the pattern used by apiRequestDuration (which works)
-	const histogramAttributes: Record<string, string | number> = {
-		...attributes,
-		model,
-		action,
-		...(rowCount !== undefined && { row_count: rowCount }),
-	};
-
-	const counterAttributes: Record<string, string | number> = {
-		...attributes,
-		model,
-		action,
-	};
-
-	try {
-		const { prismaDataTransferSize, prismaQueryCounter } = getPrismaMetrics();
-		prismaDataTransferSize.record(sizeBytes, histogramAttributes);
-		prismaQueryCounter.add(1, counterAttributes);
-	} catch (error) {
-		// Log error but don't throw - metrics should not break the application
-		logger.warn('Error recording Prisma metrics:', error);
-	}
 };
 
 // Custom span creation for detailed tracing (keeping for advanced usage)
