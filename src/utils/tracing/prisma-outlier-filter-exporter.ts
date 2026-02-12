@@ -1,11 +1,11 @@
-import type { SpanExporter } from '@opentelemetry/sdk-trace-base';
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import type { HrTime } from '@opentelemetry/api';
 import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
 const PRISMA_SPAN_NAME_PREFIX = 'prisma:';
 
 /** Converts OpenTelemetry HrTime duration [seconds, nanoseconds] to milliseconds. */
-function hrTimeToMs(duration: [number, number]): number {
+function hrTimeToMs(duration: HrTime): number {
 	return duration[0] * 1000 + duration[1] / 1e6;
 }
 
