@@ -17,8 +17,7 @@ const isNoisyPath = (url: string): boolean => {
 		pathname === '/favicon.ico' ||
 		pathname === '/favicon.svg' ||
 		pathname === '/health' ||
-		pathname === '/admin' ||
-		pathname.startsWith('/admin?')
+		pathname === '/admin'
 	);
 };
 
