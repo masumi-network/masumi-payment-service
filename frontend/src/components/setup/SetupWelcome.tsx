@@ -601,7 +601,7 @@ function PaymentSourceSetupScreen({
     register,
     handleSubmit,
     setValue,
-    watch,
+    getValues,
     formState: { errors },
   } = useForm<PaymentSourceFormValues>({
     resolver: zodResolver(paymentSourceSchema),
@@ -982,7 +982,7 @@ function PaymentSourceSetupScreen({
                             setValue('feePermille', permille, { shouldValidate: true });
                             setFeePercentInput((permille / 10).toFixed(1));
                           } else {
-                            setFeePercentInput((watch('feePermille') / 10).toFixed(1));
+                            setFeePercentInput((getValues('feePermille') / 10).toFixed(1));
                           }
                         }}
                         disabled={!customSetup}
