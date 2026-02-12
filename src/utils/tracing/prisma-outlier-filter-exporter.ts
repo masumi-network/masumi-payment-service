@@ -1,12 +1,14 @@
-import type { SpanExporter } from '@opentelemetry/sdk-trace-base';
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+import { ExportResultCode } from '@opentelemetry/core';
+import type { ExportResult, HrTime } from '@opentelemetry/core';
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
 const PRISMA_SPAN_NAME_PREFIX = 'prisma:';
 
 /** Converts OpenTelemetry HrTime duration [seconds, nanoseconds] to milliseconds. */
-function hrTimeToMs(duration: [number, number]): number {
-	return duration[0] * 1000 + duration[1] / 1e6;
+function hrTimeToMs(duration: HrTime): number {
+	const [seconds, nanoseconds] = duration;
+	return seconds * 1000 + nanoseconds / 1e6;
 }
 
 function isPrismaSpan(span: ReadableSpan): boolean {
