@@ -5,7 +5,6 @@ import {
 	recordApiRequestDuration,
 	recordBusinessEndpointError,
 	isBusinessEndpoint,
-	normalizeEndpointForMetrics,
 } from '@/utils/metrics';
 
 // Paths we skip for request logging and metrics (static assets, health, etc.)
@@ -95,17 +94,15 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
 		}
 
 		if (!skip) {
-			const normalizedEndpoint = normalizeEndpointForMetrics(req.url);
-			recordApiRequestDuration(duration, normalizedEndpoint, req.method, statusCode, {});
+			recordApiRequestDuration(duration, req.url, req.method, statusCode, {});
 		}
 
 		if (isError) {
-			const normalizedEndpoint = normalizeEndpointForMetrics(req.url);
 			const errorType = getErrorType(statusCode);
-			recordApiError(normalizedEndpoint, req.method, statusCode, errorType, {});
+			recordApiError(req.url, req.method, statusCode, errorType, {});
 			if (isBusinessEndpoint(req.url)) {
 				const errorMessage = `HTTP ${statusCode} - ${getErrorType(statusCode)}`;
-				recordBusinessEndpointError(normalizedEndpoint, req.method, statusCode, errorMessage, {});
+				recordBusinessEndpointError(req.url, req.method, statusCode, errorMessage, {});
 			}
 		}
 	});
