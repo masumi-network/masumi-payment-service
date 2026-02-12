@@ -1,5 +1,5 @@
 import { prisma } from '@/utils/db';
-import { SmartContractState } from '@/utils/generator/contract-generator';
+import { SmartContractState, getDatumFromBlockchainIdentifier } from '@/utils/generator/contract-generator';
 import { logger } from '@/utils/logger';
 import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } from '@/utils/logic/state-transitions';
 import { Transaction } from '@emurgo/cardano-serialization-lib-nodejs';
@@ -29,6 +29,8 @@ import { DecodedV1ContractDatum, decodeV1ContractDatum } from '@/utils/converter
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { CONSTANTS } from '@/utils/config';
 import { TransactionMetadata } from '@/services/cardano-tx-handler/blockchain';
+import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export type UpdateTransactionInput = {
 	blockTime: number;
@@ -480,6 +482,7 @@ export async function updateInitialTransactions(
 		network: Network;
 	},
 	tx: UpdateTransactionInput,
+	rpcProviderApiKey: string,
 ) {
 	for (const output of valueOutputs) {
 		const outputDatum = output.inline_datum;
@@ -518,6 +521,7 @@ export async function updateInitialTransactions(
 			tx.metadata,
 			buyerCardanoFees,
 			sellerCardanoFees,
+			rpcProviderApiKey,
 		);
 	}
 }
@@ -841,6 +845,7 @@ export async function updateInitialPaymentTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	rpcProviderApiKey: string,
 ) {
 	await prisma.$transaction(
 		async (prisma) => {
@@ -1073,6 +1078,72 @@ export async function updateInitialPaymentTransaction(
 				newAction = PaymentAction.WaitingForManualAction;
 				newState = OnChainState.FundsOrDatumInvalid;
 				errorNote.push(errorMessage);
+			}
+
+			try {
+				let coinsPerUtxoSize: number = CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE;
+				try {
+					const blockfrost = getBlockfrostInstance(paymentContract.network, rpcProviderApiKey);
+					const protocolParams = await blockfrost.epochsLatestParameters();
+					if (protocolParams.coins_per_utxo_size != null) {
+						coinsPerUtxoSize = Number(protocolParams.coins_per_utxo_size);
+					}
+					logger.debug('Fetched protocol parameters for min-UTXO validation', {
+						coinsPerUtxoSize,
+						paymentRequestId: dbEntry.id,
+					});
+				} catch (protocolFetchError) {
+					logger.warn('Failed to fetch protocol parameters for validation, using fallback', {
+						fallbackCoinsPerUtxoSize: coinsPerUtxoSize,
+						paymentRequestId: dbEntry.id,
+						error: protocolFetchError instanceof Error ? protocolFetchError.message : String(protocolFetchError),
+					});
+				}
+
+				const datumWithResultHash = getDatumFromBlockchainIdentifier({
+					buyerAddress: decodedNewContract.buyerAddress,
+					sellerAddress: decodedNewContract.sellerAddress,
+					blockchainIdentifier: decodedNewContract.blockchainIdentifier,
+					payByTime: decodedNewContract.payByTime,
+					collateralReturnLovelace: decodedNewContract.collateralReturnLovelace,
+					inputHash: decodedNewContract.inputHash,
+					resultHash: DUMMY_RESULT_HASH,
+					resultTime: decodedNewContract.resultTime,
+					unlockTime: decodedNewContract.unlockTime,
+					externalDisputeUnlockTime: decodedNewContract.externalDisputeUnlockTime,
+					newCooldownTimeSeller: BigInt(0),
+					newCooldownTimeBuyer: BigInt(0),
+					state: SmartContractState.ResultSubmitted,
+				});
+
+				const nativeTokenCount = getNativeTokenCount(output.amount);
+				const minUtxoResult = calculateMinUtxo({
+					datum: datumWithResultHash.value,
+					nativeTokenCount,
+					coinsPerUtxoSize,
+					includeBuffers: true,
+				});
+
+				const actualLovelace = getLovelaceFromAmounts(output.amount);
+
+				if (actualLovelace < minUtxoResult.minUtxoLovelace) {
+					const shortfall = minUtxoResult.minUtxoLovelace - actualLovelace;
+					logger.warn('Payment may be underfunded for result submission. Top-up will be applied.', {
+						paymentRequestId: dbEntry.id,
+						actualLovelace: actualLovelace.toString(),
+						requiredMinUtxo: minUtxoResult.minUtxoLovelace.toString(),
+						shortfall: shortfall.toString(),
+						nativeTokenCount,
+						coinsPerUtxoSize,
+						collateralReturnLovelace: decodedNewContract.collateralReturnLovelace.toString(),
+						note: 'Option A (auto top-up) will handle this during result submission',
+					});
+				}
+			} catch (minUtxoCheckError) {
+				logger.warn('Failed to perform min-UTXO validation check', {
+					paymentRequestId: dbEntry.id,
+					error: minUtxoCheckError instanceof Error ? minUtxoCheckError.message : String(minUtxoCheckError),
+				});
 			}
 
 			await prisma.paymentRequest.update({
