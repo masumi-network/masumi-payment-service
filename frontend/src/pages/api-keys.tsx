@@ -17,6 +17,8 @@ import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton'
 import { Search, Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Table,
   TableBody,
@@ -129,219 +131,237 @@ export default function ApiKeys() {
       <Head>
         <title>API Keys | Admin Interface</title>
       </Head>
-      <div>
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold mb-1">API keys</h1>
-              <p className="text-sm text-muted-foreground">
-                Manage your API keys for accessing the payment service.{' '}
-                <a
-                  href="https://docs.masumi.network/api-reference"
-                  target="_blank"
-                  className="text-primary hover:underline"
-                >
-                  Learn more
-                </a>
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton
-                onRefresh={() => {
-                  refetch();
-                }}
-                isRefreshing={isLoading}
-              />
-              <Button onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Add API key
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <Tabs
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-              refetch();
-            }}
-          />
-
-          <div className="flex justify-between items-center">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search by name, key ID, permission, status, network, or usage"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-xs pl-10"
-              />
+      <AnimatedPage>
+        <div>
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-semibold mb-1">API keys</h1>
+                <p className="text-sm text-muted-foreground">
+                  Manage your API keys for accessing the payment service.{' '}
+                  <a
+                    href="https://docs.masumi.network/api-reference"
+                    target="_blank"
+                    className="text-primary hover:underline"
+                  >
+                    Learn more
+                  </a>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <RefreshButton
+                  onRefresh={() => {
+                    refetch();
+                  }}
+                  isRefreshing={isLoading}
+                />
+                <Button onClick={() => setIsAddDialogOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Add API key
+                </Button>
+              </div>
             </div>
           </div>
 
-          <div className="border rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-4">ID</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Permission</TableHead>
-                  <TableHead>Network Limits</TableHead>
-                  <TableHead>Usage Limits</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <ApiKeyTableSkeleton rows={5} />
-                ) : filteredApiKeys.length === 0 ? (
+          <div className="space-y-6">
+            <Tabs
+              tabs={tabs}
+              activeTab={activeTab}
+              onTabChange={(tab) => {
+                setActiveTab(tab);
+                refetch();
+              }}
+            />
+
+            <div className="flex justify-between items-center">
+              <div className="relative flex-1">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search by name, key ID, permission, status, network, or usage"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="max-w-xs pl-10"
+                />
+              </div>
+            </div>
+
+            <div className="border rounded-lg">
+              <Table>
+                <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
-                    </TableCell>
+                    <TableHead className="pl-4">ID</TableHead>
+                    <TableHead>Key</TableHead>
+                    <TableHead>Permission</TableHead>
+                    <TableHead>Network Limits</TableHead>
+                    <TableHead>Usage Limits</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
-                ) : (
-                  filteredApiKeys.map((key, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
-                        {shortenAddress(key.id)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {shortenAddress(key.token)}
-                          </span>
-                          <CopyButton value={key.token} />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            key.permission === 'Admin'
-                              ? 'default'
-                              : key.permission === 'ReadAndPay'
-                                ? 'secondary'
-                                : 'outline'
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <ApiKeyTableSkeleton rows={5} />
+                  ) : filteredApiKeys.length === 0 ? (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={7}>
+                        <EmptyState
+                          icon={searchQuery ? 'search' : 'inbox'}
+                          title={
+                            searchQuery
+                              ? 'No API keys found matching your search'
+                              : 'No API keys found'
                           }
-                        >
-                          {key.permission}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {key.networkLimit.length > 0 ? (
-                          <div className="flex gap-1">
-                            {key.networkLimit.map((net) => (
-                              <Badge key={net} variant="outline" className="font-normal">
-                                {net}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">Unlimited</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {key.usageLimited ? (
-                          <div className="space-y-0.5">
-                            {key.RemainingUsageCredits.map((credit, i) => (
-                              <div key={i} className="text-muted-foreground">
-                                {credit.unit === 'lovelace'
-                                  ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
-                                  : `${credit.amount} ${credit.unit}`}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">Unlimited</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={key.status === 'Active' ? 'default' : 'destructive'}
-                          className={
-                            key.status === 'Active'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
-                              : ''
+                          description={
+                            searchQuery
+                              ? 'Try adjusting your search terms'
+                              : 'Add an API key to get started'
                           }
-                        >
-                          {key.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                              <span className="sr-only">Actions</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="min-w-[120px]">
-                            <DropdownMenuItem
-                              onClick={() => setKeyToUpdate(key)}
-                              className="whitespace-nowrap"
-                            >
-                              <Pencil className="mr-2 h-4 w-4 shrink-0" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              disabled={key.token === apiKey}
-                              onClick={() => setKeyToDelete(key)}
-                              className="whitespace-nowrap text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
-                              <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        />
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ) : (
+                    filteredApiKeys.map((key, index) => (
+                      <TableRow
+                        key={index}
+                        className="animate-fade-in opacity-0"
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                      >
+                        <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
+                          {shortenAddress(key.id)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm text-muted-foreground">
+                              {shortenAddress(key.token)}
+                            </span>
+                            <CopyButton value={key.token} />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              key.permission === 'Admin'
+                                ? 'default'
+                                : key.permission === 'ReadAndPay'
+                                  ? 'secondary'
+                                  : 'outline'
+                            }
+                          >
+                            {key.permission}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {key.networkLimit.length > 0 ? (
+                            <div className="flex gap-1">
+                              {key.networkLimit.map((net) => (
+                                <Badge key={net} variant="outline" className="font-normal">
+                                  {net}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Unlimited</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {key.usageLimited ? (
+                            <div className="space-y-0.5">
+                              {key.RemainingUsageCredits.map((credit, i) => (
+                                <div key={i} className="text-muted-foreground">
+                                  {credit.unit === 'lovelace'
+                                    ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
+                                    : `${credit.amount} ${credit.unit}`}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Unlimited</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={key.status === 'Active' ? 'default' : 'destructive'}
+                            className={
+                              key.status === 'Active'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
+                                : ''
+                            }
+                          >
+                            {key.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Actions</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-[120px]">
+                              <DropdownMenuItem
+                                onClick={() => setKeyToUpdate(key)}
+                                className="whitespace-nowrap"
+                              >
+                                <Pencil className="mr-2 h-4 w-4 shrink-0" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled={key.token === apiKey}
+                                onClick={() => setKeyToDelete(key)}
+                                className="whitespace-nowrap text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="mr-2 h-4 w-4 shrink-0" />
+                                <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
 
-          <div className="flex flex-col gap-4 items-center">
-            {!isLoading && (
-              <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
-            )}
+            <div className="flex flex-col gap-4 items-center">
+              {!isLoading && (
+                <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      <AddApiKeyDialog
-        open={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={() => {
-          refetch();
-        }}
-      />
-
-      {keyToUpdate && (
-        <UpdateApiKeyDialog
-          open={true}
-          onClose={() => setKeyToUpdate(null)}
+        <AddApiKeyDialog
+          open={isAddDialogOpen}
+          onClose={() => setIsAddDialogOpen(false)}
           onSuccess={() => {
             refetch();
           }}
-          apiKey={keyToUpdate}
         />
-      )}
 
-      <ConfirmDialog
-        open={!!keyToDelete}
-        onClose={() => setKeyToDelete(null)}
-        title="Delete API Key"
-        description="Are you sure you want to delete this API key? This action cannot be undone."
-        onConfirm={handleDeleteApiKey}
-        isLoading={isDeleting}
-      />
+        {keyToUpdate && (
+          <UpdateApiKeyDialog
+            open={true}
+            onClose={() => setKeyToUpdate(null)}
+            onSuccess={() => {
+              refetch();
+            }}
+            apiKey={keyToUpdate}
+          />
+        )}
+
+        <ConfirmDialog
+          open={!!keyToDelete}
+          onClose={() => setKeyToDelete(null)}
+          title="Delete API Key"
+          description="Are you sure you want to delete this API key? This action cannot be undone."
+          onConfirm={handleDeleteApiKey}
+          isLoading={isDeleting}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

@@ -18,6 +18,8 @@ import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetails
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { EmptyState } from '@/components/ui/empty-state';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -268,144 +270,144 @@ export default function Transactions() {
       <Head>
         <title>Transactions | Admin Interface</title>
       </Head>
-      <div>
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold mb-1">Transactions</h1>
-              <p className="text-sm text-muted-foreground">
-                View and manage your transaction history.{' '}
-                <a
-                  href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
-                  target="_blank"
-                  className="text-primary hover:underline"
-                >
-                  Learn more
-                </a>
-              </p>
-              {(() => {
-                const feeRate = selectedPaymentSource?.feeRatePermille;
+      <AnimatedPage>
+        <div>
+          <div className="mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-semibold mb-1">Transactions</h1>
+                <p className="text-sm text-muted-foreground">
+                  View and manage your transaction history.{' '}
+                  <a
+                    href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
+                    target="_blank"
+                    className="text-primary hover:underline"
+                  >
+                    Learn more
+                  </a>
+                </p>
+                {(() => {
+                  const feeRate = selectedPaymentSource?.feeRatePermille;
 
-                if (!feeRate) {
+                  if (!feeRate) {
+                    return (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Fee rate: none applied
+                        {selectedPaymentSource
+                          ? ` (${selectedPaymentSource.network})`
+                          : ' (default)'}
+                      </p>
+                    );
+                  }
+
                   return (
                     <p className="text-xs text-muted-foreground mt-1">
-                      Fee rate: none applied
+                      Fee rate: {(feeRate / 10).toFixed(1)}%
                       {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
                     </p>
                   );
-                }
-
-                return (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Fee rate: {(feeRate / 10).toFixed(1)}%
-                    {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
-                  </p>
-                );
-              })()}
-            </div>
-            <Button
-              onClick={() => setShowDownloadDialog(true)}
-              disabled={filteredTransactions.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <Tabs
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-            }}
-          />
-
-          <div className="flex items-center justify-between">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by ID, hash, status, amount..."
-                className="max-w-xs pl-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+                })()}
+              </div>
+              <Button
+                onClick={() => setShowDownloadDialog(true)}
+                disabled={filteredTransactions.length === 0}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </Button>
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">Transaction Hash</th>
-                  <th className="p-4 text-left text-sm font-medium">Amount</th>
-                  <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="p-4 text-left text-sm font-medium">Unlock Time</th>
-                  <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium pr-8"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <TransactionTableSkeleton rows={5} />
-                ) : isInitialLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
+          <div className="space-y-6">
+            <Tabs
+              tabs={tabs}
+              activeTab={activeTab}
+              onTabChange={(tab) => {
+                setActiveTab(tab);
+              }}
+            />
+
+            <div className="flex items-center justify-between">
+              <div className="relative flex-1">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search by ID, hash, status, amount..."
+                  className="max-w-xs pl-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              </div>
+            </div>
+
+            <div className="border rounded-lg overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
+                    <th className="p-4 text-left text-sm font-medium">Transaction Hash</th>
+                    <th className="p-4 text-left text-sm font-medium">Amount</th>
+                    <th className="p-4 text-left text-sm font-medium">Network</th>
+                    <th className="p-4 text-left text-sm font-medium">Status</th>
+                    <th className="p-4 text-left text-sm font-medium">Unlock Time</th>
+                    <th className="p-4 text-left text-sm font-medium">Date</th>
+                    <th className="p-4 text-left text-sm font-medium pr-8"></th>
                   </tr>
-                ) : filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-8">
-                      No transactions found
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTransactions.map((transaction) => (
-                    <tr
-                      key={transaction.id}
-                      className={cn(
-                        'border-b last:border-b-0',
-                        transaction.NextAction?.errorType ? 'bg-destructive/10' : '',
-                        'cursor-pointer hover:bg-muted/50',
-                      )}
-                      onClick={() => setSelectedTransaction(transaction)}
-                    >
-                      <td className="p-4 pl-6">
-                        <span className="capitalize">{transaction.type}</span>
+                </thead>
+                <tbody>
+                  {isLoading ? (
+                    <TransactionTableSkeleton rows={5} />
+                  ) : isInitialLoading ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <Spinner size={20} addContainer />
                       </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {transaction.CurrentTransaction?.txHash
-                              ? `${transaction.CurrentTransaction.txHash.slice(0, 8)}...${transaction.CurrentTransaction.txHash.slice(-8)}`
-                              : '—'}
-                          </span>
-                          {transaction.CurrentTransaction?.txHash && (
-                            <CopyButton value={transaction.CurrentTransaction?.txHash} />
-                          )}
-                        </div>
+                    </tr>
+                  ) : filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={8}>
+                        <EmptyState
+                          icon="inbox"
+                          title="No transactions found"
+                          description="Transactions will appear here once payments are made"
+                        />
                       </td>
-                      <td className="p-4">
-                        {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => {
-                              const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(fund.unit, network);
-                              return (
-                                <div key={index} className="text-sm">
-                                  {amount} {unit}
-                                </div>
-                              );
-                            })
-                          : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
+                    </tr>
+                  ) : (
+                    filteredTransactions.map((transaction, index) => (
+                      <tr
+                        key={transaction.id}
+                        className={cn(
+                          'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                          transaction.NextAction?.errorType
+                            ? 'bg-destructive/10 border-l-2 border-l-destructive'
+                            : '',
+                          'cursor-pointer hover:bg-muted/50',
+                        )}
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        onClick={() => setSelectedTransaction(transaction)}
+                      >
+                        <td className="p-4 pl-6">
+                          <span className="capitalize">{transaction.type}</span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm text-muted-foreground">
+                              {transaction.CurrentTransaction?.txHash
+                                ? `${transaction.CurrentTransaction.txHash.slice(0, 8)}...${transaction.CurrentTransaction.txHash.slice(-8)}`
+                                : '—'}
+                            </span>
+                            {transaction.CurrentTransaction?.txHash && (
+                              <CopyButton value={transaction.CurrentTransaction?.txHash} />
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          {transaction.type === 'payment' && transaction.RequestedFunds?.length
+                            ? transaction.RequestedFunds.map((fund, index) => {
                                 const amount = formatPrice(fund.amount);
                                 const unit = formatFundUnit(fund.unit, network);
                                 return (
@@ -414,68 +416,83 @@ export default function Transactions() {
                                   </div>
                                 );
                               })
+                            : transaction.type === 'purchase' && transaction.PaidFunds?.length
+                              ? transaction.PaidFunds.map((fund, index) => {
+                                  const amount = formatPrice(fund.amount);
+                                  const unit = formatFundUnit(fund.unit, network);
+                                  return (
+                                    <div key={index} className="text-sm">
+                                      {amount} {unit}
+                                    </div>
+                                  );
+                                })
+                              : '—'}
+                        </td>
+                        <td className="p-4">{transaction.PaymentSource.network}</td>
+                        <td className="p-4">
+                          <span
+                            className={getStatusColor(
+                              transaction.onChainState,
+                              !!transaction.NextAction?.errorType,
+                            )}
+                          >
+                            {transaction.onChainState === 'Disputed' ? (
+                              <span className="flex items-center gap-1">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
+                                {formatStatus(transaction.onChainState)}
+                              </span>
+                            ) : (
+                              formatStatus(transaction.onChainState)
+                            )}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          {transaction.onChainState === 'ResultSubmitted'
+                            ? formatTimestamp(transaction.unlockTime)
                             : '—'}
-                      </td>
-                      <td className="p-4">{transaction.PaymentSource.network}</td>
-                      <td className="p-4">
-                        <span
-                          className={getStatusColor(
-                            transaction.onChainState,
-                            !!transaction.NextAction?.errorType,
-                          )}
-                        >
-                          {transaction.onChainState === 'Disputed' ? (
-                            <span className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                              {formatStatus(transaction.onChainState)}
-                            </span>
-                          ) : (
-                            formatStatus(transaction.onChainState)
-                          )}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        {transaction.onChainState === 'ResultSubmitted'
-                          ? formatTimestamp(transaction.unlockTime)
-                          : '—'}
-                      </td>
-                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
-                      <td className="p-4 pr-8">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          ⋮
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
+                        <td className="p-4 pr-8">
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            ⋮
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-          <div className="flex flex-col gap-4 items-center">
-            {!isInitialLoading && (
-              <Pagination hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
-            )}
+            <div className="flex flex-col gap-4 items-center">
+              {!isInitialLoading && (
+                <Pagination
+                  hasMore={hasMore}
+                  isLoading={isLoadingMore}
+                  onLoadMore={handleLoadMore}
+                />
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      <TransactionDetailsDialog
-        transaction={selectedTransaction}
-        onClose={() => setSelectedTransaction(null)}
-        onRefresh={refreshTransactions}
-      />
+        <TransactionDetailsDialog
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+          onRefresh={refreshTransactions}
+        />
 
-      <DownloadDetailsDialog
-        open={showDownloadDialog}
-        onClose={() => setShowDownloadDialog(false)}
-        onDownload={(startDate, endDate, filteredTransactions) => {
-          downloadCSV(
-            filteredTransactions,
-            `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
-          );
-        }}
-      />
+        <DownloadDetailsDialog
+          open={showDownloadDialog}
+          onClose={() => setShowDownloadDialog(false)}
+          onDownload={(startDate, endDate, filteredTransactions) => {
+            downloadCSV(
+              filteredTransactions,
+              `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
+            );
+          }}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

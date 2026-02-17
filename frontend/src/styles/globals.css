@@ -242,6 +242,15 @@ input[type='number'] {
   }
 }
 
+@keyframes fadeInToMuted {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+
 @keyframes slideDown {
   from {
     opacity: 0;
@@ -273,6 +282,10 @@ input[type='number'] {
 
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out forwards;
+}
+
+.animate-fade-in-to-muted {
+  animation: fadeInToMuted 0.2s ease-out forwards;
 }
 
 .animate-slide-down {
@@ -420,6 +433,124 @@ input[type='number'] {
 }
 .animate-delay-500 {
   animation-delay: 275ms;
+}
+
+/* Skeleton-to-content crossfade */
+@keyframes contentReveal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+/* Stat number entrance */
+@keyframes numberReveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Infinite subtle pulse for pending/active states */
+@keyframes subtlePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Page entrance — wraps entire page content */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Floating icon for empty states */
+@keyframes emptyBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-content-reveal {
+  animation: contentReveal 0.3s ease-out forwards;
+}
+
+.animate-number-reveal {
+  animation: numberReveal 0.3s ease-out forwards;
+}
+
+.animate-subtle-pulse {
+  animation: subtlePulse 2s ease-in-out infinite;
+}
+
+.animate-page-enter {
+  animation: pageEnter 0.3s ease-out forwards;
+}
+
+.animate-empty-bounce {
+  animation: emptyBounce 3s ease-in-out infinite;
+}
+
+/* Extended stagger delays */
+.animate-stagger-5 {
+  animation-delay: 250ms;
+}
+.animate-stagger-6 {
+  animation-delay: 300ms;
+}
+.animate-stagger-7 {
+  animation-delay: 350ms;
+}
+.animate-stagger-8 {
+  animation-delay: 400ms;
+}
+
+/* Card hover lift (for div-based cards only, NOT <tr>) */
+.card-interactive {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.dark .card-interactive:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Accessibility: respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Button hover micro-interactions */

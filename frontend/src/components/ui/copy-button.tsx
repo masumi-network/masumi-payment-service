@@ -28,7 +28,11 @@ export function CopyButton({ value, className }: CopyButtonProps) {
       onClick={copyToClipboard}
       type="button"
     >
-      {hasCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      {hasCopied ? (
+        <Check className="h-4 w-4 animate-pop-in text-green-500" />
+      ) : (
+        <Copy className="h-4 w-4" />
+      )}
     </Button>
   );
 }
