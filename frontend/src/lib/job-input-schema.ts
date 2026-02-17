@@ -182,10 +182,12 @@ export const jobInputFileSchema = z.object({
   id: z.string().min(1),
   type: z.enum([ValidJobInputTypes.FILE]),
   name: z.string().min(1),
-  data: z.object({
-    outputFormat: z.literal('url'),
-    description: z.string().optional(),
-  }),
+  data: z
+    .object({
+      outputFormat: z.enum(['url', 'filename']).optional(),
+      description: z.string().optional(),
+    })
+    .optional(),
   validations: z.array(optionalValidationSchema.or(acceptValidationSchema)).optional(),
 });
 
@@ -362,11 +364,11 @@ export const jobInputRangeSchema = z.object({
   name: z.string().min(1),
   data: z
     .object({
-      min: z.union([z.string(), z.number()]).optional(),
-      max: z.union([z.string(), z.number()]).optional(),
-      step: z.union([z.string(), z.number()]).optional(),
+      min: z.coerce.number().optional(),
+      max: z.coerce.number().optional(),
+      step: z.coerce.number().optional(),
       description: z.string().optional(),
-      default: z.union([z.string(), z.number()]).optional(),
+      default: z.coerce.number().optional(),
     })
     .optional(),
   validations: z
@@ -763,6 +765,9 @@ const makeZodSchemaFromJobInputTelSchema = (jobInputTelSchema: JobInputTelSchema
         switch (value) {
           case ValidJobInputFormatValues.NON_EMPTY:
             return acc.min(1);
+          case ValidJobInputFormatValues.TEL_PATTERN:
+            // Basic phone pattern: allows digits, spaces, dashes, parentheses, and optional leading +
+            return acc.regex(/^\+?[\d\s\-()]+$/, 'Invalid phone number format');
           default:
             return acc;
         }
@@ -1004,8 +1009,12 @@ export const getDefaultValue = (jobInputSchema: JobInputSchemaType) => {
     case ValidJobInputTypes.COLOR:
       // Use schema-defined default if available, otherwise fall back to black
       return jobInputSchema.data?.default ?? '#000000';
-    case ValidJobInputTypes.RANGE:
-      return null;
+    case ValidJobInputTypes.RANGE: {
+      // Compute the effective default: use data.default, then data.min, then 0
+      // Values are already coerced to numbers by the schema
+      const rangeData = jobInputSchema.data;
+      return rangeData?.default ?? rangeData?.min ?? 0;
+    }
     case ValidJobInputTypes.HIDDEN:
       // Hidden inputs must return their fixed value for form submission
       return jobInputSchema.data.value;
