@@ -1,5 +1,3 @@
-import { MainLayout } from '@/components/layout/MainLayout';
-import Head from 'next/head';
 import { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useTheme } from '@/lib/contexts/ThemeContext';
@@ -93,10 +91,75 @@ const EXAMPLES = [
   "type": "file",
   "name": "Document Upload",
   "data": {
-    "accept": ".pdf,.doc,.docx",
-    "maxSize": "10485760",
-    "description": "PDF or Word documents only (max 10MB)",
-    "outputFormat": "base64"
+    "outputFormat": "url",
+    "description": "PDF or Word documents only (max 10MB)"
+  },
+  "validations": [
+    { "validation": "accept", "value": ".pdf,.doc,.docx" }
+  ]
+}`,
+  },
+  {
+    label: 'Email Input',
+    value: `{
+  "id": "user-email",
+  "type": "email",
+  "name": "Email Address",
+  "data": {
+    "placeholder": "you@example.com",
+    "description": "Your primary email address"
+  },
+  "validations": [
+    { "validation": "format", "value": "email" }
+  ]
+}`,
+  },
+  {
+    label: 'Date Input',
+    value: `{
+  "id": "birth-date",
+  "type": "date",
+  "name": "Date of Birth",
+  "data": {
+    "description": "Your date of birth"
+  }
+}`,
+  },
+  {
+    label: 'Color Input',
+    value: `{
+  "id": "brand-color",
+  "type": "color",
+  "name": "Brand Color",
+  "data": {
+    "description": "Pick your brand's primary color",
+    "default": "#3b82f6"
+  }
+}`,
+  },
+  {
+    label: 'Range Input',
+    value: `{
+  "id": "confidence-level",
+  "type": "range",
+  "name": "Confidence Level",
+  "data": {
+    "min": 0,
+    "max": 100,
+    "step": 5,
+    "description": "How confident are you? (0–100)"
+  }
+}`,
+  },
+  {
+    label: 'Radio Input',
+    value: `{
+  "id": "priority",
+  "type": "radio",
+  "name": "Priority",
+  "data": {
+    "values": ["Low", "Medium", "High", "Critical"],
+    "description": "Select the priority level"
   }
 }`,
   },
@@ -118,7 +181,7 @@ const EXAMPLES = [
   },
   {
     "id": "email",
-    "type": "string",
+    "type": "email",
     "name": "Email Address",
     "data": {
       "placeholder": "your.email@example.com",
@@ -198,9 +261,12 @@ const EXAMPLES = [
       "type": "file",
       "name": "Project Document",
       "data": {
-        "description": "Upload project documentation (PDF/Word, max 4.5MB)",
-        "outputFormat": "string"
-      }
+        "outputFormat": "url",
+        "description": "Upload project documentation (PDF/Word)"
+      },
+      "validations": [
+        { "validation": "accept", "value": ".pdf,.doc,.docx" }
+      ]
     },
     {
       "id": "priority",
@@ -220,21 +286,18 @@ const EXAMPLES = [
   },
 ];
 
-function validateSchemaWithZod(input: string): {
+interface ValidationResult {
   valid: boolean;
   errors: { message: string; line?: number }[];
   parsedSchemas?: JobInputSchemaType[];
-} {
+}
+
+function validateSchemaWithZod(input: string): ValidationResult {
   let parsed: any;
   try {
     parsed = JSON.parse(input);
   } catch (e: any) {
-    const match = e.message.match(/at position (\d+)/);
-    let line;
-    if (match) {
-      const pos = parseInt(match[1], 10);
-      line = input.slice(0, pos).split('\n').length;
-    }
+    const line = extractLineFromJsonError(e.message, input);
     return {
       valid: false,
       errors: [{ message: 'Invalid JSON: ' + e.message, line }],
@@ -243,45 +306,211 @@ function validateSchemaWithZod(input: string): {
 
   const errors: { message: string; line?: number }[] = [];
   const schemas: JobInputSchemaType[] = [];
-
-  const getLine = (key: string) => {
-    const idx = input.indexOf('"' + key + '"');
-    if (idx === -1) return undefined;
-    return input.slice(0, idx).split('\n').length;
-  };
-
-  let schemasToValidate: any[];
-  if (parsed.input_data && Array.isArray(parsed.input_data)) {
-    schemasToValidate = parsed.input_data;
-  } else if (Array.isArray(parsed)) {
-    schemasToValidate = parsed;
-  } else {
-    schemasToValidate = [parsed];
-  }
+  const schemasToValidate = extractSchemasToValidate(parsed);
 
   schemasToValidate.forEach((schema: any, index: number) => {
+    const normalizedSchema = normalizeSchemaForValidation(schema);
+
+    const preValidationError = validateValidationsField(normalizedSchema, index, input);
+    if (preValidationError) {
+      errors.push(preValidationError);
+      return;
+    }
+
     try {
-      const validatedSchema = jobInputSchema.parse(schema);
+      const validatedSchema = jobInputSchema.parse(normalizedSchema);
       schemas.push(validatedSchema);
     } catch (zodError: any) {
-      if (zodError.errors) {
-        zodError.errors.forEach((error: any) => {
-          errors.push({
-            message: `Schema ${index + 1}: ${error.message}`,
-            line: getLine(error.path?.[0] || ''),
-          });
-        });
-      } else {
-        errors.push({
-          message: `Schema ${index + 1}: ${zodError.message}`,
-          line: getLine('type'),
-        });
-      }
+      const zodErrors = extractZodErrors(zodError, normalizedSchema, index, input);
+      errors.push(...zodErrors);
     }
   });
 
+  return buildValidationResult(errors, schemas, schemasToValidate);
+}
+
+function extractLineFromJsonError(errorMessage: string, input: string): number | undefined {
+  const match = errorMessage.match(/at position (\d+)/);
+  if (!match) return undefined;
+  const pos = parseInt(match[1], 10);
+  return input.slice(0, pos).split('\n').length;
+}
+
+function extractSchemasToValidate(parsed: any): any[] {
+  if (parsed.input_data && Array.isArray(parsed.input_data)) {
+    return parsed.input_data;
+  }
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+  return [parsed];
+}
+
+function normalizeSchemaForValidation(schema: any): any {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (schema.validations === null) {
+    const normalized = { ...schema };
+    delete normalized.validations;
+    return normalized;
+  }
+  return schema;
+}
+
+function validateValidationsField(
+  schema: any,
+  index: number,
+  input: string,
+): { message: string; line?: number } | null {
+  if (!schema || typeof schema !== 'object') return null;
+
+  const validations = schema.validations;
+  if (validations === undefined || Array.isArray(validations)) return null;
+
+  if (typeof validations === 'object' && !Array.isArray(validations)) {
+    return handleValidationsObjectError(schema, validations, index, input);
+  }
+
+  return {
+    message:
+      `Schema ${index + 1} (field: "${schema.id || 'unknown'}"): Field "validations" must be an array or omitted. ` +
+      `Found: ${typeof validations}. ` +
+      `Example: [{"validation": "optional", "value": "true"}] or omit the field entirely.`,
+    line: getValidationsLine(schema, input),
+  };
+}
+
+function handleValidationsObjectError(
+  schema: any,
+  validations: any,
+  index: number,
+  input: string,
+): { message: string; line?: number } | null {
+  const keys = Object.keys(validations);
+  const validKeys = ['optional', 'min', 'max', 'format', 'accept'];
+
+  if (!keys.some((key) => validKeys.includes(key))) {
+    return null;
+  }
+
+  const firstKey = keys[0];
+  const value = validations[firstKey];
+  const correctFormat = formatCorrectValidationsArray(firstKey, value);
+
+  return {
+    message:
+      `Schema ${index + 1} (field: "${schema.id || 'unknown'}"): Field "validations" must be an array, not an object. ` +
+      `Found: ${JSON.stringify(validations)}. ` +
+      `Correct format: ${correctFormat}`,
+    line: getValidationsLine(schema, input),
+  };
+}
+
+function formatCorrectValidationsArray(key: string, value: any): string {
+  if (key === 'optional') {
+    const isTrue = value === true || value === 'true';
+    return isTrue
+      ? `[{"validation": "optional", "value": "true"}]`
+      : `[{"validation": "optional", "value": "${value}"}]`;
+  }
+  return `[{"validation": "${key}", "value": "${value}"}]`;
+}
+
+function extractZodErrors(
+  zodError: any,
+  schema: any,
+  index: number,
+  input: string,
+): { message: string; line?: number }[] {
+  const issues = zodError.issues ?? zodError.errors;
+  if (!issues) {
+    return [
+      {
+        message: `Schema ${index + 1}: ${zodError.message}`,
+        line: getLine('type', input),
+      },
+    ];
+  }
+
+  return issues.map((error: any) => {
+    const fieldPath = error.path?.join('.') || '';
+    const fieldName = fieldPath || error.path?.[0] || 'unknown';
+    const errorMessage = enhanceZodErrorMessage(error, fieldName, schema);
+
+    return {
+      message: `Schema ${index + 1}: ${errorMessage}`,
+      line: getLine(error.path?.[0] || '', input),
+    };
+  });
+}
+
+function enhanceZodErrorMessage(error: any, fieldName: string, schema: any): string {
+  switch (error.code) {
+    case 'invalid_type':
+      return handleInvalidTypeError(error, fieldName, schema);
+
+    case 'invalid_enum_value': {
+      const options = error.options?.join(', ') || 'unknown options';
+      return `Field "${fieldName}" has invalid value "${error.received}". Must be one of: ${options}.`;
+    }
+
+    case 'too_small':
+      return handleTooSmallError(error, fieldName);
+
+    case 'invalid_string':
+      return `Field "${fieldName}" ${error.message.toLowerCase()}.`;
+
+    case 'invalid_union':
+      return `Field "${fieldName}" ${error.message}. Check that the structure matches the expected format.`;
+
+    default:
+      return error.message;
+  }
+}
+
+function handleInvalidTypeError(error: any, fieldName: string, schema: any): string {
+  if (error.received === 'null') {
+    return `Field "${fieldName}" cannot be null. Use an empty array [] or omit the field instead.`;
+  }
+
+  if (error.expected === 'array' && error.received === 'object') {
+    if (fieldName === 'validations') {
+      return (
+        `Field "validations" must be an array of validation objects, not a plain object. ` +
+        `Example: [{"validation": "optional", "value": "true"}] or [{"validation": "min", "value": "5"}]. ` +
+        `Found: ${JSON.stringify(schema.validations)}`
+      );
+    }
+  }
+
+  return `Field "${fieldName}" has invalid type. Expected ${error.expected}, but received ${error.received}.`;
+}
+
+function handleTooSmallError(error: any, fieldName: string): string {
+  if (error.type === 'array') {
+    return `Field "${fieldName}" array must have at least ${error.minimum} element(s).`;
+  }
+  return `Field "${fieldName}" must be at least ${error.minimum} character(s) long.`;
+}
+
+function buildValidationResult(
+  errors: { message: string; line?: number }[],
+  schemas: JobInputSchemaType[],
+  schemasToValidate: any[],
+): ValidationResult {
   if (errors.length > 0) {
-    return { valid: false, errors };
+    return {
+      valid: false,
+      errors,
+      parsedSchemas: schemas.length > 0 ? schemas : undefined,
+    };
+  }
+
+  if (schemasToValidate.length > 0 && schemas.length < schemasToValidate.length) {
+    return {
+      valid: false,
+      errors: [{ message: 'Some schemas could not be validated. Please check the structure.' }],
+      parsedSchemas: schemas.length > 0 ? schemas : undefined,
+    };
   }
 
   return {
@@ -290,6 +519,36 @@ function validateSchemaWithZod(input: string): {
     parsedSchemas: schemas,
   };
 }
+
+function getLine(key: string, input: string): number | undefined {
+  if (!key) return undefined;
+  const searchKey = '"' + key + '"';
+  const idx = input.indexOf(searchKey);
+  if (idx === -1) return undefined;
+  return input.slice(0, idx).split('\n').length;
+}
+
+function getValidationsLine(schema: any, input: string): number | undefined {
+  const schemaId = schema.id || '';
+  if (!schemaId) return getLine('validations', input);
+
+  const idPattern = '"id":\\s*"' + schemaId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"';
+  const idMatch = input.match(new RegExp(idPattern));
+
+  if (!idMatch || idMatch.index === undefined) return getLine('validations', input);
+
+  const afterId = input.substring(idMatch.index);
+  const validationsMatch = afterId.match(/"validations"\s*:/);
+
+  if (!validationsMatch || validationsMatch.index === undefined) {
+    return getLine('validations', input);
+  }
+
+  const absolutePos = idMatch.index + validationsMatch.index;
+  return input.slice(0, absolutePos).split('\n').length;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function InputSchemaValidator() {
   const [jsonInput, setJsonInput] = useState<string>(DEFAULT_SCHEMA);
@@ -301,7 +560,6 @@ export function InputSchemaValidator() {
     setSelectedExample('');
   };
 
-  // Memoize validation for performance
   const validation = useMemo(() => validateSchemaWithZod(jsonInput), [jsonInput]);
 
   const handleSelectExample = (e: React.ChangeEvent<HTMLSelectElement>) => {
