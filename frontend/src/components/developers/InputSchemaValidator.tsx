@@ -1,4 +1,9 @@
-import { SchemaPlayground } from 'masumi-schema-validator-component';
+import dynamic from 'next/dynamic';
+
+const SchemaPlayground = dynamic(
+  () => import('masumi-schema-validator-component').then((mod) => mod.SchemaPlayground),
+  { ssr: false },
+);
 
 // These examples mirror the package's dev/examples.ts (not exported publicly).
 // They populate the "Load Example" dropdown in SchemaPlayground.
