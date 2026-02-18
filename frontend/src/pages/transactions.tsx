@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -9,7 +8,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { Search } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -19,6 +18,7 @@ import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
@@ -311,7 +311,7 @@ export default function Transactions() {
               <Button
                 onClick={() => setShowDownloadDialog(true)}
                 disabled={filteredTransactions.length === 0}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 btn-hover-lift"
               >
                 <Download className="h-4 w-4" />
                 Download CSV
@@ -329,13 +329,12 @@ export default function Transactions() {
             />
 
             <div className="flex items-center justify-between">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search by ID, hash, status, amount..."
-                  className="max-w-xs pl-10"
+              <div className="flex-1">
+                <SearchInput
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={setSearchQuery}
+                  placeholder="Search by ID, hash, status, amount..."
+                  className="max-w-xs"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -454,7 +453,7 @@ export default function Transactions() {
                         <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
                         <td className="p-4 pr-8">
                           <Button variant="ghost" size="icon" className="h-8 w-8">
-                            ⋮
+                            <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </td>
                       </tr>

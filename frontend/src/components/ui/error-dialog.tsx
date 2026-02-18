@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './dialog';
 import { Button } from './button';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -45,11 +45,12 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
                 onClick={() => setShowDetails(!showDetails)}
               >
                 <span className="text-sm">View Details</span>
-                {showDetails ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 transition-transform duration-200',
+                    showDetails && 'rotate-180',
+                  )}
+                />
               </Button>
 
               <div

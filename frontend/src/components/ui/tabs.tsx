@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect } from 'react';
+import { useRef, useState, useLayoutEffect, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Tab {
@@ -11,6 +11,22 @@ interface TabsProps {
   activeTab: string;
   onTabChange: (tabName: string) => void;
   className?: string;
+}
+
+interface TabsContentProps {
+  children: ReactNode;
+  className?: string;
+}
+
+export function TabsContent({ children, className }: TabsContentProps) {
+  return (
+    <div
+      className={cn('animate-fade-in-up opacity-0', className)}
+      style={{ animationDelay: '30ms' }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
@@ -49,7 +65,7 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
           <div className="flex items-center gap-2">
             {tab.name}
             {tab.count && (
-              <span className="bg-destructive text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">
+              <span className="bg-destructive text-white rounded-full w-4 h-4 text-xs flex items-center justify-center animate-pop-in">
                 {tab.count}
               </span>
             )}

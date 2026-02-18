@@ -55,11 +55,17 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
+  const [isFirstNavMount, setIsFirstNavMount] = useState(true);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       queueMicrotask(() => setIsMac(window.navigator.userAgent.includes('Macintosh')));
     }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- First mount detection requires setState in effect
+    setIsFirstNavMount(false);
   }, []);
 
   const applyBlurTransition = useCallback((isActive: boolean) => {
@@ -346,11 +352,17 @@ export function MainLayout({ children }: MainLayoutProps) {
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
             const isDev = item.href === '/developers';
             const isActive = router.pathname === item.href;
             return (
-              <div key={item.href}>
+              <div
+                key={item.href}
+                className={isFirstNavMount ? 'animate-fade-in-up opacity-0' : undefined}
+                style={
+                  isFirstNavMount ? { animationDelay: `${Math.min(index, 7) * 40}ms` } : undefined
+                }
+              >
                 {isDev && (
                   <div
                     className={cn(
@@ -363,14 +375,14 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <Link
                   href={item.href}
                   className={cn(
-                    'flex items-center rounded-lg text-sm transition-all relative',
+                    'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
                     isDev
                       ? isActive
-                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300'
+                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300 is-active'
                         : 'hover:bg-violet-500/10 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400'
                       : cn(
                           'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
                         ),
                     collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
                   )}
@@ -431,7 +443,11 @@ export function MainLayout({ children }: MainLayoutProps) {
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === 'dark' ? (
+                <Sun key="sun" className="h-4 w-4 animate-pop-in" />
+              ) : (
+                <Moon key="moon" className="h-4 w-4 animate-pop-in" />
+              )}
             </Button>
           </div>
         </div>
@@ -487,7 +503,9 @@ export function MainLayout({ children }: MainLayoutProps) {
                   )}
                   onClick={() => setIsNotificationsOpen(true)}
                 >
-                  <Bell className="h-4 w-4" />
+                  <Bell
+                    className={cn('h-4 w-4', newTransactionsCount > 0 && 'animate-subtle-pulse')}
+                  />
                   {formatCount(newTransactionsCount)}
                 </Button>
               </div>

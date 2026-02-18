@@ -1,9 +1,8 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, Trash2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
@@ -36,6 +35,7 @@ import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
+import { SearchInput } from '@/components/ui/search-input';
 type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -321,7 +321,7 @@ export default function AIAgentsPage() {
                 isRefreshing={isFetchingAgents}
               />
               <Button
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsRegisterDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
@@ -341,14 +341,11 @@ export default function AIAgentsPage() {
             />
 
             <div className="flex items-center justify-between gap-4">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input
-                  type="search"
-                  placeholder="Search by name, description, tags, or wallet..."
+              <div className="flex-1 max-w-sm">
+                <SearchInput
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="max-w-xs pl-10"
+                  onChange={setSearchQuery}
+                  placeholder="Search by name, description, tags, or wallet..."
                 />
               </div>
             </div>
@@ -492,9 +489,9 @@ export default function AIAgentsPage() {
                                   e.stopPropagation();
                                   handleDeleteClick(agent);
                                 }}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
                               </Button>
                             </div>
                           ) : agent.state === 'RegistrationInitiated' ||

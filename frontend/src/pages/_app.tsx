@@ -253,7 +253,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
             pauseOnFocusLoss
             draggable
             pauseOnHover
-            theme="dark"
+            theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
           />,
           document.body,
         )}

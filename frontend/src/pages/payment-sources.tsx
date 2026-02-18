@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, Trash2, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Edit2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
@@ -29,6 +29,7 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { BadgeWithTooltip } from '@/components/ui/badge-with-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -231,7 +232,7 @@ export default function PaymentSourcesPage() {
                 isRefreshing={isLoading}
               />
               <Button
-                className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
+                className="flex items-center gap-2 bg-black text-white hover:bg-black/90 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
@@ -242,14 +243,12 @@ export default function PaymentSourcesPage() {
 
           <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Search Payment Source"
+              <div className="flex-1">
+                <SearchInput
                   value={searchQuery}
-                  className="max-w-xs pl-10"
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={setSearchQuery}
+                  placeholder="Search Payment Source"
+                  className="max-w-xs"
                 />
               </div>
             </div>
@@ -347,9 +346,9 @@ export default function PaymentSourcesPage() {
                               variant="ghost"
                               size="sm"
                               onClick={() => setSourceToDelete(source)}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
                             </Button>
 
                             {selectedPaymentSourceId === source.id ? (

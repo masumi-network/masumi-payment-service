@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
@@ -30,6 +29,7 @@ import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
+import { SearchInput } from '@/components/ui/search-input';
 
 type UTXO = Utxo;
 
@@ -260,7 +260,7 @@ export default function WalletsPage() {
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
               <Button
-                className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
+                className="flex items-center gap-2 bg-black text-white hover:bg-black/90 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
@@ -272,14 +272,12 @@ export default function WalletsPage() {
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
           <div className="flex items-center justify-between gap-4">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search by address, note, type, or balance..."
+            <div className="flex-1">
+              <SearchInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-xs pl-10"
+                onChange={setSearchQuery}
+                placeholder="Search by address, note, type, or balance..."
+                className="max-w-xs"
               />
             </div>
           </div>

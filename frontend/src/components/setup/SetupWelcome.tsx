@@ -1993,7 +1993,9 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         </div>
       )}
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-260px)] py-8">
-        {steps[currentStep]}
+        <div key={currentStep} className="animate-slide-in-right w-full">
+          {steps[currentStep]}
+        </div>
       </div>
     </div>
   );

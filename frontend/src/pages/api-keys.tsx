@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -14,10 +13,11 @@ import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Search, Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
   Table,
@@ -155,7 +155,7 @@ export default function ApiKeys() {
                   }}
                   isRefreshing={isLoading}
                 />
-                <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Button className="btn-hover-lift" onClick={() => setIsAddDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   Add API key
                 </Button>
@@ -174,14 +174,12 @@ export default function ApiKeys() {
             />
 
             <div className="flex justify-between items-center">
-              <div className="relative flex-1">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Search by name, key ID, permission, status, network, or usage"
+              <div className="flex-1">
+                <SearchInput
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="max-w-xs pl-10"
+                  onChange={setSearchQuery}
+                  placeholder="Search by name, key ID, permission, status, network, or usage"
+                  className="max-w-xs"
                 />
               </div>
             </div>
