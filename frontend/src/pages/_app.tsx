@@ -9,7 +9,7 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
-import { ThemeProvider } from '@/lib/contexts/ThemeContext';
+import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { Spinner } from '@/components/ui/spinner';
@@ -35,6 +35,25 @@ function App({ Component, pageProps, router }: AppProps) {
         </AppProvider>
       </QueryProvider>
     </ThemeProvider>
+  );
+}
+
+function ToastWrapper() {
+  const { theme } = useTheme();
+  return createPortal(
+    <ToastContainer
+      position="top-right"
+      autoClose={3000}
+      hideProgressBar={false}
+      newestOnTop
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+      theme={theme === 'dark' ? 'dark' : 'light'}
+    />,
+    document.body,
   );
 }
 
@@ -241,22 +260,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   return (
     <>
       {apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-      {mounted &&
-        createPortal(
-          <ToastContainer
-            position="top-right"
-            autoClose={3000}
-            hideProgressBar={false}
-            newestOnTop
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-            theme={document.documentElement.classList.contains('dark') ? 'dark' : 'light'}
-          />,
-          document.body,
-        )}
+      {mounted && <ToastWrapper />}
     </>
   );
 }

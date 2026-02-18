@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect, type ReactNode } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Tab {
@@ -13,21 +13,6 @@ interface TabsProps {
   className?: string;
 }
 
-interface TabsContentProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function TabsContent({ children, className }: TabsContentProps) {
-  return (
-    <div
-      className={cn('animate-fade-in-up opacity-0', className)}
-      style={{ animationDelay: '30ms' }}
-    >
-      {children}
-    </div>
-  );
-}
 
 export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
