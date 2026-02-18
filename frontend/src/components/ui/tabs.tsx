@@ -13,7 +13,6 @@ interface TabsProps {
   className?: string;
 }
 
-
 export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
   const tabsRef = useRef<(HTMLButtonElement | null)[]>([]);
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
