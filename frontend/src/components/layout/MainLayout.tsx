@@ -64,8 +64,8 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- First mount detection requires setState in effect
-    setIsFirstNavMount(false);
+    const timer = setTimeout(() => setIsFirstNavMount(false), 600);
+    return () => clearTimeout(timer);
   }, []);
 
   const applyBlurTransition = useCallback((isActive: boolean) => {
