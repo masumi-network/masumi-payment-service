@@ -70,7 +70,12 @@ export const ModelName = {
   AdminWallet: 'AdminWallet',
   PaymentSourceConfig: 'PaymentSourceConfig',
   WebhookEndpoint: 'WebhookEndpoint',
-  WebhookDelivery: 'WebhookDelivery'
+  WebhookDelivery: 'WebhookDelivery',
+  HydraHead: 'HydraHead',
+  HydraParticipant: 'HydraParticipant',
+  HydraSecret: 'HydraSecret',
+  HydraChannel: 'HydraChannel',
+  HydraSnapshot: 'HydraSnapshot'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -163,7 +168,9 @@ export const TransactionScalarFieldEnum = {
   paymentRequestHistoryId: 'paymentRequestHistoryId',
   purchaseRequestHistoryId: 'purchaseRequestHistoryId',
   previousOnChainState: 'previousOnChainState',
-  newOnChainState: 'newOnChainState'
+  newOnChainState: 'newOnChainState',
+  layer: 'layer',
+  hydraHeadId: 'hydraHeadId'
 } as const
 
 export type TransactionScalarFieldEnum = (typeof TransactionScalarFieldEnum)[keyof typeof TransactionScalarFieldEnum]
@@ -449,6 +456,84 @@ export const WebhookDeliveryScalarFieldEnum = {
 } as const
 
 export type WebhookDeliveryScalarFieldEnum = (typeof WebhookDeliveryScalarFieldEnum)[keyof typeof WebhookDeliveryScalarFieldEnum]
+
+
+export const HydraHeadScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  headId: 'headId',
+  network: 'network',
+  paymentSourceId: 'paymentSourceId',
+  status: 'status',
+  contestationPeriod: 'contestationPeriod',
+  openedAt: 'openedAt',
+  closedAt: 'closedAt',
+  finalizedAt: 'finalizedAt',
+  lastActivityAt: 'lastActivityAt',
+  lastSnapshotNumber: 'lastSnapshotNumber',
+  lastSnapshotUtxoHash: 'lastSnapshotUtxoHash',
+  lastError: 'lastError',
+  lastErrorAt: 'lastErrorAt'
+} as const
+
+export type HydraHeadScalarFieldEnum = (typeof HydraHeadScalarFieldEnum)[keyof typeof HydraHeadScalarFieldEnum]
+
+
+export const HydraParticipantScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  hydraHeadId: 'hydraHeadId',
+  participantId: 'participantId',
+  participantType: 'participantType',
+  participantIndex: 'participantIndex',
+  nodeUrl: 'nodeUrl',
+  nodeHttpUrl: 'nodeHttpUrl',
+  cardanoVerificationKey: 'cardanoVerificationKey',
+  hydraVerificationKey: 'hydraVerificationKey',
+  hasCommitted: 'hasCommitted',
+  hydraSecretId: 'hydraSecretId'
+} as const
+
+export type HydraParticipantScalarFieldEnum = (typeof HydraParticipantScalarFieldEnum)[keyof typeof HydraParticipantScalarFieldEnum]
+
+
+export const HydraSecretScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  encryptedFundWalletSK: 'encryptedFundWalletSK',
+  encryptedNodeWalletSK: 'encryptedNodeWalletSK',
+  encryptedHydraSK: 'encryptedHydraSK'
+} as const
+
+export type HydraSecretScalarFieldEnum = (typeof HydraSecretScalarFieldEnum)[keyof typeof HydraSecretScalarFieldEnum]
+
+
+export const HydraChannelScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  hydraHeadId: 'hydraHeadId',
+  participantIdA: 'participantIdA',
+  participantIdB: 'participantIdB'
+} as const
+
+export type HydraChannelScalarFieldEnum = (typeof HydraChannelScalarFieldEnum)[keyof typeof HydraChannelScalarFieldEnum]
+
+
+export const HydraSnapshotScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  hydraHeadId: 'hydraHeadId',
+  snapshotNumber: 'snapshotNumber',
+  utxoHash: 'utxoHash',
+  fanoutTxHash: 'fanoutTxHash',
+  reconciledAt: 'reconciledAt'
+} as const
+
+export type HydraSnapshotScalarFieldEnum = (typeof HydraSnapshotScalarFieldEnum)[keyof typeof HydraSnapshotScalarFieldEnum]
 
 
 export const SortOrder = {

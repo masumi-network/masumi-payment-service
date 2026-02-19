@@ -139,3 +139,44 @@ export type WebhookEndpoint = Prisma.WebhookEndpointModel
  * 
  */
 export type WebhookDelivery = Prisma.WebhookDeliveryModel
+/**
+ * Model HydraHead
+ * Represents a Hydra L2 head between N participants.
+ * Each head has its own Hydra node connection and tracks lifecycle state.
+ * Optionally linked to a PaymentSource for config (Blockfrost API key, contract refs).
+ */
+export type HydraHead = Prisma.HydraHeadModel
+/**
+ * Model HydraParticipant
+ * A participant in a Hydra head.
+ * Join table between HydraHead and participants, supporting N participants per head.
+ * The same participant can be in multiple heads simultaneously.
+ * Participants can be agents or external buyers (marketplace frontend users).
+ */
+export type HydraParticipant = Prisma.HydraParticipantModel
+/**
+ * Model HydraSecret
+ * Encrypted secret key material for a Hydra participant (1:1 with HydraParticipant).
+ * Stores the three secret keys needed to operate a Hydra node participant:
+ * fundWalletSK, nodeWalletSK, and hydraSK as encrypted JSON key envelopes.
+ * Uses the project's encrypt()/decrypt() from @/utils/security/encryption.
+ */
+export type HydraSecret = Prisma.HydraSecretModel
+/**
+ * Model HydraChannel
+ * A Hydra channel between exactly 2 participants, backed by a Hydra head.
+ * Provides a fast indexed lookup: "find all heads between participant A and B."
+ * 
+ * Participants are stored in deterministic order (participantIdA < participantIdB
+ * lexicographically) so the same pair is never duplicated with swapped columns.
+ * The same pair can have multiple channels (e.g. one closing while a new one opens).
+ * Participants can be agents or external buyers (marketplace frontend users).
+ */
+export type HydraChannel = Prisma.HydraChannelModel
+/**
+ * Model HydraSnapshot
+ * Tracks a snapshot confirmed within a Hydra head.
+ * When the head fans out, these snapshots map L2 state back to L1.
+ * The final snapshot's UTXO set becomes the fanout transaction on L1.
+ */
+export type HydraSnapshot = Prisma.HydraSnapshotModel

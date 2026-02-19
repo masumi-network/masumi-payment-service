@@ -100,6 +100,14 @@ export const TransactionStatus = {
 export type TransactionStatus = (typeof TransactionStatus)[keyof typeof TransactionStatus]
 
 
+export const TransactionLayer = {
+  L1: 'L1',
+  L2: 'L2'
+} as const
+
+export type TransactionLayer = (typeof TransactionLayer)[keyof typeof TransactionLayer]
+
+
 export const OnChainState = {
   FundsLocked: 'FundsLocked',
   FundsOrDatumInvalid: 'FundsOrDatumInvalid',
@@ -182,3 +190,23 @@ export const WebhookDeliveryStatus = {
 } as const
 
 export type WebhookDeliveryStatus = (typeof WebhookDeliveryStatus)[keyof typeof WebhookDeliveryStatus]
+
+
+export const HydraHeadStatus = {
+  Idle: 'Idle',
+  Initializing: 'Initializing',
+  Open: 'Open',
+  Closed: 'Closed',
+  FanoutPossible: 'FanoutPossible',
+  Final: 'Final'
+} as const
+
+export type HydraHeadStatus = (typeof HydraHeadStatus)[keyof typeof HydraHeadStatus]
+
+
+export const HydraParticipantType = {
+  Agent: 'Agent',
+  ExternalBuyer: 'ExternalBuyer'
+} as const
+
+export type HydraParticipantType = (typeof HydraParticipantType)[keyof typeof HydraParticipantType]

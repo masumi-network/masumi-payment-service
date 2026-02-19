@@ -1,4 +1,5 @@
 import { logger } from '@/utils/logger';
+import { Mutex } from 'async-mutex';
 import { ActiveHydraHeadInfo, HydraHeadConfig, HydraHeadStatus, HydraSubmitResult } from './types';
 
 // TODO: Import from @masumi-hydra when integrating
@@ -32,6 +33,20 @@ interface HydraHeadInstance {
  * Each entry wraps a @masumi-hydra HydraHead instance.
  */
 const hydraHeadInstances: Map<string, HydraHeadInstance> = new Map();
+
+/**
+ * Per-head mutexes to prevent concurrent creation of the same HydraHead instance.
+ */
+const headLocks: Map<string, Mutex> = new Map();
+
+function getHeadLock(hydraHeadId: string): Mutex {
+	let lock = headLocks.get(hydraHeadId);
+	if (!lock) {
+		lock = new Mutex();
+		headLocks.set(hydraHeadId, lock);
+	}
+	return lock;
+}
 
 /**
  * Create a HydraHead instance from config.
@@ -107,16 +122,20 @@ async function createHydraHeadInstance(_config: HydraHeadConfig): Promise<HydraH
  * @returns The HydraHead instance (connected to main node)
  */
 export async function getOrCreateHydraHead(hydraHeadId: string, config: HydraHeadConfig): Promise<HydraHeadInstance> {
-	let instance = hydraHeadInstances.get(hydraHeadId);
+	const lock = getHeadLock(hydraHeadId);
 
-	if (!instance) {
-		logger.info('[HydraManager] Creating new HydraHead instance', { hydraHeadId });
-		instance = await createHydraHeadInstance(config);
-		hydraHeadInstances.set(hydraHeadId, instance);
-		await instance.connectMainNode();
-	}
+	return lock.runExclusive(async () => {
+		let instance = hydraHeadInstances.get(hydraHeadId);
 
-	return instance;
+		if (!instance) {
+			logger.info('[HydraManager] Creating new HydraHead instance', { hydraHeadId });
+			instance = await createHydraHeadInstance(config);
+			hydraHeadInstances.set(hydraHeadId, instance);
+			await instance.connectMainNode();
+		}
+
+		return instance;
+	});
 }
 
 /**
@@ -131,6 +150,7 @@ export function getHydraHead(hydraHeadId: string): HydraHeadInstance | null {
  */
 export function removeHydraHead(hydraHeadId: string): void {
 	hydraHeadInstances.delete(hydraHeadId);
+	headLocks.delete(hydraHeadId);
 	logger.info('[HydraManager] Removed HydraHead instance', { hydraHeadId });
 }
 

@@ -318,6 +318,7 @@ export type PaymentSourceWhereInput = {
   RegistryRequest?: Prisma.RegistryRequestListRelationFilter
   WalletBases?: Prisma.WalletBaseListRelationFilter
   WebhookEndpoints?: Prisma.WebhookEndpointListRelationFilter
+  HydraHeads?: Prisma.HydraHeadListRelationFilter
 }
 
 export type PaymentSourceOrderByWithRelationInput = {
@@ -347,6 +348,7 @@ export type PaymentSourceOrderByWithRelationInput = {
   RegistryRequest?: Prisma.RegistryRequestOrderByRelationAggregateInput
   WalletBases?: Prisma.WalletBaseOrderByRelationAggregateInput
   WebhookEndpoints?: Prisma.WebhookEndpointOrderByRelationAggregateInput
+  HydraHeads?: Prisma.HydraHeadOrderByRelationAggregateInput
 }
 
 export type PaymentSourceWhereUniqueInput = Prisma.AtLeast<{
@@ -381,6 +383,7 @@ export type PaymentSourceWhereUniqueInput = Prisma.AtLeast<{
   RegistryRequest?: Prisma.RegistryRequestListRelationFilter
   WalletBases?: Prisma.WalletBaseListRelationFilter
   WebhookEndpoints?: Prisma.WebhookEndpointListRelationFilter
+  HydraHeads?: Prisma.HydraHeadListRelationFilter
 }, "id" | "paymentSourceConfigId" | "network_smartContractAddress" | "network_policyId">
 
 export type PaymentSourceOrderByWithAggregationInput = {
@@ -454,6 +457,7 @@ export type PaymentSourceCreateInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateInput = {
@@ -481,6 +485,7 @@ export type PaymentSourceUncheckedCreateInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUpdateInput = {
@@ -508,6 +513,7 @@ export type PaymentSourceUpdateInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateInput = {
@@ -535,6 +541,7 @@ export type PaymentSourceUncheckedUpdateInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateManyInput = {
@@ -883,6 +890,22 @@ export type PaymentSourceUpdateOneWithoutWebhookEndpointsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.PaymentSourceUpdateToOneWithWhereWithoutWebhookEndpointsInput, Prisma.PaymentSourceUpdateWithoutWebhookEndpointsInput>, Prisma.PaymentSourceUncheckedUpdateWithoutWebhookEndpointsInput>
 }
 
+export type PaymentSourceCreateNestedOneWithoutHydraHeadsInput = {
+  create?: Prisma.XOR<Prisma.PaymentSourceCreateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedCreateWithoutHydraHeadsInput>
+  connectOrCreate?: Prisma.PaymentSourceCreateOrConnectWithoutHydraHeadsInput
+  connect?: Prisma.PaymentSourceWhereUniqueInput
+}
+
+export type PaymentSourceUpdateOneWithoutHydraHeadsNestedInput = {
+  create?: Prisma.XOR<Prisma.PaymentSourceCreateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedCreateWithoutHydraHeadsInput>
+  connectOrCreate?: Prisma.PaymentSourceCreateOrConnectWithoutHydraHeadsInput
+  upsert?: Prisma.PaymentSourceUpsertWithoutHydraHeadsInput
+  disconnect?: Prisma.PaymentSourceWhereInput | boolean
+  delete?: Prisma.PaymentSourceWhereInput | boolean
+  connect?: Prisma.PaymentSourceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.PaymentSourceUpdateToOneWithWhereWithoutHydraHeadsInput, Prisma.PaymentSourceUpdateWithoutHydraHeadsInput>, Prisma.PaymentSourceUncheckedUpdateWithoutHydraHeadsInput>
+}
+
 export type PaymentSourceCreateWithoutHotWalletsInput = {
   id?: string
   createdAt?: Date | string
@@ -907,6 +930,7 @@ export type PaymentSourceCreateWithoutHotWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutHotWalletsInput = {
@@ -933,6 +957,7 @@ export type PaymentSourceUncheckedCreateWithoutHotWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutHotWalletsInput = {
@@ -975,6 +1000,7 @@ export type PaymentSourceUpdateWithoutHotWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutHotWalletsInput = {
@@ -1001,6 +1027,7 @@ export type PaymentSourceUncheckedUpdateWithoutHotWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutWalletBasesInput = {
@@ -1027,6 +1054,7 @@ export type PaymentSourceCreateWithoutWalletBasesInput = {
   PurchaseRequests?: Prisma.PurchaseRequestCreateNestedManyWithoutPaymentSourceInput
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutWalletBasesInput = {
@@ -1053,6 +1081,7 @@ export type PaymentSourceUncheckedCreateWithoutWalletBasesInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutWalletBasesInput = {
@@ -1095,6 +1124,7 @@ export type PaymentSourceUpdateWithoutWalletBasesInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUpdateManyWithoutPaymentSourceNestedInput
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutWalletBasesInput = {
@@ -1121,6 +1151,7 @@ export type PaymentSourceUncheckedUpdateWithoutWalletBasesInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutRegistryRequestInput = {
@@ -1147,6 +1178,7 @@ export type PaymentSourceCreateWithoutRegistryRequestInput = {
   PurchaseRequests?: Prisma.PurchaseRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutRegistryRequestInput = {
@@ -1173,6 +1205,7 @@ export type PaymentSourceUncheckedCreateWithoutRegistryRequestInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutRegistryRequestInput = {
@@ -1215,6 +1248,7 @@ export type PaymentSourceUpdateWithoutRegistryRequestInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutRegistryRequestInput = {
@@ -1241,6 +1275,7 @@ export type PaymentSourceUncheckedUpdateWithoutRegistryRequestInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutPaymentRequestsInput = {
@@ -1267,6 +1302,7 @@ export type PaymentSourceCreateWithoutPaymentRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutPaymentRequestsInput = {
@@ -1293,6 +1329,7 @@ export type PaymentSourceUncheckedCreateWithoutPaymentRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutPaymentRequestsInput = {
@@ -1335,6 +1372,7 @@ export type PaymentSourceUpdateWithoutPaymentRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutPaymentRequestsInput = {
@@ -1361,6 +1399,7 @@ export type PaymentSourceUncheckedUpdateWithoutPaymentRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutPurchaseRequestsInput = {
@@ -1387,6 +1426,7 @@ export type PaymentSourceCreateWithoutPurchaseRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutPurchaseRequestsInput = {
@@ -1413,6 +1453,7 @@ export type PaymentSourceUncheckedCreateWithoutPurchaseRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutPurchaseRequestsInput = {
@@ -1455,6 +1496,7 @@ export type PaymentSourceUpdateWithoutPurchaseRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutPurchaseRequestsInput = {
@@ -1481,6 +1523,7 @@ export type PaymentSourceUncheckedUpdateWithoutPurchaseRequestsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutPaymentSourceIdentifiersInput = {
@@ -1507,6 +1550,7 @@ export type PaymentSourceCreateWithoutPaymentSourceIdentifiersInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutPaymentSourceIdentifiersInput = {
@@ -1533,6 +1577,7 @@ export type PaymentSourceUncheckedCreateWithoutPaymentSourceIdentifiersInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutPaymentSourceIdentifiersInput = {
@@ -1575,6 +1620,7 @@ export type PaymentSourceUpdateWithoutPaymentSourceIdentifiersInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutPaymentSourceIdentifiersInput = {
@@ -1601,6 +1647,7 @@ export type PaymentSourceUncheckedUpdateWithoutPaymentSourceIdentifiersInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutAdminWalletsInput = {
@@ -1627,6 +1674,7 @@ export type PaymentSourceCreateWithoutAdminWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutAdminWalletsInput = {
@@ -1653,6 +1701,7 @@ export type PaymentSourceUncheckedCreateWithoutAdminWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutAdminWalletsInput = {
@@ -1684,6 +1733,7 @@ export type PaymentSourceCreateWithoutFeeReceiverNetworkWalletInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutFeeReceiverNetworkWalletInput = {
@@ -1710,6 +1760,7 @@ export type PaymentSourceUncheckedCreateWithoutFeeReceiverNetworkWalletInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutFeeReceiverNetworkWalletInput = {
@@ -1757,6 +1808,7 @@ export type PaymentSourceUpdateWithoutAdminWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutAdminWalletsInput = {
@@ -1783,6 +1835,7 @@ export type PaymentSourceUncheckedUpdateWithoutAdminWalletsInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUpsertWithWhereUniqueWithoutFeeReceiverNetworkWalletInput = {
@@ -1847,6 +1900,7 @@ export type PaymentSourceCreateWithoutPaymentSourceConfigInput = {
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutPaymentSourceConfigInput = {
@@ -1873,6 +1927,7 @@ export type PaymentSourceUncheckedCreateWithoutPaymentSourceConfigInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutPaymentSourceConfigInput = {
@@ -1915,6 +1970,7 @@ export type PaymentSourceUpdateWithoutPaymentSourceConfigInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutPaymentSourceConfigInput = {
@@ -1941,6 +1997,7 @@ export type PaymentSourceUncheckedUpdateWithoutPaymentSourceConfigInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateWithoutWebhookEndpointsInput = {
@@ -1967,6 +2024,7 @@ export type PaymentSourceCreateWithoutWebhookEndpointsInput = {
   PurchaseRequests?: Prisma.PurchaseRequestCreateNestedManyWithoutPaymentSourceInput
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceUncheckedCreateWithoutWebhookEndpointsInput = {
@@ -1993,6 +2051,7 @@ export type PaymentSourceUncheckedCreateWithoutWebhookEndpointsInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
   WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
+  HydraHeads?: Prisma.HydraHeadUncheckedCreateNestedManyWithoutPaymentSourceInput
 }
 
 export type PaymentSourceCreateOrConnectWithoutWebhookEndpointsInput = {
@@ -2035,6 +2094,7 @@ export type PaymentSourceUpdateWithoutWebhookEndpointsInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUpdateManyWithoutPaymentSourceNestedInput
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutWebhookEndpointsInput = {
@@ -2061,6 +2121,131 @@ export type PaymentSourceUncheckedUpdateWithoutWebhookEndpointsInput = {
   PurchaseRequests?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
+}
+
+export type PaymentSourceCreateWithoutHydraHeadsInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  network: $Enums.Network
+  lastCheckedAt?: Date | string | null
+  lastIdentifierChecked?: string | null
+  syncInProgress?: boolean
+  smartContractAddress: string
+  feeRatePermille: number
+  cooldownTime: number
+  deletedAt?: Date | string | null
+  policyId?: string | null
+  disablePaymentAt?: Date | string | null
+  disableSyncAt?: Date | string | null
+  AdminWallets?: Prisma.AdminWalletCreateNestedManyWithoutPaymentSourceAdminInput
+  HotWallets?: Prisma.HotWalletCreateNestedManyWithoutPaymentSourceInput
+  PaymentRequests?: Prisma.PaymentRequestCreateNestedManyWithoutPaymentSourceInput
+  FeeReceiverNetworkWallet: Prisma.AdminWalletCreateNestedOneWithoutPaymentSourceFeeReceiverInput
+  PaymentSourceConfig: Prisma.PaymentSourceConfigCreateNestedOneWithoutPaymentSourceInput
+  PaymentSourceIdentifiers?: Prisma.PaymentSourceIdentifiersCreateNestedManyWithoutPaymentSourceInput
+  PurchaseRequests?: Prisma.PurchaseRequestCreateNestedManyWithoutPaymentSourceInput
+  RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutPaymentSourceInput
+  WalletBases?: Prisma.WalletBaseCreateNestedManyWithoutPaymentSourceInput
+  WebhookEndpoints?: Prisma.WebhookEndpointCreateNestedManyWithoutPaymentSourceInput
+}
+
+export type PaymentSourceUncheckedCreateWithoutHydraHeadsInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  network: $Enums.Network
+  lastCheckedAt?: Date | string | null
+  lastIdentifierChecked?: string | null
+  syncInProgress?: boolean
+  smartContractAddress: string
+  adminWalletId: string
+  feeRatePermille: number
+  cooldownTime: number
+  paymentSourceConfigId: string
+  deletedAt?: Date | string | null
+  policyId?: string | null
+  disablePaymentAt?: Date | string | null
+  disableSyncAt?: Date | string | null
+  AdminWallets?: Prisma.AdminWalletUncheckedCreateNestedManyWithoutPaymentSourceAdminInput
+  HotWallets?: Prisma.HotWalletUncheckedCreateNestedManyWithoutPaymentSourceInput
+  PaymentRequests?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
+  PaymentSourceIdentifiers?: Prisma.PaymentSourceIdentifiersUncheckedCreateNestedManyWithoutPaymentSourceInput
+  PurchaseRequests?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
+  RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutPaymentSourceInput
+  WalletBases?: Prisma.WalletBaseUncheckedCreateNestedManyWithoutPaymentSourceInput
+  WebhookEndpoints?: Prisma.WebhookEndpointUncheckedCreateNestedManyWithoutPaymentSourceInput
+}
+
+export type PaymentSourceCreateOrConnectWithoutHydraHeadsInput = {
+  where: Prisma.PaymentSourceWhereUniqueInput
+  create: Prisma.XOR<Prisma.PaymentSourceCreateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedCreateWithoutHydraHeadsInput>
+}
+
+export type PaymentSourceUpsertWithoutHydraHeadsInput = {
+  update: Prisma.XOR<Prisma.PaymentSourceUpdateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedUpdateWithoutHydraHeadsInput>
+  create: Prisma.XOR<Prisma.PaymentSourceCreateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedCreateWithoutHydraHeadsInput>
+  where?: Prisma.PaymentSourceWhereInput
+}
+
+export type PaymentSourceUpdateToOneWithWhereWithoutHydraHeadsInput = {
+  where?: Prisma.PaymentSourceWhereInput
+  data: Prisma.XOR<Prisma.PaymentSourceUpdateWithoutHydraHeadsInput, Prisma.PaymentSourceUncheckedUpdateWithoutHydraHeadsInput>
+}
+
+export type PaymentSourceUpdateWithoutHydraHeadsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  network?: Prisma.EnumNetworkFieldUpdateOperationsInput | $Enums.Network
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastIdentifierChecked?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  syncInProgress?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  smartContractAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  feeRatePermille?: Prisma.IntFieldUpdateOperationsInput | number
+  cooldownTime?: Prisma.IntFieldUpdateOperationsInput | number
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  policyId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  disablePaymentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  disableSyncAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  AdminWallets?: Prisma.AdminWalletUpdateManyWithoutPaymentSourceAdminNestedInput
+  HotWallets?: Prisma.HotWalletUpdateManyWithoutPaymentSourceNestedInput
+  PaymentRequests?: Prisma.PaymentRequestUpdateManyWithoutPaymentSourceNestedInput
+  FeeReceiverNetworkWallet?: Prisma.AdminWalletUpdateOneRequiredWithoutPaymentSourceFeeReceiverNestedInput
+  PaymentSourceConfig?: Prisma.PaymentSourceConfigUpdateOneRequiredWithoutPaymentSourceNestedInput
+  PaymentSourceIdentifiers?: Prisma.PaymentSourceIdentifiersUpdateManyWithoutPaymentSourceNestedInput
+  PurchaseRequests?: Prisma.PurchaseRequestUpdateManyWithoutPaymentSourceNestedInput
+  RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
+  WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
+  WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+}
+
+export type PaymentSourceUncheckedUpdateWithoutHydraHeadsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  network?: Prisma.EnumNetworkFieldUpdateOperationsInput | $Enums.Network
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastIdentifierChecked?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  syncInProgress?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  smartContractAddress?: Prisma.StringFieldUpdateOperationsInput | string
+  adminWalletId?: Prisma.StringFieldUpdateOperationsInput | string
+  feeRatePermille?: Prisma.IntFieldUpdateOperationsInput | number
+  cooldownTime?: Prisma.IntFieldUpdateOperationsInput | number
+  paymentSourceConfigId?: Prisma.StringFieldUpdateOperationsInput | string
+  deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  policyId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  disablePaymentAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  disableSyncAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  AdminWallets?: Prisma.AdminWalletUncheckedUpdateManyWithoutPaymentSourceAdminNestedInput
+  HotWallets?: Prisma.HotWalletUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  PaymentRequests?: Prisma.PaymentRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  PaymentSourceIdentifiers?: Prisma.PaymentSourceIdentifiersUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  PurchaseRequests?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceCreateManyFeeReceiverNetworkWalletInput = {
@@ -2105,6 +2290,7 @@ export type PaymentSourceUpdateWithoutFeeReceiverNetworkWalletInput = {
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateWithoutFeeReceiverNetworkWalletInput = {
@@ -2131,6 +2317,7 @@ export type PaymentSourceUncheckedUpdateWithoutFeeReceiverNetworkWalletInput = {
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WalletBases?: Prisma.WalletBaseUncheckedUpdateManyWithoutPaymentSourceNestedInput
   WebhookEndpoints?: Prisma.WebhookEndpointUncheckedUpdateManyWithoutPaymentSourceNestedInput
+  HydraHeads?: Prisma.HydraHeadUncheckedUpdateManyWithoutPaymentSourceNestedInput
 }
 
 export type PaymentSourceUncheckedUpdateManyWithoutFeeReceiverNetworkWalletInput = {
@@ -2165,6 +2352,7 @@ export type PaymentSourceCountOutputType = {
   RegistryRequest: number
   WalletBases: number
   WebhookEndpoints: number
+  HydraHeads: number
 }
 
 export type PaymentSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2176,6 +2364,7 @@ export type PaymentSourceCountOutputTypeSelect<ExtArgs extends runtime.Types.Ext
   RegistryRequest?: boolean | PaymentSourceCountOutputTypeCountRegistryRequestArgs
   WalletBases?: boolean | PaymentSourceCountOutputTypeCountWalletBasesArgs
   WebhookEndpoints?: boolean | PaymentSourceCountOutputTypeCountWebhookEndpointsArgs
+  HydraHeads?: boolean | PaymentSourceCountOutputTypeCountHydraHeadsArgs
 }
 
 /**
@@ -2244,6 +2433,13 @@ export type PaymentSourceCountOutputTypeCountWebhookEndpointsArgs<ExtArgs extend
   where?: Prisma.WebhookEndpointWhereInput
 }
 
+/**
+ * PaymentSourceCountOutputType without action
+ */
+export type PaymentSourceCountOutputTypeCountHydraHeadsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.HydraHeadWhereInput
+}
+
 
 export type PaymentSourceSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -2272,6 +2468,7 @@ export type PaymentSourceSelect<ExtArgs extends runtime.Types.Extensions.Interna
   RegistryRequest?: boolean | Prisma.PaymentSource$RegistryRequestArgs<ExtArgs>
   WalletBases?: boolean | Prisma.PaymentSource$WalletBasesArgs<ExtArgs>
   WebhookEndpoints?: boolean | Prisma.PaymentSource$WebhookEndpointsArgs<ExtArgs>
+  HydraHeads?: boolean | Prisma.PaymentSource$HydraHeadsArgs<ExtArgs>
   _count?: boolean | Prisma.PaymentSourceCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["paymentSource"]>
 
@@ -2348,6 +2545,7 @@ export type PaymentSourceInclude<ExtArgs extends runtime.Types.Extensions.Intern
   RegistryRequest?: boolean | Prisma.PaymentSource$RegistryRequestArgs<ExtArgs>
   WalletBases?: boolean | Prisma.PaymentSource$WalletBasesArgs<ExtArgs>
   WebhookEndpoints?: boolean | Prisma.PaymentSource$WebhookEndpointsArgs<ExtArgs>
+  HydraHeads?: boolean | Prisma.PaymentSource$HydraHeadsArgs<ExtArgs>
   _count?: boolean | Prisma.PaymentSourceCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type PaymentSourceIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2372,6 +2570,7 @@ export type $PaymentSourcePayload<ExtArgs extends runtime.Types.Extensions.Inter
     RegistryRequest: Prisma.$RegistryRequestPayload<ExtArgs>[]
     WalletBases: Prisma.$WalletBasePayload<ExtArgs>[]
     WebhookEndpoints: Prisma.$WebhookEndpointPayload<ExtArgs>[]
+    HydraHeads: Prisma.$HydraHeadPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -2794,6 +2993,7 @@ export interface Prisma__PaymentSourceClient<T, Null = never, ExtArgs extends ru
   RegistryRequest<T extends Prisma.PaymentSource$RegistryRequestArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentSource$RegistryRequestArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$RegistryRequestPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   WalletBases<T extends Prisma.PaymentSource$WalletBasesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentSource$WalletBasesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WalletBasePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   WebhookEndpoints<T extends Prisma.PaymentSource$WebhookEndpointsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentSource$WebhookEndpointsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebhookEndpointPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  HydraHeads<T extends Prisma.PaymentSource$HydraHeadsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentSource$HydraHeadsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$HydraHeadPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -3424,6 +3624,30 @@ export type PaymentSource$WebhookEndpointsArgs<ExtArgs extends runtime.Types.Ext
   take?: number
   skip?: number
   distinct?: Prisma.WebhookEndpointScalarFieldEnum | Prisma.WebhookEndpointScalarFieldEnum[]
+}
+
+/**
+ * PaymentSource.HydraHeads
+ */
+export type PaymentSource$HydraHeadsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the HydraHead
+   */
+  select?: Prisma.HydraHeadSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the HydraHead
+   */
+  omit?: Prisma.HydraHeadOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.HydraHeadInclude<ExtArgs> | null
+  where?: Prisma.HydraHeadWhereInput
+  orderBy?: Prisma.HydraHeadOrderByWithRelationInput | Prisma.HydraHeadOrderByWithRelationInput[]
+  cursor?: Prisma.HydraHeadWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.HydraHeadScalarFieldEnum | Prisma.HydraHeadScalarFieldEnum[]
 }
 
 /**

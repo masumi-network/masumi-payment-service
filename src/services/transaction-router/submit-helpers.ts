@@ -18,10 +18,10 @@ interface BaseSubmitContext {
  */
 interface PurchaseSubmitContext extends BaseSubmitContext {
 	purchaseRequestId: string;
-	/** Agent ID of the buyer (participant A) */
-	buyerAgentId: string;
-	/** Agent ID of the seller (participant B) */
-	sellerAgentId: string;
+	/** Buyer participant ID (agent ID or external buyer ID) */
+	buyerParticipantId: string;
+	/** Seller participant ID (agent ID) */
+	sellerParticipantId: string;
 }
 
 /**
@@ -29,10 +29,10 @@ interface PurchaseSubmitContext extends BaseSubmitContext {
  */
 interface PaymentSubmitContext extends BaseSubmitContext {
 	paymentRequestId: string;
-	/** Agent ID of the buyer (participant A) */
-	buyerAgentId: string;
-	/** Agent ID of the seller (participant B) */
-	sellerAgentId: string;
+	/** Buyer participant ID (agent ID or external buyer ID) */
+	buyerParticipantId: string;
+	/** Seller participant ID (agent ID) */
+	sellerParticipantId: string;
 }
 
 // ============================================================
@@ -64,8 +64,8 @@ export async function submitLockFundsTransaction(
 			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -102,8 +102,8 @@ export async function submitResultTransaction(
 			transactionType: 'SubmitResult',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -140,8 +140,8 @@ export async function submitRequestRefundTransaction(
 			transactionType: 'RequestRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -178,8 +178,8 @@ export async function submitCancelRefundTransaction(
 			transactionType: 'CancelRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -216,8 +216,8 @@ export async function submitAuthorizeRefundTransaction(
 			transactionType: 'AuthorizeRefund',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -254,8 +254,8 @@ export async function submitCollectPaymentTransaction(
 			transactionType: 'CollectPayment',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -292,8 +292,8 @@ export async function submitCollectRefundTransaction(
 			transactionType: 'CollectRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			agentIdA: context.buyerAgentId,
-			agentIdB: context.sellerAgentId,
+			participantIdA: context.buyerParticipantId,
+			participantIdB: context.sellerParticipantId,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -314,8 +314,8 @@ export async function fetchUtxosForTransaction(
 	address: string,
 	context: {
 		paymentSourceId: string;
-		agentIdA?: string;
-		agentIdB?: string;
+		participantIdA?: string;
+		participantIdB?: string;
 		network: Network;
 		forceLayer?: TransactionLayer;
 	},
@@ -326,10 +326,10 @@ export async function fetchUtxosForTransaction(
 	return router.fetchUtxos(
 		address,
 		{
-			transactionType: 'LockFunds', // Type doesn't matter for UTXO queries
+			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
-			agentIdA: context.agentIdA,
-			agentIdB: context.agentIdB,
+			participantIdA: context.participantIdA,
+			participantIdB: context.participantIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -344,8 +344,8 @@ export async function fetchUtxosByTxHashForTransaction(
 	txHash: string,
 	context: {
 		paymentSourceId: string;
-		agentIdA?: string;
-		agentIdB?: string;
+		participantIdA?: string;
+		participantIdB?: string;
 		network: Network;
 		forceLayer?: TransactionLayer;
 	},
@@ -356,10 +356,10 @@ export async function fetchUtxosByTxHashForTransaction(
 	return router.fetchUtxosByTxHash(
 		txHash,
 		{
-			transactionType: 'LockFunds', // Type doesn't matter for UTXO queries
+			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
-			agentIdA: context.agentIdA,
-			agentIdB: context.agentIdB,
+			participantIdA: context.participantIdA,
+			participantIdB: context.participantIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -372,21 +372,22 @@ export async function fetchUtxosByTxHashForTransaction(
 // ============================================================
 
 /**
- * Check if L2 (Hydra) is available for a transaction between two agents.
- * Uses symmetric agent IDs (no buyer/seller distinction).
+ * Check if L2 (Hydra) is available for a transaction between two participants.
+ * Uses symmetric participant IDs (no buyer/seller distinction).
  */
 export async function isHydraAvailable(context: {
 	paymentSourceId: string;
-	agentIdA: string;
-	agentIdB: string;
+	participantIdA: string;
+	participantIdB: string;
+	network: Network;
 }): Promise<boolean> {
 	const router = getTransactionRouter();
 	const layer = await router.determineLayer({
 		transactionType: 'LockFunds',
 		paymentSourceId: context.paymentSourceId,
-		agentIdA: context.agentIdA,
-		agentIdB: context.agentIdB,
-		network: 'preprod', // Network doesn't affect Hydra availability check
+		participantIdA: context.participantIdA,
+		participantIdB: context.participantIdB,
+		network: context.network,
 	});
 
 	return layer === 'L2';

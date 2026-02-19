@@ -69,6 +69,8 @@ export type TransactionMinAggregateOutputType = {
   purchaseRequestHistoryId: string | null
   previousOnChainState: $Enums.OnChainState | null
   newOnChainState: $Enums.OnChainState | null
+  layer: $Enums.TransactionLayer | null
+  hydraHeadId: string | null
 }
 
 export type TransactionMaxAggregateOutputType = {
@@ -92,6 +94,8 @@ export type TransactionMaxAggregateOutputType = {
   purchaseRequestHistoryId: string | null
   previousOnChainState: $Enums.OnChainState | null
   newOnChainState: $Enums.OnChainState | null
+  layer: $Enums.TransactionLayer | null
+  hydraHeadId: string | null
 }
 
 export type TransactionCountAggregateOutputType = {
@@ -115,6 +119,8 @@ export type TransactionCountAggregateOutputType = {
   purchaseRequestHistoryId: number
   previousOnChainState: number
   newOnChainState: number
+  layer: number
+  hydraHeadId: number
   _all: number
 }
 
@@ -162,6 +168,8 @@ export type TransactionMinAggregateInputType = {
   purchaseRequestHistoryId?: true
   previousOnChainState?: true
   newOnChainState?: true
+  layer?: true
+  hydraHeadId?: true
 }
 
 export type TransactionMaxAggregateInputType = {
@@ -185,6 +193,8 @@ export type TransactionMaxAggregateInputType = {
   purchaseRequestHistoryId?: true
   previousOnChainState?: true
   newOnChainState?: true
+  layer?: true
+  hydraHeadId?: true
 }
 
 export type TransactionCountAggregateInputType = {
@@ -208,6 +218,8 @@ export type TransactionCountAggregateInputType = {
   purchaseRequestHistoryId?: true
   previousOnChainState?: true
   newOnChainState?: true
+  layer?: true
+  hydraHeadId?: true
   _all?: true
 }
 
@@ -318,6 +330,8 @@ export type TransactionGroupByOutputType = {
   purchaseRequestHistoryId: string | null
   previousOnChainState: $Enums.OnChainState | null
   newOnChainState: $Enums.OnChainState | null
+  layer: $Enums.TransactionLayer
+  hydraHeadId: string | null
   _count: TransactionCountAggregateOutputType | null
   _avg: TransactionAvgAggregateOutputType | null
   _sum: TransactionSumAggregateOutputType | null
@@ -364,6 +378,9 @@ export type TransactionWhereInput = {
   purchaseRequestHistoryId?: Prisma.StringNullableFilter<"Transaction"> | string | null
   previousOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
   newOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFilter<"Transaction"> | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.StringNullableFilter<"Transaction"> | string | null
+  HydraHead?: Prisma.XOR<Prisma.HydraHeadNullableScalarRelationFilter, Prisma.HydraHeadWhereInput> | null
   BlocksWallet?: Prisma.XOR<Prisma.HotWalletNullableScalarRelationFilter, Prisma.HotWalletWhereInput> | null
   PaymentRequestCurrent?: Prisma.XOR<Prisma.PaymentRequestNullableScalarRelationFilter, Prisma.PaymentRequestWhereInput> | null
   PurchaseRequestCurrent?: Prisma.XOR<Prisma.PurchaseRequestNullableScalarRelationFilter, Prisma.PurchaseRequestWhereInput> | null
@@ -393,6 +410,9 @@ export type TransactionOrderByWithRelationInput = {
   purchaseRequestHistoryId?: Prisma.SortOrderInput | Prisma.SortOrder
   previousOnChainState?: Prisma.SortOrderInput | Prisma.SortOrder
   newOnChainState?: Prisma.SortOrderInput | Prisma.SortOrder
+  layer?: Prisma.SortOrder
+  hydraHeadId?: Prisma.SortOrderInput | Prisma.SortOrder
+  HydraHead?: Prisma.HydraHeadOrderByWithRelationInput
   BlocksWallet?: Prisma.HotWalletOrderByWithRelationInput
   PaymentRequestCurrent?: Prisma.PaymentRequestOrderByWithRelationInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestOrderByWithRelationInput
@@ -425,6 +445,9 @@ export type TransactionWhereUniqueInput = Prisma.AtLeast<{
   purchaseRequestHistoryId?: Prisma.StringNullableFilter<"Transaction"> | string | null
   previousOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
   newOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFilter<"Transaction"> | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.StringNullableFilter<"Transaction"> | string | null
+  HydraHead?: Prisma.XOR<Prisma.HydraHeadNullableScalarRelationFilter, Prisma.HydraHeadWhereInput> | null
   BlocksWallet?: Prisma.XOR<Prisma.HotWalletNullableScalarRelationFilter, Prisma.HotWalletWhereInput> | null
   PaymentRequestCurrent?: Prisma.XOR<Prisma.PaymentRequestNullableScalarRelationFilter, Prisma.PaymentRequestWhereInput> | null
   PurchaseRequestCurrent?: Prisma.XOR<Prisma.PurchaseRequestNullableScalarRelationFilter, Prisma.PurchaseRequestWhereInput> | null
@@ -454,6 +477,8 @@ export type TransactionOrderByWithAggregationInput = {
   purchaseRequestHistoryId?: Prisma.SortOrderInput | Prisma.SortOrder
   previousOnChainState?: Prisma.SortOrderInput | Prisma.SortOrder
   newOnChainState?: Prisma.SortOrderInput | Prisma.SortOrder
+  layer?: Prisma.SortOrder
+  hydraHeadId?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.TransactionCountOrderByAggregateInput
   _avg?: Prisma.TransactionAvgOrderByAggregateInput
   _max?: Prisma.TransactionMaxOrderByAggregateInput
@@ -485,6 +510,8 @@ export type TransactionScalarWhereWithAggregatesInput = {
   purchaseRequestHistoryId?: Prisma.StringNullableWithAggregatesFilter<"Transaction"> | string | null
   previousOnChainState?: Prisma.EnumOnChainStateNullableWithAggregatesFilter<"Transaction"> | $Enums.OnChainState | null
   newOnChainState?: Prisma.EnumOnChainStateNullableWithAggregatesFilter<"Transaction"> | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerWithAggregatesFilter<"Transaction"> | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.StringNullableWithAggregatesFilter<"Transaction"> | string | null
 }
 
 export type TransactionCreateInput = {
@@ -506,6 +533,8 @@ export type TransactionCreateInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
@@ -535,6 +564,8 @@ export type TransactionUncheckedCreateInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
@@ -560,6 +591,8 @@ export type TransactionUpdateInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
@@ -589,6 +622,8 @@ export type TransactionUncheckedUpdateInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
@@ -616,6 +651,8 @@ export type TransactionCreateManyInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
 }
 
 export type TransactionUpdateManyMutationInput = {
@@ -637,6 +674,7 @@ export type TransactionUpdateManyMutationInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
 }
 
 export type TransactionUncheckedUpdateManyInput = {
@@ -660,6 +698,8 @@ export type TransactionUncheckedUpdateManyInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TransactionNullableScalarRelationFilter = {
@@ -688,6 +728,8 @@ export type TransactionCountOrderByAggregateInput = {
   purchaseRequestHistoryId?: Prisma.SortOrder
   previousOnChainState?: Prisma.SortOrder
   newOnChainState?: Prisma.SortOrder
+  layer?: Prisma.SortOrder
+  hydraHeadId?: Prisma.SortOrder
 }
 
 export type TransactionAvgOrderByAggregateInput = {
@@ -722,6 +764,8 @@ export type TransactionMaxOrderByAggregateInput = {
   purchaseRequestHistoryId?: Prisma.SortOrder
   previousOnChainState?: Prisma.SortOrder
   newOnChainState?: Prisma.SortOrder
+  layer?: Prisma.SortOrder
+  hydraHeadId?: Prisma.SortOrder
 }
 
 export type TransactionMinOrderByAggregateInput = {
@@ -745,6 +789,8 @@ export type TransactionMinOrderByAggregateInput = {
   purchaseRequestHistoryId?: Prisma.SortOrder
   previousOnChainState?: Prisma.SortOrder
   newOnChainState?: Prisma.SortOrder
+  layer?: Prisma.SortOrder
+  hydraHeadId?: Prisma.SortOrder
 }
 
 export type TransactionSumOrderByAggregateInput = {
@@ -810,6 +856,10 @@ export type NullableBoolFieldUpdateOperationsInput = {
 
 export type NullableEnumOnChainStateFieldUpdateOperationsInput = {
   set?: $Enums.OnChainState | null
+}
+
+export type EnumTransactionLayerFieldUpdateOperationsInput = {
+  set?: $Enums.TransactionLayer
 }
 
 export type TransactionCreateNestedOneWithoutRegistryRequestInput = {
@@ -944,6 +994,48 @@ export type TransactionUncheckedUpdateManyWithoutPurchaseRequestHistoryNestedInp
   deleteMany?: Prisma.TransactionScalarWhereInput | Prisma.TransactionScalarWhereInput[]
 }
 
+export type TransactionCreateNestedManyWithoutHydraHeadInput = {
+  create?: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput> | Prisma.TransactionCreateWithoutHydraHeadInput[] | Prisma.TransactionUncheckedCreateWithoutHydraHeadInput[]
+  connectOrCreate?: Prisma.TransactionCreateOrConnectWithoutHydraHeadInput | Prisma.TransactionCreateOrConnectWithoutHydraHeadInput[]
+  createMany?: Prisma.TransactionCreateManyHydraHeadInputEnvelope
+  connect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+}
+
+export type TransactionUncheckedCreateNestedManyWithoutHydraHeadInput = {
+  create?: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput> | Prisma.TransactionCreateWithoutHydraHeadInput[] | Prisma.TransactionUncheckedCreateWithoutHydraHeadInput[]
+  connectOrCreate?: Prisma.TransactionCreateOrConnectWithoutHydraHeadInput | Prisma.TransactionCreateOrConnectWithoutHydraHeadInput[]
+  createMany?: Prisma.TransactionCreateManyHydraHeadInputEnvelope
+  connect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+}
+
+export type TransactionUpdateManyWithoutHydraHeadNestedInput = {
+  create?: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput> | Prisma.TransactionCreateWithoutHydraHeadInput[] | Prisma.TransactionUncheckedCreateWithoutHydraHeadInput[]
+  connectOrCreate?: Prisma.TransactionCreateOrConnectWithoutHydraHeadInput | Prisma.TransactionCreateOrConnectWithoutHydraHeadInput[]
+  upsert?: Prisma.TransactionUpsertWithWhereUniqueWithoutHydraHeadInput | Prisma.TransactionUpsertWithWhereUniqueWithoutHydraHeadInput[]
+  createMany?: Prisma.TransactionCreateManyHydraHeadInputEnvelope
+  set?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  disconnect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  delete?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  connect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  update?: Prisma.TransactionUpdateWithWhereUniqueWithoutHydraHeadInput | Prisma.TransactionUpdateWithWhereUniqueWithoutHydraHeadInput[]
+  updateMany?: Prisma.TransactionUpdateManyWithWhereWithoutHydraHeadInput | Prisma.TransactionUpdateManyWithWhereWithoutHydraHeadInput[]
+  deleteMany?: Prisma.TransactionScalarWhereInput | Prisma.TransactionScalarWhereInput[]
+}
+
+export type TransactionUncheckedUpdateManyWithoutHydraHeadNestedInput = {
+  create?: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput> | Prisma.TransactionCreateWithoutHydraHeadInput[] | Prisma.TransactionUncheckedCreateWithoutHydraHeadInput[]
+  connectOrCreate?: Prisma.TransactionCreateOrConnectWithoutHydraHeadInput | Prisma.TransactionCreateOrConnectWithoutHydraHeadInput[]
+  upsert?: Prisma.TransactionUpsertWithWhereUniqueWithoutHydraHeadInput | Prisma.TransactionUpsertWithWhereUniqueWithoutHydraHeadInput[]
+  createMany?: Prisma.TransactionCreateManyHydraHeadInputEnvelope
+  set?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  disconnect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  delete?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  connect?: Prisma.TransactionWhereUniqueInput | Prisma.TransactionWhereUniqueInput[]
+  update?: Prisma.TransactionUpdateWithWhereUniqueWithoutHydraHeadInput | Prisma.TransactionUpdateWithWhereUniqueWithoutHydraHeadInput[]
+  updateMany?: Prisma.TransactionUpdateManyWithWhereWithoutHydraHeadInput | Prisma.TransactionUpdateManyWithWhereWithoutHydraHeadInput[]
+  deleteMany?: Prisma.TransactionScalarWhereInput | Prisma.TransactionScalarWhereInput[]
+}
+
 export type TransactionCreateWithoutBlocksWalletInput = {
   id?: string
   createdAt?: Date | string
@@ -963,6 +1055,8 @@ export type TransactionCreateWithoutBlocksWalletInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutCurrentTransactionInput
@@ -991,6 +1085,8 @@ export type TransactionUncheckedCreateWithoutBlocksWalletInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutCurrentTransactionInput
@@ -1031,6 +1127,8 @@ export type TransactionUpdateWithoutBlocksWalletInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutCurrentTransactionNestedInput
@@ -1059,6 +1157,8 @@ export type TransactionUncheckedUpdateWithoutBlocksWalletInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutCurrentTransactionNestedInput
@@ -1083,6 +1183,8 @@ export type TransactionCreateWithoutRegistryRequestInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
@@ -1111,6 +1213,8 @@ export type TransactionUncheckedCreateWithoutRegistryRequestInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
@@ -1151,6 +1255,8 @@ export type TransactionUpdateWithoutRegistryRequestInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
@@ -1179,6 +1285,8 @@ export type TransactionUncheckedUpdateWithoutRegistryRequestInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
@@ -1203,6 +1311,8 @@ export type TransactionCreateWithoutPaymentRequestCurrentInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutCurrentTransactionInput
@@ -1231,6 +1341,8 @@ export type TransactionUncheckedCreateWithoutPaymentRequestCurrentInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutCurrentTransactionInput
@@ -1260,6 +1372,8 @@ export type TransactionCreateWithoutPaymentRequestHistoryInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
@@ -1287,6 +1401,8 @@ export type TransactionUncheckedCreateWithoutPaymentRequestHistoryInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
@@ -1333,6 +1449,8 @@ export type TransactionUpdateWithoutPaymentRequestCurrentInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutCurrentTransactionNestedInput
@@ -1361,6 +1479,8 @@ export type TransactionUncheckedUpdateWithoutPaymentRequestCurrentInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutCurrentTransactionNestedInput
@@ -1406,6 +1526,8 @@ export type TransactionScalarWhereInput = {
   purchaseRequestHistoryId?: Prisma.StringNullableFilter<"Transaction"> | string | null
   previousOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
   newOnChainState?: Prisma.EnumOnChainStateNullableFilter<"Transaction"> | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFilter<"Transaction"> | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.StringNullableFilter<"Transaction"> | string | null
 }
 
 export type TransactionCreateWithoutPurchaseRequestCurrentInput = {
@@ -1427,6 +1549,8 @@ export type TransactionCreateWithoutPurchaseRequestCurrentInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutCurrentTransactionInput
@@ -1455,6 +1579,8 @@ export type TransactionUncheckedCreateWithoutPurchaseRequestCurrentInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutCurrentTransactionInput
@@ -1484,6 +1610,8 @@ export type TransactionCreateWithoutPurchaseRequestHistoryInput = {
   validContract?: boolean | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadCreateNestedOneWithoutTransactionsInput
   BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
@@ -1511,6 +1639,8 @@ export type TransactionUncheckedCreateWithoutPurchaseRequestHistoryInput = {
   paymentRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
   BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
@@ -1557,6 +1687,8 @@ export type TransactionUpdateWithoutPurchaseRequestCurrentInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutCurrentTransactionNestedInput
@@ -1585,6 +1717,8 @@ export type TransactionUncheckedUpdateWithoutPurchaseRequestCurrentInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutCurrentTransactionNestedInput
@@ -1604,6 +1738,88 @@ export type TransactionUpdateWithWhereUniqueWithoutPurchaseRequestHistoryInput =
 export type TransactionUpdateManyWithWhereWithoutPurchaseRequestHistoryInput = {
   where: Prisma.TransactionScalarWhereInput
   data: Prisma.XOR<Prisma.TransactionUpdateManyMutationInput, Prisma.TransactionUncheckedUpdateManyWithoutPurchaseRequestHistoryInput>
+}
+
+export type TransactionCreateWithoutHydraHeadInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  txHash?: string | null
+  status: $Enums.TransactionStatus
+  confirmations?: number | null
+  lastCheckedAt?: Date | string | null
+  fees?: bigint | number | null
+  blockHeight?: number | null
+  blockTime?: number | null
+  outputAmount?: string | null
+  utxoCount?: number | null
+  withdrawalCount?: number | null
+  assetMintOrBurnCount?: number | null
+  redeemerCount?: number | null
+  validContract?: boolean | null
+  previousOnChainState?: $Enums.OnChainState | null
+  newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  BlocksWallet?: Prisma.HotWalletCreateNestedOneWithoutPendingTransactionInput
+  PaymentRequestCurrent?: Prisma.PaymentRequestCreateNestedOneWithoutCurrentTransactionInput
+  PurchaseRequestCurrent?: Prisma.PurchaseRequestCreateNestedOneWithoutCurrentTransactionInput
+  RegistryRequest?: Prisma.RegistryRequestCreateNestedManyWithoutCurrentTransactionInput
+  PaymentRequestHistory?: Prisma.PaymentRequestCreateNestedOneWithoutTransactionHistoryInput
+  PurchaseRequestHistory?: Prisma.PurchaseRequestCreateNestedOneWithoutTransactionHistoryInput
+}
+
+export type TransactionUncheckedCreateWithoutHydraHeadInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  txHash?: string | null
+  status: $Enums.TransactionStatus
+  confirmations?: number | null
+  lastCheckedAt?: Date | string | null
+  fees?: bigint | number | null
+  blockHeight?: number | null
+  blockTime?: number | null
+  outputAmount?: string | null
+  utxoCount?: number | null
+  withdrawalCount?: number | null
+  assetMintOrBurnCount?: number | null
+  redeemerCount?: number | null
+  validContract?: boolean | null
+  paymentRequestHistoryId?: string | null
+  purchaseRequestHistoryId?: string | null
+  previousOnChainState?: $Enums.OnChainState | null
+  newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  BlocksWallet?: Prisma.HotWalletUncheckedCreateNestedOneWithoutPendingTransactionInput
+  PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
+  PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedCreateNestedOneWithoutCurrentTransactionInput
+  RegistryRequest?: Prisma.RegistryRequestUncheckedCreateNestedManyWithoutCurrentTransactionInput
+}
+
+export type TransactionCreateOrConnectWithoutHydraHeadInput = {
+  where: Prisma.TransactionWhereUniqueInput
+  create: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput>
+}
+
+export type TransactionCreateManyHydraHeadInputEnvelope = {
+  data: Prisma.TransactionCreateManyHydraHeadInput | Prisma.TransactionCreateManyHydraHeadInput[]
+  skipDuplicates?: boolean
+}
+
+export type TransactionUpsertWithWhereUniqueWithoutHydraHeadInput = {
+  where: Prisma.TransactionWhereUniqueInput
+  update: Prisma.XOR<Prisma.TransactionUpdateWithoutHydraHeadInput, Prisma.TransactionUncheckedUpdateWithoutHydraHeadInput>
+  create: Prisma.XOR<Prisma.TransactionCreateWithoutHydraHeadInput, Prisma.TransactionUncheckedCreateWithoutHydraHeadInput>
+}
+
+export type TransactionUpdateWithWhereUniqueWithoutHydraHeadInput = {
+  where: Prisma.TransactionWhereUniqueInput
+  data: Prisma.XOR<Prisma.TransactionUpdateWithoutHydraHeadInput, Prisma.TransactionUncheckedUpdateWithoutHydraHeadInput>
+}
+
+export type TransactionUpdateManyWithWhereWithoutHydraHeadInput = {
+  where: Prisma.TransactionScalarWhereInput
+  data: Prisma.XOR<Prisma.TransactionUpdateManyMutationInput, Prisma.TransactionUncheckedUpdateManyWithoutHydraHeadInput>
 }
 
 export type TransactionCreateManyPaymentRequestHistoryInput = {
@@ -1626,6 +1842,8 @@ export type TransactionCreateManyPaymentRequestHistoryInput = {
   purchaseRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
 }
 
 export type TransactionUpdateWithoutPaymentRequestHistoryInput = {
@@ -1647,6 +1865,8 @@ export type TransactionUpdateWithoutPaymentRequestHistoryInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
@@ -1674,6 +1894,8 @@ export type TransactionUncheckedUpdateWithoutPaymentRequestHistoryInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
@@ -1700,6 +1922,8 @@ export type TransactionUncheckedUpdateManyWithoutPaymentRequestHistoryInput = {
   purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TransactionCreateManyPurchaseRequestHistoryInput = {
@@ -1722,6 +1946,8 @@ export type TransactionCreateManyPurchaseRequestHistoryInput = {
   paymentRequestHistoryId?: string | null
   previousOnChainState?: $Enums.OnChainState | null
   newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+  hydraHeadId?: string | null
 }
 
 export type TransactionUpdateWithoutPurchaseRequestHistoryInput = {
@@ -1743,6 +1969,8 @@ export type TransactionUpdateWithoutPurchaseRequestHistoryInput = {
   validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  HydraHead?: Prisma.HydraHeadUpdateOneWithoutTransactionsNestedInput
   BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
@@ -1770,6 +1998,8 @@ export type TransactionUncheckedUpdateWithoutPurchaseRequestHistoryInput = {
   paymentRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
   PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
   PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
@@ -1796,6 +2026,112 @@ export type TransactionUncheckedUpdateManyWithoutPurchaseRequestHistoryInput = {
   paymentRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
   newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  hydraHeadId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+}
+
+export type TransactionCreateManyHydraHeadInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  txHash?: string | null
+  status: $Enums.TransactionStatus
+  confirmations?: number | null
+  lastCheckedAt?: Date | string | null
+  fees?: bigint | number | null
+  blockHeight?: number | null
+  blockTime?: number | null
+  outputAmount?: string | null
+  utxoCount?: number | null
+  withdrawalCount?: number | null
+  assetMintOrBurnCount?: number | null
+  redeemerCount?: number | null
+  validContract?: boolean | null
+  paymentRequestHistoryId?: string | null
+  purchaseRequestHistoryId?: string | null
+  previousOnChainState?: $Enums.OnChainState | null
+  newOnChainState?: $Enums.OnChainState | null
+  layer?: $Enums.TransactionLayer
+}
+
+export type TransactionUpdateWithoutHydraHeadInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumTransactionStatusFieldUpdateOperationsInput | $Enums.TransactionStatus
+  confirmations?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  fees?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  blockHeight?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  blockTime?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  outputAmount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  utxoCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  withdrawalCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  assetMintOrBurnCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  redeemerCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  BlocksWallet?: Prisma.HotWalletUpdateOneWithoutPendingTransactionNestedInput
+  PaymentRequestCurrent?: Prisma.PaymentRequestUpdateOneWithoutCurrentTransactionNestedInput
+  PurchaseRequestCurrent?: Prisma.PurchaseRequestUpdateOneWithoutCurrentTransactionNestedInput
+  RegistryRequest?: Prisma.RegistryRequestUpdateManyWithoutCurrentTransactionNestedInput
+  PaymentRequestHistory?: Prisma.PaymentRequestUpdateOneWithoutTransactionHistoryNestedInput
+  PurchaseRequestHistory?: Prisma.PurchaseRequestUpdateOneWithoutTransactionHistoryNestedInput
+}
+
+export type TransactionUncheckedUpdateWithoutHydraHeadInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumTransactionStatusFieldUpdateOperationsInput | $Enums.TransactionStatus
+  confirmations?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  fees?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  blockHeight?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  blockTime?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  outputAmount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  utxoCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  withdrawalCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  assetMintOrBurnCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  redeemerCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  paymentRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
+  BlocksWallet?: Prisma.HotWalletUncheckedUpdateOneWithoutPendingTransactionNestedInput
+  PaymentRequestCurrent?: Prisma.PaymentRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
+  PurchaseRequestCurrent?: Prisma.PurchaseRequestUncheckedUpdateOneWithoutCurrentTransactionNestedInput
+  RegistryRequest?: Prisma.RegistryRequestUncheckedUpdateManyWithoutCurrentTransactionNestedInput
+}
+
+export type TransactionUncheckedUpdateManyWithoutHydraHeadInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  txHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  status?: Prisma.EnumTransactionStatusFieldUpdateOperationsInput | $Enums.TransactionStatus
+  confirmations?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  fees?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  blockHeight?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  blockTime?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  outputAmount?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  utxoCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  withdrawalCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  assetMintOrBurnCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  redeemerCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  validContract?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  paymentRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  purchaseRequestHistoryId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  previousOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  newOnChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  layer?: Prisma.EnumTransactionLayerFieldUpdateOperationsInput | $Enums.TransactionLayer
 }
 
 
@@ -1850,6 +2186,9 @@ export type TransactionSelect<ExtArgs extends runtime.Types.Extensions.InternalA
   purchaseRequestHistoryId?: boolean
   previousOnChainState?: boolean
   newOnChainState?: boolean
+  layer?: boolean
+  hydraHeadId?: boolean
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   BlocksWallet?: boolean | Prisma.Transaction$BlocksWalletArgs<ExtArgs>
   PaymentRequestCurrent?: boolean | Prisma.Transaction$PaymentRequestCurrentArgs<ExtArgs>
   PurchaseRequestCurrent?: boolean | Prisma.Transaction$PurchaseRequestCurrentArgs<ExtArgs>
@@ -1880,6 +2219,9 @@ export type TransactionSelectCreateManyAndReturn<ExtArgs extends runtime.Types.E
   purchaseRequestHistoryId?: boolean
   previousOnChainState?: boolean
   newOnChainState?: boolean
+  layer?: boolean
+  hydraHeadId?: boolean
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   PaymentRequestHistory?: boolean | Prisma.Transaction$PaymentRequestHistoryArgs<ExtArgs>
   PurchaseRequestHistory?: boolean | Prisma.Transaction$PurchaseRequestHistoryArgs<ExtArgs>
 }, ExtArgs["result"]["transaction"]>
@@ -1905,6 +2247,9 @@ export type TransactionSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.E
   purchaseRequestHistoryId?: boolean
   previousOnChainState?: boolean
   newOnChainState?: boolean
+  layer?: boolean
+  hydraHeadId?: boolean
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   PaymentRequestHistory?: boolean | Prisma.Transaction$PaymentRequestHistoryArgs<ExtArgs>
   PurchaseRequestHistory?: boolean | Prisma.Transaction$PurchaseRequestHistoryArgs<ExtArgs>
 }, ExtArgs["result"]["transaction"]>
@@ -1930,10 +2275,13 @@ export type TransactionSelectScalar = {
   purchaseRequestHistoryId?: boolean
   previousOnChainState?: boolean
   newOnChainState?: boolean
+  layer?: boolean
+  hydraHeadId?: boolean
 }
 
-export type TransactionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "txHash" | "status" | "confirmations" | "lastCheckedAt" | "fees" | "blockHeight" | "blockTime" | "outputAmount" | "utxoCount" | "withdrawalCount" | "assetMintOrBurnCount" | "redeemerCount" | "validContract" | "paymentRequestHistoryId" | "purchaseRequestHistoryId" | "previousOnChainState" | "newOnChainState", ExtArgs["result"]["transaction"]>
+export type TransactionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "txHash" | "status" | "confirmations" | "lastCheckedAt" | "fees" | "blockHeight" | "blockTime" | "outputAmount" | "utxoCount" | "withdrawalCount" | "assetMintOrBurnCount" | "redeemerCount" | "validContract" | "paymentRequestHistoryId" | "purchaseRequestHistoryId" | "previousOnChainState" | "newOnChainState" | "layer" | "hydraHeadId", ExtArgs["result"]["transaction"]>
 export type TransactionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   BlocksWallet?: boolean | Prisma.Transaction$BlocksWalletArgs<ExtArgs>
   PaymentRequestCurrent?: boolean | Prisma.Transaction$PaymentRequestCurrentArgs<ExtArgs>
   PurchaseRequestCurrent?: boolean | Prisma.Transaction$PurchaseRequestCurrentArgs<ExtArgs>
@@ -1943,10 +2291,12 @@ export type TransactionInclude<ExtArgs extends runtime.Types.Extensions.Internal
   _count?: boolean | Prisma.TransactionCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type TransactionIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   PaymentRequestHistory?: boolean | Prisma.Transaction$PaymentRequestHistoryArgs<ExtArgs>
   PurchaseRequestHistory?: boolean | Prisma.Transaction$PurchaseRequestHistoryArgs<ExtArgs>
 }
 export type TransactionIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  HydraHead?: boolean | Prisma.Transaction$HydraHeadArgs<ExtArgs>
   PaymentRequestHistory?: boolean | Prisma.Transaction$PaymentRequestHistoryArgs<ExtArgs>
   PurchaseRequestHistory?: boolean | Prisma.Transaction$PurchaseRequestHistoryArgs<ExtArgs>
 }
@@ -1954,6 +2304,7 @@ export type TransactionIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.
 export type $TransactionPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Transaction"
   objects: {
+    HydraHead: Prisma.$HydraHeadPayload<ExtArgs> | null
     BlocksWallet: Prisma.$HotWalletPayload<ExtArgs> | null
     PaymentRequestCurrent: Prisma.$PaymentRequestPayload<ExtArgs> | null
     PurchaseRequestCurrent: Prisma.$PurchaseRequestPayload<ExtArgs> | null
@@ -1982,6 +2333,14 @@ export type $TransactionPayload<ExtArgs extends runtime.Types.Extensions.Interna
     purchaseRequestHistoryId: string | null
     previousOnChainState: $Enums.OnChainState | null
     newOnChainState: $Enums.OnChainState | null
+    /**
+     * Which blockchain layer this transaction was submitted to
+     */
+    layer: $Enums.TransactionLayer
+    /**
+     * If submitted to L2, which Hydra head processed it
+     */
+    hydraHeadId: string | null
   }, ExtArgs["result"]["transaction"]>
   composites: {}
 }
@@ -2376,6 +2735,7 @@ readonly fields: TransactionFieldRefs;
  */
 export interface Prisma__TransactionClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  HydraHead<T extends Prisma.Transaction$HydraHeadArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Transaction$HydraHeadArgs<ExtArgs>>): Prisma.Prisma__HydraHeadClient<runtime.Types.Result.GetResult<Prisma.$HydraHeadPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   BlocksWallet<T extends Prisma.Transaction$BlocksWalletArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Transaction$BlocksWalletArgs<ExtArgs>>): Prisma.Prisma__HotWalletClient<runtime.Types.Result.GetResult<Prisma.$HotWalletPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   PaymentRequestCurrent<T extends Prisma.Transaction$PaymentRequestCurrentArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Transaction$PaymentRequestCurrentArgs<ExtArgs>>): Prisma.Prisma__PaymentRequestClient<runtime.Types.Result.GetResult<Prisma.$PaymentRequestPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   PurchaseRequestCurrent<T extends Prisma.Transaction$PurchaseRequestCurrentArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Transaction$PurchaseRequestCurrentArgs<ExtArgs>>): Prisma.Prisma__PurchaseRequestClient<runtime.Types.Result.GetResult<Prisma.$PurchaseRequestPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
@@ -2431,6 +2791,8 @@ export interface TransactionFieldRefs {
   readonly purchaseRequestHistoryId: Prisma.FieldRef<"Transaction", 'String'>
   readonly previousOnChainState: Prisma.FieldRef<"Transaction", 'OnChainState'>
   readonly newOnChainState: Prisma.FieldRef<"Transaction", 'OnChainState'>
+  readonly layer: Prisma.FieldRef<"Transaction", 'TransactionLayer'>
+  readonly hydraHeadId: Prisma.FieldRef<"Transaction", 'String'>
 }
     
 
@@ -2824,6 +3186,25 @@ export type TransactionDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.I
    * Limit how many Transactions to delete.
    */
   limit?: number
+}
+
+/**
+ * Transaction.HydraHead
+ */
+export type Transaction$HydraHeadArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the HydraHead
+   */
+  select?: Prisma.HydraHeadSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the HydraHead
+   */
+  omit?: Prisma.HydraHeadOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.HydraHeadInclude<ExtArgs> | null
+  where?: Prisma.HydraHeadWhereInput
 }
 
 /**

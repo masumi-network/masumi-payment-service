@@ -1,4 +1,4 @@
-import { MeshWallet, BlockfrostProvider } from '@meshsdk/core';
+import { MeshWallet, BlockfrostProvider, Network } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { HYDRA_CONFIG } from '@/utils/config';
 import { submitTransactionToHydra, HydraHeadConfig } from '@/services/hydra';
@@ -21,29 +21,31 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
 };
 
 /**
- * Function type for finding an active Hydra head between two agents.
+ * Function type for finding an active Hydra head between two participants.
  *
- * Takes two symmetric agent IDs (no buyer/seller distinction) and returns
+ * Takes two symmetric participant IDs (no buyer/seller distinction) and returns
  * the resolved Hydra head info if an active (Open) head exists, or null.
+ * Participants can be agents or external buyers (marketplace frontend users).
  *
  * Typically backed by a DB query: HydraChannel → HydraHead → HydraParticipant.
  *
  * @example
  * ```typescript
- * router.setHydraHeadFinder(async (agentIdA, agentIdB) => {
- *   const [sortedA, sortedB] = agentIdA < agentIdB
- *     ? [agentIdA, agentIdB] : [agentIdB, agentIdA];
+ * router.setHydraHeadFinder(async (participantIdA, participantIdB, network) => {
+ *   const [sortedA, sortedB] = participantIdA < participantIdB
+ *     ? [participantIdA, participantIdB] : [participantIdB, participantIdA];
  *
  *   const channel = await prisma.hydraChannel.findFirst({
- *     where: { agentIdA: sortedA, agentIdB: sortedB },
+ *     where: { participantIdA: sortedA, participantIdB: sortedB,
+ *       HydraHead: { network, status: 'Open' } },
  *     include: { HydraHead: { include: { Participants: true } } },
  *     orderBy: { createdAt: 'desc' },
  *   });
  *
- *   if (!channel || channel.HydraHead.status !== 'Open') return null;
+ *   if (!channel) return null;
  *
  *   const ourParticipant = channel.HydraHead.Participants.find(
- *     p => p.agentId === ourAgentId,
+ *     p => p.participantId === ourParticipantId,
  *   );
  *   if (!ourParticipant) return null;
  *
@@ -56,8 +58,9 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
  * ```
  */
 export type FindActiveHydraHead = (
-	agentIdA: string,
-	agentIdB: string,
+	participantIdA: string,
+	participantIdB: string,
+	network: Network,
 ) => ActiveHydraHeadInfo | null | Promise<ActiveHydraHeadInfo | null>;
 
 /**
@@ -94,7 +97,7 @@ export class TransactionRouter {
 	}
 
 	/**
-	 * Set a function to find an active Hydra head between two agents.
+	 * Set a function to find an active Hydra head between two participants.
 	 * When not set, all transactions go to L1.
 	 */
 	setHydraHeadFinder(fn: FindActiveHydraHead | null): void {
@@ -134,8 +137,8 @@ export class TransactionRouter {
 				layer: routing.layer,
 				hydraHeadId: routing.hydraHead?.id,
 				paymentSourceId: context.paymentSourceId,
-				agentIdA: context.agentIdA,
-				agentIdB: context.agentIdB,
+				participantIdA: context.participantIdA,
+				participantIdB: context.participantIdB,
 			});
 		}
 
@@ -250,7 +253,7 @@ export class TransactionRouter {
 	 * Resolve the full routing decision (layer + Hydra head info if L2).
 	 *
 	 * Uses findActiveHydraHead to query the DB for an active HydraChannel
-	 * between the two agents. Falls back to L1 if no finder is set or
+	 * between the two participants. Falls back to L1 if no finder is set or
 	 * no active head is found.
 	 */
 	private async resolveRouting(context: TransactionRoutingContext): Promise<RoutingDecision> {
@@ -262,12 +265,11 @@ export class TransactionRouter {
 			return { layer: 'L1' };
 		}
 
-		const agentIdA = context.agentIdA ?? '';
-		const agentIdB = context.agentIdB ?? '';
+		const participantA = context.participantIdA ?? '';
+		const participantB = context.participantIdB ?? '';
 
-		// Look up active Hydra head between these 2 agents via DB
-		if (this.findActiveHydraHead && agentIdA && agentIdB) {
-			const head = await Promise.resolve(this.findActiveHydraHead(agentIdA, agentIdB));
+		if (this.findActiveHydraHead && participantA && participantB) {
+			const head = await Promise.resolve(this.findActiveHydraHead(participantA, participantB, context.network));
 			if (head) {
 				return { layer: 'L2', hydraHead: head };
 			}

@@ -1,22 +1,12 @@
 import { UTxO, Network } from '@meshsdk/core';
+import { ActiveHydraHeadInfo } from '@/services/hydra/types';
+
+export type { ActiveHydraHeadInfo };
 
 /**
  * Layer type for transaction submission
  */
 export type TransactionLayer = 'L1' | 'L2';
-
-/**
- * Resolved Hydra head info returned by FindActiveHydraHead.
- * Contains the connection details needed to route to L2.
- */
-export interface ActiveHydraHeadInfo {
-	/** HydraHead DB record ID (used as the Hydra manager cache key) */
-	id: string;
-	/** WebSocket URL for our participant's Hydra node */
-	nodeUrl: string;
-	/** HTTP URL for our participant's Hydra node */
-	nodeHttpUrl: string;
-}
 
 /**
  * Transaction type for routing decisions
@@ -39,11 +29,10 @@ export interface TransactionRoutingContext {
 	purchaseRequestId?: string;
 	paymentRequestId?: string;
 
-	// Agent identifiers for Hydra head lookup (symmetric; no buyer/seller distinction)
-	// In a payment transaction these are the buyer and seller, but for Hydra routing
-	// they are treated as symmetric participants.
-	agentIdA?: string;
-	agentIdB?: string;
+	// Participant identifiers for Hydra head lookup (symmetric; no buyer/seller distinction).
+	// Can be agent IDs or external buyer IDs (marketplace frontend users).
+	participantIdA?: string;
+	participantIdB?: string;
 
 	// Transaction type
 	transactionType: TransactionType;

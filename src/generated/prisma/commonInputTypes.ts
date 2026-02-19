@@ -267,6 +267,13 @@ export type EnumOnChainStateNullableFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel> | $Enums.OnChainState | null
 }
 
+export type EnumTransactionLayerFilter<$PrismaModel = never> = {
+  equals?: $Enums.TransactionLayer | Prisma.EnumTransactionLayerFieldRefInput<$PrismaModel>
+  in?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  notIn?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel> | $Enums.TransactionLayer
+}
+
 export type EnumTransactionStatusWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.TransactionStatus | Prisma.EnumTransactionStatusFieldRefInput<$PrismaModel>
   in?: $Enums.TransactionStatus[] | Prisma.ListEnumTransactionStatusFieldRefInput<$PrismaModel>
@@ -325,6 +332,16 @@ export type EnumOnChainStateNullableWithAggregatesFilter<$PrismaModel = never> =
   _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
   _min?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel>
   _max?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel>
+}
+
+export type EnumTransactionLayerWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.TransactionLayer | Prisma.EnumTransactionLayerFieldRefInput<$PrismaModel>
+  in?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  notIn?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumTransactionLayerWithAggregatesFilter<$PrismaModel> | $Enums.TransactionLayer
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel>
 }
 
 export type EnumWalletTypeFilter<$PrismaModel = never> = {
@@ -609,6 +626,40 @@ export type EnumWebhookDeliveryStatusWithAggregatesFilter<$PrismaModel = never> 
   _max?: Prisma.NestedEnumWebhookDeliveryStatusFilter<$PrismaModel>
 }
 
+export type EnumHydraHeadStatusNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraHeadStatus | Prisma.EnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  in?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel> | $Enums.HydraHeadStatus | null
+}
+
+export type EnumHydraHeadStatusNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraHeadStatus | Prisma.EnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  in?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumHydraHeadStatusNullableWithAggregatesFilter<$PrismaModel> | $Enums.HydraHeadStatus | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel>
+}
+
+export type EnumHydraParticipantTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraParticipantType | Prisma.EnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel> | $Enums.HydraParticipantType
+}
+
+export type EnumHydraParticipantTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraParticipantType | Prisma.EnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumHydraParticipantTypeWithAggregatesFilter<$PrismaModel> | $Enums.HydraParticipantType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel>
+}
+
 export type NestedStringFilter<$PrismaModel = never> = {
   equals?: string | Prisma.StringFieldRefInput<$PrismaModel>
   in?: string[] | Prisma.ListStringFieldRefInput<$PrismaModel>
@@ -875,6 +926,13 @@ export type NestedEnumOnChainStateNullableFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel> | $Enums.OnChainState | null
 }
 
+export type NestedEnumTransactionLayerFilter<$PrismaModel = never> = {
+  equals?: $Enums.TransactionLayer | Prisma.EnumTransactionLayerFieldRefInput<$PrismaModel>
+  in?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  notIn?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel> | $Enums.TransactionLayer
+}
+
 export type NestedEnumTransactionStatusWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.TransactionStatus | Prisma.EnumTransactionStatusFieldRefInput<$PrismaModel>
   in?: $Enums.TransactionStatus[] | Prisma.ListEnumTransactionStatusFieldRefInput<$PrismaModel>
@@ -944,6 +1002,16 @@ export type NestedEnumOnChainStateNullableWithAggregatesFilter<$PrismaModel = ne
   _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
   _min?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel>
   _max?: Prisma.NestedEnumOnChainStateNullableFilter<$PrismaModel>
+}
+
+export type NestedEnumTransactionLayerWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.TransactionLayer | Prisma.EnumTransactionLayerFieldRefInput<$PrismaModel>
+  in?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  notIn?: $Enums.TransactionLayer[] | Prisma.ListEnumTransactionLayerFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumTransactionLayerWithAggregatesFilter<$PrismaModel> | $Enums.TransactionLayer
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumTransactionLayerFilter<$PrismaModel>
 }
 
 export type NestedEnumWalletTypeFilter<$PrismaModel = never> = {
@@ -1188,6 +1256,40 @@ export type NestedEnumWebhookDeliveryStatusWithAggregatesFilter<$PrismaModel = n
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumWebhookDeliveryStatusFilter<$PrismaModel>
   _max?: Prisma.NestedEnumWebhookDeliveryStatusFilter<$PrismaModel>
+}
+
+export type NestedEnumHydraHeadStatusNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraHeadStatus | Prisma.EnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  in?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel> | $Enums.HydraHeadStatus | null
+}
+
+export type NestedEnumHydraHeadStatusNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraHeadStatus | Prisma.EnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  in?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.HydraHeadStatus[] | Prisma.ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumHydraHeadStatusNullableWithAggregatesFilter<$PrismaModel> | $Enums.HydraHeadStatus | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumHydraHeadStatusNullableFilter<$PrismaModel>
+}
+
+export type NestedEnumHydraParticipantTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraParticipantType | Prisma.EnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel> | $Enums.HydraParticipantType
+}
+
+export type NestedEnumHydraParticipantTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.HydraParticipantType | Prisma.EnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.HydraParticipantType[] | Prisma.ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumHydraParticipantTypeWithAggregatesFilter<$PrismaModel> | $Enums.HydraParticipantType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumHydraParticipantTypeFilter<$PrismaModel>
 }
 
 

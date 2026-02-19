@@ -91,12 +91,23 @@ model Transaction {
   purchaseRequestHistoryId String?
   previousOnChainState     OnChainState?
   newOnChainState          OnChainState?
+
+  /// Which blockchain layer this transaction was submitted to
+  layer                    TransactionLayer  @default(L1)
+
+  /// If submitted to L2, which Hydra head processed it
+  hydraHeadId              String?
+  HydraHead                HydraHead?        @relation(fields: [hydraHeadId], references: [id])
+
   BlocksWallet             HotWallet?
   PaymentRequestCurrent    PaymentRequest?   @relation("CurrentPaymentTransaction")
   PurchaseRequestCurrent   PurchaseRequest?  @relation("CurrentPurchaseTransaction")
   RegistryRequest          RegistryRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+
+  @@index([layer])
+  @@index([hydraHeadId])
 }
 
 model WalletSecret {
@@ -352,6 +363,7 @@ model PaymentSource {
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
+  HydraHeads               HydraHead[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -436,6 +448,11 @@ enum TransactionStatus {
   FailedViaTimeout
   FailedViaManualReset
   RolledBack
+}
+
+enum TransactionLayer {
+  L1
+  L2
 }
 
 enum OnChainState {
@@ -563,9 +580,14 @@ enum HydraHeadStatus {
   Final
 }
 
+enum HydraParticipantType {
+  Agent
+  ExternalBuyer
+}
+
 /// Represents a Hydra L2 head between N participants.
 /// Each head has its own Hydra node connection and tracks lifecycle state.
-/// Not tied to PaymentSource; routing is based on participant agent IDs.
+/// Optionally linked to a PaymentSource for config (Blockfrost API key, contract refs).
 model HydraHead {
   id                   String             @id @default(cuid())
   createdAt            DateTime           @default(now())
@@ -576,6 +598,10 @@ model HydraHead {
 
   /// Cardano network this head operates on
   network              Network
+
+  /// Optional PaymentSource for RPC provider config and contract references
+  paymentSourceId      String?
+  PaymentSource        PaymentSource?     @relation(fields: [paymentSourceId], references: [id])
 
   /// Current status of the Hydra head (null before head is initialized)
   status               HydraHeadStatus?
@@ -604,27 +630,37 @@ model HydraHead {
   /// Participants in this head
   Participants         HydraParticipant[]
 
-  /// Channels (2-agent pairings) that reference this head
+  /// Channels (2-participant pairings) that reference this head
   Channels             HydraChannel[]
+
+  /// Transactions submitted through this head (L2)
+  Transactions         Transaction[]
+
+  /// Confirmed snapshots within this head
+  Snapshots            HydraSnapshot[]
 
   @@index([status])
   @@index([network, status])
 }
 
 /// A participant in a Hydra head.
-/// Join table between HydraHead and agents, supporting N participants per head.
-/// The same agent can participate in multiple heads simultaneously.
+/// Join table between HydraHead and participants, supporting N participants per head.
+/// The same participant can be in multiple heads simultaneously.
+/// Participants can be agents or external buyers (marketplace frontend users).
 model HydraParticipant {
-  id                     String    @id @default(cuid())
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  id                     String                @id @default(cuid())
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   /// Which head this participant belongs to
   hydraHeadId            String
-  HydraHead              HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+  HydraHead              HydraHead             @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
 
-  /// Agent identifier (not buyer/seller specific; participants are symmetric)
-  agentId                String
+  /// Unique identifier for this participant (agent ID or external buyer ID)
+  participantId          String
+
+  /// Whether this participant is a registered agent or an external buyer
+  participantType        HydraParticipantType  @default(Agent)
 
   /// Participant order/index in the head (0-based)
   participantIndex       Int
@@ -642,43 +678,95 @@ model HydraParticipant {
   hydraVerificationKey   String?
 
   /// Whether this participant has committed funds to the head
-  hasCommitted           Boolean   @default(false)
+  hasCommitted           Boolean               @default(false)
 
-  /// Same agent cannot join the same head twice
-  @@unique([hydraHeadId, agentId])
+  /// Encrypted key material for operating this participant's Hydra node (1:1)
+  hydraSecretId          String?               @unique
+  HydraSecret            HydraSecret?          @relation(fields: [hydraSecretId], references: [id])
 
-  /// Index for "find all heads where agent X participates"
-  @@index([agentId])
-  @@index([agentId, hydraHeadId])
+  /// Same participant cannot join the same head twice
+  @@unique([hydraHeadId, participantId])
+
+  /// Index for "find all heads where participant X is involved"
+  @@index([participantId])
+  @@index([participantId, hydraHeadId])
 }
 
-/// A Hydra channel between exactly 2 agents, backed by a Hydra head.
-/// Provides a fast indexed lookup: "find all heads between agent A and agent B."
+/// Encrypted secret key material for a Hydra participant (1:1 with HydraParticipant).
+/// Stores the three secret keys needed to operate a Hydra node participant:
+/// fundWalletSK, nodeWalletSK, and hydraSK as encrypted JSON key envelopes.
+/// Uses the project's encrypt()/decrypt() from @/utils/security/encryption.
+model HydraSecret {
+  id                      String            @id @default(cuid())
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  /// Encrypted JSON key envelope for the fund wallet signing key
+  encryptedFundWalletSK   String
+
+  /// Encrypted JSON key envelope for the node wallet signing key
+  encryptedNodeWalletSK   String
+
+  /// Encrypted JSON key envelope for the Hydra signing key
+  encryptedHydraSK        String
+
+  HydraParticipant        HydraParticipant?
+}
+
+/// A Hydra channel between exactly 2 participants, backed by a Hydra head.
+/// Provides a fast indexed lookup: "find all heads between participant A and B."
 ///
-/// Agents are stored in deterministic order (agentIdA < agentIdB lexicographically)
-/// so the same pair is never duplicated with swapped columns.
+/// Participants are stored in deterministic order (participantIdA < participantIdB
+/// lexicographically) so the same pair is never duplicated with swapped columns.
 /// The same pair can have multiple channels (e.g. one closing while a new one opens).
+/// Participants can be agents or external buyers (marketplace frontend users).
 model HydraChannel {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   /// The Hydra head backing this channel
-  hydraHeadId   String
-  HydraHead     HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+  hydraHeadId      String
+  HydraHead        HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
 
-  /// First agent (lexicographically smaller agentId)
-  agentIdA      String
+  /// First participant (lexicographically smaller ID)
+  participantIdA   String
 
-  /// Second agent (lexicographically larger agentId)
-  agentIdB      String
+  /// Second participant (lexicographically larger ID)
+  participantIdB   String
 
-  /// Each head appears at most once per agent pair
-  @@unique([hydraHeadId, agentIdA, agentIdB])
+  /// Each head appears at most once per participant pair
+  @@unique([hydraHeadId, participantIdA, participantIdB])
 
-  /// Primary lookup: find all channels between two specific agents
-  @@index([agentIdA, agentIdB])
+  /// Primary lookup: find all channels between two specific participants
+  @@index([participantIdA, participantIdB])
 
-  /// Reverse lookup: find all channels where agent B is the second participant
-  @@index([agentIdB, agentIdA])
+  /// Reverse lookup
+  @@index([participantIdB, participantIdA])
+}
+
+/// Tracks a snapshot confirmed within a Hydra head.
+/// When the head fans out, these snapshots map L2 state back to L1.
+/// The final snapshot's UTXO set becomes the fanout transaction on L1.
+model HydraSnapshot {
+  id               String    @id @default(cuid())
+  createdAt        DateTime  @default(now())
+
+  hydraHeadId      String
+  HydraHead        HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// Snapshot number (monotonically increasing within a head)
+  snapshotNumber   Int
+
+  /// Hash of the confirmed UTXO set at this snapshot
+  utxoHash         String?
+
+  /// L1 fanout transaction hash (set after the head closes and fans out)
+  fanoutTxHash     String?
+
+  /// Whether this snapshot has been reconciled with L1 state
+  reconciledAt     DateTime?
+
+  @@unique([hydraHeadId, snapshotNumber])
+  @@index([hydraHeadId])
 }

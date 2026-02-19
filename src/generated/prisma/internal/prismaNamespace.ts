@@ -403,7 +403,12 @@ export const ModelName = {
   AdminWallet: 'AdminWallet',
   PaymentSourceConfig: 'PaymentSourceConfig',
   WebhookEndpoint: 'WebhookEndpoint',
-  WebhookDelivery: 'WebhookDelivery'
+  WebhookDelivery: 'WebhookDelivery',
+  HydraHead: 'HydraHead',
+  HydraParticipant: 'HydraParticipant',
+  HydraSecret: 'HydraSecret',
+  HydraChannel: 'HydraChannel',
+  HydraSnapshot: 'HydraSnapshot'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -419,7 +424,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "apiKey" | "unitValue" | "hotWallet" | "transaction" | "walletSecret" | "walletBase" | "registryRequest" | "exampleOutput" | "agentPricing" | "agentFixedPricing" | "paymentRequest" | "paymentActionData" | "purchaseRequest" | "purchaseActionData" | "paymentSourceIdentifiers" | "paymentSource" | "adminWallet" | "paymentSourceConfig" | "webhookEndpoint" | "webhookDelivery"
+    modelProps: "apiKey" | "unitValue" | "hotWallet" | "transaction" | "walletSecret" | "walletBase" | "registryRequest" | "exampleOutput" | "agentPricing" | "agentFixedPricing" | "paymentRequest" | "paymentActionData" | "purchaseRequest" | "purchaseActionData" | "paymentSourceIdentifiers" | "paymentSource" | "adminWallet" | "paymentSourceConfig" | "webhookEndpoint" | "webhookDelivery" | "hydraHead" | "hydraParticipant" | "hydraSecret" | "hydraChannel" | "hydraSnapshot"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1903,6 +1908,376 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    HydraHead: {
+      payload: Prisma.$HydraHeadPayload<ExtArgs>
+      fields: Prisma.HydraHeadFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HydraHeadFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HydraHeadFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        findFirst: {
+          args: Prisma.HydraHeadFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HydraHeadFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        findMany: {
+          args: Prisma.HydraHeadFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>[]
+        }
+        create: {
+          args: Prisma.HydraHeadCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        createMany: {
+          args: Prisma.HydraHeadCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HydraHeadCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>[]
+        }
+        delete: {
+          args: Prisma.HydraHeadDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        update: {
+          args: Prisma.HydraHeadUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        deleteMany: {
+          args: Prisma.HydraHeadDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HydraHeadUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HydraHeadUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>[]
+        }
+        upsert: {
+          args: Prisma.HydraHeadUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraHeadPayload>
+        }
+        aggregate: {
+          args: Prisma.HydraHeadAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHydraHead>
+        }
+        groupBy: {
+          args: Prisma.HydraHeadGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraHeadGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HydraHeadCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraHeadCountAggregateOutputType> | number
+        }
+      }
+    }
+    HydraParticipant: {
+      payload: Prisma.$HydraParticipantPayload<ExtArgs>
+      fields: Prisma.HydraParticipantFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HydraParticipantFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HydraParticipantFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        findFirst: {
+          args: Prisma.HydraParticipantFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HydraParticipantFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        findMany: {
+          args: Prisma.HydraParticipantFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>[]
+        }
+        create: {
+          args: Prisma.HydraParticipantCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        createMany: {
+          args: Prisma.HydraParticipantCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HydraParticipantCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>[]
+        }
+        delete: {
+          args: Prisma.HydraParticipantDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        update: {
+          args: Prisma.HydraParticipantUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        deleteMany: {
+          args: Prisma.HydraParticipantDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HydraParticipantUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HydraParticipantUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>[]
+        }
+        upsert: {
+          args: Prisma.HydraParticipantUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraParticipantPayload>
+        }
+        aggregate: {
+          args: Prisma.HydraParticipantAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHydraParticipant>
+        }
+        groupBy: {
+          args: Prisma.HydraParticipantGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraParticipantGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HydraParticipantCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraParticipantCountAggregateOutputType> | number
+        }
+      }
+    }
+    HydraSecret: {
+      payload: Prisma.$HydraSecretPayload<ExtArgs>
+      fields: Prisma.HydraSecretFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HydraSecretFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HydraSecretFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        findFirst: {
+          args: Prisma.HydraSecretFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HydraSecretFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        findMany: {
+          args: Prisma.HydraSecretFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>[]
+        }
+        create: {
+          args: Prisma.HydraSecretCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        createMany: {
+          args: Prisma.HydraSecretCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HydraSecretCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>[]
+        }
+        delete: {
+          args: Prisma.HydraSecretDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        update: {
+          args: Prisma.HydraSecretUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        deleteMany: {
+          args: Prisma.HydraSecretDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HydraSecretUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HydraSecretUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>[]
+        }
+        upsert: {
+          args: Prisma.HydraSecretUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSecretPayload>
+        }
+        aggregate: {
+          args: Prisma.HydraSecretAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHydraSecret>
+        }
+        groupBy: {
+          args: Prisma.HydraSecretGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraSecretGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HydraSecretCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraSecretCountAggregateOutputType> | number
+        }
+      }
+    }
+    HydraChannel: {
+      payload: Prisma.$HydraChannelPayload<ExtArgs>
+      fields: Prisma.HydraChannelFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HydraChannelFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HydraChannelFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        findFirst: {
+          args: Prisma.HydraChannelFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HydraChannelFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        findMany: {
+          args: Prisma.HydraChannelFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>[]
+        }
+        create: {
+          args: Prisma.HydraChannelCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        createMany: {
+          args: Prisma.HydraChannelCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HydraChannelCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>[]
+        }
+        delete: {
+          args: Prisma.HydraChannelDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        update: {
+          args: Prisma.HydraChannelUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        deleteMany: {
+          args: Prisma.HydraChannelDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HydraChannelUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HydraChannelUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>[]
+        }
+        upsert: {
+          args: Prisma.HydraChannelUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraChannelPayload>
+        }
+        aggregate: {
+          args: Prisma.HydraChannelAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHydraChannel>
+        }
+        groupBy: {
+          args: Prisma.HydraChannelGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraChannelGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HydraChannelCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraChannelCountAggregateOutputType> | number
+        }
+      }
+    }
+    HydraSnapshot: {
+      payload: Prisma.$HydraSnapshotPayload<ExtArgs>
+      fields: Prisma.HydraSnapshotFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.HydraSnapshotFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.HydraSnapshotFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        findFirst: {
+          args: Prisma.HydraSnapshotFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.HydraSnapshotFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        findMany: {
+          args: Prisma.HydraSnapshotFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>[]
+        }
+        create: {
+          args: Prisma.HydraSnapshotCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        createMany: {
+          args: Prisma.HydraSnapshotCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.HydraSnapshotCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>[]
+        }
+        delete: {
+          args: Prisma.HydraSnapshotDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        update: {
+          args: Prisma.HydraSnapshotUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        deleteMany: {
+          args: Prisma.HydraSnapshotDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.HydraSnapshotUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.HydraSnapshotUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>[]
+        }
+        upsert: {
+          args: Prisma.HydraSnapshotUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$HydraSnapshotPayload>
+        }
+        aggregate: {
+          args: Prisma.HydraSnapshotAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateHydraSnapshot>
+        }
+        groupBy: {
+          args: Prisma.HydraSnapshotGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraSnapshotGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.HydraSnapshotCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.HydraSnapshotCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -2016,7 +2391,9 @@ export const TransactionScalarFieldEnum = {
   paymentRequestHistoryId: 'paymentRequestHistoryId',
   purchaseRequestHistoryId: 'purchaseRequestHistoryId',
   previousOnChainState: 'previousOnChainState',
-  newOnChainState: 'newOnChainState'
+  newOnChainState: 'newOnChainState',
+  layer: 'layer',
+  hydraHeadId: 'hydraHeadId'
 } as const
 
 export type TransactionScalarFieldEnum = (typeof TransactionScalarFieldEnum)[keyof typeof TransactionScalarFieldEnum]
@@ -2304,6 +2681,84 @@ export const WebhookDeliveryScalarFieldEnum = {
 export type WebhookDeliveryScalarFieldEnum = (typeof WebhookDeliveryScalarFieldEnum)[keyof typeof WebhookDeliveryScalarFieldEnum]
 
 
+export const HydraHeadScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  headId: 'headId',
+  network: 'network',
+  paymentSourceId: 'paymentSourceId',
+  status: 'status',
+  contestationPeriod: 'contestationPeriod',
+  openedAt: 'openedAt',
+  closedAt: 'closedAt',
+  finalizedAt: 'finalizedAt',
+  lastActivityAt: 'lastActivityAt',
+  lastSnapshotNumber: 'lastSnapshotNumber',
+  lastSnapshotUtxoHash: 'lastSnapshotUtxoHash',
+  lastError: 'lastError',
+  lastErrorAt: 'lastErrorAt'
+} as const
+
+export type HydraHeadScalarFieldEnum = (typeof HydraHeadScalarFieldEnum)[keyof typeof HydraHeadScalarFieldEnum]
+
+
+export const HydraParticipantScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  hydraHeadId: 'hydraHeadId',
+  participantId: 'participantId',
+  participantType: 'participantType',
+  participantIndex: 'participantIndex',
+  nodeUrl: 'nodeUrl',
+  nodeHttpUrl: 'nodeHttpUrl',
+  cardanoVerificationKey: 'cardanoVerificationKey',
+  hydraVerificationKey: 'hydraVerificationKey',
+  hasCommitted: 'hasCommitted',
+  hydraSecretId: 'hydraSecretId'
+} as const
+
+export type HydraParticipantScalarFieldEnum = (typeof HydraParticipantScalarFieldEnum)[keyof typeof HydraParticipantScalarFieldEnum]
+
+
+export const HydraSecretScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  encryptedFundWalletSK: 'encryptedFundWalletSK',
+  encryptedNodeWalletSK: 'encryptedNodeWalletSK',
+  encryptedHydraSK: 'encryptedHydraSK'
+} as const
+
+export type HydraSecretScalarFieldEnum = (typeof HydraSecretScalarFieldEnum)[keyof typeof HydraSecretScalarFieldEnum]
+
+
+export const HydraChannelScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  hydraHeadId: 'hydraHeadId',
+  participantIdA: 'participantIdA',
+  participantIdB: 'participantIdB'
+} as const
+
+export type HydraChannelScalarFieldEnum = (typeof HydraChannelScalarFieldEnum)[keyof typeof HydraChannelScalarFieldEnum]
+
+
+export const HydraSnapshotScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  hydraHeadId: 'hydraHeadId',
+  snapshotNumber: 'snapshotNumber',
+  utxoHash: 'utxoHash',
+  fanoutTxHash: 'fanoutTxHash',
+  reconciledAt: 'reconciledAt'
+} as const
+
+export type HydraSnapshotScalarFieldEnum = (typeof HydraSnapshotScalarFieldEnum)[keyof typeof HydraSnapshotScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -2498,6 +2953,20 @@ export type ListEnumOnChainStateFieldRefInput<$PrismaModel> = FieldRefInputType<
 
 
 /**
+ * Reference to a field of type 'TransactionLayer'
+ */
+export type EnumTransactionLayerFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'TransactionLayer'>
+    
+
+
+/**
+ * Reference to a field of type 'TransactionLayer[]'
+ */
+export type ListEnumTransactionLayerFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'TransactionLayer[]'>
+    
+
+
+/**
  * Reference to a field of type 'WalletType'
  */
 export type EnumWalletTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'WalletType'>
@@ -2666,6 +3135,34 @@ export type ListEnumWebhookDeliveryStatusFieldRefInput<$PrismaModel> = FieldRefI
 
 
 /**
+ * Reference to a field of type 'HydraHeadStatus'
+ */
+export type EnumHydraHeadStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'HydraHeadStatus'>
+    
+
+
+/**
+ * Reference to a field of type 'HydraHeadStatus[]'
+ */
+export type ListEnumHydraHeadStatusFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'HydraHeadStatus[]'>
+    
+
+
+/**
+ * Reference to a field of type 'HydraParticipantType'
+ */
+export type EnumHydraParticipantTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'HydraParticipantType'>
+    
+
+
+/**
+ * Reference to a field of type 'HydraParticipantType[]'
+ */
+export type ListEnumHydraParticipantTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'HydraParticipantType[]'>
+    
+
+
+/**
  * Reference to a field of type 'Float'
  */
 export type FloatFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Float'>
@@ -2793,6 +3290,11 @@ export type GlobalOmitConfig = {
   paymentSourceConfig?: Prisma.PaymentSourceConfigOmit
   webhookEndpoint?: Prisma.WebhookEndpointOmit
   webhookDelivery?: Prisma.WebhookDeliveryOmit
+  hydraHead?: Prisma.HydraHeadOmit
+  hydraParticipant?: Prisma.HydraParticipantOmit
+  hydraSecret?: Prisma.HydraSecretOmit
+  hydraChannel?: Prisma.HydraChannelOmit
+  hydraSnapshot?: Prisma.HydraSnapshotOmit
 }
 
 /* Types for Logging */
