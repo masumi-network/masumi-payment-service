@@ -92,6 +92,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
     [key: number]: boolean;
   }>({});
   const [walletGenError, setWalletGenError] = useState<string>('');
+  const [feePercentInput, setFeePercentInput] = useState('');
 
   const {
     register,
@@ -156,6 +157,12 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
 
   const network = useWatch({ control, name: 'network' });
   const useCustomAdminWallets = useWatch({ control, name: 'useCustomAdminWallets' });
+  const feePermille = useWatch({ control, name: 'feePermille' });
+
+  // Clear percent input when custom config is disabled so re-enabling shows derived value
+  useEffect(() => {
+    if (!useCustomAdminWallets) queueMicrotask(() => setFeePercentInput(''));
+  }, [useCustomAdminWallets]);
 
   // Update network-dependent values when the form's network dropdown changes
   useEffect(() => {
@@ -466,7 +473,7 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <label className="text-sm font-medium">
-                    Fee Permille <span className="text-red-500">*</span>
+                    Fee (%) <span className="text-red-500">*</span>
                   </label>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -480,11 +487,45 @@ export function AddPaymentSourceDialog({ open, onClose, onSuccess }: AddPaymentS
                 <input
                   type="number"
                   className="w-full p-2 rounded-md bg-background border disabled:opacity-50 disabled:cursor-not-allowed"
-                  {...register('feePermille', { valueAsNumber: true })}
-                  min="0"
-                  max="1000"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={
+                    useCustomAdminWallets
+                      ? feePercentInput !== ''
+                        ? feePercentInput
+                        : (
+                            (typeof feePermille === 'number' && !Number.isNaN(feePermille)
+                              ? feePermille
+                              : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
+                          ).toFixed(1)
+                      : (
+                          (typeof feePermille === 'number' && !Number.isNaN(feePermille)
+                            ? feePermille
+                            : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
+                        ).toFixed(1)
+                  }
+                  onChange={(e) => useCustomAdminWallets && setFeePercentInput(e.target.value)}
+                  onBlur={() => {
+                    if (!useCustomAdminWallets) return;
+                    const percent = parseFloat(feePercentInput);
+                    if (!Number.isNaN(percent)) {
+                      const permille = Math.round(Math.min(100, Math.max(0, percent)) * 10);
+                      setValue('feePermille', permille, { shouldValidate: true });
+                      setFeePercentInput((permille / 10).toFixed(1));
+                    } else {
+                      setFeePercentInput(
+                        (
+                          (typeof feePermille === 'number' && !Number.isNaN(feePermille)
+                            ? feePermille
+                            : getDefaultFeeConfig(network ?? currentNetwork).feePermille) / 10
+                        ).toFixed(1),
+                      );
+                    }
+                  }}
                   disabled={!useCustomAdminWallets}
                 />
+                <p className="text-xs text-muted-foreground">0–100%, one decimal.</p>
                 {errors.feePermille && (
                   <p className="text-xs text-destructive mt-1">{errors.feePermille.message}</p>
                 )}

@@ -205,10 +205,12 @@ export default function Transactions() {
         'Network',
         'Status',
         'Date',
-        'Fee Rate Permille',
+        'Fee rate (%)',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille = selectedPaymentSource?.feeRatePermille ?? 'Unknown';
+        const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+        const feeRateDisplay =
+          typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
         const paymentAmounts = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
@@ -238,7 +240,7 @@ export default function Transactions() {
           transaction.PaymentSource.network,
           status,
           date,
-          feeRatePermille,
+          feeRateDisplay,
         ];
       });
 

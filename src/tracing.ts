@@ -14,6 +14,7 @@ import { Span } from '@opentelemetry/api';
 import { IncomingMessage, OutgoingMessage } from 'http';
 import { Request } from 'express';
 import { PrismaInstrumentation } from '@prisma/instrumentation';
+import { PrismaOutlierFilterSpanExporter } from '@/utils/tracing/prisma-outlier-filter-exporter';
 import { CONFIG } from './utils/config';
 import { logInfo, logError } from './utils/logs';
 import { logger } from './utils/logger';
@@ -45,10 +46,14 @@ export async function setupTracing() {
 		headers['signoz-ingestion-key'] = CONFIG.SIGNOZ_INGESTION_KEY;
 	}
 
-	// Trace exporter configuration
-	const traceExporter = new OTLPTraceExporter({
+	// Trace exporter: wrap OTLP with Prisma outlier filter to reduce volume
+	const otlpTraceExporter = new OTLPTraceExporter({
 		url: traceEndpoint,
 		headers,
+	});
+	const traceExporter = new PrismaOutlierFilterSpanExporter(otlpTraceExporter, {
+		outlierThresholdMs: CONFIG.OTEL_PRISMA_OUTLIER_THRESHOLD_MS,
+		maxPrismaSpansPerMinute: CONFIG.OTEL_PRISMA_MAX_SPANS_PER_MINUTE,
 	});
 
 	// Metrics exporter configuration
