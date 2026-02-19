@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
  * the resolved Hydra head info if an active (Open) head exists, or null.
  * Participants can be agents or external buyers (marketplace frontend users).
  *
- * Typically backed by a DB query: HydraChannel → HydraHead → HydraParticipant.
+ * Typically backed by a DB query: HydraRelation → Heads (Open) → Participants.
  *
  * @example
  * ```typescript
@@ -35,22 +35,29 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
  *   const [sortedA, sortedB] = participantIdA < participantIdB
  *     ? [participantIdA, participantIdB] : [participantIdB, participantIdA];
  *
- *   const channel = await prisma.hydraChannel.findFirst({
- *     where: { participantIdA: sortedA, participantIdB: sortedB,
- *       HydraHead: { network, status: 'Open' } },
- *     include: { HydraHead: { include: { Participants: true } } },
- *     orderBy: { createdAt: 'desc' },
+ *   const relation = await prisma.hydraRelation.findUnique({
+ *     where: { network_participantIdA_participantIdB:
+ *       { network, participantIdA: sortedA, participantIdB: sortedB } },
+ *     include: {
+ *       Heads: {
+ *         where: { status: 'Open' },
+ *         include: { Participants: true },
+ *         take: 1,
+ *         orderBy: { createdAt: 'desc' },
+ *       },
+ *     },
  *   });
  *
- *   if (!channel) return null;
+ *   const openHead = relation?.Heads[0];
+ *   if (!openHead) return null;
  *
- *   const ourParticipant = channel.HydraHead.Participants.find(
+ *   const ourParticipant = openHead.Participants.find(
  *     p => p.participantId === ourParticipantId,
  *   );
  *   if (!ourParticipant) return null;
  *
  *   return {
- *     id: channel.HydraHead.id,
+ *     id: openHead.id,
  *     nodeUrl: ourParticipant.nodeUrl,
  *     nodeHttpUrl: ourParticipant.nodeHttpUrl,
  *   };
@@ -67,7 +74,7 @@ export type FindActiveHydraHead = (
  * Transaction Router Service
  *
  * Routes transactions to Layer 1 (Cardano) or Layer 2 (Hydra) based on whether
- * a Hydra head is active between the transacting agents.
+ * an open Hydra head exists between the two participants.
  *
  * Decision flow:
  * 1. If forceLayer is set → use it
@@ -252,9 +259,9 @@ export class TransactionRouter {
 	/**
 	 * Resolve the full routing decision (layer + Hydra head info if L2).
 	 *
-	 * Uses findActiveHydraHead to query the DB for an active HydraChannel
-	 * between the two participants. Falls back to L1 if no finder is set or
-	 * no active head is found.
+	 * Uses findActiveHydraHead to query the DB for an open HydraHead
+	 * between the two participants (via HydraRelation).
+	 * Falls back to L1 if no finder is set or no active head is found.
 	 */
 	private async resolveRouting(context: TransactionRoutingContext): Promise<RoutingDecision> {
 		if (context.forceLayer) {

@@ -30,6 +30,7 @@ export async function syncHydraHeads(): Promise<void> {
 		where: {
 			status: { in: ['Open', 'Closed', 'FanoutPossible'] },
 		},
+		include: { HydraRelation: true },
 	});
 
 	if (openHeads.length === 0) return;

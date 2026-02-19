@@ -363,7 +363,6 @@ model PaymentSource {
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
-  HydraHeads               HydraHead[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
@@ -585,23 +584,54 @@ enum HydraParticipantType {
   ExternalBuyer
 }
 
-/// Represents a Hydra L2 head between N participants.
-/// Each head has its own Hydra node connection and tracks lifecycle state.
-/// Optionally linked to a PaymentSource for config (Blockfrost API key, contract refs).
+/// Persistent relation between exactly 2 participants for Hydra L2.
+/// This is the lookup key for routing decisions: "is there a head between A and B?"
+/// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
+///
+/// Participants are stored in deterministic order (participantIdA < participantIdB
+/// lexicographically) so the same pair is never duplicated with swapped columns.
+/// Participants can be agents or external buyers (marketplace frontend users).
+model HydraRelation {
+  id             String      @id @default(cuid())
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  /// Cardano network this relation operates on
+  network        Network
+
+  /// First participant (lexicographically smaller ID)
+  participantIdA String
+
+  /// Second participant (lexicographically larger ID)
+  participantIdB String
+
+  /// Individual head sessions within this relation (1:N)
+  Heads            HydraHead[]
+
+  /// One relation per participant pair per network
+  @@unique([network, participantIdA, participantIdB])
+
+  /// Primary lookup: find relation between two specific participants
+  @@index([participantIdA, participantIdB])
+
+  /// Reverse lookup
+  @@index([participantIdB, participantIdA])
+}
+
+/// A single Hydra head instance within a participant relation.
+/// Each head is one "session" — it goes through Idle → Open → Closed → Final.
+/// A relation can have many heads over its lifetime, but typically only one is Open.
 model HydraHead {
   id                   String             @id @default(cuid())
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
+  /// The participant relation this head belongs to
+  hydraRelationId      String
+  HydraRelation        HydraRelation      @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
+
   /// Hydra protocol head ID (assigned by Hydra node after Init)
   headId               String?            @unique
-
-  /// Cardano network this head operates on
-  network              Network
-
-  /// Optional PaymentSource for RPC provider config and contract references
-  paymentSourceId      String?
-  PaymentSource        PaymentSource?     @relation(fields: [paymentSourceId], references: [id])
 
   /// Current status of the Hydra head (null before head is initialized)
   status               HydraHeadStatus?
@@ -627,11 +657,8 @@ model HydraHead {
   lastError            String?
   lastErrorAt          DateTime?
 
-  /// Participants in this head
+  /// Participants in this head (node config, keys per head)
   Participants         HydraParticipant[]
-
-  /// Channels (2-participant pairings) that reference this head
-  Channels             HydraChannel[]
 
   /// Transactions submitted through this head (L2)
   Transactions         Transaction[]
@@ -640,13 +667,12 @@ model HydraHead {
   Snapshots            HydraSnapshot[]
 
   @@index([status])
-  @@index([network, status])
+  @@index([hydraRelationId, status])
 }
 
 /// A participant in a Hydra head.
-/// Join table between HydraHead and participants, supporting N participants per head.
-/// The same participant can be in multiple heads simultaneously.
-/// Participants can be agents or external buyers (marketplace frontend users).
+/// Each head has exactly 2 participants (matching the relation).
+/// Node URLs and keys can differ per head, so they live here, not on the relation.
 model HydraParticipant {
   id                     String                @id @default(cuid())
   createdAt              DateTime              @default(now())
@@ -660,7 +686,7 @@ model HydraParticipant {
   participantId          String
 
   /// Whether this participant is a registered agent or an external buyer
-  participantType        HydraParticipantType  @default(Agent)
+  participantType        HydraParticipantType @default(Agent)
 
   /// Participant order/index in the head (0-based)
   participantIndex       Int
@@ -711,38 +737,6 @@ model HydraSecret {
   encryptedHydraSK        String
 
   HydraParticipant        HydraParticipant?
-}
-
-/// A Hydra channel between exactly 2 participants, backed by a Hydra head.
-/// Provides a fast indexed lookup: "find all heads between participant A and B."
-///
-/// Participants are stored in deterministic order (participantIdA < participantIdB
-/// lexicographically) so the same pair is never duplicated with swapped columns.
-/// The same pair can have multiple channels (e.g. one closing while a new one opens).
-/// Participants can be agents or external buyers (marketplace frontend users).
-model HydraChannel {
-  id               String    @id @default(cuid())
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-
-  /// The Hydra head backing this channel
-  hydraHeadId      String
-  HydraHead        HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
-
-  /// First participant (lexicographically smaller ID)
-  participantIdA   String
-
-  /// Second participant (lexicographically larger ID)
-  participantIdB   String
-
-  /// Each head appears at most once per participant pair
-  @@unique([hydraHeadId, participantIdA, participantIdB])
-
-  /// Primary lookup: find all channels between two specific participants
-  @@index([participantIdA, participantIdB])
-
-  /// Reverse lookup
-  @@index([participantIdB, participantIdA])
 }
 
 /// Tracks a snapshot confirmed within a Hydra head.

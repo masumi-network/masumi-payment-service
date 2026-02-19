@@ -13,7 +13,7 @@ export enum HydraHeadStatus {
 
 /**
  * Resolved info for an active Hydra head.
- * Returned by the channel lookup, used by the transaction router
+ * Returned by the HydraRelation lookup, used by the transaction router
  * to submit transactions via the Hydra manager.
  */
 export interface ActiveHydraHeadInfo {

@@ -8,7 +8,7 @@ This document describes how the Transaction Router handles user requests and rou
 
 Every payment transaction in the Masumi Payment Service — locking funds, submitting results, requesting refunds, collecting payments — needs to be submitted to the blockchain. The Transaction Router is the single point that decides **which blockchain layer** to use and handles submission for both.
 
-Without the router, every handler would submit directly to Cardano L1 via Blockfrost. The router sits in between, transparently redirecting to Hydra L2 when a channel is available.
+Without the router, every handler would submit directly to Cardano L1 via Blockfrost. The router sits in between, transparently redirecting to Hydra L2 when an open head exists between the participants.
 
 ---
 
@@ -21,7 +21,7 @@ API / Background Job
   Payment Handler          (builds and signs the transaction)
         │
         ▼
-  Submit Helper            (adds routing context: agent IDs, tx type)
+  Submit Helper            (adds routing context: participant IDs, tx type)
         │
         ▼
   Transaction Router       (decides L1 or L2, submits accordingly)
@@ -60,9 +60,9 @@ The payment handler (e.g., the payment batcher for LockFunds) loads data from th
 
 ### 2. Submit Helper Adds Context
 
-The handler passes the signed transaction to a submit helper function. The helper adds **routing context** — the two agent IDs involved, the transaction type, the payment source, and the network. This context is what the router needs to make its decision.
+The handler passes the signed transaction to a submit helper function. The helper adds **routing context** — the two participant IDs involved, the transaction type, the payment source, and the network. This context is what the router needs to make its decision.
 
-The agent IDs come from the `blockchainIdentifier` stored on each purchase or payment request. They identify the buyer and seller, but for routing purposes they are treated as symmetric participants (either one could be "agent A" or "agent B").
+The participant IDs come from the `blockchainIdentifier` stored on each purchase or payment request. They identify the buyer and seller, but for routing purposes they are treated as symmetric participants (either one could be "participant A" or "participant B"). Participants can be agents or external buyers (marketplace frontend users).
 
 ### 3. Router Decides the Layer
 
@@ -72,9 +72,9 @@ The Transaction Router evaluates a series of conditions to determine L1 or L2:
 
 **Step 2 — Global switch.** If `HYDRA_ENABLED` is false, route to L1. No database queries are made.
 
-**Step 3 — Channel lookup.** If both agent IDs are available, query the database for an open Hydra channel between these two agents. This lookup uses the `HydraChannel` table, which stores agent pairs in deterministic order for symmetric lookups. If an open channel is found, the query also resolves the connection URL for our participant's Hydra node.
+**Step 3 — Head lookup.** If both participant IDs are available, query the database for an open Hydra head between these two participants. This lookup uses `HydraRelation` (the persistent relation table, indexed by `participantIdA` and `participantIdB` in deterministic order) to find a `HydraHead` with status `Open`. If found, the query also resolves the connection URL for our participant's Hydra node.
 
-**Step 4 — Fallback.** If no channel is found, route to L1.
+**Step 4 — Fallback.** If no open head is found, route to L1.
 
 ### 4. Router Submits the Transaction
 
@@ -96,26 +96,43 @@ Both paths return the same result shape: a transaction hash, the layer used, and
 |---|-----------|--------|
 | 1 | `forceLayer` is set | Use that layer |
 | 2 | `HYDRA_ENABLED` is false | L1 |
-| 3 | Both agent IDs present AND open HydraChannel found in DB | L2 |
+| 3 | Both participant IDs present AND open HydraHead found in DB | L2 |
 | 4 | Otherwise | L1 |
 
 The decision is made **per-transaction**. If a Hydra head closes between two consecutive transactions, the second one automatically falls back to L1.
 
 ---
 
-## Channel Lookup in Detail
+## Head Lookup in Detail
 
-The router's channel lookup follows this process:
+The router's head lookup follows this process:
 
-1. **Sort agent IDs.** The two agent IDs are sorted lexicographically. This ensures the lookup is symmetric — regardless of which agent is the buyer or seller, the query is the same.
+1. **Sort participant IDs.** The two participant IDs are sorted lexicographically. This ensures the lookup is symmetric — regardless of which participant is the buyer or seller, the query is the same.
 
-2. **Query HydraChannel.** Look up the `HydraChannel` table by `(agentIdA, agentIdB)`. This is a direct indexed query (no joins needed at this level).
+2. **Query HydraRelation.** Look up the `HydraRelation` table by `(network, participantIdA, participantIdB)`. This is a direct indexed unique query.
 
-3. **Check head status.** Join to `HydraHead` and verify `status = Open`. If the head is in any other state (null, Idle, Initializing, Closed, FanoutPossible, Final), skip it.
+3. **Find open head.** From the `HydraRelation`, query its related `HydraHead` records for one with `status = Open`. A relation can have many heads over time, but typically only one is open.
 
-4. **Resolve connection info.** Join to `HydraParticipant` to find **our** participant's node URL. Each participant runs their own Hydra node, and we need to connect to ours.
+4. **Resolve connection info.** From the open `HydraHead`, look up `HydraParticipant` to find **our** participant's node URL. Each participant runs their own Hydra node, and we need to connect to ours.
 
-5. **Return or fall back.** If an open channel with valid connection info is found, return it. Otherwise return null, and the router falls back to L1.
+5. **Return or fall back.** If an open head with valid connection info is found, return it. Otherwise return null, and the router falls back to L1.
+
+---
+
+## Data Model
+
+```
+HydraRelation (participantIdA, participantIdB, network)   ← persistent relation / lookup key
+  └── HydraHead[]                                       ← individual head sessions (1:N)
+       ├── HydraParticipant[] (node URLs, keys, type)
+       ├── HydraSnapshot[]
+       └── Transaction[]
+```
+
+- **HydraRelation**: The persistent relation between two participants on a specific network. One record per unique participant pair per network.
+- **HydraHead**: A single head session. Goes through `Idle → Open → Closed → Final`. A relation can have many heads over its lifetime.
+- **HydraParticipant**: Per-head participant config (node URLs, verification keys, encrypted secret keys via `HydraSecret`).
+- **HydraSnapshot**: Confirmed snapshots within a head, used for L2→L1 reconciliation after fanout.
 
 ---
 
@@ -126,7 +143,7 @@ Transaction building requires UTXOs (unspent outputs). The router also routes UT
 - **L1**: Fetched from Blockfrost.
 - **L2**: Fetched from the Hydra head's snapshot via the `@masumi-hydra` HydraProvider.
 
-The same routing decision applies. If there's an open channel, UTXOs come from the Hydra snapshot; otherwise from Blockfrost. This ensures transactions are built against the correct ledger state for the layer they'll be submitted to.
+The same routing decision applies. If there's an open head, UTXOs come from the Hydra snapshot; otherwise from Blockfrost. This ensures transactions are built against the correct ledger state for the layer they'll be submitted to.
 
 ---
 
@@ -145,9 +162,9 @@ The same routing decision applies. If there's an open channel, UTXOs come from t
 
 The router itself does **not** automatically retry on L1 when L2 fails. This is by design — the handler knows the business context and can decide whether an L1 retry is appropriate. Handlers can catch the error and resubmit with `forceLayer: 'L1'`.
 
-### Missing Agent IDs
+### Missing Participant IDs
 
-If one or both agent IDs are missing from the routing context, the channel lookup is skipped entirely and the transaction goes to L1. This is safe — it just means no Hydra optimization for that particular transaction.
+If one or both participant IDs are missing from the routing context, the head lookup is skipped entirely and the transaction goes to L1. This is safe — it just means no Hydra optimization for that particular transaction.
 
 ---
 
@@ -156,7 +173,7 @@ If one or both agent IDs are missing from the routing context, the channel looku
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HYDRA_ENABLED` | `false` | Master switch. When false, no DB lookups occur; everything goes to L1. |
-| `HYDRA_DEBUG_LOGGING` | `false` | When true, logs every routing decision with agent IDs, layer chosen, and transaction type. |
+| `HYDRA_DEBUG_LOGGING` | `false` | When true, logs every routing decision with participant IDs, layer chosen, and transaction type. |
 
 The router is initialized as a singleton on first use. It can also be initialized explicitly with custom configuration.
 
@@ -168,8 +185,8 @@ The router is initialized as a singleton on first use. It can also be initialize
 User/API → Handler → Submit Helper → Router → Hydra Manager → Hydra Node
                                        │
                                        ├─ 1. resolveRouting(context)
-                                       │     → query HydraChannel DB
-                                       │     → found open channel
+                                       │     → query HydraRelation → HydraHead (Open)
+                                       │     → found open head
                                        │
                                        ├─ 2. submitToL2(signedTx, headInfo)
                                        │     → get/create HydraHead instance
@@ -185,7 +202,7 @@ User/API → Handler → Submit Helper → Router → wallet.submitTx() → Bloc
                                        │
                                        ├─ 1. resolveRouting(context)
                                        │     → HYDRA_ENABLED=false, or
-                                       │     → no open channel found
+                                       │     → no open head found
                                        │
                                        ├─ 2. submitToL1(signedTx, wallet)
                                        │     → wallet.submitTx(signedTx)
@@ -201,13 +218,13 @@ User/API → Handler → Submit Helper → Router → wallet.submitTx() → Bloc
 
 Centralizing the L1/L2 decision in one place means handlers don't need to be modified when Hydra support changes. Adding a new transaction type only requires calling the appropriate submit helper — the routing logic is inherited.
 
-### Why is the channel lookup a configurable function?
+### Why is the head lookup a configurable function?
 
 The router accepts a `setHydraHeadFinder()` function rather than querying the database directly. This keeps the router independent of Prisma and makes it testable — tests can inject a mock finder without a real database.
 
-### Why treat agent IDs as symmetric?
+### Why treat participant IDs as symmetric?
 
-In the Masumi payment system, there is a buyer and a seller. But for Hydra, a head is a channel between participants — either side can initiate any transaction type. Today's buyer may be tomorrow's seller. Storing and querying agent pairs in deterministic order eliminates duplicate lookups and simplifies the data model.
+In the Masumi payment system, there is a buyer and a seller. But for Hydra, a head is between participants — either side can initiate any transaction type. Today's buyer may be tomorrow's seller. Storing and querying participant pairs in deterministic order eliminates duplicate lookups and simplifies the data model.
 
 ### Why not auto-fallback to L1?
 
@@ -223,6 +240,7 @@ The router throws on L2 failure rather than silently falling back. This is inten
 | Submit Helpers | `src/services/transaction-router/submit-helpers.ts` |
 | Routing Types | `src/services/transaction-router/types.ts` |
 | Hydra Manager | `src/services/hydra/hydra-manager.ts` |
+| Hydra Sync Service | `src/services/hydra/hydra-sync.service.ts` |
 | Hydra Types | `src/services/hydra/types.ts` |
-| Database Schema | `prisma/schema.prisma` (HydraHead, HydraParticipant, HydraChannel) |
+| Database Schema | `prisma/schema.prisma` (HydraRelation, HydraHead, HydraParticipant, HydraSecret, HydraSnapshot) |
 | Configuration | `src/utils/config/index.ts` (HYDRA_CONFIG) |
