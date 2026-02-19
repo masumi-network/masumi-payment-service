@@ -42,6 +42,12 @@ export type ApiKey = {
      * Current status of the API key
      */
     status: 'Active' | 'Revoked';
+    /**
+     * PaymentSources this key is scoped to. Empty array means unscoped (access all).
+     */
+    PaymentSourceScopes: Array<{
+        paymentSourceId: string;
+    }>;
 };
 
 export type Wallet = {
@@ -1886,6 +1892,14 @@ export type PatchApiKeyData = {
          * The networks the API key is allowed to use
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * PaymentSource IDs to add to this key's scope
+         */
+        addPaymentSourceIds?: Array<string>;
+        /**
+         * PaymentSource IDs to remove from this key's scope
+         */
+        removePaymentSourceIds?: Array<string>;
     };
     path?: never;
     query?: never;
@@ -1946,6 +1960,10 @@ export type PostApiKeyData = {
          * The permission of the API key
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
+        /**
+         * Optional PaymentSource IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys.
+         */
+        paymentSourceIds?: Array<string>;
     };
     path?: never;
     query?: never;

@@ -83,6 +83,21 @@
                             "Revoked"
                         ],
                         "description": "Current status of the API key"
+                    },
+                    "PaymentSourceScopes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "paymentSourceId": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "paymentSourceId"
+                            ]
+                        },
+                        "description": "PaymentSources this key is scoped to. Empty array means unscoped (access all)."
                     }
                 },
                 "required": [
@@ -92,7 +107,8 @@
                     "usageLimited",
                     "networkLimit",
                     "RemainingUsageCredits",
-                    "status"
+                    "status",
+                    "PaymentSourceScopes"
                 ]
             },
             "Wallet": {
@@ -3003,7 +3019,8 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "PaymentSourceScopes": []
                                         }
                                     }
                                 }
@@ -3405,7 +3422,8 @@
                                                             "amount": "10000000"
                                                         }
                                                     ],
-                                                    "status": "Active"
+                                                    "status": "Active",
+                                                    "PaymentSourceScopes": []
                                                 }
                                             ]
                                         },
@@ -3496,6 +3514,16 @@
                                         ],
                                         "default": "Read",
                                         "description": "The permission of the API key"
+                                    },
+                                    "paymentSourceIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 250
+                                        },
+                                        "maxItems": 50,
+                                        "default": [],
+                                        "description": "Optional PaymentSource IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys."
                                     }
                                 },
                                 "required": [
@@ -3550,7 +3578,8 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "PaymentSourceScopes": []
                                         }
                                     }
                                 }
@@ -3649,6 +3678,24 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "addPaymentSourceIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 250
+                                        },
+                                        "maxItems": 50,
+                                        "description": "PaymentSource IDs to add to this key's scope"
+                                    },
+                                    "removePaymentSourceIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 250
+                                        },
+                                        "maxItems": 50,
+                                        "description": "PaymentSource IDs to remove from this key's scope"
                                     }
                                 },
                                 "required": [
@@ -3709,7 +3756,8 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "PaymentSourceScopes": []
                                         }
                                     }
                                 }
@@ -3796,7 +3844,8 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Revoked"
+                                            "status": "Revoked",
+                                            "PaymentSourceScopes": []
                                         }
                                     }
                                 }

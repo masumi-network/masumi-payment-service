@@ -63,6 +63,21 @@ export const APIKeySchema = {
                 'Revoked'
             ],
             description: 'Current status of the API key'
+        },
+        PaymentSourceScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    paymentSourceId: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'paymentSourceId'
+                ]
+            },
+            description: 'PaymentSources this key is scoped to. Empty array means unscoped (access all).'
         }
     },
     required: [
@@ -72,7 +87,8 @@ export const APIKeySchema = {
         'usageLimited',
         'networkLimit',
         'RemainingUsageCredits',
-        'status'
+        'status',
+        'PaymentSourceScopes'
     ]
 } as const;
 
