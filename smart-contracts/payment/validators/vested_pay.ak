@@ -1,4 +1,3 @@
-use aiken/cbor
 use aiken/collection/list
 use aiken/crypto.{VerificationKeyHash}
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
@@ -61,7 +60,7 @@ validator vested_pay(
   admin_vks: List<VerificationKeyHash>,
   fee_address: Address,
   fee_permille: Int,
-  _cooldown_period: Int,
+  cooldown_period: Int,
 ) {
   spend(
     datum: Option<Datum>,
@@ -83,15 +82,15 @@ validator vested_pay(
       submit_result_time,
       unlock_time,
       external_dispute_unlock_time,
-      state,
       seller_cooldown_time,
-      ..
+      buyer_cooldown_time,
+      state,
     }) = datum
-
     let Transaction { validity_range, .. } = self
-    // expect Finite(tx_latest_time) = validity_range.upper_bound.bound_type
-    // let current_time = tx_latest_time
-    // let cooldown_time = current_time + cooldown_period
+    expect Finite(tx_latest_time) = validity_range.upper_bound.bound_type
+    let current_time = tx_latest_time
+    let cooldown_time = current_time + cooldown_period
+
     //requires 15 min cooldown
     expect Some(input) =
       self.inputs
@@ -101,9 +100,7 @@ validator vested_pay(
 
     let inputs =
       self.inputs
-        |> list.filter(
-            fn(input) { input.output.address == count_script_address },
-          )
+        |> list.filter(fn(input) { input.output.address == count_script_address })
     //ensure there is only one input utxo from our script, to prevent double spending
     expect list.length(inputs) == 1
 
@@ -130,8 +127,7 @@ validator vested_pay(
         expect Some(seller_vk) = address_to_verification_key(seller)
         expect must_be_signed_by(self, seller_vk)
 
-        // expect must_start_after(validity_range, unlock_time)
-        // time check not supported yet
+        expect must_start_after(validity_range, unlock_time)
         expect state == ResultSubmitted
 
         let fee_outputs =
@@ -193,9 +189,7 @@ validator vested_pay(
           )
         expect lovelace_of(value_returned) >= collateral_return_lovelace
 
-        expect bytearray.is_empty(result_hash) == False
-
-        True
+        bytearray.is_empty(result_hash) == False
       }
 
       SetRefundRequested -> {
@@ -204,17 +198,15 @@ validator vested_pay(
 
         expect Some(output) =
           self.outputs
-            |> list.filter(
-                fn(output) { output.address == count_script_address },
-              )
+            |> list.filter(fn(output) { output.address == count_script_address })
             |> list.head()
         expect InlineDatum(maybe_new_datum) = output.datum
         expect new_datum: Datum = maybe_new_datum
         expect output_value_is_preserved(input.output.value, output.value)
 
-        // expect must_end_before(validity_range, unlock_time)
-        // expect must_start_after(validity_range, buyer_cooldown_time)
-        // time check not supported yet
+        expect must_end_before(validity_range, unlock_time)
+        expect must_start_after(validity_range, buyer_cooldown_time)
+
         expect or {
             state == FundsLocked,
             state == ResultSubmitted,
@@ -229,27 +221,24 @@ validator vested_pay(
             Disputed
           }
 
-        expect new_datum.buyer == buyer
-        expect new_datum.seller == seller
-        expect new_datum.reference_key == reference_key
-        expect new_datum.reference_signature == reference_signature
-        expect new_datum.seller_nonce == seller_nonce
-        expect new_datum.buyer_nonce == buyer_nonce
-        expect
-          new_datum.collateral_return_lovelace == collateral_return_lovelace
-        expect new_datum.input_hash == input_hash
-        expect new_datum.result_hash == result_hash
-        expect new_datum.pay_by_time == pay_by_time
-        expect new_datum.unlock_time == unlock_time
-        expect new_datum.submit_result_time == submit_result_time
-        expect
-          new_datum.external_dispute_unlock_time == external_dispute_unlock_time
-        expect new_datum.seller_cooldown_time == 0
-        // expect new_datum.buyer_cooldown_time >= cooldown_time
-        // time check not supported yet
-        expect new_datum.state == new_state
-
-        True
+        and {
+          new_datum.buyer == buyer,
+          new_datum.seller == seller,
+          new_datum.reference_key == reference_key,
+          new_datum.reference_signature == reference_signature,
+          new_datum.seller_nonce == seller_nonce,
+          new_datum.buyer_nonce == buyer_nonce,
+          new_datum.collateral_return_lovelace == collateral_return_lovelace,
+          new_datum.input_hash == input_hash,
+          new_datum.result_hash == result_hash,
+          new_datum.pay_by_time == pay_by_time,
+          new_datum.unlock_time == unlock_time,
+          new_datum.submit_result_time == submit_result_time,
+          new_datum.external_dispute_unlock_time == external_dispute_unlock_time,
+          new_datum.seller_cooldown_time == 0,
+          new_datum.buyer_cooldown_time >= cooldown_time,
+          new_datum.state == new_state,
+        }
       }
       // Seller can approve the refund request by letting it run into the refund time
       WithdrawRefund -> {
@@ -260,31 +249,26 @@ validator vested_pay(
             state == RefundRequested,
           }
 
-        // expect must_start_after(validity_range, submit_result_time)
-        // time check not supported yet
-        expect bytearray.is_empty(result_hash)
-
-        True
+        and {
+          must_start_after(validity_range, submit_result_time),
+          bytearray.is_empty(result_hash),
+        }
       }
-
       //The buyer can cancel the refund request, if the vesting period is over, this will immediately give the seller the option to withdraw any funds
       UnSetRefundRequested -> {
         expect Some(buyer_vk) = address_to_verification_key(buyer)
         expect must_be_signed_by(self, buyer_vk)
         expect Some(output) =
           self.outputs
-            |> list.filter(
-                fn(output) { output.address == count_script_address },
-              )
+            |> list.filter(fn(output) { output.address == count_script_address })
             |> list.head()
         expect InlineDatum(maybe_new_datum) = output.datum
         expect new_datum: Datum = maybe_new_datum
 
         //expect the locked value to be preserved
         expect output_value_is_preserved(input.output.value, output.value)
+        expect must_start_after(validity_range, buyer_cooldown_time)
 
-        // expect must_start_after(validity_range, buyer_cooldown_time)
-        // time check not supported yet
         expect or {
             state == RefundRequested,
             state == Disputed,
@@ -298,34 +282,31 @@ validator vested_pay(
           }
 
         //we always allow to cancel the refund request
-        expect new_datum.buyer == buyer
-        expect new_datum.seller == seller
-        expect new_datum.reference_key == reference_key
-        expect new_datum.reference_signature == reference_signature
-        expect new_datum.seller_nonce == seller_nonce
-        expect new_datum.buyer_nonce == buyer_nonce
-        expect
-          new_datum.collateral_return_lovelace == collateral_return_lovelace
-        expect new_datum.input_hash == input_hash
-        expect new_datum.result_hash == result_hash
-        expect new_datum.pay_by_time == pay_by_time
-        expect new_datum.submit_result_time == submit_result_time
-        expect new_datum.unlock_time == unlock_time
-        expect
-          new_datum.external_dispute_unlock_time == external_dispute_unlock_time
-        expect new_datum.seller_cooldown_time == 0
-        // expect new_datum.buyer_cooldown_time >= cooldown_time
-        // time check not supported yet
-        expect new_datum.state == new_state
-
-        True
+        and {
+          new_datum.buyer == buyer,
+          new_datum.seller == seller,
+          new_datum.reference_key == reference_key,
+          new_datum.reference_signature == reference_signature,
+          new_datum.seller_nonce == seller_nonce,
+          new_datum.buyer_nonce == buyer_nonce,
+          new_datum.collateral_return_lovelace == collateral_return_lovelace,
+          new_datum.input_hash == input_hash,
+          new_datum.result_hash == result_hash,
+          new_datum.pay_by_time == pay_by_time,
+          new_datum.submit_result_time == submit_result_time,
+          new_datum.unlock_time == unlock_time,
+          new_datum.external_dispute_unlock_time == external_dispute_unlock_time,
+          new_datum.seller_cooldown_time == 0,
+          new_datum.buyer_cooldown_time >= cooldown_time,
+          new_datum.state == new_state,
+        }
       }
       //multi sig 2/X to withdraw the disputed funds via network admins
       WithdrawDisputed -> {
         expect bytearray.is_empty(result_hash) == False
 
-        // expect must_start_after(validity_range, external_dispute_unlock_time)
-        // time check not supported yet
+        expect must_start_after(validity_range, external_dispute_unlock_time)
+
         //this allows to add one admin multiple times, giving them more voting power
         let countOfAdmins = list.length(admin_vks)
         //safety check to require at least one admin and disallow misconfigured contracts
@@ -338,9 +319,7 @@ validator vested_pay(
         let signedBy =
           list.filter(admin_vks, fn(vk) { must_be_signed_by(self, vk) })
         //this allows to add one admin multiple times, giving them more voting power
-        expect list.length(signedBy) >= required_admins_multi_sig
-
-        True
+        list.length(signedBy) >= required_admins_multi_sig
       }
       SubmitResult -> {
         expect Some(seller_vk) = address_to_verification_key(seller)
@@ -348,25 +327,20 @@ validator vested_pay(
 
         expect Some(output) =
           self.outputs
-            |> list.filter(
-                fn(output) { output.address == count_script_address },
-              )
+            |> list.filter(fn(output) { output.address == count_script_address })
             |> list.head()
         expect InlineDatum(maybe_new_datum) = output.datum
         expect new_datum: Datum = maybe_new_datum
 
-        // expect or {
-        //     must_end_before(validity_range, submit_result_time),
-        //     and {
-        //       must_end_before(validity_range, external_dispute_unlock_time),
-        //       bytearray.is_empty(result_hash) == False,
-        //     },
-        //   }
+        expect or {
+            must_end_before(validity_range, submit_result_time),
+            and {
+              must_end_before(validity_range, external_dispute_unlock_time),
+              bytearray.is_empty(result_hash) == False,
+            },
+          }
+
         expect output_value_is_preserved(input.output.value, output.value)
-        trace @"validity range"
-        trace cbor.diagnostic(validity_range)
-        trace @"seller_cooldown_time"
-        trace cbor.diagnostic(seller_cooldown_time)
         expect must_start_after(validity_range, seller_cooldown_time)
         expect bytearray.is_empty(new_datum.result_hash) == False
 
@@ -378,26 +352,23 @@ validator vested_pay(
             Disputed
           }
 
-        expect new_datum.buyer == buyer
-        expect new_datum.seller == seller
-        expect new_datum.reference_key == reference_key
-        expect new_datum.reference_signature == reference_signature
-        expect new_datum.seller_nonce == seller_nonce
-        expect new_datum.buyer_nonce == buyer_nonce
-        expect
-          new_datum.collateral_return_lovelace == collateral_return_lovelace
-        expect new_datum.pay_by_time == pay_by_time
-        expect new_datum.unlock_time == unlock_time
-        expect new_datum.input_hash == input_hash
-        expect new_datum.submit_result_time == submit_result_time
-        expect
-          new_datum.external_dispute_unlock_time == external_dispute_unlock_time
-        // expect new_datum.seller_cooldown_time >= cooldown_time
-        // time check not supported yet
-        expect new_datum.buyer_cooldown_time == 0
-        expect new_datum.state == new_state
-
-        True
+        and {
+          new_datum.buyer == buyer,
+          new_datum.seller == seller,
+          new_datum.reference_key == reference_key,
+          new_datum.reference_signature == reference_signature,
+          new_datum.seller_nonce == seller_nonce,
+          new_datum.buyer_nonce == buyer_nonce,
+          new_datum.collateral_return_lovelace == collateral_return_lovelace,
+          new_datum.pay_by_time == pay_by_time,
+          new_datum.unlock_time == unlock_time,
+          new_datum.input_hash == input_hash,
+          new_datum.submit_result_time == submit_result_time,
+          new_datum.external_dispute_unlock_time == external_dispute_unlock_time,
+          new_datum.seller_cooldown_time >= cooldown_time,
+          new_datum.buyer_cooldown_time == 0,
+          new_datum.state == new_state,
+        }
       }
 
       AuthorizeRefund -> {
@@ -406,9 +377,7 @@ validator vested_pay(
 
         expect Some(output) =
           self.outputs
-            |> list.filter(
-                fn(output) { output.address == count_script_address },
-              )
+            |> list.filter(fn(output) { output.address == count_script_address })
             |> list.head()
         expect InlineDatum(maybe_new_datum) = output.datum
         expect new_datum: Datum = maybe_new_datum
@@ -419,29 +388,24 @@ validator vested_pay(
         expect state == Disputed
 
         expect bytearray.is_empty(new_datum.result_hash)
-
-        // expect must_start_after(validity_range, seller_cooldown_time)
-        // time check not supported yet
-        expect new_datum.buyer == buyer
-        expect new_datum.seller == seller
-        expect new_datum.reference_key == reference_key
-        expect new_datum.reference_signature == reference_signature
-        expect new_datum.seller_nonce == seller_nonce
-        expect new_datum.buyer_nonce == buyer_nonce
-        expect
-          new_datum.collateral_return_lovelace == collateral_return_lovelace
-        expect new_datum.pay_by_time == pay_by_time
-        expect new_datum.submit_result_time == submit_result_time
-        expect new_datum.input_hash == input_hash
-        expect new_datum.unlock_time == unlock_time
-        expect
-          new_datum.external_dispute_unlock_time == external_dispute_unlock_time
-        // expect new_datum.seller_cooldown_time >= cooldown_time
-        // time check not supported yet
-        expect new_datum.buyer_cooldown_time == 0
-        expect new_datum.state == RefundRequested
-
-        True
+        expect must_start_after(validity_range, seller_cooldown_time)
+        and {
+          new_datum.buyer == buyer,
+          new_datum.seller == seller,
+          new_datum.reference_key == reference_key,
+          new_datum.reference_signature == reference_signature,
+          new_datum.seller_nonce == seller_nonce,
+          new_datum.buyer_nonce == buyer_nonce,
+          new_datum.collateral_return_lovelace == collateral_return_lovelace,
+          new_datum.pay_by_time == pay_by_time,
+          new_datum.submit_result_time == submit_result_time,
+          new_datum.input_hash == input_hash,
+          new_datum.unlock_time == unlock_time,
+          new_datum.external_dispute_unlock_time == external_dispute_unlock_time,
+          new_datum.seller_cooldown_time >= cooldown_time,
+          new_datum.buyer_cooldown_time == 0,
+          new_datum.state == RefundRequested,
+        }
       }
     }
   }
@@ -568,17 +532,13 @@ test fee_value_is_preserved_succeeds() {
   let input_value: Value =
     assets.from_lovelace(100)
       |> assets.add("foo", "bar", 42)
-      |> assets.add("foo2", "bar", 32)
-      //correctly round down and ignore 0
+      |> assets.add("foo2", "bar", 32) //correctly round down and ignore 0
       |> assets.add("foo2", "baz", 1)
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(10)
-      //check for correct rounding behavior
-      |> assets.add("foo", "bar", 4)
-      //ignore additional assets
-      |> assets.add("foo", "baz", 4)
-      //allow bigger output value
+    assets.from_lovelace(10) //check for correct rounding behavior
+      |> assets.add("foo", "bar", 4) //ignore additional assets
+      |> assets.add("foo", "baz", 4) //allow bigger output value
       |> assets.add("foo2", "bar", 4)
   fee_value_is_preserved(input_value, output_value, 100)
 }
@@ -591,8 +551,7 @@ test fee_value_is_preserved_fails_5() {
 
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(10)
-      //check for correct rounding behavior
+    assets.from_lovelace(10) //check for correct rounding behavior
       |> assets.add("foo", "bar", 4)
 
   fee_value_is_preserved(input_value, output_value, 100) == False
@@ -605,8 +564,7 @@ test fee_value_is_preserved_fails_1() {
 
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(10)
-      //check for failing down
+    assets.from_lovelace(10) //check for failing down
       |> assets.add("foo", "bar", 4)
       |> assets.add("foo", "baz", 5)
       |> assets.add("foo1", "bar", 5)
@@ -621,8 +579,7 @@ test fee_value_is_preserved_fails_4() {
 
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(10)
-      //check for failing not included
+    assets.from_lovelace(10) //check for failing not included
       |> assets.add("foo", "baz", 5)
 
   fee_value_is_preserved(input_value, output_value, 100) == False
@@ -635,8 +592,7 @@ test fee_value_is_preserved_fails_2() {
 
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(10)
-      //check for failing down
+    assets.from_lovelace(10) //check for failing down
       |> assets.add("foo", "bar", 4)
 
   fee_value_is_preserved(input_value, output_value, 100) == False
@@ -649,8 +605,7 @@ test fee_value_is_preserved_fails_3() {
 
   let output_value: Value =
     //check for correct equal behavior
-    assets.from_lovelace(9)
-      //check for failing down
+    assets.from_lovelace(9) //check for failing down
       |> assets.add("foo", "bar", 60)
 
   fee_value_is_preserved(input_value, output_value, 100) == False
