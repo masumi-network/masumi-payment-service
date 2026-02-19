@@ -10,6 +10,7 @@ export type AuthContext = {
 	permission: Permission;
 	networkLimit: Network[];
 	usageLimited: boolean;
+	paymentSourceIds: string[] | null; // null = unscoped (access all)
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -32,6 +33,9 @@ export const authMiddleware = (minPermission: Permission) =>
 				const apiKey = await prisma.apiKey.findUnique({
 					where: {
 						tokenHash: generateSHA256Hash(sentKey),
+					},
+					include: {
+						PaymentSourceScopes: { select: { paymentSourceId: true } },
 					},
 				});
 
@@ -72,11 +76,19 @@ export const authMiddleware = (minPermission: Permission) =>
 					usageLimited = false;
 				}
 
+				const paymentSourceIds =
+					apiKey.permission === Permission.Admin
+						? null
+						: apiKey.PaymentSourceScopes.length > 0
+							? apiKey.PaymentSourceScopes.map((s) => s.paymentSourceId)
+							: null;
+
 				return {
 					id: apiKey.id,
 					permission: apiKey.permission,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
+					paymentSourceIds: paymentSourceIds,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

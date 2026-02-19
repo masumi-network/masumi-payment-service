@@ -37,6 +37,9 @@ export const apiKeyOutputSchema = z
 			)
 			.describe('Remaining usage credits for this API key'),
 		status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
+		PaymentSourceScopes: z
+			.array(z.object({ paymentSourceId: z.string() }))
+			.describe('PaymentSources this key is scoped to. Empty array means unscoped (access all).'),
 	})
 	.openapi('APIKey');
 
@@ -54,6 +57,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			take: input.limit,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				PaymentSourceScopes: { select: { paymentSourceId: true } },
 			},
 		});
 		return {
@@ -96,6 +100,13 @@ export const addAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
 	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key'),
+	paymentSourceIds: z
+		.array(z.string().max(250))
+		.max(50)
+		.default([])
+		.describe(
+			'Optional PaymentSource IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys.',
+		),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -106,6 +117,21 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	output: addAPIKeySchemaOutput,
 	handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
 		const isAdmin = input.permission == Permission.Admin;
+
+		// Admin keys are never scoped
+		const scopeIds = isAdmin ? [] : input.paymentSourceIds;
+
+		// Validate all provided PaymentSource IDs exist
+		if (scopeIds.length > 0) {
+			const found = await prisma.paymentSource.findMany({
+				where: { id: { in: scopeIds }, deletedAt: null },
+				select: { id: true },
+			});
+			if (found.length !== scopeIds.length) {
+				throw createHttpError(404, 'One or more paymentSourceIds not found');
+			}
+		}
+
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
@@ -126,9 +152,18 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 						}),
 					},
 				},
+				PaymentSourceScopes:
+					scopeIds.length > 0
+						? {
+								createMany: {
+									data: scopeIds.map((psId) => ({ paymentSourceId: psId })),
+								},
+							}
+						: undefined,
 			},
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				PaymentSourceScopes: { select: { paymentSourceId: true } },
 			},
 		});
 		return {
@@ -168,6 +203,16 @@ export const updateAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.optional()
 		.describe('The networks the API key is allowed to use'),
+	addPaymentSourceIds: z
+		.array(z.string().max(250))
+		.max(50)
+		.optional()
+		.describe("PaymentSource IDs to add to this key's scope"),
+	removePaymentSourceIds: z
+		.array(z.string().max(250))
+		.max(50)
+		.optional()
+		.describe("PaymentSource IDs to remove from this key's scope"),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -225,6 +270,32 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 				}
+
+				if (input.addPaymentSourceIds?.length) {
+					const found = await prisma.paymentSource.findMany({
+						where: { id: { in: input.addPaymentSourceIds }, deletedAt: null },
+						select: { id: true },
+					});
+					if (found.length !== input.addPaymentSourceIds.length) {
+						throw createHttpError(404, 'One or more addPaymentSourceIds not found');
+					}
+					await prisma.apiKeyPaymentSourceScope.createMany({
+						data: input.addPaymentSourceIds.map((psId) => ({
+							apiKeyId: input.id,
+							paymentSourceId: psId,
+						})),
+						skipDuplicates: true,
+					});
+				}
+				if (input.removePaymentSourceIds?.length) {
+					await prisma.apiKeyPaymentSourceScope.deleteMany({
+						where: {
+							apiKeyId: input.id,
+							paymentSourceId: { in: input.removePaymentSourceIds },
+						},
+					});
+				}
+
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
@@ -235,6 +306,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
+						PaymentSourceScopes: { select: { paymentSourceId: true } },
 					},
 				});
 				return result;
@@ -268,6 +340,7 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 			data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
+				PaymentSourceScopes: { select: { paymentSourceId: true } },
 			},
 		});
 		return {

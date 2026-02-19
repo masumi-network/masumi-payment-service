@@ -7,6 +7,7 @@ import { HotWalletType, Network } from '@/generated/prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const getWalletSchemaInput = z.object({
@@ -62,6 +63,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						type: HotWalletType.Selling,
 						PaymentSource: {
 							network: { in: ctx.networkLimit },
+							...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 						},
 						deletedAt: null,
 					},
@@ -137,6 +139,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						type: HotWalletType.Purchasing,
 						PaymentSource: {
 							network: { in: ctx.networkLimit },
+							...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 						},
 						deletedAt: null,
 					},
@@ -289,11 +292,12 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 	method: 'patch',
 	input: patchWalletSchemaInput,
 	output: patchWalletSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof patchWalletSchemaInput> }) => {
+	handler: async ({ input, ctx }: { input: z.infer<typeof patchWalletSchemaInput>; ctx: AuthContext }) => {
 		const wallet = await prisma.hotWallet.findFirst({
 			where: {
 				id: input.id,
 				deletedAt: null,
+				...(ctx.paymentSourceIds !== null ? { PaymentSource: { id: { in: ctx.paymentSourceIds } } } : {}),
 			},
 		});
 

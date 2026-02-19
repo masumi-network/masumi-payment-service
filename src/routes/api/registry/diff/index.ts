@@ -4,6 +4,7 @@ import { ez } from 'express-zod-api';
 import { prisma } from '@/utils/db';
 import { Network, Prisma, PricingType } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
 
@@ -33,17 +34,20 @@ function buildRegistryDiffWhere({
 	cursorId,
 	network,
 	filterSmartContractAddress,
+	paymentSourceIds,
 }: {
 	lastUpdate: Date;
 	cursorId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	paymentSourceIds: string[] | null;
 }): Prisma.RegistryRequestWhereInput {
 	const base: Prisma.RegistryRequestWhereInput = {
 		PaymentSource: {
 			network,
 			deletedAt: null,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
+			...getPaymentSourceIdFilter(paymentSourceIds),
 		},
 		SmartContractWallet: { deletedAt: null },
 	};
@@ -72,6 +76,7 @@ export const queryRegistryDiffGet = payAuthenticatedEndpointFactory.build({
 				cursorId: input.cursorId,
 				network: input.network,
 				filterSmartContractAddress: input.filterSmartContractAddress,
+				paymentSourceIds: ctx.paymentSourceIds,
 			}),
 			orderBy: [{ registrationStateLastChangedAt: 'asc' }, { id: 'asc' }],
 			take: input.limit,

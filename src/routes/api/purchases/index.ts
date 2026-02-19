@@ -12,6 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter, assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
@@ -250,6 +251,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
@@ -600,6 +602,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				);
 				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
 			}
+			assertPaymentSourceInScope(paymentSource.id, ctx.paymentSourceIds);
 
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {

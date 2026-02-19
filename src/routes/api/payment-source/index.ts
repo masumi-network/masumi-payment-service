@@ -4,6 +4,7 @@ import { Network } from '@/generated/prisma/client';
 import { z } from '@/utils/zod-openapi';
 import { splitWalletsByType } from '@/utils/shared/transformers';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 
 export const paymentSourceSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(10).describe('The number of payment sources to return'),
@@ -80,6 +81,7 @@ export const paymentSourceEndpointGet = readAuthenticatedEndpointFactory.build({
 			where: {
 				network: { in: ctx.networkLimit },
 				deletedAt: null,
+				...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 			},
 			include: {
 				AdminWallets: {

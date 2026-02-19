@@ -12,6 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
@@ -198,6 +199,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				SmartContractWallet: { deletedAt: null },
 				...(stateFilter ? { state: { in: stateFilter } } : {}),
@@ -435,6 +437,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					PaymentSource: {
 						deletedAt: null,
 						network: input.network,
+						...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 					},
 				},
 				include: {

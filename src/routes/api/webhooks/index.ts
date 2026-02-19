@@ -4,6 +4,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { WebhookEventType, Permission, Network } from '@/generated/prisma/client';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
 
 // Schema for registering a new webhook
 export const registerWebhookSchemaInput = z.object({
@@ -36,6 +37,7 @@ export const registerWebhookPost = payAuthenticatedEndpointFactory.build({
 			if (!paymentSource) {
 				throw createHttpError(404, 'Payment source not found');
 			}
+			assertPaymentSourceInScope(input.paymentSourceId, ctx.paymentSourceIds);
 
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, paymentSource.network, ctx.permission);
 		} else {

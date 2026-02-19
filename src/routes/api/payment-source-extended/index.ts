@@ -8,6 +8,7 @@ import createHttpError from 'http-errors';
 import { z } from '@/utils/zod-openapi';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 import { DEFAULTS } from '@/utils/config';
 import { splitWalletsByType } from '@/utils/shared/transformers';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -99,6 +100,7 @@ export const paymentSourceExtendedEndpointGet = adminAuthenticatedEndpointFactor
 					in: ctx.networkLimit,
 				},
 				deletedAt: null,
+				...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 			},
 			take: input.take,
 			orderBy: {

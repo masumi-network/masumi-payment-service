@@ -8,20 +8,34 @@ datasource db {
 }
 
 model ApiKey {
-  id                    String            @id @default(cuid())
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  token                 String            @unique
-  tokenHash             String            @unique
+  id                    String                       @id @default(cuid())
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+  token                 String                       @unique
+  tokenHash             String                       @unique
   status                ApiKeyStatus
   permission            Permission
   networkLimit          Network[]
-  usageLimited          Boolean           @default(false)
+  usageLimited          Boolean                      @default(false)
   deletedAt             DateTime?
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
   CreatedWebhooks       WebhookEndpoint[]
+  PaymentSourceScopes   ApiKeyPaymentSourceScope[]
+}
+
+model ApiKeyPaymentSourceScope {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  apiKeyId        String
+  paymentSourceId String
+  ApiKey          ApiKey        @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, paymentSourceId])
+  @@index([apiKeyId])
+  @@index([paymentSourceId])
 }
 
 model UnitValue {
@@ -355,6 +369,7 @@ model PaymentSource {
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
+  ApiKeyScopes             ApiKeyPaymentSourceScope[]
 
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])

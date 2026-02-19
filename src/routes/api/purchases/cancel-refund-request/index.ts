@@ -4,6 +4,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
@@ -45,6 +46,7 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 				PaymentSource: {
 					network: input.network,
 					deletedAt: null,
+					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				SmartContractWallet: {
 					deletedAt: null,

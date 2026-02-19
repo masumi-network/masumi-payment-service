@@ -15,6 +15,7 @@ import { ez } from 'express-zod-api';
 import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { getPaymentSourceIdFilter, assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
@@ -280,6 +281,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
+					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
@@ -518,6 +520,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
+		assertPaymentSourceInScope(specifiedPaymentContract.id, ctx.paymentSourceIds);
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
