@@ -184,6 +184,8 @@ const apiKeyExample = {
 		},
 	],
 	status: ApiKeyStatus.Active,
+	globalSpendLimit: null,
+	totalADASpent: '0',
 } satisfies z.infer<typeof apiKeyOutputSchema>;
 
 const walletExample = {
