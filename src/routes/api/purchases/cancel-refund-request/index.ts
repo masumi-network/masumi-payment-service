@@ -7,6 +7,9 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import { checkGlobalSpendLimitOrThrow } from '@/repositories/creditTokens/global-limit.repository';
+import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
+import { CONSTANTS } from '@/utils/config';
 
 export const cancelPurchaseRefundRequestSchemaInput = z.object({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
@@ -60,6 +63,20 @@ export const cancelPurchaseRefundRequestPost = payAuthenticatedEndpointFactory.b
 
 		if (purchase.requestedById != ctx.id && ctx.permission != Permission.Admin) {
 			throw createHttpError(403, 'You are not authorized to cancel a refund request for this purchase');
+		}
+
+		if (ctx.globalSpendLimit !== null) {
+			try {
+				await checkGlobalSpendLimitOrThrow({
+					apiKeyId: ctx.id,
+					estimatedLovelace: CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE,
+				});
+			} catch (error) {
+				if (error instanceof InsufficientFundsError) {
+					throw createHttpError(402, 'Global spend limit exceeded');
+				}
+				throw error;
+			}
 		}
 
 		const result = await prisma.purchaseRequest.update({

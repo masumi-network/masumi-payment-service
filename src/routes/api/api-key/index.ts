@@ -37,6 +37,13 @@ export const apiKeyOutputSchema = z
 			)
 			.describe('Remaining usage credits for this API key'),
 		status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
+		globalSpendLimit: z
+			.string()
+			.nullable()
+			.describe('Global ADA spend cap in lovelace (null = unlimited). Applies to all smart contract interactions.'),
+		totalADASpent: z
+			.string()
+			.describe('Cumulative ADA spent by this key across all smart contract interactions, in lovelace.'),
 	})
 	.openapi('APIKey');
 
@@ -60,6 +67,8 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			ApiKeys: result.map((data) => ({
 				...data,
 				RemainingUsageCredits: transformBigIntAmounts(data.RemainingUsageCredits),
+				globalSpendLimit: data.globalSpendLimit?.toString() ?? null,
+				totalADASpent: data.totalADASpent.toString(),
 			})),
 		};
 	},
@@ -96,6 +105,10 @@ export const addAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
 	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key'),
+	globalSpendLimit: z
+		.string()
+		.optional()
+		.describe('Global spend limit in lovelace for all smart contract interactions. Omit or leave empty for unlimited.'),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -107,6 +120,8 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }: { input: z.infer<typeof addAPIKeySchemaInput> }) => {
 		const isAdmin = input.permission == Permission.Admin;
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
+		const parsedGlobalSpendLimit =
+			input.globalSpendLimit && input.globalSpendLimit.length > 0 ? BigInt(input.globalSpendLimit) : null;
 		const result = await prisma.apiKey.create({
 			data: {
 				token: apiKey,
@@ -115,6 +130,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				permission: input.permission,
 				usageLimited: isAdmin ? false : input.usageLimited,
 				networkLimit: isAdmin ? [Network.Mainnet, Network.Preprod] : input.networkLimit,
+				globalSpendLimit: isAdmin ? null : parsedGlobalSpendLimit,
 				RemainingUsageCredits: {
 					createMany: {
 						data: input.UsageCredits.map((usageCredit) => {
@@ -134,6 +150,8 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		return {
 			...result,
 			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
+			globalSpendLimit: result.globalSpendLimit?.toString() ?? null,
+			totalADASpent: result.totalADASpent.toString(),
 		};
 	},
 });
@@ -168,6 +186,11 @@ export const updateAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.optional()
 		.describe('The networks the API key is allowed to use'),
+	globalSpendLimit: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('Update global spend limit in lovelace. Pass null to remove the limit.'),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -225,6 +248,12 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 				}
+				const parsedGlobalSpendLimit =
+					input.globalSpendLimit !== undefined
+						? input.globalSpendLimit !== null && input.globalSpendLimit.length > 0
+							? BigInt(input.globalSpendLimit)
+							: null
+						: undefined;
 				const result = await prisma.apiKey.update({
 					where: { id: input.id },
 					data: {
@@ -232,6 +261,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						usageLimited: input.usageLimited,
 						status: input.status,
 						networkLimit: input.networkLimit,
+						globalSpendLimit: parsedGlobalSpendLimit,
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
@@ -248,6 +278,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 		return {
 			...apiKey,
 			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
+			globalSpendLimit: apiKey.globalSpendLimit?.toString() ?? null,
+			totalADASpent: apiKey.totalADASpent.toString(),
 		};
 	},
 });
@@ -273,6 +305,8 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 		return {
 			...apiKey,
 			RemainingUsageCredits: transformBigIntAmounts(apiKey.RemainingUsageCredits),
+			globalSpendLimit: apiKey.globalSpendLimit?.toString() ?? null,
+			totalADASpent: apiKey.totalADASpent.toString(),
 		};
 	},
 });

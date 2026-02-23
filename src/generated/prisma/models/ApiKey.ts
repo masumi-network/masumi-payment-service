@@ -20,8 +20,20 @@ export type ApiKeyModel = runtime.Types.Result.DefaultSelection<Prisma.$ApiKeyPa
 
 export type AggregateApiKey = {
   _count: ApiKeyCountAggregateOutputType | null
+  _avg: ApiKeyAvgAggregateOutputType | null
+  _sum: ApiKeySumAggregateOutputType | null
   _min: ApiKeyMinAggregateOutputType | null
   _max: ApiKeyMaxAggregateOutputType | null
+}
+
+export type ApiKeyAvgAggregateOutputType = {
+  globalSpendLimit: number | null
+  totalADASpent: number | null
+}
+
+export type ApiKeySumAggregateOutputType = {
+  globalSpendLimit: bigint | null
+  totalADASpent: bigint | null
 }
 
 export type ApiKeyMinAggregateOutputType = {
@@ -33,6 +45,8 @@ export type ApiKeyMinAggregateOutputType = {
   status: $Enums.ApiKeyStatus | null
   permission: $Enums.Permission | null
   usageLimited: boolean | null
+  globalSpendLimit: bigint | null
+  totalADASpent: bigint | null
   deletedAt: Date | null
 }
 
@@ -45,6 +59,8 @@ export type ApiKeyMaxAggregateOutputType = {
   status: $Enums.ApiKeyStatus | null
   permission: $Enums.Permission | null
   usageLimited: boolean | null
+  globalSpendLimit: bigint | null
+  totalADASpent: bigint | null
   deletedAt: Date | null
 }
 
@@ -58,10 +74,22 @@ export type ApiKeyCountAggregateOutputType = {
   permission: number
   networkLimit: number
   usageLimited: number
+  globalSpendLimit: number
+  totalADASpent: number
   deletedAt: number
   _all: number
 }
 
+
+export type ApiKeyAvgAggregateInputType = {
+  globalSpendLimit?: true
+  totalADASpent?: true
+}
+
+export type ApiKeySumAggregateInputType = {
+  globalSpendLimit?: true
+  totalADASpent?: true
+}
 
 export type ApiKeyMinAggregateInputType = {
   id?: true
@@ -72,6 +100,8 @@ export type ApiKeyMinAggregateInputType = {
   status?: true
   permission?: true
   usageLimited?: true
+  globalSpendLimit?: true
+  totalADASpent?: true
   deletedAt?: true
 }
 
@@ -84,6 +114,8 @@ export type ApiKeyMaxAggregateInputType = {
   status?: true
   permission?: true
   usageLimited?: true
+  globalSpendLimit?: true
+  totalADASpent?: true
   deletedAt?: true
 }
 
@@ -97,6 +129,8 @@ export type ApiKeyCountAggregateInputType = {
   permission?: true
   networkLimit?: true
   usageLimited?: true
+  globalSpendLimit?: true
+  totalADASpent?: true
   deletedAt?: true
   _all?: true
 }
@@ -139,6 +173,18 @@ export type ApiKeyAggregateArgs<ExtArgs extends runtime.Types.Extensions.Interna
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: ApiKeyAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: ApiKeySumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: ApiKeyMinAggregateInputType
@@ -169,6 +215,8 @@ export type ApiKeyGroupByArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   take?: number
   skip?: number
   _count?: ApiKeyCountAggregateInputType | true
+  _avg?: ApiKeyAvgAggregateInputType
+  _sum?: ApiKeySumAggregateInputType
   _min?: ApiKeyMinAggregateInputType
   _max?: ApiKeyMaxAggregateInputType
 }
@@ -183,8 +231,12 @@ export type ApiKeyGroupByOutputType = {
   permission: $Enums.Permission
   networkLimit: $Enums.Network[]
   usageLimited: boolean
+  globalSpendLimit: bigint | null
+  totalADASpent: bigint
   deletedAt: Date | null
   _count: ApiKeyCountAggregateOutputType | null
+  _avg: ApiKeyAvgAggregateOutputType | null
+  _sum: ApiKeySumAggregateOutputType | null
   _min: ApiKeyMinAggregateOutputType | null
   _max: ApiKeyMaxAggregateOutputType | null
 }
@@ -217,6 +269,8 @@ export type ApiKeyWhereInput = {
   permission?: Prisma.EnumPermissionFilter<"ApiKey"> | $Enums.Permission
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolFilter<"ApiKey"> | boolean
+  globalSpendLimit?: Prisma.BigIntNullableFilter<"ApiKey"> | bigint | number | null
+  totalADASpent?: Prisma.BigIntFilter<"ApiKey"> | bigint | number
   deletedAt?: Prisma.DateTimeNullableFilter<"ApiKey"> | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestListRelationFilter
   PurchaseRequest?: Prisma.PurchaseRequestListRelationFilter
@@ -234,6 +288,8 @@ export type ApiKeyOrderByWithRelationInput = {
   permission?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
+  globalSpendLimit?: Prisma.SortOrderInput | Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   PaymentRequest?: Prisma.PaymentRequestOrderByRelationAggregateInput
   PurchaseRequest?: Prisma.PurchaseRequestOrderByRelationAggregateInput
@@ -254,6 +310,8 @@ export type ApiKeyWhereUniqueInput = Prisma.AtLeast<{
   permission?: Prisma.EnumPermissionFilter<"ApiKey"> | $Enums.Permission
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolFilter<"ApiKey"> | boolean
+  globalSpendLimit?: Prisma.BigIntNullableFilter<"ApiKey"> | bigint | number | null
+  totalADASpent?: Prisma.BigIntFilter<"ApiKey"> | bigint | number
   deletedAt?: Prisma.DateTimeNullableFilter<"ApiKey"> | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestListRelationFilter
   PurchaseRequest?: Prisma.PurchaseRequestListRelationFilter
@@ -271,10 +329,14 @@ export type ApiKeyOrderByWithAggregationInput = {
   permission?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
+  globalSpendLimit?: Prisma.SortOrderInput | Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.ApiKeyCountOrderByAggregateInput
+  _avg?: Prisma.ApiKeyAvgOrderByAggregateInput
   _max?: Prisma.ApiKeyMaxOrderByAggregateInput
   _min?: Prisma.ApiKeyMinOrderByAggregateInput
+  _sum?: Prisma.ApiKeySumOrderByAggregateInput
 }
 
 export type ApiKeyScalarWhereWithAggregatesInput = {
@@ -290,6 +352,8 @@ export type ApiKeyScalarWhereWithAggregatesInput = {
   permission?: Prisma.EnumPermissionWithAggregatesFilter<"ApiKey"> | $Enums.Permission
   networkLimit?: Prisma.EnumNetworkNullableListFilter<"ApiKey">
   usageLimited?: Prisma.BoolWithAggregatesFilter<"ApiKey"> | boolean
+  globalSpendLimit?: Prisma.BigIntNullableWithAggregatesFilter<"ApiKey"> | bigint | number | null
+  totalADASpent?: Prisma.BigIntWithAggregatesFilter<"ApiKey"> | bigint | number
   deletedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"ApiKey"> | Date | string | null
 }
 
@@ -303,6 +367,8 @@ export type ApiKeyCreateInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestCreateNestedManyWithoutRequestedByInput
@@ -320,6 +386,8 @@ export type ApiKeyUncheckedCreateInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutRequestedByInput
@@ -337,6 +405,8 @@ export type ApiKeyUpdateInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUpdateManyWithoutRequestedByNestedInput
@@ -354,6 +424,8 @@ export type ApiKeyUncheckedUpdateInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutRequestedByNestedInput
@@ -371,6 +443,8 @@ export type ApiKeyCreateManyInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
 }
 
@@ -384,6 +458,8 @@ export type ApiKeyUpdateManyMutationInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
@@ -397,6 +473,8 @@ export type ApiKeyUncheckedUpdateManyInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
 }
 
@@ -418,7 +496,14 @@ export type ApiKeyCountOrderByAggregateInput = {
   permission?: Prisma.SortOrder
   networkLimit?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
+  globalSpendLimit?: Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
+}
+
+export type ApiKeyAvgOrderByAggregateInput = {
+  globalSpendLimit?: Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
 }
 
 export type ApiKeyMaxOrderByAggregateInput = {
@@ -430,6 +515,8 @@ export type ApiKeyMaxOrderByAggregateInput = {
   status?: Prisma.SortOrder
   permission?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
+  globalSpendLimit?: Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
 }
 
@@ -442,7 +529,14 @@ export type ApiKeyMinOrderByAggregateInput = {
   status?: Prisma.SortOrder
   permission?: Prisma.SortOrder
   usageLimited?: Prisma.SortOrder
+  globalSpendLimit?: Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
+}
+
+export type ApiKeySumOrderByAggregateInput = {
+  globalSpendLimit?: Prisma.SortOrder
+  totalADASpent?: Prisma.SortOrder
 }
 
 export type ApiKeyNullableScalarRelationFilter = {
@@ -482,6 +576,22 @@ export type ApiKeyUpdatenetworkLimitInput = {
 
 export type BoolFieldUpdateOperationsInput = {
   set?: boolean
+}
+
+export type NullableBigIntFieldUpdateOperationsInput = {
+  set?: bigint | number | null
+  increment?: bigint | number
+  decrement?: bigint | number
+  multiply?: bigint | number
+  divide?: bigint | number
+}
+
+export type BigIntFieldUpdateOperationsInput = {
+  set?: bigint | number
+  increment?: bigint | number
+  decrement?: bigint | number
+  multiply?: bigint | number
+  divide?: bigint | number
 }
 
 export type NullableDateTimeFieldUpdateOperationsInput = {
@@ -558,6 +668,8 @@ export type ApiKeyCreateWithoutRemainingUsageCreditsInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestCreateNestedManyWithoutRequestedByInput
@@ -574,6 +686,8 @@ export type ApiKeyUncheckedCreateWithoutRemainingUsageCreditsInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutRequestedByInput
@@ -606,6 +720,8 @@ export type ApiKeyUpdateWithoutRemainingUsageCreditsInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUpdateManyWithoutRequestedByNestedInput
@@ -622,6 +738,8 @@ export type ApiKeyUncheckedUpdateWithoutRemainingUsageCreditsInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutRequestedByNestedInput
@@ -638,6 +756,8 @@ export type ApiKeyCreateWithoutPaymentRequestInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PurchaseRequest?: Prisma.PurchaseRequestCreateNestedManyWithoutRequestedByInput
   RemainingUsageCredits?: Prisma.UnitValueCreateNestedManyWithoutApiKeyInput
@@ -654,6 +774,8 @@ export type ApiKeyUncheckedCreateWithoutPaymentRequestInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutRequestedByInput
   RemainingUsageCredits?: Prisma.UnitValueUncheckedCreateNestedManyWithoutApiKeyInput
@@ -686,6 +808,8 @@ export type ApiKeyUpdateWithoutPaymentRequestInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PurchaseRequest?: Prisma.PurchaseRequestUpdateManyWithoutRequestedByNestedInput
   RemainingUsageCredits?: Prisma.UnitValueUpdateManyWithoutApiKeyNestedInput
@@ -702,6 +826,8 @@ export type ApiKeyUncheckedUpdateWithoutPaymentRequestInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutRequestedByNestedInput
   RemainingUsageCredits?: Prisma.UnitValueUncheckedUpdateManyWithoutApiKeyNestedInput
@@ -718,6 +844,8 @@ export type ApiKeyCreateWithoutPurchaseRequestInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestCreateNestedManyWithoutRequestedByInput
   RemainingUsageCredits?: Prisma.UnitValueCreateNestedManyWithoutApiKeyInput
@@ -734,6 +862,8 @@ export type ApiKeyUncheckedCreateWithoutPurchaseRequestInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutRequestedByInput
   RemainingUsageCredits?: Prisma.UnitValueUncheckedCreateNestedManyWithoutApiKeyInput
@@ -766,6 +896,8 @@ export type ApiKeyUpdateWithoutPurchaseRequestInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUpdateManyWithoutRequestedByNestedInput
   RemainingUsageCredits?: Prisma.UnitValueUpdateManyWithoutApiKeyNestedInput
@@ -782,6 +914,8 @@ export type ApiKeyUncheckedUpdateWithoutPurchaseRequestInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedUpdateManyWithoutRequestedByNestedInput
   RemainingUsageCredits?: Prisma.UnitValueUncheckedUpdateManyWithoutApiKeyNestedInput
@@ -798,6 +932,8 @@ export type ApiKeyCreateWithoutCreatedWebhooksInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestCreateNestedManyWithoutRequestedByInput
@@ -814,6 +950,8 @@ export type ApiKeyUncheckedCreateWithoutCreatedWebhooksInput = {
   permission: $Enums.Permission
   networkLimit?: Prisma.ApiKeyCreatenetworkLimitInput | $Enums.Network[]
   usageLimited?: boolean
+  globalSpendLimit?: bigint | number | null
+  totalADASpent?: bigint | number
   deletedAt?: Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutRequestedByInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedCreateNestedManyWithoutRequestedByInput
@@ -846,6 +984,8 @@ export type ApiKeyUpdateWithoutCreatedWebhooksInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUpdateManyWithoutRequestedByNestedInput
@@ -862,6 +1002,8 @@ export type ApiKeyUncheckedUpdateWithoutCreatedWebhooksInput = {
   permission?: Prisma.EnumPermissionFieldUpdateOperationsInput | $Enums.Permission
   networkLimit?: Prisma.ApiKeyUpdatenetworkLimitInput | $Enums.Network[]
   usageLimited?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  globalSpendLimit?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalADASpent?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   PaymentRequest?: Prisma.PaymentRequestUncheckedUpdateManyWithoutRequestedByNestedInput
   PurchaseRequest?: Prisma.PurchaseRequestUncheckedUpdateManyWithoutRequestedByNestedInput
@@ -936,6 +1078,8 @@ export type ApiKeySelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   permission?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
+  globalSpendLimit?: boolean
+  totalADASpent?: boolean
   deletedAt?: boolean
   PaymentRequest?: boolean | Prisma.ApiKey$PaymentRequestArgs<ExtArgs>
   PurchaseRequest?: boolean | Prisma.ApiKey$PurchaseRequestArgs<ExtArgs>
@@ -954,6 +1098,8 @@ export type ApiKeySelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   permission?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
+  globalSpendLimit?: boolean
+  totalADASpent?: boolean
   deletedAt?: boolean
 }, ExtArgs["result"]["apiKey"]>
 
@@ -967,6 +1113,8 @@ export type ApiKeySelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   permission?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
+  globalSpendLimit?: boolean
+  totalADASpent?: boolean
   deletedAt?: boolean
 }, ExtArgs["result"]["apiKey"]>
 
@@ -980,10 +1128,12 @@ export type ApiKeySelectScalar = {
   permission?: boolean
   networkLimit?: boolean
   usageLimited?: boolean
+  globalSpendLimit?: boolean
+  totalADASpent?: boolean
   deletedAt?: boolean
 }
 
-export type ApiKeyOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "token" | "tokenHash" | "status" | "permission" | "networkLimit" | "usageLimited" | "deletedAt", ExtArgs["result"]["apiKey"]>
+export type ApiKeyOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "token" | "tokenHash" | "status" | "permission" | "networkLimit" | "usageLimited" | "globalSpendLimit" | "totalADASpent" | "deletedAt", ExtArgs["result"]["apiKey"]>
 export type ApiKeyInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   PaymentRequest?: boolean | Prisma.ApiKey$PaymentRequestArgs<ExtArgs>
   PurchaseRequest?: boolean | Prisma.ApiKey$PurchaseRequestArgs<ExtArgs>
@@ -1012,6 +1162,8 @@ export type $ApiKeyPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     permission: $Enums.Permission
     networkLimit: $Enums.Network[]
     usageLimited: boolean
+    globalSpendLimit: bigint | null
+    totalADASpent: bigint
     deletedAt: Date | null
   }, ExtArgs["result"]["apiKey"]>
   composites: {}
@@ -1449,6 +1601,8 @@ export interface ApiKeyFieldRefs {
   readonly permission: Prisma.FieldRef<"ApiKey", 'Permission'>
   readonly networkLimit: Prisma.FieldRef<"ApiKey", 'Network[]'>
   readonly usageLimited: Prisma.FieldRef<"ApiKey", 'Boolean'>
+  readonly globalSpendLimit: Prisma.FieldRef<"ApiKey", 'BigInt'>
+  readonly totalADASpent: Prisma.FieldRef<"ApiKey", 'BigInt'>
   readonly deletedAt: Prisma.FieldRef<"ApiKey", 'DateTime'>
 }
     

@@ -26,6 +26,8 @@ export const queryAPIKeyStatusEndpointGet = readAuthenticatedEndpointFactory.bui
 		return {
 			...result,
 			RemainingUsageCredits: transformBigIntAmounts(result.RemainingUsageCredits),
+			globalSpendLimit: result.globalSpendLimit?.toString() ?? null,
+			totalADASpent: result.totalADASpent.toString(),
 		};
 	},
 });

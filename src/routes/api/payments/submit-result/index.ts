@@ -7,6 +7,9 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { checkGlobalSpendLimitOrThrow } from '@/repositories/creditTokens/global-limit.repository';
+import { InsufficientFundsError } from '@/utils/errors/insufficient-funds-error';
+import { CONSTANTS } from '@/utils/config';
 
 export const submitPaymentResultSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The network the payment was received on'),
@@ -60,6 +63,20 @@ export const submitPaymentResultEndpointPost = readAuthenticatedEndpointFactory.
 
 		if (payment.requestedById != ctx.id && ctx.permission != Permission.Admin) {
 			throw createHttpError(403, 'You are not authorized to submit results for this payment');
+		}
+
+		if (ctx.globalSpendLimit !== null) {
+			try {
+				await checkGlobalSpendLimitOrThrow({
+					apiKeyId: ctx.id,
+					estimatedLovelace: CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE,
+				});
+			} catch (error) {
+				if (error instanceof InsufficientFundsError) {
+					throw createHttpError(402, 'Global spend limit exceeded');
+				}
+				throw error;
+			}
 		}
 
 		const result = await prisma.paymentRequest.update({

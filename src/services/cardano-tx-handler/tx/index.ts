@@ -193,6 +193,26 @@ export async function handlePaymentTransactionCardanoV1(
 					resultHash: resultHash,
 				},
 			});
+			// Accumulate actual seller tx fees against the seller API key's global spend.
+			// If a fee buffer was pre-reserved by checkGlobalSpendLimitOrThrow, reconcile
+			// by subtracting the buffer and adding the actual fee (net adjustment is negative
+			// when actual < buffer, effectively returning the unused portion).
+			if (paymentRequest.requestedById !== null) {
+				const bufferWasReserved =
+					currentAction === PaymentAction.SubmitResultRequested ||
+					currentAction === PaymentAction.SubmitResultInitiated ||
+					currentAction === PaymentAction.AuthorizeRefundRequested ||
+					currentAction === PaymentAction.AuthorizeRefundInitiated;
+				const feeAdjustment = bufferWasReserved
+					? sellerCardanoFees - CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE
+					: sellerCardanoFees;
+				if (feeAdjustment !== 0n) {
+					await prisma.apiKey.update({
+						where: { id: paymentRequest.requestedById },
+						data: { totalADASpent: { increment: feeAdjustment } },
+					});
+				}
+			}
 			if (paymentRequest.currentTransactionId != null && paymentRequest.CurrentTransaction?.BlocksWallet != null) {
 				await prisma.transaction.update({
 					where: {
@@ -347,6 +367,25 @@ export async function handlePurchasingTransactionCardanoV1(
 					resultHash: resultHash,
 				},
 			});
+			// Accumulate actual buyer tx fees against the buyer API key's global spend.
+			// If a fee buffer was pre-reserved by checkGlobalSpendLimitOrThrow, reconcile
+			// by subtracting the buffer and adding the actual fee.
+			if (purchasingRequest.requestedById !== null) {
+				const bufferWasReserved =
+					currentAction === PurchasingAction.SetRefundRequestedRequested ||
+					currentAction === PurchasingAction.SetRefundRequestedInitiated ||
+					currentAction === PurchasingAction.UnSetRefundRequestedRequested ||
+					currentAction === PurchasingAction.UnSetRefundRequestedInitiated;
+				const feeAdjustment = bufferWasReserved
+					? buyerCardanoFees - CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE
+					: buyerCardanoFees;
+				if (feeAdjustment !== 0n) {
+					await prisma.apiKey.update({
+						where: { id: purchasingRequest.requestedById },
+						data: { totalADASpent: { increment: feeAdjustment } },
+					});
+				}
+			}
 			if (
 				purchasingRequest.currentTransactionId != null &&
 				purchasingRequest.CurrentTransaction?.BlocksWallet != null

@@ -10,6 +10,7 @@ export type AuthContext = {
 	permission: Permission;
 	networkLimit: Network[];
 	usageLimited: boolean;
+	globalSpendLimit: bigint | null;
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -71,12 +72,17 @@ export const authMiddleware = (minPermission: Permission) =>
 				if (apiKey.permission == Permission.Admin) {
 					usageLimited = false;
 				}
+				let globalSpendLimit: bigint | null = apiKey.globalSpendLimit ?? null;
+				if (apiKey.permission == Permission.Admin) {
+					globalSpendLimit = null;
+				}
 
 				return {
 					id: apiKey.id,
 					permission: apiKey.permission,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
+					globalSpendLimit: globalSpendLimit,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

@@ -83,6 +83,15 @@
                             "Revoked"
                         ],
                         "description": "Current status of the API key"
+                    },
+                    "globalSpendLimit": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Global ADA spend cap in lovelace (null = unlimited). Applies to all smart contract interactions."
+                    },
+                    "totalADASpent": {
+                        "type": "string",
+                        "description": "Cumulative ADA spent by this key across all smart contract interactions, in lovelace."
                     }
                 },
                 "required": [
@@ -92,7 +101,9 @@
                     "usageLimited",
                     "networkLimit",
                     "RemainingUsageCredits",
-                    "status"
+                    "status",
+                    "globalSpendLimit",
+                    "totalADASpent"
                 ]
             },
             "Wallet": {
@@ -3496,6 +3507,10 @@
                                         ],
                                         "default": "Read",
                                         "description": "The permission of the API key"
+                                    },
+                                    "globalSpendLimit": {
+                                        "type": "string",
+                                        "description": "Global spend limit in lovelace for all smart contract interactions. Omit or leave empty for unlimited."
                                     }
                                 },
                                 "required": [
@@ -3649,6 +3664,11 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "globalSpendLimit": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Update global spend limit in lovelace. Pass null to remove the limit."
                                     }
                                 },
                                 "required": [

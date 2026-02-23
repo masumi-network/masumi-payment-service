@@ -1952,6 +1952,8 @@ export const ApiKeyScalarFieldEnum = {
   permission: 'permission',
   networkLimit: 'networkLimit',
   usageLimited: 'usageLimited',
+  globalSpendLimit: 'globalSpendLimit',
+  totalADASpent: 'totalADASpent',
   deletedAt: 'deletedAt'
 } as const
 

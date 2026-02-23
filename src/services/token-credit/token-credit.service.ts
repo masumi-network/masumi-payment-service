@@ -52,12 +52,12 @@ export async function handlePurchaseCreditInit({
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {
-				throw createHttpError(400, 'Insufficient funds');
+				throw createHttpError(402, 'Insufficient funds or spend limit exceeded');
 			}
 			logger.warn(error);
 			await new Promise((resolve) => setTimeout(resolve, Math.random() * 300));
 			remainingAttempts--;
 		}
 	}
-	throw createHttpError(500, 'Error handling payment credit initialization, after please try again later');
+	throw createHttpError(500, 'Error handling payment credit initialization, please try again later');
 }

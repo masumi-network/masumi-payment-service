@@ -63,6 +63,15 @@ export const APIKeySchema = {
                 'Revoked'
             ],
             description: 'Current status of the API key'
+        },
+        globalSpendLimit: {
+            type: 'string',
+            nullable: true,
+            description: 'Global ADA spend cap in lovelace (null = unlimited). Applies to all smart contract interactions.'
+        },
+        totalADASpent: {
+            type: 'string',
+            description: 'Cumulative ADA spent by this key across all smart contract interactions, in lovelace.'
         }
     },
     required: [
@@ -72,7 +81,9 @@ export const APIKeySchema = {
         'usageLimited',
         'networkLimit',
         'RemainingUsageCredits',
-        'status'
+        'status',
+        'globalSpendLimit',
+        'totalADASpent'
     ]
 } as const;
 

@@ -593,14 +593,6 @@ export type UnitValueUncheckedUpdateManyWithoutApiKeyNestedInput = {
   deleteMany?: Prisma.UnitValueScalarWhereInput | Prisma.UnitValueScalarWhereInput[]
 }
 
-export type BigIntFieldUpdateOperationsInput = {
-  set?: bigint | number
-  increment?: bigint | number
-  decrement?: bigint | number
-  multiply?: bigint | number
-  divide?: bigint | number
-}
-
 export type NullableStringFieldUpdateOperationsInput = {
   set?: string | null
 }

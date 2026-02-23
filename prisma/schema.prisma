@@ -17,6 +17,8 @@ model ApiKey {
   permission            Permission
   networkLimit          Network[]
   usageLimited          Boolean           @default(false)
+  globalSpendLimit      BigInt?
+  totalADASpent         BigInt            @default(0)
   deletedAt             DateTime?
   PaymentRequest        PaymentRequest[]
   PurchaseRequest       PurchaseRequest[]

@@ -42,6 +42,14 @@ export type ApiKey = {
      * Current status of the API key
      */
     status: 'Active' | 'Revoked';
+    /**
+     * Global ADA spend cap in lovelace (null = unlimited). Applies to all smart contract interactions.
+     */
+    globalSpendLimit: string | null;
+    /**
+     * Cumulative ADA spent by this key across all smart contract interactions, in lovelace.
+     */
+    totalADASpent: string;
 };
 
 export type Wallet = {
@@ -1886,6 +1894,10 @@ export type PatchApiKeyData = {
          * The networks the API key is allowed to use
          */
         networkLimit?: Array<'Preprod' | 'Mainnet'>;
+        /**
+         * Update global spend limit in lovelace. Pass null to remove the limit.
+         */
+        globalSpendLimit?: string | null;
     };
     path?: never;
     query?: never;
@@ -1946,6 +1958,10 @@ export type PostApiKeyData = {
          * The permission of the API key
          */
         permission?: 'Read' | 'ReadAndPay' | 'Admin';
+        /**
+         * Global spend limit in lovelace for all smart contract interactions. Omit or leave empty for unlimited.
+         */
+        globalSpendLimit?: string;
     };
     path?: never;
     query?: never;
