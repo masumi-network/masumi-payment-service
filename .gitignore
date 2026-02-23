@@ -19,6 +19,12 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude/
 
+# Cursor settings
+.cursor/
+
+# Specify Settings
+.specify/
+
 /certs/
 
 frontend/.env
