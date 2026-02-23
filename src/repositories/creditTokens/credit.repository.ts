@@ -132,11 +132,13 @@ async function handlePurchaseCreditInit({
 			}
 
 			// Global spend limit check (atomic inside the existing Serializable tx)
+			const lovelaceCost = totalCost.get('') ?? 0n;
 			if (result.globalSpendLimit !== null) {
-				const lovelaceCost = totalCost.get('') ?? 0n;
 				if (result.totalADASpent + lovelaceCost > result.globalSpendLimit) {
 					throw new InsufficientFundsError('Global spend limit exceeded for id: ' + id);
 				}
+			}
+			if (lovelaceCost>0n) {
 				await prisma.apiKey.update({
 					where: { id },
 					data: { totalADASpent: { increment: lovelaceCost } },
