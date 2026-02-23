@@ -187,6 +187,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			usageLimited: mockApiKey.usageLimited,
 			networkLimit: mockApiKey.networkLimit,
+			globalSpendLimit: null,
 		});
 	});
 
@@ -210,6 +211,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			usageLimited: mockApiKey.usageLimited,
 			networkLimit: [],
+			globalSpendLimit: null,
 		});
 	});
 	it('should pass validation with valid admin token', async () => {
@@ -232,6 +234,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			networkLimit: [Network.Mainnet, Network.Preprod],
 			usageLimited: false,
+			globalSpendLimit: null,
 		});
 	});
 	it('should pass validation with valid network ', async () => {
@@ -255,6 +258,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			networkLimit: mockApiKey.networkLimit,
 			usageLimited: mockApiKey.usageLimited,
+			globalSpendLimit: null,
 		});
 	});
 });
