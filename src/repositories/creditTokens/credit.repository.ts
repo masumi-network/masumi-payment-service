@@ -138,7 +138,7 @@ async function handlePurchaseCreditInit({
 					throw new InsufficientFundsError('Global spend limit exceeded for id: ' + id);
 				}
 			}
-			if (lovelaceCost>0n) {
+			if (lovelaceCost > 0n) {
 				await prisma.apiKey.update({
 					where: { id },
 					data: { totalADASpent: { increment: lovelaceCost } },

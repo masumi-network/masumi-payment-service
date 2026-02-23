@@ -3014,7 +3014,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "globalSpendLimit": null,
+                                            "totalADASpent": "0"
                                         }
                                     }
                                 }
@@ -3416,7 +3418,9 @@
                                                             "amount": "10000000"
                                                         }
                                                     ],
-                                                    "status": "Active"
+                                                    "status": "Active",
+                                                    "globalSpendLimit": null,
+                                                    "totalADASpent": "0"
                                                 }
                                             ]
                                         },
@@ -3565,7 +3569,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "globalSpendLimit": null,
+                                            "totalADASpent": "0"
                                         }
                                     }
                                 }
@@ -3729,7 +3735,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Active"
+                                            "status": "Active",
+                                            "globalSpendLimit": null,
+                                            "totalADASpent": "0"
                                         }
                                     }
                                 }
@@ -3816,7 +3824,9 @@
                                                     "amount": "10000000"
                                                 }
                                             ],
-                                            "status": "Revoked"
+                                            "status": "Revoked",
+                                            "globalSpendLimit": null,
+                                            "totalADASpent": "0"
                                         }
                                     }
                                 }
