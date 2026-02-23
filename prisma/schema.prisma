@@ -633,8 +633,8 @@ model HydraHead {
   /// Hydra protocol head ID (assigned by Hydra node after Init)
   headId               String?            @unique
 
-  /// Current status of the Hydra head (null before head is initialized)
-  status               HydraHeadStatus?
+  /// Current status of the Hydra head
+  status               HydraHeadStatus    @default(Idle)
 
   /// Contestation period in seconds (configured on the Hydra node)
   contestationPeriod   Int                @default(60)
@@ -644,14 +644,19 @@ model HydraHead {
   closedAt             DateTime?
   finalizedAt          DateTime?
 
-  /// Last activity timestamp for idle detection / auto-close
-  lastActivityAt       DateTime?
+  /// Deadline after which fanout is possible (set when head is closed)
+  contestationDeadline DateTime?
 
-  /// Latest confirmed snapshot number
-  lastSnapshotNumber   Int                @default(0)
+  /// Latest activity timestamp for idle detection / auto-close
+  latestActivityAt     DateTime?
 
-  /// Hash of the latest confirmed snapshot UTXOs
-  lastSnapshotUtxoHash String?
+  /// Latest confirmed snapshot number (monotonically increasing while head is open)
+  latestSnapshotNumber Int                @default(0)
+
+  /// L1 transaction hashes for head lifecycle events
+  initTxHash           String?
+  closeTxHash          String?
+  fanoutTxHash         String?
 
   /// Last error message (if any)
   lastError            String?
@@ -662,9 +667,6 @@ model HydraHead {
 
   /// Transactions submitted through this head (L2)
   Transactions         Transaction[]
-
-  /// Confirmed snapshots within this head
-  Snapshots            HydraSnapshot[]
 
   @@index([status])
   @@index([hydraRelationId, status])
@@ -706,6 +708,9 @@ model HydraParticipant {
   /// Whether this participant has committed funds to the head
   hasCommitted           Boolean               @default(false)
 
+  /// L1 commit transaction hash (set after this participant commits to the head)
+  commitTxHash           String?
+
   /// Encrypted key material for operating this participant's Hydra node (1:1)
   hydraSecretId          String?               @unique
   HydraSecret            HydraSecret?          @relation(fields: [hydraSecretId], references: [id])
@@ -739,28 +744,3 @@ model HydraSecret {
   HydraParticipant        HydraParticipant?
 }
 
-/// Tracks a snapshot confirmed within a Hydra head.
-/// When the head fans out, these snapshots map L2 state back to L1.
-/// The final snapshot's UTXO set becomes the fanout transaction on L1.
-model HydraSnapshot {
-  id               String    @id @default(cuid())
-  createdAt        DateTime  @default(now())
-
-  hydraHeadId      String
-  HydraHead        HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
-
-  /// Snapshot number (monotonically increasing within a head)
-  snapshotNumber   Int
-
-  /// Hash of the confirmed UTXO set at this snapshot
-  utxoHash         String?
-
-  /// L1 fanout transaction hash (set after the head closes and fans out)
-  fanoutTxHash     String?
-
-  /// Whether this snapshot has been reconciled with L1 state
-  reconciledAt     DateTime?
-
-  @@unique([hydraHeadId, snapshotNumber])
-  @@index([hydraHeadId])
-}

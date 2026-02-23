@@ -8,4 +8,4 @@ export {
 	fetchUtxosFromHydra,
 	isHydraHeadReady,
 } from './hydra-manager';
-export { syncHydraHeads, recordSnapshot } from './hydra-sync.service';
+export { syncHydraHeads, updateSnapshot } from './hydra-sync.service';

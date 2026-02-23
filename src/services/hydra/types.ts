@@ -1,6 +1,6 @@
 /**
  * Hydra Head status enum.
- * Matches the @masumi-hydra package HydraHeadStatus.
+ * Values match the Prisma HydraHeadStatus enum and the @masumi-hydra package.
  */
 export enum HydraHeadStatus {
 	IDLE = 'Idle',
@@ -19,6 +19,8 @@ export enum HydraHeadStatus {
 export interface ActiveHydraHeadInfo {
 	/** HydraHead DB record ID (used as the cache key for HydraHead instances) */
 	id: string;
+	/** Hydra protocol head ID (from the Hydra node) */
+	headId: string;
 	/** WebSocket URL for our participant's Hydra node */
 	nodeUrl: string;
 	/** HTTP URL for our participant's Hydra node */

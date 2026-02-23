@@ -11,7 +11,7 @@ import { ActiveHydraHeadInfo, HydraHeadConfig, HydraHeadStatus, HydraSubmitResul
  * Replace with actual import when the package is integrated.
  */
 interface HydraHeadInstance {
-	status: HydraHeadStatus | null;
+	status: HydraHeadStatus;
 	mainNodeConnected: boolean;
 	mainNodeName: string;
 	participants: string[];
@@ -21,7 +21,6 @@ interface HydraHeadInstance {
 	init(): Promise<void>;
 	close(): Promise<void>;
 	fanout(): Promise<void>;
-	// TODO: Add more methods as needed (commit, cardanoTransaction, etc.)
 }
 
 // ============================================================
@@ -68,7 +67,7 @@ async function createHydraHeadInstance(_config: HydraHeadConfig): Promise<HydraH
 	logger.warn('[HydraManager] Using placeholder HydraHead instance');
 
 	const instance: HydraHeadInstance = {
-		status: null,
+		status: HydraHeadStatus.IDLE,
 		mainNodeConnected: false,
 		mainNodeName: _config.mainNodeName,
 		participants: _config.nodes.map((n) => n.name),
@@ -187,7 +186,7 @@ export async function submitTransactionToHydra(
 		return {
 			txHash: '',
 			accepted: false,
-			reason: `Hydra head is not open (status: ${instance.status ?? 'null'})`,
+			reason: `Hydra head is not open (status: ${instance.status})`,
 		};
 	}
 
