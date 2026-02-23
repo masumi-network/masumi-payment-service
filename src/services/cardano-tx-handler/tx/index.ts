@@ -197,12 +197,18 @@ export async function handlePaymentTransactionCardanoV1(
 			// If a fee buffer was pre-reserved by checkGlobalSpendLimitOrThrow, reconcile
 			// by subtracting the buffer and adding the actual fee (net adjustment is negative
 			// when actual < buffer, effectively returning the unused portion).
+			// The buffer is only reserved when the API key has a globalSpendLimit set.
 			if (paymentRequest.requestedById !== null) {
-				const bufferWasReserved =
+				const apiKey = await prisma.apiKey.findUnique({
+					where: { id: paymentRequest.requestedById },
+					select: { globalSpendLimit: true },
+				});
+				const actionReservesBuffer =
 					currentAction === PaymentAction.SubmitResultRequested ||
 					currentAction === PaymentAction.SubmitResultInitiated ||
 					currentAction === PaymentAction.AuthorizeRefundRequested ||
 					currentAction === PaymentAction.AuthorizeRefundInitiated;
+				const bufferWasReserved = actionReservesBuffer && apiKey?.globalSpendLimit !== null;
 				const feeAdjustment = bufferWasReserved
 					? sellerCardanoFees - CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE
 					: sellerCardanoFees;
@@ -370,12 +376,18 @@ export async function handlePurchasingTransactionCardanoV1(
 			// Accumulate actual buyer tx fees against the buyer API key's global spend.
 			// If a fee buffer was pre-reserved by checkGlobalSpendLimitOrThrow, reconcile
 			// by subtracting the buffer and adding the actual fee.
+			// The buffer is only reserved when the API key has a globalSpendLimit set.
 			if (purchasingRequest.requestedById !== null) {
-				const bufferWasReserved =
+				const apiKey = await prisma.apiKey.findUnique({
+					where: { id: purchasingRequest.requestedById },
+					select: { globalSpendLimit: true },
+				});
+				const actionReservesBuffer =
 					currentAction === PurchasingAction.SetRefundRequestedRequested ||
 					currentAction === PurchasingAction.SetRefundRequestedInitiated ||
 					currentAction === PurchasingAction.UnSetRefundRequestedRequested ||
 					currentAction === PurchasingAction.UnSetRefundRequestedInitiated;
+				const bufferWasReserved = actionReservesBuffer && apiKey?.globalSpendLimit !== null;
 				const feeAdjustment = bufferWasReserved
 					? buyerCardanoFees - CONSTANTS.GLOBAL_LIMIT_FEE_BUFFER_LOVELACE
 					: buyerCardanoFees;
