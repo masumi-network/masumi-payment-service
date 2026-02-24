@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 
+@source "../../node_modules/masumi-schema-validator-component/dist/index.mjs";
+
 @plugin 'tailwindcss-animate';
 
 @custom-variant dark (&:is(.dark *));
