@@ -188,6 +188,17 @@ model RegistryRequest {
   metadataVersion                Int
   tags                           String[]
   agentPricingId                 String            @unique
+  agentCardUrl                   String?
+  a2aProtocolVersions            String[]
+  a2aAgentVersion                String?
+  a2aDefaultInputModes           String[]
+  a2aDefaultOutputModes          String[]
+  a2aProviderName                String?
+  a2aProviderUrl                 String?
+  a2aDocumentationUrl            String?
+  a2aIconUrl                     String?
+  a2aCapabilitiesStreaming        Boolean?
+  a2aCapabilitiesPushNotifications Boolean?
   agentIdentifier                String?           @unique
   state                          RegistrationState
   registrationStateLastChangedAt DateTime          @default(now())

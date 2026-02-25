@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
-import { HotWalletType, Network, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { HotWalletType, Network, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -11,6 +11,7 @@ import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { mapRegistryRequestToOutput } from '@/routes/api/registry/utils';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -123,43 +124,6 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 			},
 		});
 
-		return {
-			...result,
-			Capability: {
-				name: result.capabilityName,
-				version: result.capabilityVersion,
-			},
-			Author: {
-				name: result.authorName,
-				contactEmail: result.authorContactEmail,
-				contactOther: result.authorContactOther,
-				organization: result.authorOrganization,
-			},
-			Legal: {
-				privacyPolicy: result.privacyPolicy,
-				terms: result.terms,
-				other: result.other,
-			},
-			AgentPricing:
-				result.Pricing.pricingType == PricingType.Fixed
-					? {
-							pricingType: PricingType.Fixed,
-							Pricing:
-								result.Pricing.FixedPricing?.Amounts.map((price) => ({
-									unit: price.unit,
-									amount: price.amount.toString(),
-								})) ?? [],
-						}
-					: {
-							pricingType: PricingType.Free,
-						},
-			Tags: result.tags,
-			CurrentTransaction: result.CurrentTransaction
-				? {
-						...result.CurrentTransaction,
-						fees: result.CurrentTransaction.fees?.toString() ?? null,
-					}
-				: null,
-		};
+		return mapRegistryRequestToOutput(result);
 	},
 });

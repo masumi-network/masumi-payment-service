@@ -884,9 +884,17 @@ export type AgentMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (currently only version 1 is supported)
+         * Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)
          */
         metadataVersion: number;
+        /**
+         * Agent Card URL for A2A agents. Null for standard agents
+         */
+        agentCardUrl?: string | null;
+        /**
+         * A2A protocol versions. Empty for standard agents
+         */
+        a2aProtocolVersions?: Array<string>;
     };
 };
 
@@ -954,9 +962,9 @@ export type AgentIdentifierMetadata = {
             version?: string | null;
         } | null;
         /**
-         * Author information for the agent
+         * Author information for the agent. Null for A2A agents
          */
-        Author: {
+        Author?: {
             /**
              * Name of the agent author
              */
@@ -973,7 +981,7 @@ export type AgentIdentifierMetadata = {
              * Organization of the author. Null if not provided
              */
             organization?: string | null;
-        };
+        } | null;
         /**
          * Legal information about the agent. Null if not provided
          */
@@ -992,9 +1000,9 @@ export type AgentIdentifierMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent
+         * Pricing information for the agent. Absent for A2A agents (pricing is off-chain)
          */
-        AgentPricing: {
+        AgentPricing?: {
             /**
              * Pricing type for the agent (Fixed)
              */
@@ -1023,9 +1031,17 @@ export type AgentIdentifierMetadata = {
          */
         image: string;
         /**
-         * Version of the metadata schema (currently only version 1 is supported)
+         * Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)
          */
         metadataVersion: number;
+        /**
+         * Agent Card URL for A2A agents. Null for standard agents
+         */
+        agentCardUrl?: string | null;
+        /**
+         * A2A protocol versions. Empty for standard agents
+         */
+        a2aProtocolVersions?: Array<string>;
     };
 };
 
@@ -1142,6 +1158,54 @@ export type RegistryEntry = {
      * Full agent identifier (policy ID + asset name). Null if not yet minted
      */
     agentIdentifier: string | null;
+    /**
+     * Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A
+     */
+    metadataVersion: number;
+    /**
+     * Agent Card URL for A2A agents. Null for standard agents
+     */
+    agentCardUrl: string | null;
+    /**
+     * A2A protocol versions. Empty for standard agents
+     */
+    a2aProtocolVersions: Array<string>;
+    /**
+     * Agent version from Agent Card. Null for standard agents
+     */
+    a2aAgentVersion: string | null;
+    /**
+     * A2A default input MIME types. Empty for standard agents
+     */
+    a2aDefaultInputModes: Array<string>;
+    /**
+     * A2A default output MIME types. Empty for standard agents
+     */
+    a2aDefaultOutputModes: Array<string>;
+    /**
+     * Agent Card provider name. Null for standard agents
+     */
+    a2aProviderName: string | null;
+    /**
+     * Agent Card provider URL. Null for standard agents
+     */
+    a2aProviderUrl: string | null;
+    /**
+     * Agent Card documentation URL. Null for standard agents
+     */
+    a2aDocumentationUrl: string | null;
+    /**
+     * Agent Card icon URL. Null for standard agents
+     */
+    a2aIconUrl: string | null;
+    /**
+     * Streaming capability. Null for standard agents
+     */
+    a2aCapabilitiesStreaming: boolean | null;
+    /**
+     * Push notification capability. Null for standard agents
+     */
+    a2aCapabilitiesPushNotifications: boolean | null;
     /**
      * Pricing information for the agent
      */
@@ -6818,6 +6882,81 @@ export type PostRegistryDeregisterResponses = {
 };
 
 export type PostRegistryDeregisterResponse = PostRegistryDeregisterResponses[keyof PostRegistryDeregisterResponses];
+
+export type PostRegistryA2aData = {
+    body?: {
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The payment key of a specific wallet used for the registration
+         */
+        sellingWalletVkey: string;
+        /**
+         * Name of the agent
+         */
+        name: string;
+        /**
+         * Base URL of the agent API for interactions
+         */
+        apiBaseUrl: string;
+        /**
+         * URL to the Agent Card JSON (typically /.well-known/agent-card.json)
+         */
+        agentCardUrl: string;
+        /**
+         * A2A protocol versions this agent supports
+         */
+        a2aProtocolVersions: Array<string>;
+        /**
+         * Description of the agent
+         */
+        description?: string;
+        /**
+         * Tags used in the registry metadata
+         */
+        Tags?: Array<string>;
+        /**
+         * Skip fetching and validating the Agent Card URL. Use with caution.
+         */
+        skipAgentCardValidation?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/registry/a2a';
+};
+
+export type PostRegistryA2aErrors = {
+    /**
+     * Bad Request (invalid input or Agent Card validation failed)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type PostRegistryA2aResponses = {
+    /**
+     * A2A agent registered
+     */
+    200: {
+        status: string;
+        data: RegistryEntry;
+    };
+};
+
+export type PostRegistryA2aResponse = PostRegistryA2aResponses[keyof PostRegistryA2aResponses];
 
 export type GetPaymentSourceData = {
     body?: never;

@@ -73,6 +73,21 @@ export const registryRequestOutputSchema = z
 			.max(250)
 			.nullable()
 			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
+		metadataVersion: z.number().int().describe('Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A'),
+		agentCardUrl: z.string().nullable().describe('Agent Card URL for A2A agents. Null for standard agents'),
+		a2aProtocolVersions: z.array(z.string()).describe('A2A protocol versions. Empty for standard agents'),
+		a2aAgentVersion: z.string().nullable().describe('Agent version from Agent Card. Null for standard agents'),
+		a2aDefaultInputModes: z.array(z.string()).describe('A2A default input MIME types. Empty for standard agents'),
+		a2aDefaultOutputModes: z.array(z.string()).describe('A2A default output MIME types. Empty for standard agents'),
+		a2aProviderName: z.string().nullable().describe('Agent Card provider name. Null for standard agents'),
+		a2aProviderUrl: z.string().nullable().describe('Agent Card provider URL. Null for standard agents'),
+		a2aDocumentationUrl: z.string().nullable().describe('Agent Card documentation URL. Null for standard agents'),
+		a2aIconUrl: z.string().nullable().describe('Agent Card icon URL. Null for standard agents'),
+		a2aCapabilitiesStreaming: z.boolean().nullable().describe('Streaming capability. Null for standard agents'),
+		a2aCapabilitiesPushNotifications: z
+			.boolean()
+			.nullable()
+			.describe('Push notification capability. Null for standard agents'),
 		AgentPricing: z
 			.object({
 				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),

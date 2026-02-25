@@ -341,6 +341,9 @@ export default function AIAgentsPage() {
                       Name
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Type
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Added
                     </th>
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -367,7 +370,7 @@ export default function AIAgentsPage() {
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -403,6 +406,11 @@ export default function AIAgentsPage() {
                           <div className="text-xs text-muted-foreground truncate">
                             {agent.description}
                           </div>
+                        </td>
+                        <td className="p-4">
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {agent.metadataVersion === 2 ? 'A2A' : 'Standard'}
+                          </Badge>
                         </td>
                         <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                         <td className="p-4">

@@ -12,10 +12,15 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { PaymentSourceExtended, postRegistry, SellingWallet } from '@/lib/api/generated';
+import {
+  PaymentSourceExtended,
+  postRegistry,
+  postRegistryA2A,
+  SellingWallet,
+} from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
-import { Trash2 } from 'lucide-react';
+import { Trash2, AlertTriangle } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -30,6 +35,7 @@ interface RegisterAIAgentDialogProps {
   onSuccess: () => void;
 }
 
+// ─── Standard (v1) schema ─────────────────────────────────────────────────────
 const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
   return z.object({
@@ -54,84 +60,113 @@ const exampleOutputSchema = z.object({
 
 const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
   const priceSchema = createPriceSchema(network);
-  return z.object({
-    apiUrl: z
-      .string()
-      .url('API URL must be a valid URL')
-      .min(1, 'API URL is required')
-      .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-        message: 'API URL must start with http:// or https://',
-      }),
-    name: z.string().min(1, 'Name is required'),
-    description: z
-      .string()
-      .min(1, 'Description is required')
-      .max(250, 'Description must be less than 250 characters'),
-    selectedWallet: z.string().min(1, 'Wallet is required'),
-    prices: z.array(priceSchema).min(1, 'At least one price is required'),
-    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
-    isFree: z.boolean().optional(),
-    // Additional Fields
-    authorName: z
-      .string()
-      .max(250, 'Author name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    authorEmail: z
-      .string()
-      .email('Author email must be a valid email')
-      .max(250, 'Author email must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    organization: z
-      .string()
-      .max(250, 'Organization must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    contactOther: z
-      .string()
-      .max(250, 'Contact other must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-
-    termsOfUseUrl: z
-      .string()
-      .url('Terms of use URL must be a valid URL')
-      .max(250, 'Terms of use URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    privacyPolicyUrl: z
-      .string()
-      .url('Privacy policy URL must be a valid URL')
-      .max(250, 'Privacy policy URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    otherUrl: z
-      .string()
-      .url('Other URL must be a valid URL')
-      .max(250, 'Other URL must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-
-    capabilityName: z
-      .string()
-      .max(250, 'Capability name must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-    capabilityVersion: z
-      .string()
-      .max(250, 'Capability version must be less than 250 characters')
-      .optional()
-      .or(z.literal('')),
-
-    exampleOutputs: z.array(exampleOutputSchema).optional(),
-  });
+  return z
+    .object({
+      apiUrl: z
+        .string()
+        .url('API URL must be a valid URL')
+        .min(1, 'API URL is required')
+        .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+          message: 'API URL must start with http:// or https://',
+        }),
+      name: z.string().min(1, 'Name is required'),
+      description: z
+        .string()
+        .min(1, 'Description is required')
+        .max(250, 'Description must be less than 250 characters'),
+      selectedWallet: z.string().min(1, 'Wallet is required'),
+      prices: z.array(priceSchema),
+      tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+      isFree: z.boolean().optional(),
+      authorName: z
+        .string()
+        .max(250, 'Author name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      authorEmail: z
+        .string()
+        .email('Author email must be a valid email')
+        .max(250, 'Author email must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      organization: z
+        .string()
+        .max(250, 'Organization must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      contactOther: z
+        .string()
+        .max(250, 'Contact other must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      termsOfUseUrl: z
+        .string()
+        .url('Terms of use URL must be a valid URL')
+        .max(250, 'Terms of use URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      privacyPolicyUrl: z
+        .string()
+        .url('Privacy policy URL must be a valid URL')
+        .max(250, 'Privacy policy URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      otherUrl: z
+        .string()
+        .url('Other URL must be a valid URL')
+        .max(250, 'Other URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      capabilityName: z
+        .string()
+        .max(250, 'Capability name must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      capabilityVersion: z
+        .string()
+        .max(250, 'Capability version must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      exampleOutputs: z.array(exampleOutputSchema).optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (!data.isFree && data.prices.length < 1) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'At least one price is required',
+          path: ['prices'],
+        });
+      }
+    });
 };
 
+// ─── A2A (v2) schema ──────────────────────────────────────────────────────────
+const a2aAgentSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  apiUrl: z.string().url('API URL must be a valid URL').min(1, 'API URL is required'),
+  agentCardUrl: z
+    .string()
+    .url('Agent Card URL must be a valid URL')
+    .min(1, 'Agent Card URL is required'),
+  a2aProtocolVersions: z
+    .array(z.string().min(1))
+    .min(1, 'At least one A2A protocol version is required'),
+  selectedWallet: z.string().min(1, 'Wallet is required'),
+  description: z
+    .string()
+    .max(250, 'Description must be less than 250 characters')
+    .optional()
+    .or(z.literal('')),
+  tags: z.array(z.string().min(1)).optional(),
+  skipAgentCardValidation: z.boolean().optional(),
+});
+
 type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
+type A2AFormValues = z.infer<typeof a2aAgentSchema>;
 
 export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [agentType, setAgentType] = useState<'Standard' | 'A2A'>('Standard');
   const [sellingWallets, setSellingWallets] = useState<
     { wallet: SellingWallet; balance: number }[]
   >([]);
@@ -140,6 +175,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   const { apiClient, network } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
+  // ── Standard form ──────────────────────────────────────────────────────────
   const {
     register,
     handleSubmit,
@@ -175,19 +211,41 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     fields: priceFields,
     append: appendPrice,
     remove: removePrice,
-  } = useFieldArray({
-    control,
-    name: 'prices',
-  });
+  } = useFieldArray({ control, name: 'prices' });
 
   const {
     fields: exampleOutputFields,
     append: appendExampleOutput,
     remove: removeExampleOutput,
-  } = useFieldArray({
-    control,
-    name: 'exampleOutputs',
+  } = useFieldArray({ control, name: 'exampleOutputs' });
+
+  // ── A2A form ───────────────────────────────────────────────────────────────
+  const {
+    register: registerA2A,
+    handleSubmit: handleSubmitA2A,
+    control: controlA2A,
+    setValue: setValueA2A,
+    reset: resetA2A,
+    formState: { errors: errorsA2A },
+    watch: watchA2A,
+  } = useForm<A2AFormValues>({
+    resolver: zodResolver(a2aAgentSchema),
+    defaultValues: {
+      name: '',
+      apiUrl: '',
+      agentCardUrl: '',
+      a2aProtocolVersions: [],
+      selectedWallet: '',
+      description: '',
+      tags: [],
+      skipAgentCardValidation: false,
+    },
   });
+
+  const a2aProtocolVersions = watchA2A('a2aProtocolVersions') ?? [];
+  const [a2aVersionInput, setA2aVersionInput] = useState('');
+  const a2aTags = watchA2A('tags') ?? [];
+  const [a2aTagInput, setA2aTagInput] = useState('');
 
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
@@ -199,6 +257,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
 
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
+
   useEffect(() => {
     setSellingWallets(
       wallets
@@ -219,9 +278,12 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   useEffect(() => {
     if (open) {
       reset();
+      resetA2A();
+      setAgentType('Standard');
     }
-  }, [open, reset]);
+  }, [open, reset, resetA2A]);
 
+  // ── Standard submit ────────────────────────────────────────────────────────
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
@@ -242,11 +304,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           return;
         }
 
-        const legal: {
-          privacyPolicy?: string;
-          terms?: string;
-          other?: string;
-        } = {};
+        const legal: { privacyPolicy?: string; terms?: string; other?: string } = {};
         if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
         if (data.termsOfUseUrl) legal.terms = data.termsOfUseUrl;
         if (data.otherUrl) legal.other = data.otherUrl;
@@ -256,19 +314,14 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           contactEmail?: string;
           contactOther?: string;
           organization?: string;
-        } = {
-          name: data.authorName || 'Default Author', // Default in case it's empty
-        };
+        } = { name: data.authorName || 'Default Author' };
         if (data.authorEmail) author.contactEmail = data.authorEmail;
         if (data.contactOther) author.contactOther = data.contactOther;
         if (data.organization) author.organization = data.organization;
 
         const capability =
           data.capabilityName && data.capabilityVersion
-            ? {
-                name: data.capabilityName,
-                version: data.capabilityVersion,
-              }
+            ? { name: data.capabilityName, version: data.capabilityVersion }
             : { name: 'Custom Agent', version: '1.0.0' };
 
         const response = await postRegistry({
@@ -283,14 +336,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             Capability: capability,
             AgentPricing: (() => {
               const isFreeAgent = data.isFree;
-
-              if (isFreeAgent) {
-                return {
-                  pricingType: 'Free',
-                  Pricing: [],
-                };
-              }
-
+              if (isFreeAgent) return { pricingType: 'Free', Pricing: [] };
               return {
                 pricingType: 'Fixed',
                 Pricing: data.prices.map((price) => {
@@ -298,10 +344,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                     price.unit === stablecoinUnit
                       ? getActiveStablecoinConfig(network).fullAssetId
                       : price.unit;
-                  return {
-                    unit,
-                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
-                  };
+                  return { unit, amount: (parseFloat(price.amount) * 1_000_000).toString() };
                 }),
               };
             })(),
@@ -324,9 +367,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         onSuccess();
         onClose();
         reset();
-      } catch (error: any) {
-        console.error('Error registering AI agent:', error);
-        toast.error(error?.message ?? 'Failed to register AI agent');
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : 'Failed to register AI agent');
       } finally {
         setIsLoading(false);
       }
@@ -343,21 +385,134 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     ],
   );
 
-  // Tag management
+  // ── A2A submit ─────────────────────────────────────────────────────────────
+  const onSubmitA2A = useCallback(
+    async (data: A2AFormValues) => {
+      try {
+        setIsLoading(true);
+        const selectedWalletBalance = sellingWallets.find(
+          (w) => w.wallet.walletVkey == data.selectedWallet,
+        )?.balance;
+        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+          toast.error('Insufficient balance in selected wallet');
+          return;
+        }
+
+        const response = await postRegistryA2A({
+          client: apiClient,
+          body: {
+            network: network,
+            sellingWalletVkey: data.selectedWallet,
+            name: data.name,
+            apiBaseUrl: data.apiUrl,
+            agentCardUrl: data.agentCardUrl,
+            a2aProtocolVersions: data.a2aProtocolVersions,
+            description: data.description || undefined,
+            Tags: data.tags && data.tags.length > 0 ? data.tags : undefined,
+            skipAgentCardValidation: data.skipAgentCardValidation ?? false,
+          },
+        });
+
+        if (!response.data?.data?.id) {
+          throw new Error('Failed to register A2A agent: Invalid response from server');
+        }
+
+        toast.success('A2A agent registered successfully');
+        onSuccess();
+        onClose();
+        resetA2A();
+      } catch (error: unknown) {
+        toast.error(error instanceof Error ? error.message : 'Failed to register A2A agent');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [sellingWallets, apiClient, network, onSuccess, onClose, resetA2A],
+  );
+
+  // ── Tag helpers (Standard) ─────────────────────────────────────────────────
   const handleAddTag = () => {
     const tag = tagInput.trim();
-    if (tag && !tags.includes(tag)) {
-      setValue('tags', [...tags, tag]);
-    }
+    if (tag && !tags.includes(tag)) setValue('tags', [...tags, tag]);
     setTagInput('');
   };
-
   const handleRemoveTag = (tagToRemove: string) => {
     setValue(
       'tags',
-      tags.filter((tag) => tag !== tagToRemove),
+      tags.filter((t) => t !== tagToRemove),
     );
   };
+
+  // ── Version / tag helpers (A2A) ────────────────────────────────────────────
+  const handleAddA2AVersion = () => {
+    const v = a2aVersionInput.trim();
+    if (v && !a2aProtocolVersions.includes(v))
+      setValueA2A('a2aProtocolVersions', [...a2aProtocolVersions, v]);
+    setA2aVersionInput('');
+  };
+  const handleRemoveA2AVersion = (v: string) => {
+    setValueA2A(
+      'a2aProtocolVersions',
+      a2aProtocolVersions.filter((x) => x !== v),
+    );
+  };
+  const handleAddA2ATag = () => {
+    const tag = a2aTagInput.trim();
+    if (tag && !a2aTags.includes(tag)) setValueA2A('tags', [...a2aTags, tag]);
+    setA2aTagInput('');
+  };
+  const handleRemoveA2ATag = (tag: string) => {
+    setValueA2A(
+      'tags',
+      a2aTags.filter((t) => t !== tag),
+    );
+  };
+
+  // ── Shared wallet selector ─────────────────────────────────────────────────
+  const renderWalletSelect = (
+    fieldName: 'selectedWallet',
+    ctrl: typeof control | typeof controlA2A,
+    errs: typeof errors | typeof errorsA2A,
+  ) => (
+    <div className="space-y-2">
+      <label className="text-sm font-medium">
+        Linked wallet <span className="text-red-500">*</span>
+      </label>
+      <Controller
+        control={ctrl as typeof control}
+        name={fieldName}
+        render={({ field }) => (
+          <Select value={field.value} onValueChange={field.onChange}>
+            <SelectTrigger
+              disabled={isLoadingWallets}
+              className={`${(errs as typeof errors).selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <SelectValue
+                placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {sellingWallets.map((wallet) => (
+                <SelectItem
+                  disabled={wallet.balance <= 3000000}
+                  key={wallet.wallet.id}
+                  value={wallet.wallet.walletVkey}
+                >
+                  {wallet.wallet.note
+                    ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                    : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                  {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      />
+      {(errs as typeof errors).selectedWallet && (
+        <p className="text-sm text-red-500">{(errs as typeof errors).selectedWallet?.message}</p>
+      )}
+    </div>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -368,221 +523,532 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
             This registers your agent on the Masumi Network, making it visible to everyone.
           </p>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              API URL <span className="text-red-500">*</span>
-            </label>
-            <Input
-              {...register('apiUrl')}
-              placeholder="Enter the API URL for your agent"
-              className={errors.apiUrl ? 'border-red-500' : ''}
-            />
-            {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
-          </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Name <span className="text-red-500">*</span>
-            </label>
-            <Input
-              {...register('name')}
-              placeholder="Enter a name for your agent"
-              className={errors.name ? 'border-red-500' : ''}
-            />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
-          </div>
+        {/* ── Type toggle ─────────────────────────────────────────────────── */}
+        <div className="flex gap-2 p-1 bg-muted rounded-lg w-fit">
+          <button
+            type="button"
+            onClick={() => setAgentType('Standard')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              agentType === 'Standard'
+                ? 'bg-background shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Standard
+          </button>
+          <button
+            type="button"
+            onClick={() => setAgentType('A2A')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              agentType === 'A2A'
+                ? 'bg-background shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            A2A
+          </button>
+        </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Description <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
-              <Textarea
-                {...register('description')}
-                placeholder="Describe what your agent does"
-                rows={3}
-                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
-                maxLength={250}
-              />
-              <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
-                {watch('description')?.length || 0}/250
-              </div>
-            </div>
-            {errors.description && (
-              <p className="text-sm text-red-500">{errors.description.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Linked wallet <span className="text-red-500">*</span>
-            </label>
-            <Controller
-              control={control}
-              name="selectedWallet"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger
-                    disabled={isLoadingWallets}
-                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <SelectValue
-                      placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sellingWallets.map((wallet) => (
-                      <SelectItem
-                        disabled={wallet.balance <= 3000000}
-                        key={wallet.wallet.id}
-                        value={wallet.wallet.walletVkey}
-                      >
-                        {wallet.wallet.note
-                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
-                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
-                        {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.selectedWallet && (
-              <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
-            )}
-          </div>
-          {/* Free Agent Toggle */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Controller
-                control={control}
-                name="isFree"
-                render={({ field }) => (
-                  <input
-                    type="checkbox"
-                    id="isFree"
-                    checked={field.value || false}
-                    onChange={(e) => {
-                      field.onChange(e.target.checked);
-                      setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
-                    }}
-                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                  />
-                )}
-              />
-              <label htmlFor="isFree" className="text-sm font-medium">
-                This is a free agent (no cost for interactions)
-              </label>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+        {/* ══════════════════════════════════════════════════════════════════
+            STANDARD FORM
+           ══════════════════════════════════════════════════════════════════ */}
+        {agentType === 'Standard' && (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-2">
               <label className="text-sm font-medium">
-                Prices <span className="text-red-500">*</span>
+                API URL <span className="text-red-500">*</span>
               </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={watch('isFree')}
-                onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
-              >
-                Add Price
-              </Button>
+              <Input
+                {...register('apiUrl')}
+                placeholder="Enter the API URL for your agent"
+                className={errors.apiUrl ? 'border-red-500' : ''}
+              />
+              {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
             </div>
-            {priceFields.map((field, index) => (
-              <div key={field.id} className="flex gap-2 items-start">
-                <div className="flex-1 space-y-2">
-                  <Controller
-                    control={control}
-                    name={`prices.${index}.unit` as const}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={watch('isFree')}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select token" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="lovelace">
-                            {formatFundUnit('lovelace', network)}
-                          </SelectItem>
-                          <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Name <span className="text-red-500">*</span>
+              </label>
+              <Input
+                {...register('name')}
+                placeholder="Enter a name for your agent"
+                className={errors.name ? 'border-red-500' : ''}
+              />
+              {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Description <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <Textarea
+                  {...register('description')}
+                  placeholder="Describe what your agent does"
+                  rows={3}
+                  className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
+                  maxLength={250}
+                />
+                <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                  {watch('description')?.length || 0}/250
                 </div>
-                <div className="flex-1 space-y-2">
+              </div>
+              {errors.description && (
+                <p className="text-sm text-red-500">{errors.description.message}</p>
+              )}
+            </div>
+
+            {renderWalletSelect('selectedWallet', control, errors)}
+
+            {/* Free Agent Toggle */}
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Controller
+                  control={control}
+                  name="isFree"
+                  render={({ field }) => (
+                    <input
+                      type="checkbox"
+                      id="isFree"
+                      checked={field.value || false}
+                      onChange={(e) => {
+                        field.onChange(e.target.checked);
+                        setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
+                      }}
+                      className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                    />
+                  )}
+                />
+                <label htmlFor="isFree" className="text-sm font-medium">
+                  This is a free agent (no cost for interactions)
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  Prices <span className="text-red-500">*</span>
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={watch('isFree')}
+                  onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
+                >
+                  Add Price
+                </Button>
+              </div>
+              {priceFields.map((field, index) => (
+                <div key={field.id} className="flex gap-2 items-start">
+                  <div className="flex-1 space-y-2">
+                    <Controller
+                      control={control}
+                      name={`prices.${index}.unit` as const}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={watch('isFree')}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select token" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="lovelace">
+                              {formatFundUnit('lovelace', network)}
+                            </SelectItem>
+                            <SelectItem value={network === 'Mainnet' ? 'USDM' : 'tUSDM'}>
+                              {formatFundUnit('USDM', network)}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      onWheel={(e) => e.currentTarget.blur()}
+                      disabled={watch('isFree')}
+                      value={watch(`prices.${index}.amount`) || ''}
+                      {...register(`prices.${index}.amount` as const)}
+                      min="0"
+                      step="0.000001"
+                    />
+                    {errors.prices &&
+                      Array.isArray(errors.prices) &&
+                      errors.prices[index]?.amount && (
+                        <p className="text-xs text-red-500">
+                          {errors.prices[index]?.amount?.message}
+                        </p>
+                      )}
+                  </div>
+                  {index > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removePrice(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {errors.prices && typeof errors.prices.message === 'string' && (
+                <p className="text-sm text-red-500">{errors.prices.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Tags <span className="text-red-500">*</span>
+              </label>
+              <div>
+                <div className="flex gap-2">
                   <Input
-                    type="number"
-                    placeholder="0.00"
-                    onWheel={(e) => e.currentTarget.blur()}
-                    disabled={watch('isFree')}
-                    value={watch(`prices.${index}.amount`) || ''}
-                    {...register(`prices.${index}.amount` as const)}
-                    min="0"
-                    step="0.000001"
+                    placeholder="Add a tag"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                    }}
+                    className={errors.tags ? 'border-red-500' : ''}
                   />
-                  {errors.prices &&
-                    Array.isArray(errors.prices) &&
-                    errors.prices[index]?.amount && (
-                      <p className="text-xs text-red-500">
-                        {errors.prices[index]?.amount?.message}
-                      </p>
-                    )}
-                </div>
-                {index > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removePrice(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
+                  <Button type="button" variant="outline" onClick={handleAddTag}>
+                    Add
                   </Button>
+                </div>
+                {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
+                {tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {tags.map((tag: string) => (
+                      <Badge
+                        key={tag}
+                        variant="secondary"
+                        className="cursor-pointer"
+                        onClick={() => handleRemoveTag(tag)}
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-            {errors.prices && typeof errors.prices.message === 'string' && (
-              <p className="text-sm text-red-500">{errors.prices.message}</p>
-            )}
-          </div>
+            </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Tags <span className="text-red-500">*</span>
-            </label>
-            <div>
+            <div className="flex items-center gap-4 pt-2">
+              <Separator className="flex-1" />
+              <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                Additional Fields
+              </h3>
+              <Separator className="flex-1" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Author Name</label>
+              <Input
+                {...register('authorName')}
+                placeholder="Enter the author's name"
+                className={errors.authorName ? 'border-red-500' : ''}
+              />
+              {errors.authorName && (
+                <p className="text-sm text-red-500">{errors.authorName.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Author Email</label>
+              <Input
+                {...register('authorEmail')}
+                type="email"
+                placeholder="Enter the author's email address"
+                className={errors.authorEmail ? 'border-red-500' : ''}
+              />
+              {errors.authorEmail && (
+                <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Organization</label>
+              <Input
+                {...register('organization')}
+                placeholder="Enter the organization name"
+                className={errors.organization ? 'border-red-500' : ''}
+              />
+              {errors.organization && (
+                <p className="text-sm text-red-500">{errors.organization.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
+              <Input
+                {...register('contactOther')}
+                placeholder="Enter other contact"
+                className={errors.contactOther ? 'border-red-500' : ''}
+              />
+              {errors.contactOther && (
+                <p className="text-sm text-red-500">{errors.contactOther.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Terms of Use URL</label>
+              <Input
+                {...register('termsOfUseUrl')}
+                placeholder="Enter the terms of use URL"
+                className={errors.termsOfUseUrl ? 'border-red-500' : ''}
+              />
+              {errors.termsOfUseUrl && (
+                <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Privacy Policy URL</label>
+              <Input
+                {...register('privacyPolicyUrl')}
+                placeholder="Enter the privacy policy URL"
+                className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
+              />
+              {errors.privacyPolicyUrl && (
+                <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Other URL (Support...)</label>
+              <Input
+                {...register('otherUrl')}
+                placeholder="Enter the other URL"
+                className={errors.otherUrl ? 'border-red-500' : ''}
+              />
+              {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Capability Name</label>
+                <Input
+                  {...register('capabilityName')}
+                  placeholder="e.g., Text Generation"
+                  className={errors.capabilityName ? 'border-red-500' : ''}
+                />
+                {errors.capabilityName && (
+                  <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Capability Version</label>
+                <Input
+                  {...register('capabilityVersion')}
+                  placeholder="e.g., 1.0.0"
+                  className={errors.capabilityVersion ? 'border-red-500' : ''}
+                />
+                {errors.capabilityVersion && (
+                  <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4 border rounded-md p-4 bg-muted/40">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Example Outputs</label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
+                >
+                  Add Example
+                </Button>
+              </div>
+              {exampleOutputFields.map((field, index) => (
+                <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Input
+                      placeholder="Name"
+                      {...register(`exampleOutputs.${index}.name` as const)}
+                    />
+                    <Input
+                      placeholder="URL"
+                      {...register(`exampleOutputs.${index}.url` as const)}
+                    />
+                    <Input
+                      placeholder="MIME Type"
+                      {...register(`exampleOutputs.${index}.mimeType` as const)}
+                    />
+                  </div>
+                  {index >= 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeExampleOutput(index)}
+                      className="absolute top-2 right-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end items-center gap-2">
+              <Button variant="outline" onClick={onClose} type="button">
+                Cancel
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={isLoading || isLoadingWallets}>
+                  {isLoading ? 'Registering...' : 'Register'}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════════
+            A2A FORM
+           ══════════════════════════════════════════════════════════════════ */}
+        {agentType === 'A2A' && (
+          <form onSubmit={handleSubmitA2A(onSubmitA2A)} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Name <span className="text-red-500">*</span>
+              </label>
+              <Input
+                {...registerA2A('name')}
+                placeholder="Enter a name for your agent"
+                className={errorsA2A.name ? 'border-red-500' : ''}
+              />
+              {errorsA2A.name && <p className="text-sm text-red-500">{errorsA2A.name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                API Base URL <span className="text-red-500">*</span>
+              </label>
+              <Input
+                {...registerA2A('apiUrl')}
+                placeholder="https://api.example.com"
+                className={errorsA2A.apiUrl ? 'border-red-500' : ''}
+              />
+              {errorsA2A.apiUrl && (
+                <p className="text-sm text-red-500">{errorsA2A.apiUrl.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Agent Card URL <span className="text-red-500">*</span>
+              </label>
+              <Input
+                {...registerA2A('agentCardUrl')}
+                placeholder="https://api.example.com/.well-known/agent-card.json"
+                className={errorsA2A.agentCardUrl ? 'border-red-500' : ''}
+              />
+              {errorsA2A.agentCardUrl && (
+                <p className="text-sm text-red-500">{errorsA2A.agentCardUrl.message}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                URL to your Agent Card JSON file (typically /.well-known/agent-card.json)
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                A2A Protocol Versions <span className="text-red-500">*</span>
+              </label>
               <div className="flex gap-2">
                 <Input
-                  placeholder="Add a tag"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
+                  placeholder="e.g. 0.2.5"
+                  value={a2aVersionInput}
+                  onChange={(e) => setA2aVersionInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      handleAddTag();
+                      handleAddA2AVersion();
                     }
                   }}
-                  className={errors.tags ? 'border-red-500' : ''}
+                  className={errorsA2A.a2aProtocolVersions ? 'border-red-500' : ''}
                 />
-                <Button type="button" variant="outline" onClick={handleAddTag}>
+                <Button type="button" variant="outline" onClick={handleAddA2AVersion}>
                   Add
                 </Button>
               </div>
-              {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
-              {tags.length > 0 && (
+              {errorsA2A.a2aProtocolVersions && (
+                <p className="text-sm text-red-500">{errorsA2A.a2aProtocolVersions.message}</p>
+              )}
+              {a2aProtocolVersions.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {tags.map((tag: string) => (
+                  {a2aProtocolVersions.map((v) => (
+                    <Badge
+                      key={v}
+                      variant="secondary"
+                      className="cursor-pointer font-mono"
+                      onClick={() => handleRemoveA2AVersion(v)}
+                    >
+                      {v} ×
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {renderWalletSelect('selectedWallet', controlA2A, errorsA2A)}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Description</label>
+              <div className="relative">
+                <Textarea
+                  {...registerA2A('description')}
+                  placeholder="Describe what your agent does"
+                  rows={3}
+                  className="resize-none overflow-y-auto h-[84px]"
+                  maxLength={250}
+                />
+                <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                  {watchA2A('description')?.length || 0}/250
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tags</label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add a tag"
+                  value={a2aTagInput}
+                  onChange={(e) => setA2aTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddA2ATag();
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" onClick={handleAddA2ATag}>
+                  Add
+                </Button>
+              </div>
+              {a2aTags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {a2aTags.map((tag) => (
                     <Badge
                       key={tag}
                       variant="secondary"
                       className="cursor-pointer"
-                      onClick={() => handleRemoveTag(tag)}
+                      onClick={() => handleRemoveA2ATag(tag)}
                     >
                       {tag}
                     </Badge>
@@ -590,175 +1056,48 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
                 </div>
               )}
             </div>
-          </div>
 
-          <div className="flex items-center gap-4 pt-2">
-            <Separator className="flex-1" />
-            <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-              Additional Fields
-            </h3>
-            <Separator className="flex-1" />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Author Name</label>
-            <Input
-              {...register('authorName')}
-              placeholder="Enter the author's name"
-              className={errors.authorName ? 'border-red-500' : ''}
-            />
-            {errors.authorName && (
-              <p className="text-sm text-red-500">{errors.authorName.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Author Email</label>
-            <Input
-              {...register('authorEmail')}
-              type="email"
-              placeholder="Enter the author's email address"
-              className={errors.authorEmail ? 'border-red-500' : ''}
-            />
-            {errors.authorEmail && (
-              <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Organization</label>
-            <Input
-              {...register('organization')}
-              placeholder="Enter the organization name"
-              className={errors.organization ? 'border-red-500' : ''}
-            />
-            {errors.organization && (
-              <p className="text-sm text-red-500">{errors.organization.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
-            <Input
-              {...register('contactOther')}
-              placeholder="Enter other contact"
-              className={errors.contactOther ? 'border-red-500' : ''}
-            />
-            {errors.contactOther && (
-              <p className="text-sm text-red-500">{errors.contactOther.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Terms of Use URL</label>
-            <Input
-              {...register('termsOfUseUrl')}
-              placeholder="Enter the terms of use URL"
-              className={errors.termsOfUseUrl ? 'border-red-500' : ''}
-            />
-            {errors.termsOfUseUrl && (
-              <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Privacy Policy URL</label>
-            <Input
-              {...register('privacyPolicyUrl')}
-              placeholder="Enter the privacy policy URL"
-              className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
-            />
-            {errors.privacyPolicyUrl && (
-              <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Other URL (Support...)</label>
-            <Input
-              {...register('otherUrl')}
-              placeholder="Enter the other URL"
-              className={errors.otherUrl ? 'border-red-500' : ''}
-            />
-            {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+            {/* Skip validation toggle */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Capability Name</label>
-              <Input
-                {...register('capabilityName')}
-                placeholder="e.g., Text Generation"
-                className={errors.capabilityName ? 'border-red-500' : ''}
-              />
-              {errors.capabilityName && (
-                <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Capability Version</label>
-              <Input
-                {...register('capabilityVersion')}
-                placeholder="e.g., 1.0.0"
-                className={errors.capabilityVersion ? 'border-red-500' : ''}
-              />
-              {errors.capabilityVersion && (
-                <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-4 border rounded-md p-4 bg-muted/40">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Example Outputs</label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
-              >
-                Add Example
-              </Button>
-            </div>
-            {exampleOutputFields.map((field, index) => (
-              <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <Input
-                    placeholder="Name"
-                    {...register(`exampleOutputs.${index}.name` as const)}
-                  />
-                  <Input placeholder="URL" {...register(`exampleOutputs.${index}.url` as const)} />
-                  <Input
-                    placeholder="MIME Type"
-                    {...register(`exampleOutputs.${index}.mimeType` as const)}
-                  />
-                </div>
-                {index >= 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeExampleOutput(index)}
-                    className="absolute top-2 right-2"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+              <div className="flex items-center space-x-2">
+                <Controller
+                  control={controlA2A}
+                  name="skipAgentCardValidation"
+                  render={({ field }) => (
+                    <input
+                      type="checkbox"
+                      id="skipValidation"
+                      checked={field.value || false}
+                      onChange={(e) => field.onChange(e.target.checked)}
+                      className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                    />
+                  )}
+                />
+                <label htmlFor="skipValidation" className="text-sm font-medium">
+                  Skip Agent Card validation
+                </label>
               </div>
-            ))}
-          </div>
+              {watchA2A('skipAgentCardValidation') && (
+                <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800 text-xs">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Agent Card will not be fetched or validated. Use only if the URL is temporarily
+                    unavailable.
+                  </span>
+                </div>
+              )}
+            </div>
 
-          <div className="flex justify-end items-center gap-2">
-            <Button variant="outline" onClick={onClose} type="button">
-              Cancel
-            </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex justify-end items-center gap-2">
+              <Button variant="outline" onClick={onClose} type="button">
+                Cancel
+              </Button>
               <Button type="submit" disabled={isLoading || isLoadingWallets}>
-                {isLoading ? 'Registering...' : 'Register'}
+                {isLoading ? 'Registering...' : 'Register A2A Agent'}
               </Button>
             </div>
-          </div>
-        </form>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );
