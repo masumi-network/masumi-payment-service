@@ -9,6 +9,9 @@ export function AIAgentTableSkeleton({ rows = 5 }: { rows?: number }) {
             <Skeleton className="h-4 w-32" />
           </td>
           <td className="p-4">
+            <Skeleton className="h-4 w-16" />
+          </td>
+          <td className="p-4">
             <Skeleton className="h-4 w-24" />
           </td>
           <td className="p-4">
