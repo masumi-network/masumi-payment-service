@@ -390,11 +390,19 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     async (data: A2AFormValues) => {
       try {
         setIsLoading(true);
+        const selectedWalletVkey = data.selectedWallet;
         const selectedWalletBalance = sellingWallets.find(
-          (w) => w.wallet.walletVkey == data.selectedWallet,
+          (w) => w.wallet.walletVkey == selectedWalletVkey,
         )?.balance;
         if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
           toast.error('Insufficient balance in selected wallet');
+          return;
+        }
+        const paymentSource = currentNetworkPaymentSources.find((ps) =>
+          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
+        );
+        if (!paymentSource) {
+          toast.error('Smart contract wallet not found in payment sources');
           return;
         }
 
@@ -427,7 +435,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [sellingWallets, apiClient, network, onSuccess, onClose, resetA2A],
+    [sellingWallets, currentNetworkPaymentSources, apiClient, network, onSuccess, onClose, resetA2A],
   );
 
   // ── Tag helpers (Standard) ─────────────────────────────────────────────────
