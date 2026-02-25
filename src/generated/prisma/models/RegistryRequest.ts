@@ -55,6 +55,14 @@ export type RegistryRequestMinAggregateOutputType = {
   authorOrganization: string | null
   metadataVersion: number | null
   agentPricingId: string | null
+  agentCardUrl: string | null
+  a2aAgentVersion: string | null
+  a2aProviderName: string | null
+  a2aProviderUrl: string | null
+  a2aDocumentationUrl: string | null
+  a2aIconUrl: string | null
+  a2aCapabilitiesStreaming: boolean | null
+  a2aCapabilitiesPushNotifications: boolean | null
   agentIdentifier: string | null
   state: $Enums.RegistrationState | null
   registrationStateLastChangedAt: Date | null
@@ -84,6 +92,14 @@ export type RegistryRequestMaxAggregateOutputType = {
   authorOrganization: string | null
   metadataVersion: number | null
   agentPricingId: string | null
+  agentCardUrl: string | null
+  a2aAgentVersion: string | null
+  a2aProviderName: string | null
+  a2aProviderUrl: string | null
+  a2aDocumentationUrl: string | null
+  a2aIconUrl: string | null
+  a2aCapabilitiesStreaming: boolean | null
+  a2aCapabilitiesPushNotifications: boolean | null
   agentIdentifier: string | null
   state: $Enums.RegistrationState | null
   registrationStateLastChangedAt: Date | null
@@ -114,6 +130,17 @@ export type RegistryRequestCountAggregateOutputType = {
   metadataVersion: number
   tags: number
   agentPricingId: number
+  agentCardUrl: number
+  a2aProtocolVersions: number
+  a2aAgentVersion: number
+  a2aDefaultInputModes: number
+  a2aDefaultOutputModes: number
+  a2aProviderName: number
+  a2aProviderUrl: number
+  a2aDocumentationUrl: number
+  a2aIconUrl: number
+  a2aCapabilitiesStreaming: number
+  a2aCapabilitiesPushNotifications: number
   agentIdentifier: number
   state: number
   registrationStateLastChangedAt: number
@@ -153,6 +180,14 @@ export type RegistryRequestMinAggregateInputType = {
   authorOrganization?: true
   metadataVersion?: true
   agentPricingId?: true
+  agentCardUrl?: true
+  a2aAgentVersion?: true
+  a2aProviderName?: true
+  a2aProviderUrl?: true
+  a2aDocumentationUrl?: true
+  a2aIconUrl?: true
+  a2aCapabilitiesStreaming?: true
+  a2aCapabilitiesPushNotifications?: true
   agentIdentifier?: true
   state?: true
   registrationStateLastChangedAt?: true
@@ -182,6 +217,14 @@ export type RegistryRequestMaxAggregateInputType = {
   authorOrganization?: true
   metadataVersion?: true
   agentPricingId?: true
+  agentCardUrl?: true
+  a2aAgentVersion?: true
+  a2aProviderName?: true
+  a2aProviderUrl?: true
+  a2aDocumentationUrl?: true
+  a2aIconUrl?: true
+  a2aCapabilitiesStreaming?: true
+  a2aCapabilitiesPushNotifications?: true
   agentIdentifier?: true
   state?: true
   registrationStateLastChangedAt?: true
@@ -212,6 +255,17 @@ export type RegistryRequestCountAggregateInputType = {
   metadataVersion?: true
   tags?: true
   agentPricingId?: true
+  agentCardUrl?: true
+  a2aProtocolVersions?: true
+  a2aAgentVersion?: true
+  a2aDefaultInputModes?: true
+  a2aDefaultOutputModes?: true
+  a2aProviderName?: true
+  a2aProviderUrl?: true
+  a2aDocumentationUrl?: true
+  a2aIconUrl?: true
+  a2aCapabilitiesStreaming?: true
+  a2aCapabilitiesPushNotifications?: true
   agentIdentifier?: true
   state?: true
   registrationStateLastChangedAt?: true
@@ -329,6 +383,17 @@ export type RegistryRequestGroupByOutputType = {
   metadataVersion: number
   tags: string[]
   agentPricingId: string
+  agentCardUrl: string | null
+  a2aProtocolVersions: string[]
+  a2aAgentVersion: string | null
+  a2aDefaultInputModes: string[]
+  a2aDefaultOutputModes: string[]
+  a2aProviderName: string | null
+  a2aProviderUrl: string | null
+  a2aDocumentationUrl: string | null
+  a2aIconUrl: string | null
+  a2aCapabilitiesStreaming: boolean | null
+  a2aCapabilitiesPushNotifications: boolean | null
   agentIdentifier: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt: Date
@@ -382,6 +447,17 @@ export type RegistryRequestWhereInput = {
   metadataVersion?: Prisma.IntFilter<"RegistryRequest"> | number
   tags?: Prisma.StringNullableListFilter<"RegistryRequest">
   agentPricingId?: Prisma.StringFilter<"RegistryRequest"> | string
+  agentCardUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProtocolVersions?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aAgentVersion?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDefaultInputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aDefaultOutputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aProviderName?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProviderUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDocumentationUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aIconUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aCapabilitiesStreaming?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
   agentIdentifier?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
   state?: Prisma.EnumRegistrationStateFilter<"RegistryRequest"> | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFilter<"RegistryRequest"> | Date | string
@@ -417,6 +493,17 @@ export type RegistryRequestOrderByWithRelationInput = {
   metadataVersion?: Prisma.SortOrder
   tags?: Prisma.SortOrder
   agentPricingId?: Prisma.SortOrder
+  agentCardUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aProtocolVersions?: Prisma.SortOrder
+  a2aAgentVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aDefaultInputModes?: Prisma.SortOrder
+  a2aDefaultOutputModes?: Prisma.SortOrder
+  a2aProviderName?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aProviderUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aDocumentationUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aIconUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aCapabilitiesStreaming?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aCapabilitiesPushNotifications?: Prisma.SortOrderInput | Prisma.SortOrder
   agentIdentifier?: Prisma.SortOrderInput | Prisma.SortOrder
   state?: Prisma.SortOrder
   registrationStateLastChangedAt?: Prisma.SortOrder
@@ -456,6 +543,17 @@ export type RegistryRequestWhereUniqueInput = Prisma.AtLeast<{
   authorOrganization?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
   metadataVersion?: Prisma.IntFilter<"RegistryRequest"> | number
   tags?: Prisma.StringNullableListFilter<"RegistryRequest">
+  agentCardUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProtocolVersions?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aAgentVersion?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDefaultInputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aDefaultOutputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aProviderName?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProviderUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDocumentationUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aIconUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aCapabilitiesStreaming?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
   state?: Prisma.EnumRegistrationStateFilter<"RegistryRequest"> | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFilter<"RegistryRequest"> | Date | string
   currentTransactionId?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
@@ -490,6 +588,17 @@ export type RegistryRequestOrderByWithAggregationInput = {
   metadataVersion?: Prisma.SortOrder
   tags?: Prisma.SortOrder
   agentPricingId?: Prisma.SortOrder
+  agentCardUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aProtocolVersions?: Prisma.SortOrder
+  a2aAgentVersion?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aDefaultInputModes?: Prisma.SortOrder
+  a2aDefaultOutputModes?: Prisma.SortOrder
+  a2aProviderName?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aProviderUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aDocumentationUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aIconUrl?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aCapabilitiesStreaming?: Prisma.SortOrderInput | Prisma.SortOrder
+  a2aCapabilitiesPushNotifications?: Prisma.SortOrderInput | Prisma.SortOrder
   agentIdentifier?: Prisma.SortOrderInput | Prisma.SortOrder
   state?: Prisma.SortOrder
   registrationStateLastChangedAt?: Prisma.SortOrder
@@ -528,6 +637,17 @@ export type RegistryRequestScalarWhereWithAggregatesInput = {
   metadataVersion?: Prisma.IntWithAggregatesFilter<"RegistryRequest"> | number
   tags?: Prisma.StringNullableListFilter<"RegistryRequest">
   agentPricingId?: Prisma.StringWithAggregatesFilter<"RegistryRequest"> | string
+  agentCardUrl?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aProtocolVersions?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aAgentVersion?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aDefaultInputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aDefaultOutputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aProviderName?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aProviderUrl?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aDocumentationUrl?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aIconUrl?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
+  a2aCapabilitiesStreaming?: Prisma.BoolNullableWithAggregatesFilter<"RegistryRequest"> | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.BoolNullableWithAggregatesFilter<"RegistryRequest"> | boolean | null
   agentIdentifier?: Prisma.StringNullableWithAggregatesFilter<"RegistryRequest"> | string | null
   state?: Prisma.EnumRegistrationStateWithAggregatesFilter<"RegistryRequest"> | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeWithAggregatesFilter<"RegistryRequest"> | Date | string
@@ -555,6 +675,17 @@ export type RegistryRequestCreateInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -589,6 +720,17 @@ export type RegistryRequestUncheckedCreateInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -617,6 +759,17 @@ export type RegistryRequestUpdateInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -651,6 +804,17 @@ export type RegistryRequestUncheckedUpdateInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -682,6 +846,17 @@ export type RegistryRequestCreateManyInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -709,6 +884,17 @@ export type RegistryRequestUpdateManyMutationInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -738,6 +924,17 @@ export type RegistryRequestUncheckedUpdateManyInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -786,6 +983,17 @@ export type RegistryRequestCountOrderByAggregateInput = {
   metadataVersion?: Prisma.SortOrder
   tags?: Prisma.SortOrder
   agentPricingId?: Prisma.SortOrder
+  agentCardUrl?: Prisma.SortOrder
+  a2aProtocolVersions?: Prisma.SortOrder
+  a2aAgentVersion?: Prisma.SortOrder
+  a2aDefaultInputModes?: Prisma.SortOrder
+  a2aDefaultOutputModes?: Prisma.SortOrder
+  a2aProviderName?: Prisma.SortOrder
+  a2aProviderUrl?: Prisma.SortOrder
+  a2aDocumentationUrl?: Prisma.SortOrder
+  a2aIconUrl?: Prisma.SortOrder
+  a2aCapabilitiesStreaming?: Prisma.SortOrder
+  a2aCapabilitiesPushNotifications?: Prisma.SortOrder
   agentIdentifier?: Prisma.SortOrder
   state?: Prisma.SortOrder
   registrationStateLastChangedAt?: Prisma.SortOrder
@@ -819,6 +1027,14 @@ export type RegistryRequestMaxOrderByAggregateInput = {
   authorOrganization?: Prisma.SortOrder
   metadataVersion?: Prisma.SortOrder
   agentPricingId?: Prisma.SortOrder
+  agentCardUrl?: Prisma.SortOrder
+  a2aAgentVersion?: Prisma.SortOrder
+  a2aProviderName?: Prisma.SortOrder
+  a2aProviderUrl?: Prisma.SortOrder
+  a2aDocumentationUrl?: Prisma.SortOrder
+  a2aIconUrl?: Prisma.SortOrder
+  a2aCapabilitiesStreaming?: Prisma.SortOrder
+  a2aCapabilitiesPushNotifications?: Prisma.SortOrder
   agentIdentifier?: Prisma.SortOrder
   state?: Prisma.SortOrder
   registrationStateLastChangedAt?: Prisma.SortOrder
@@ -848,6 +1064,14 @@ export type RegistryRequestMinOrderByAggregateInput = {
   authorOrganization?: Prisma.SortOrder
   metadataVersion?: Prisma.SortOrder
   agentPricingId?: Prisma.SortOrder
+  agentCardUrl?: Prisma.SortOrder
+  a2aAgentVersion?: Prisma.SortOrder
+  a2aProviderName?: Prisma.SortOrder
+  a2aProviderUrl?: Prisma.SortOrder
+  a2aDocumentationUrl?: Prisma.SortOrder
+  a2aIconUrl?: Prisma.SortOrder
+  a2aCapabilitiesStreaming?: Prisma.SortOrder
+  a2aCapabilitiesPushNotifications?: Prisma.SortOrder
   agentIdentifier?: Prisma.SortOrder
   state?: Prisma.SortOrder
   registrationStateLastChangedAt?: Prisma.SortOrder
@@ -953,6 +1177,18 @@ export type RegistryRequestCreatetagsInput = {
   set: string[]
 }
 
+export type RegistryRequestCreatea2aProtocolVersionsInput = {
+  set: string[]
+}
+
+export type RegistryRequestCreatea2aDefaultInputModesInput = {
+  set: string[]
+}
+
+export type RegistryRequestCreatea2aDefaultOutputModesInput = {
+  set: string[]
+}
+
 export type IntFieldUpdateOperationsInput = {
   set?: number
   increment?: number
@@ -962,6 +1198,21 @@ export type IntFieldUpdateOperationsInput = {
 }
 
 export type RegistryRequestUpdatetagsInput = {
+  set?: string[]
+  push?: string | string[]
+}
+
+export type RegistryRequestUpdatea2aProtocolVersionsInput = {
+  set?: string[]
+  push?: string | string[]
+}
+
+export type RegistryRequestUpdatea2aDefaultInputModesInput = {
+  set?: string[]
+  push?: string | string[]
+}
+
+export type RegistryRequestUpdatea2aDefaultOutputModesInput = {
   set?: string[]
   push?: string | string[]
 }
@@ -1083,6 +1334,17 @@ export type RegistryRequestCreateWithoutSmartContractWalletInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1115,6 +1377,17 @@ export type RegistryRequestUncheckedCreateWithoutSmartContractWalletInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1175,6 +1448,17 @@ export type RegistryRequestScalarWhereInput = {
   metadataVersion?: Prisma.IntFilter<"RegistryRequest"> | number
   tags?: Prisma.StringNullableListFilter<"RegistryRequest">
   agentPricingId?: Prisma.StringFilter<"RegistryRequest"> | string
+  agentCardUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProtocolVersions?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aAgentVersion?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDefaultInputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aDefaultOutputModes?: Prisma.StringNullableListFilter<"RegistryRequest">
+  a2aProviderName?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aProviderUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aDocumentationUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aIconUrl?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
+  a2aCapabilitiesStreaming?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.BoolNullableFilter<"RegistryRequest"> | boolean | null
   agentIdentifier?: Prisma.StringNullableFilter<"RegistryRequest"> | string | null
   state?: Prisma.EnumRegistrationStateFilter<"RegistryRequest"> | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFilter<"RegistryRequest"> | Date | string
@@ -1202,6 +1486,17 @@ export type RegistryRequestCreateWithoutCurrentTransactionInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1235,6 +1530,17 @@ export type RegistryRequestUncheckedCreateWithoutCurrentTransactionInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1288,6 +1594,17 @@ export type RegistryRequestCreateWithoutExampleOutputsInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1321,6 +1638,17 @@ export type RegistryRequestUncheckedCreateWithoutExampleOutputsInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1364,6 +1692,17 @@ export type RegistryRequestUpdateWithoutExampleOutputsInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1397,6 +1736,17 @@ export type RegistryRequestUncheckedUpdateWithoutExampleOutputsInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1424,6 +1774,17 @@ export type RegistryRequestCreateWithoutPricingInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1456,6 +1817,17 @@ export type RegistryRequestUncheckedCreateWithoutPricingInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1500,6 +1872,17 @@ export type RegistryRequestUpdateWithoutPricingInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1532,6 +1915,17 @@ export type RegistryRequestUncheckedUpdateWithoutPricingInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1560,6 +1954,17 @@ export type RegistryRequestCreateWithoutPaymentSourceInput = {
   authorOrganization?: string | null
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1592,6 +1997,17 @@ export type RegistryRequestUncheckedCreateWithoutPaymentSourceInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1648,6 +2064,17 @@ export type RegistryRequestCreateManySmartContractWalletInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1675,6 +2102,17 @@ export type RegistryRequestUpdateWithoutSmartContractWalletInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1707,6 +2145,17 @@ export type RegistryRequestUncheckedUpdateWithoutSmartContractWalletInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1737,6 +2186,17 @@ export type RegistryRequestUncheckedUpdateManyWithoutSmartContractWalletInput = 
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1767,6 +2227,17 @@ export type RegistryRequestCreateManyCurrentTransactionInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1793,6 +2264,17 @@ export type RegistryRequestUpdateWithoutCurrentTransactionInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1826,6 +2308,17 @@ export type RegistryRequestUncheckedUpdateWithoutCurrentTransactionInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1856,6 +2349,17 @@ export type RegistryRequestUncheckedUpdateManyWithoutCurrentTransactionInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1884,6 +2388,17 @@ export type RegistryRequestCreateManyPaymentSourceInput = {
   metadataVersion: number
   tags?: Prisma.RegistryRequestCreatetagsInput | string[]
   agentPricingId: string
+  agentCardUrl?: string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestCreatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestCreatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestCreatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: string | null
+  a2aProviderUrl?: string | null
+  a2aDocumentationUrl?: string | null
+  a2aIconUrl?: string | null
+  a2aCapabilitiesStreaming?: boolean | null
+  a2aCapabilitiesPushNotifications?: boolean | null
   agentIdentifier?: string | null
   state: $Enums.RegistrationState
   registrationStateLastChangedAt?: Date | string
@@ -1911,6 +2426,17 @@ export type RegistryRequestUpdateWithoutPaymentSourceInput = {
   authorOrganization?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1943,6 +2469,17 @@ export type RegistryRequestUncheckedUpdateWithoutPaymentSourceInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1973,6 +2510,17 @@ export type RegistryRequestUncheckedUpdateManyWithoutPaymentSourceInput = {
   metadataVersion?: Prisma.IntFieldUpdateOperationsInput | number
   tags?: Prisma.RegistryRequestUpdatetagsInput | string[]
   agentPricingId?: Prisma.StringFieldUpdateOperationsInput | string
+  agentCardUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProtocolVersions?: Prisma.RegistryRequestUpdatea2aProtocolVersionsInput | string[]
+  a2aAgentVersion?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDefaultInputModes?: Prisma.RegistryRequestUpdatea2aDefaultInputModesInput | string[]
+  a2aDefaultOutputModes?: Prisma.RegistryRequestUpdatea2aDefaultOutputModesInput | string[]
+  a2aProviderName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aProviderUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aDocumentationUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aIconUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  a2aCapabilitiesStreaming?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
+  a2aCapabilitiesPushNotifications?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   agentIdentifier?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   state?: Prisma.EnumRegistrationStateFieldUpdateOperationsInput | $Enums.RegistrationState
   registrationStateLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2034,6 +2582,17 @@ export type RegistryRequestSelect<ExtArgs extends runtime.Types.Extensions.Inter
   metadataVersion?: boolean
   tags?: boolean
   agentPricingId?: boolean
+  agentCardUrl?: boolean
+  a2aProtocolVersions?: boolean
+  a2aAgentVersion?: boolean
+  a2aDefaultInputModes?: boolean
+  a2aDefaultOutputModes?: boolean
+  a2aProviderName?: boolean
+  a2aProviderUrl?: boolean
+  a2aDocumentationUrl?: boolean
+  a2aIconUrl?: boolean
+  a2aCapabilitiesStreaming?: boolean
+  a2aCapabilitiesPushNotifications?: boolean
   agentIdentifier?: boolean
   state?: boolean
   registrationStateLastChangedAt?: boolean
@@ -2070,6 +2629,17 @@ export type RegistryRequestSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   metadataVersion?: boolean
   tags?: boolean
   agentPricingId?: boolean
+  agentCardUrl?: boolean
+  a2aProtocolVersions?: boolean
+  a2aAgentVersion?: boolean
+  a2aDefaultInputModes?: boolean
+  a2aDefaultOutputModes?: boolean
+  a2aProviderName?: boolean
+  a2aProviderUrl?: boolean
+  a2aDocumentationUrl?: boolean
+  a2aIconUrl?: boolean
+  a2aCapabilitiesStreaming?: boolean
+  a2aCapabilitiesPushNotifications?: boolean
   agentIdentifier?: boolean
   state?: boolean
   registrationStateLastChangedAt?: boolean
@@ -2104,6 +2674,17 @@ export type RegistryRequestSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   metadataVersion?: boolean
   tags?: boolean
   agentPricingId?: boolean
+  agentCardUrl?: boolean
+  a2aProtocolVersions?: boolean
+  a2aAgentVersion?: boolean
+  a2aDefaultInputModes?: boolean
+  a2aDefaultOutputModes?: boolean
+  a2aProviderName?: boolean
+  a2aProviderUrl?: boolean
+  a2aDocumentationUrl?: boolean
+  a2aIconUrl?: boolean
+  a2aCapabilitiesStreaming?: boolean
+  a2aCapabilitiesPushNotifications?: boolean
   agentIdentifier?: boolean
   state?: boolean
   registrationStateLastChangedAt?: boolean
@@ -2138,6 +2719,17 @@ export type RegistryRequestSelectScalar = {
   metadataVersion?: boolean
   tags?: boolean
   agentPricingId?: boolean
+  agentCardUrl?: boolean
+  a2aProtocolVersions?: boolean
+  a2aAgentVersion?: boolean
+  a2aDefaultInputModes?: boolean
+  a2aDefaultOutputModes?: boolean
+  a2aProviderName?: boolean
+  a2aProviderUrl?: boolean
+  a2aDocumentationUrl?: boolean
+  a2aIconUrl?: boolean
+  a2aCapabilitiesStreaming?: boolean
+  a2aCapabilitiesPushNotifications?: boolean
   agentIdentifier?: boolean
   state?: boolean
   registrationStateLastChangedAt?: boolean
@@ -2146,7 +2738,7 @@ export type RegistryRequestSelectScalar = {
   paymentType?: boolean
 }
 
-export type RegistryRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "lastCheckedAt" | "paymentSourceId" | "smartContractWalletId" | "name" | "apiBaseUrl" | "capabilityName" | "capabilityVersion" | "description" | "privacyPolicy" | "terms" | "other" | "authorName" | "authorContactEmail" | "authorContactOther" | "authorOrganization" | "metadataVersion" | "tags" | "agentPricingId" | "agentIdentifier" | "state" | "registrationStateLastChangedAt" | "currentTransactionId" | "error" | "paymentType", ExtArgs["result"]["registryRequest"]>
+export type RegistryRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "lastCheckedAt" | "paymentSourceId" | "smartContractWalletId" | "name" | "apiBaseUrl" | "capabilityName" | "capabilityVersion" | "description" | "privacyPolicy" | "terms" | "other" | "authorName" | "authorContactEmail" | "authorContactOther" | "authorOrganization" | "metadataVersion" | "tags" | "agentPricingId" | "agentCardUrl" | "a2aProtocolVersions" | "a2aAgentVersion" | "a2aDefaultInputModes" | "a2aDefaultOutputModes" | "a2aProviderName" | "a2aProviderUrl" | "a2aDocumentationUrl" | "a2aIconUrl" | "a2aCapabilitiesStreaming" | "a2aCapabilitiesPushNotifications" | "agentIdentifier" | "state" | "registrationStateLastChangedAt" | "currentTransactionId" | "error" | "paymentType", ExtArgs["result"]["registryRequest"]>
 export type RegistryRequestInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   ExampleOutputs?: boolean | Prisma.RegistryRequest$ExampleOutputsArgs<ExtArgs>
   Pricing?: boolean | Prisma.AgentPricingDefaultArgs<ExtArgs>
@@ -2199,6 +2791,17 @@ export type $RegistryRequestPayload<ExtArgs extends runtime.Types.Extensions.Int
     metadataVersion: number
     tags: string[]
     agentPricingId: string
+    agentCardUrl: string | null
+    a2aProtocolVersions: string[]
+    a2aAgentVersion: string | null
+    a2aDefaultInputModes: string[]
+    a2aDefaultOutputModes: string[]
+    a2aProviderName: string | null
+    a2aProviderUrl: string | null
+    a2aDocumentationUrl: string | null
+    a2aIconUrl: string | null
+    a2aCapabilitiesStreaming: boolean | null
+    a2aCapabilitiesPushNotifications: boolean | null
     agentIdentifier: string | null
     state: $Enums.RegistrationState
     registrationStateLastChangedAt: Date
@@ -2654,6 +3257,17 @@ export interface RegistryRequestFieldRefs {
   readonly metadataVersion: Prisma.FieldRef<"RegistryRequest", 'Int'>
   readonly tags: Prisma.FieldRef<"RegistryRequest", 'String[]'>
   readonly agentPricingId: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly agentCardUrl: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aProtocolVersions: Prisma.FieldRef<"RegistryRequest", 'String[]'>
+  readonly a2aAgentVersion: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aDefaultInputModes: Prisma.FieldRef<"RegistryRequest", 'String[]'>
+  readonly a2aDefaultOutputModes: Prisma.FieldRef<"RegistryRequest", 'String[]'>
+  readonly a2aProviderName: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aProviderUrl: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aDocumentationUrl: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aIconUrl: Prisma.FieldRef<"RegistryRequest", 'String'>
+  readonly a2aCapabilitiesStreaming: Prisma.FieldRef<"RegistryRequest", 'Boolean'>
+  readonly a2aCapabilitiesPushNotifications: Prisma.FieldRef<"RegistryRequest", 'Boolean'>
   readonly agentIdentifier: Prisma.FieldRef<"RegistryRequest", 'String'>
   readonly state: Prisma.FieldRef<"RegistryRequest", 'RegistrationState'>
   readonly registrationStateLastChangedAt: Prisma.FieldRef<"RegistryRequest", 'DateTime'>

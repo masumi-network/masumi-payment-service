@@ -118,6 +118,27 @@ function buildAgentMetadata(request: {
 	};
 }
 
+function buildAgentMetadataV2(request: {
+	name: string;
+	description: string | null;
+	apiBaseUrl: string;
+	agentCardUrl: string;
+	a2aProtocolVersions: string[];
+	tags: string[];
+	metadataVersion: number;
+}): AgentMetadata {
+	return {
+		name: stringToMetadata(request.name),
+		api_url: stringToMetadata(request.apiBaseUrl),
+		agent_card_url: stringToMetadata(request.agentCardUrl),
+		a2a_protocol_versions: request.a2aProtocolVersions,
+		metadata_version: request.metadataVersion.toString(),
+		...(request.description ? { description: stringToMetadata(request.description) } : {}),
+		...(request.tags.length > 0 ? { tags: request.tags } : {}),
+		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
+	};
+}
+
 export async function registerAgentV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -175,7 +196,21 @@ export async function registerAgentV1() {
 						const collateralUtxo = limitedFilteredUtxos[0];
 
 						const assetName = generateAssetName(firstUtxo);
-						const metadata = buildAgentMetadata(request);
+						if (request.metadataVersion === DEFAULTS.A2A_METADATA_VERSION && !request.agentCardUrl) {
+							throw new Error('A2A agent is missing required agentCardUrl — cannot mint on-chain metadata');
+						}
+						const metadata =
+							request.metadataVersion === DEFAULTS.A2A_METADATA_VERSION
+								? buildAgentMetadataV2({
+										name: request.name,
+										description: request.description,
+										apiBaseUrl: request.apiBaseUrl,
+										agentCardUrl: request.agentCardUrl!,
+										a2aProtocolVersions: request.a2aProtocolVersions,
+										tags: request.tags,
+										metadataVersion: request.metadataVersion,
+									})
+								: buildAgentMetadata(request);
 						const evaluationTx = await generateRegisterAgentTransaction(
 							blockchainProvider,
 							network,

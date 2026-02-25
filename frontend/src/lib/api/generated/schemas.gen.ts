@@ -1619,8 +1619,20 @@ export const AgentMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)'
+                },
+                agentCardUrl: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Agent Card URL for A2A agents. Null for standard agents'
+                },
+                a2aProtocolVersions: {
+                    type: 'array',
+                    items: {
+                        type: 'string'
+                    },
+                    description: 'A2A protocol versions. Empty for standard agents'
                 }
             },
             required: [
@@ -1737,6 +1749,7 @@ export const AgentIdentifierMetadataSchema = {
                 },
                 Author: {
                     type: 'object',
+                    nullable: true,
                     properties: {
                         name: {
                             type: 'string',
@@ -1765,7 +1778,7 @@ export const AgentIdentifierMetadataSchema = {
                     required: [
                         'name'
                     ],
-                    description: 'Author information for the agent'
+                    description: 'Author information for the agent. Null for A2A agents'
                 },
                 Legal: {
                     type: 'object',
@@ -1849,7 +1862,7 @@ export const AgentIdentifierMetadataSchema = {
                             ]
                         }
                     ],
-                    description: 'Pricing information for the agent'
+                    description: 'Pricing information for the agent. Absent for A2A agents (pricing is off-chain)'
                 },
                 image: {
                     type: 'string',
@@ -1859,8 +1872,20 @@ export const AgentIdentifierMetadataSchema = {
                 metadataVersion: {
                     type: 'integer',
                     minimum: 1,
-                    maximum: 1,
-                    description: 'Version of the metadata schema (currently only version 1 is supported)'
+                    maximum: 2,
+                    description: 'Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)'
+                },
+                agentCardUrl: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Agent Card URL for A2A agents. Null for standard agents'
+                },
+                a2aProtocolVersions: {
+                    type: 'array',
+                    items: {
+                        type: 'string'
+                    },
+                    description: 'A2A protocol versions. Empty for standard agents'
                 }
             },
             required: [
@@ -1868,8 +1893,6 @@ export const AgentIdentifierMetadataSchema = {
                 'apiBaseUrl',
                 'ExampleOutputs',
                 'Tags',
-                'Author',
-                'AgentPricing',
                 'image',
                 'metadataVersion'
             ],
@@ -2060,6 +2083,71 @@ export const RegistryEntrySchema = {
             maxLength: 250,
             description: 'Full agent identifier (policy ID + asset name). Null if not yet minted'
         },
+        metadataVersion: {
+            type: 'integer',
+            description: 'Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A'
+        },
+        agentCardUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent Card URL for A2A agents. Null for standard agents'
+        },
+        a2aProtocolVersions: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'A2A protocol versions. Empty for standard agents'
+        },
+        a2aAgentVersion: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent version from Agent Card. Null for standard agents'
+        },
+        a2aDefaultInputModes: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'A2A default input MIME types. Empty for standard agents'
+        },
+        a2aDefaultOutputModes: {
+            type: 'array',
+            items: {
+                type: 'string'
+            },
+            description: 'A2A default output MIME types. Empty for standard agents'
+        },
+        a2aProviderName: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent Card provider name. Null for standard agents'
+        },
+        a2aProviderUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent Card provider URL. Null for standard agents'
+        },
+        a2aDocumentationUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent Card documentation URL. Null for standard agents'
+        },
+        a2aIconUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'Agent Card icon URL. Null for standard agents'
+        },
+        a2aCapabilitiesStreaming: {
+            type: 'boolean',
+            nullable: true,
+            description: 'Streaming capability. Null for standard agents'
+        },
+        a2aCapabilitiesPushNotifications: {
+            type: 'boolean',
+            nullable: true,
+            description: 'Push notification capability. Null for standard agents'
+        },
         AgentPricing: {
             anyOf: [
                 {
@@ -2204,6 +2292,18 @@ export const RegistryEntrySchema = {
         'lastCheckedAt',
         'ExampleOutputs',
         'agentIdentifier',
+        'metadataVersion',
+        'agentCardUrl',
+        'a2aProtocolVersions',
+        'a2aAgentVersion',
+        'a2aDefaultInputModes',
+        'a2aDefaultOutputModes',
+        'a2aProviderName',
+        'a2aProviderUrl',
+        'a2aDocumentationUrl',
+        'a2aIconUrl',
+        'a2aCapabilitiesStreaming',
+        'a2aCapabilitiesPushNotifications',
         'AgentPricing',
         'SmartContractWallet',
         'CurrentTransaction'

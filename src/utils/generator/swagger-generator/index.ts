@@ -226,6 +226,18 @@ const registryEntryExample = {
 		},
 	],
 	agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+	metadataVersion: 1,
+	agentCardUrl: null,
+	a2aProtocolVersions: [],
+	a2aAgentVersion: null,
+	a2aDefaultInputModes: [],
+	a2aDefaultOutputModes: [],
+	a2aProviderName: null,
+	a2aProviderUrl: null,
+	a2aDocumentationUrl: null,
+	a2aIconUrl: null,
+	a2aCapabilitiesStreaming: null,
+	a2aCapabilitiesPushNotifications: null,
 	AgentPricing: {
 		pricingType: PricingType.Fixed,
 		Pricing: [
@@ -312,6 +324,7 @@ import {
 	queryAgentByIdentifierSchemaInput,
 	queryAgentByIdentifierSchemaOutput,
 } from '@/routes/api/registry/agent-identifier';
+import { registerA2AAgentSchemaInput, registerA2AAgentSchemaOutput } from '@/routes/api/registry/a2a';
 import {
 	postPaymentRequestSchemaInput,
 	postPaymentRequestSchemaOutput,
@@ -2458,6 +2471,72 @@ export function generateOpenAPI() {
 						},
 					},
 				},
+			},
+			500: {
+				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/registry/a2a',
+		description:
+			'Registers an A2A (Agent-to-Agent) agent in the Masumi Registry using MIP-002-A2A metadata (version 2). Fetches and validates the Agent Card unless skipAgentCardValidation is set.',
+		summary: 'Register an A2A agent in the Masumi Registry. (PAY access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: registerA2AAgentSchemaInput.openapi({
+							example: {
+								network: Network.Preprod,
+								sellingWalletVkey: 'wallet_vkey',
+								name: 'My A2A Agent',
+								apiBaseUrl: 'https://api.example.com',
+								agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
+								a2aProtocolVersions: ['0.2.5'],
+								description: 'An A2A-capable AI agent',
+								Tags: ['a2a', 'agent'],
+								skipAgentCardValidation: false,
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'A2A agent registered',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: registerA2AAgentSchemaOutput }).openapi({
+							example: {
+								status: 'success',
+								data: {
+									...registryEntryExample,
+									metadataVersion: 2,
+									agentCardUrl: 'https://api.example.com/.well-known/agent-card.json',
+									a2aProtocolVersions: ['0.2.5'],
+									Author: { name: '', contactEmail: null, contactOther: null, organization: null },
+									AgentPricing: { pricingType: PricingType.Free },
+								},
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (invalid input or Agent Card validation failed)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
 			},
 			500: {
 				description: 'Internal Server Error',

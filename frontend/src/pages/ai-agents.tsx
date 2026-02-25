@@ -203,7 +203,6 @@ export default function AIAgentsPage() {
             refetch();
           },
           onError: (error: any) => {
-            console.error('Error deleting agent:', error);
             toast.error(error.message || 'Failed to delete AI agent');
           },
           onFinally: () => {
@@ -235,7 +234,6 @@ export default function AIAgentsPage() {
             refetch();
           },
           onError: (error: any) => {
-            console.error('Error deregistering agent:', error);
             toast.error(error.message || 'Failed to deregister AI agent');
           },
           onFinally: () => {
@@ -355,6 +353,7 @@ export default function AIAgentsPage() {
               <thead>
                 <tr className="border-b">
                   <th className="p-4 text-left text-sm font-medium pl-6">Name</th>
+                  <th className="p-4 text-left text-sm font-medium">Type</th>
                   <th className="p-4 text-left text-sm font-medium">Added</th>
                   <th className="p-4 text-left text-sm font-medium">Agent ID</th>
                   <th className="p-4 text-left text-sm font-medium">Linked wallet</th>
@@ -369,7 +368,7 @@ export default function AIAgentsPage() {
                   <AIAgentTableSkeleton rows={5} />
                 ) : filteredAgents.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={9} className="text-center py-8">
                       {searchQuery
                         ? 'No AI agents found matching your search'
                         : 'No AI agents found'}
@@ -390,6 +389,11 @@ export default function AIAgentsPage() {
                         <div className="text-xs text-muted-foreground truncate">
                           {agent.description}
                         </div>
+                      </td>
+                      <td className="p-4">
+                        <Badge variant="outline" className="text-xs font-mono">
+                          {agent.metadataVersion === 2 ? 'A2A' : 'Standard'}
+                        </Badge>
                       </td>
                       <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                       <td className="p-4">

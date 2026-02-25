@@ -15,6 +15,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
+import { mapRegistryRequestToOutput } from '@/routes/api/registry/utils';
 
 export const queryRegistryRequestSchemaInput = z.object({
 	cursorId: z.string().optional().describe('The cursor id to paginate through the results'),
@@ -75,6 +76,21 @@ export const registryRequestOutputSchema = z
 			.max(250)
 			.nullable()
 			.describe('Full agent identifier (policy ID + asset name). Null if not yet minted'),
+		metadataVersion: z.number().int().describe('Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A'),
+		agentCardUrl: z.string().nullable().describe('Agent Card URL for A2A agents. Null for standard agents'),
+		a2aProtocolVersions: z.array(z.string()).describe('A2A protocol versions. Empty for standard agents'),
+		a2aAgentVersion: z.string().nullable().describe('Agent version from Agent Card. Null for standard agents'),
+		a2aDefaultInputModes: z.array(z.string()).describe('A2A default input MIME types. Empty for standard agents'),
+		a2aDefaultOutputModes: z.array(z.string()).describe('A2A default output MIME types. Empty for standard agents'),
+		a2aProviderName: z.string().nullable().describe('Agent Card provider name. Null for standard agents'),
+		a2aProviderUrl: z.string().nullable().describe('Agent Card provider URL. Null for standard agents'),
+		a2aDocumentationUrl: z.string().nullable().describe('Agent Card documentation URL. Null for standard agents'),
+		a2aIconUrl: z.string().nullable().describe('Agent Card icon URL. Null for standard agents'),
+		a2aCapabilitiesStreaming: z.boolean().nullable().describe('Streaming capability. Null for standard agents'),
+		a2aCapabilitiesPushNotifications: z
+			.boolean()
+			.nullable()
+			.describe('Push notification capability. Null for standard agents'),
 		AgentPricing: z
 			.object({
 				pricingType: z.enum([PricingType.Fixed]).describe('Pricing type for the agent '),
@@ -182,44 +198,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 		});
 
 		return {
-			Assets: result.map((item) => ({
-				...item,
-				Capability: {
-					name: item.capabilityName,
-					version: item.capabilityVersion,
-				},
-				Author: {
-					name: item.authorName,
-					contactEmail: item.authorContactEmail,
-					contactOther: item.authorContactOther,
-					organization: item.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: item.privacyPolicy,
-					terms: item.terms,
-					other: item.other,
-				},
-				AgentPricing:
-					item.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									item.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: PricingType.Free,
-							},
-				Tags: item.tags,
-				CurrentTransaction: item.CurrentTransaction
-					? {
-							...item.CurrentTransaction,
-							fees: item.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			})),
+			Assets: result.map((item) => mapRegistryRequestToOutput(item)),
 		};
 	},
 });
@@ -334,17 +313,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					wallet_vkey: input.sellingWalletVkey,
 				});
 				throw createHttpError(404, 'Network and Address combination not supported');
-			}
-			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
-
-			if (sellingWallet == null) {
-				recordBusinessEndpointError('/api/v1/registry', 'POST', 404, 'Selling wallet not found', {
-					network: input.network,
-					operation: 'register_agent',
-					step: 'wallet_validation',
-					wallet_vkey: input.sellingWalletVkey,
-				});
-				throw createHttpError(404, 'Selling wallet not found');
 			}
 
 			// Validate pricing assets exist on-chain
@@ -468,44 +436,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			return {
-				...result,
-				Capability: {
-					name: result.capabilityName,
-					version: result.capabilityVersion,
-				},
-				Author: {
-					name: result.authorName,
-					contactEmail: result.authorContactEmail,
-					contactOther: result.authorContactOther,
-					organization: result.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: result.privacyPolicy,
-					terms: result.terms,
-					other: result.other,
-				},
-				AgentPricing:
-					result.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									result.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: PricingType.Free,
-							},
-				Tags: result.tags,
-				CurrentTransaction: result.CurrentTransaction
-					? {
-							...result.CurrentTransaction,
-							fees: result.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			};
+			return mapRegistryRequestToOutput(result);
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
@@ -620,44 +551,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 				},
 			});
 
-			return {
-				...item,
-				Capability: {
-					name: item.capabilityName,
-					version: item.capabilityVersion,
-				},
-				Author: {
-					name: item.authorName,
-					contactEmail: item.authorContactEmail,
-					contactOther: item.authorContactOther,
-					organization: item.authorOrganization,
-				},
-				Legal: {
-					privacyPolicy: item.privacyPolicy,
-					terms: item.terms,
-					other: item.other,
-				},
-				AgentPricing:
-					item.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									item.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: PricingType.Free,
-							},
-				Tags: item.tags,
-				CurrentTransaction: item.CurrentTransaction
-					? {
-							...item.CurrentTransaction,
-							fees: item.CurrentTransaction.fees?.toString() ?? null,
-						}
-					: null,
-			};
+			return mapRegistryRequestToOutput(item);
 		} catch (error: unknown) {
 			// Record the business-specific error with context
 			const errorInstance = error instanceof Error ? error : new Error(String(error));

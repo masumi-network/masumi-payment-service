@@ -1634,8 +1634,20 @@
                             "metadataVersion": {
                                 "type": "integer",
                                 "minimum": 1,
-                                "maximum": 1,
-                                "description": "Version of the metadata schema (currently only version 1 is supported)"
+                                "maximum": 2,
+                                "description": "Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)"
+                            },
+                            "agentCardUrl": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Agent Card URL for A2A agents. Null for standard agents"
+                            },
+                            "a2aProtocolVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "A2A protocol versions. Empty for standard agents"
                             }
                         },
                         "required": [
@@ -1751,6 +1763,7 @@
                             },
                             "Author": {
                                 "type": "object",
+                                "nullable": true,
                                 "properties": {
                                     "name": {
                                         "type": "string",
@@ -1779,7 +1792,7 @@
                                 "required": [
                                     "name"
                                 ],
-                                "description": "Author information for the agent"
+                                "description": "Author information for the agent. Null for A2A agents"
                             },
                             "Legal": {
                                 "type": "object",
@@ -1863,7 +1876,7 @@
                                         ]
                                     }
                                 ],
-                                "description": "Pricing information for the agent"
+                                "description": "Pricing information for the agent. Absent for A2A agents (pricing is off-chain)"
                             },
                             "image": {
                                 "type": "string",
@@ -1873,8 +1886,20 @@
                             "metadataVersion": {
                                 "type": "integer",
                                 "minimum": 1,
-                                "maximum": 1,
-                                "description": "Version of the metadata schema (currently only version 1 is supported)"
+                                "maximum": 2,
+                                "description": "Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)"
+                            },
+                            "agentCardUrl": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Agent Card URL for A2A agents. Null for standard agents"
+                            },
+                            "a2aProtocolVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "A2A protocol versions. Empty for standard agents"
                             }
                         },
                         "required": [
@@ -1882,8 +1907,6 @@
                             "apiBaseUrl",
                             "ExampleOutputs",
                             "Tags",
-                            "Author",
-                            "AgentPricing",
                             "image",
                             "metadataVersion"
                         ],
@@ -2073,6 +2096,71 @@
                         "maxLength": 250,
                         "description": "Full agent identifier (policy ID + asset name). Null if not yet minted"
                     },
+                    "metadataVersion": {
+                        "type": "integer",
+                        "description": "Metadata version: 1 = standard MIP-002, 2 = MIP-002-A2A"
+                    },
+                    "agentCardUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent Card URL for A2A agents. Null for standard agents"
+                    },
+                    "a2aProtocolVersions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A2A protocol versions. Empty for standard agents"
+                    },
+                    "a2aAgentVersion": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent version from Agent Card. Null for standard agents"
+                    },
+                    "a2aDefaultInputModes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A2A default input MIME types. Empty for standard agents"
+                    },
+                    "a2aDefaultOutputModes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A2A default output MIME types. Empty for standard agents"
+                    },
+                    "a2aProviderName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent Card provider name. Null for standard agents"
+                    },
+                    "a2aProviderUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent Card provider URL. Null for standard agents"
+                    },
+                    "a2aDocumentationUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent Card documentation URL. Null for standard agents"
+                    },
+                    "a2aIconUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Agent Card icon URL. Null for standard agents"
+                    },
+                    "a2aCapabilitiesStreaming": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Streaming capability. Null for standard agents"
+                    },
+                    "a2aCapabilitiesPushNotifications": {
+                        "type": "boolean",
+                        "nullable": true,
+                        "description": "Push notification capability. Null for standard agents"
+                    },
                     "AgentPricing": {
                         "anyOf": [
                             {
@@ -2217,6 +2305,18 @@
                     "lastCheckedAt",
                     "ExampleOutputs",
                     "agentIdentifier",
+                    "metadataVersion",
+                    "agentCardUrl",
+                    "a2aProtocolVersions",
+                    "a2aAgentVersion",
+                    "a2aDefaultInputModes",
+                    "a2aDefaultOutputModes",
+                    "a2aProviderName",
+                    "a2aProviderUrl",
+                    "a2aDocumentationUrl",
+                    "a2aIconUrl",
+                    "a2aCapabilitiesStreaming",
+                    "a2aCapabilitiesPushNotifications",
                     "AgentPricing",
                     "SmartContractWallet",
                     "CurrentTransaction"
@@ -11099,6 +11199,18 @@
                                                 }
                                             ],
                                             "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "agentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "a2aAgentVersion": null,
+                                            "a2aDefaultInputModes": [],
+                                            "a2aDefaultOutputModes": [],
+                                            "a2aProviderName": null,
+                                            "a2aProviderUrl": null,
+                                            "a2aDocumentationUrl": null,
+                                            "a2aIconUrl": null,
+                                            "a2aCapabilitiesStreaming": null,
+                                            "a2aCapabilitiesPushNotifications": null,
                                             "AgentPricing": {
                                                 "pricingType": "Fixed",
                                                 "Pricing": [
@@ -11213,6 +11325,18 @@
                                                 }
                                             ],
                                             "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "agentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "a2aAgentVersion": null,
+                                            "a2aDefaultInputModes": [],
+                                            "a2aDefaultOutputModes": [],
+                                            "a2aProviderName": null,
+                                            "a2aProviderUrl": null,
+                                            "a2aDocumentationUrl": null,
+                                            "a2aIconUrl": null,
+                                            "a2aCapabilitiesStreaming": null,
+                                            "a2aCapabilitiesPushNotifications": null,
                                             "AgentPricing": {
                                                 "pricingType": "Fixed",
                                                 "Pricing": [
@@ -11555,6 +11679,18 @@
                                                 }
                                             ],
                                             "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 1,
+                                            "agentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "a2aAgentVersion": null,
+                                            "a2aDefaultInputModes": [],
+                                            "a2aDefaultOutputModes": [],
+                                            "a2aProviderName": null,
+                                            "a2aProviderUrl": null,
+                                            "a2aDocumentationUrl": null,
+                                            "a2aIconUrl": null,
+                                            "a2aCapabilitiesStreaming": null,
+                                            "a2aCapabilitiesPushNotifications": null,
                                             "AgentPricing": {
                                                 "pricingType": "Fixed",
                                                 "Pricing": [
@@ -11574,6 +11710,215 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/registry/a2a": {
+            "post": {
+                "description": "Registers an A2A (Agent-to-Agent) agent in the Masumi Registry using MIP-002-A2A metadata (version 2). Fetches and validates the Agent Card unless skipAgentCardValidation is set.",
+                "summary": "Register an A2A agent in the Masumi Registry. (PAY access required)",
+                "tags": [
+                    "registry"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The Cardano network used to register the agent on"
+                                    },
+                                    "sellingWalletVkey": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "The payment key of a specific wallet used for the registration"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Name of the agent"
+                                    },
+                                    "apiBaseUrl": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "Base URL of the agent API for interactions"
+                                    },
+                                    "agentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "format": "uri",
+                                        "description": "URL to the Agent Card JSON (typically /.well-known/agent-card.json)"
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 20
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent supports"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Description of the agent"
+                                    },
+                                    "Tags": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 63
+                                        },
+                                        "maxItems": 15,
+                                        "default": [],
+                                        "description": "Tags used in the registry metadata"
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Skip fetching and validating the Agent Card URL. Use with caution."
+                                    }
+                                },
+                                "required": [
+                                    "network",
+                                    "sellingWalletVkey",
+                                    "name",
+                                    "apiBaseUrl",
+                                    "agentCardUrl",
+                                    "a2aProtocolVersions"
+                                ],
+                                "example": {
+                                    "network": "Preprod",
+                                    "sellingWalletVkey": "wallet_vkey",
+                                    "name": "My A2A Agent",
+                                    "apiBaseUrl": "https://api.example.com",
+                                    "agentCardUrl": "https://api.example.com/.well-known/agent-card.json",
+                                    "a2aProtocolVersions": [
+                                        "0.2.5"
+                                    ],
+                                    "description": "An A2A-capable AI agent",
+                                    "Tags": [
+                                        "a2a",
+                                        "agent"
+                                    ],
+                                    "skipAgentCardValidation": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "A2A agent registered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/RegistryEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "error": null,
+                                            "id": "registry_id",
+                                            "name": "Agent Name",
+                                            "description": "Agent Description",
+                                            "apiBaseUrl": "https://api.example.com",
+                                            "Capability": {
+                                                "name": "Capability Name",
+                                                "version": "1.0.0"
+                                            },
+                                            "Author": {
+                                                "name": "",
+                                                "contactEmail": null,
+                                                "contactOther": null,
+                                                "organization": null
+                                            },
+                                            "Legal": {
+                                                "privacyPolicy": "https://example.com/privacy",
+                                                "terms": "https://example.com/terms",
+                                                "other": "https://example.com/other"
+                                            },
+                                            "state": "RegistrationRequested",
+                                            "Tags": [
+                                                "tag1",
+                                                "tag2"
+                                            ],
+                                            "createdAt": "1970-01-20T20:00:36.260Z",
+                                            "updatedAt": "1970-01-20T20:00:36.260Z",
+                                            "lastCheckedAt": null,
+                                            "ExampleOutputs": [
+                                                {
+                                                    "name": "example_output_name",
+                                                    "url": "https://example.com/example_output",
+                                                    "mimeType": "application/json"
+                                                }
+                                            ],
+                                            "agentIdentifier": "policy_id_asset_name_policy_id_asset_name_policy_id_asset_name",
+                                            "metadataVersion": 2,
+                                            "agentCardUrl": "https://api.example.com/.well-known/agent-card.json",
+                                            "a2aProtocolVersions": [
+                                                "0.2.5"
+                                            ],
+                                            "a2aAgentVersion": null,
+                                            "a2aDefaultInputModes": [],
+                                            "a2aDefaultOutputModes": [],
+                                            "a2aProviderName": null,
+                                            "a2aProviderUrl": null,
+                                            "a2aDocumentationUrl": null,
+                                            "a2aIconUrl": null,
+                                            "a2aCapabilitiesStreaming": null,
+                                            "a2aCapabilitiesPushNotifications": null,
+                                            "AgentPricing": {
+                                                "pricingType": "Free"
+                                            },
+                                            "SmartContractWallet": {
+                                                "walletVkey": "wallet_vkey",
+                                                "walletAddress": "wallet_address"
+                                            },
+                                            "CurrentTransaction": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (invalid input or Agent Card validation failed)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
                     }
                 }
             }
