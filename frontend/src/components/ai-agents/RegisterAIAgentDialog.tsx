@@ -435,7 +435,15 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [sellingWallets, currentNetworkPaymentSources, apiClient, network, onSuccess, onClose, resetA2A],
+    [
+      sellingWallets,
+      currentNetworkPaymentSources,
+      apiClient,
+      network,
+      onSuccess,
+      onClose,
+      resetA2A,
+    ],
   );
 
   // ── Tag helpers (Standard) ─────────────────────────────────────────────────
