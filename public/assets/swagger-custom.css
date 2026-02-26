@@ -1568,7 +1568,7 @@
 	min-height: 42px;
 	width: 100%;
 	max-width: var(--swg-content-max);
-	margin-bottom: var(--swg-space-6) !important;
+	margin: 0 !important;
 	transition: border-color var(--swg-duration) var(--swg-ease),
 				box-shadow var(--swg-duration) var(--swg-ease);
 }
@@ -1581,6 +1581,49 @@
 
 .swagger-ui .operation-filter-input::placeholder {
 	color: var(--swg-text-muted) !important;
+}
+
+/* Filter wrapper + clear button */
+.filter-wrapper {
+	position: relative;
+	width: 100%;
+	max-width: var(--swg-content-max);
+	margin-bottom: var(--swg-space-6);
+}
+
+.filter-wrapper .operation-filter-input {
+	margin-bottom: 0 !important;
+	padding-right: var(--swg-space-10) !important;
+	width: 100% !important;
+	box-sizing: border-box !important;
+}
+
+.filter-clear-btn {
+	position: absolute;
+	right: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 1;
+	background: transparent;
+	border: none;
+	color: var(--swg-text-muted);
+	font-size: 1.1rem;
+	line-height: 1;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	border-radius: 50%;
+	transition: color var(--swg-duration-fast) var(--swg-ease),
+				background-color var(--swg-duration-fast) var(--swg-ease);
+}
+
+.filter-clear-btn:hover {
+	color: var(--swg-text);
+	background-color: var(--swg-border);
 }
 
 /* ══════════════════════════════════════════════════════════════════════

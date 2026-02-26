@@ -137,9 +137,36 @@ initialize()
 									input = document.querySelector('.operation-filter-input');
 									if (!input) return setTimeout(waitForFilter, 300);
 									input.setAttribute('placeholder', 'Filter by tag, endpoint, or description...');
+									// Clone and replace to strip Swagger's built-in event listeners
+									var clone = input.cloneNode(true);
+									var parent = input.parentNode;
+									parent.replaceChild(clone, input);
+									input = clone;
+									// Wrap input with a container for the clear button
+									var wrapper = document.createElement('div');
+									wrapper.className = 'filter-wrapper';
+									input.parentNode.insertBefore(wrapper, input);
+									wrapper.appendChild(input);
+									var clearBtn = document.createElement('button');
+									clearBtn.className = 'filter-clear-btn';
+									clearBtn.type = 'button';
+									clearBtn.innerHTML = '&times;';
+									clearBtn.title = 'Clear filter';
+									clearBtn.style.display = 'none';
+									wrapper.appendChild(clearBtn);
+									function updateClearBtn() {
+										clearBtn.style.display = input.value ? '' : 'none';
+									}
 									input.addEventListener('input', function() {
+										updateClearBtn();
 										clearTimeout(debounceTimer);
 										debounceTimer = setTimeout(applyFilter, 150);
+									});
+									clearBtn.addEventListener('click', function() {
+										input.value = '';
+										updateClearBtn();
+										applyFilter();
+										input.focus();
 									});
 								}
 								function applyFilter() {
@@ -159,10 +186,10 @@ initialize()
 											var path = (op.querySelector('.opblock-summary-path') || {}).textContent || '';
 											var desc = (op.querySelector('.opblock-summary-description') || {}).textContent || '';
 											var method = (op.querySelector('.opblock-summary-method') || {}).textContent || '';
-											var match = tagMatch
-												|| path.toLowerCase().indexOf(query) !== -1
-												|| desc.toLowerCase().indexOf(query) !== -1
-												|| method.toLowerCase().indexOf(query) !== -1;
+											var match = path.toLowerCase().indexOf(query) !== -1
+												|| method.toLowerCase().indexOf(query) !== -1
+												|| tagMatch
+												|| desc.toLowerCase().indexOf(query) !== -1;
 											op.style.display = match ? '' : 'none';
 											if (match) anyOpMatch = true;
 										});
