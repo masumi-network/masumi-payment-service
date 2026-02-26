@@ -29,10 +29,9 @@ export interface TransactionRoutingContext {
 	purchaseRequestId?: string;
 	paymentRequestId?: string;
 
-	// Participant identifiers for Hydra head lookup (symmetric; no buyer/seller distinction).
-	// Can be agent IDs or external buyer IDs (marketplace frontend users).
-	participantIdA?: string;
-	participantIdB?: string;
+	// HotWallet IDs for Hydra head lookup (lexicographically ordered; no buyer/seller distinction).
+	walletIdA?: string;
+	walletIdB?: string;
 
 	// Transaction type
 	transactionType: TransactionType;

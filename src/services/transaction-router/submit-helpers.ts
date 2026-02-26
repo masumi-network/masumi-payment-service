@@ -18,10 +18,10 @@ interface BaseSubmitContext {
  */
 interface PurchaseSubmitContext extends BaseSubmitContext {
 	purchaseRequestId: string;
-	/** Buyer participant ID (agent ID or external buyer ID) */
-	buyerParticipantId: string;
-	/** Seller participant ID (agent ID) */
-	sellerParticipantId: string;
+	/** HotWallet ID of the buyer (Purchasing type) */
+	buyerWalletId: string;
+	/** HotWallet ID of the seller (Selling type) */
+	sellerWalletId: string;
 }
 
 /**
@@ -29,10 +29,17 @@ interface PurchaseSubmitContext extends BaseSubmitContext {
  */
 interface PaymentSubmitContext extends BaseSubmitContext {
 	paymentRequestId: string;
-	/** Buyer participant ID (agent ID or external buyer ID) */
-	buyerParticipantId: string;
-	/** Seller participant ID (agent ID) */
-	sellerParticipantId: string;
+	/** HotWallet ID of the buyer (Purchasing type) */
+	buyerWalletId: string;
+	/** HotWallet ID of the seller (Selling type) */
+	sellerWalletId: string;
+}
+
+/**
+ * Sort two wallet IDs into deterministic lexicographic order for HydraRelation lookup.
+ */
+function sortWalletIds(idA: string, idB: string): [string, string] {
+	return idA < idB ? [idA, idB] : [idB, idA];
 }
 
 // ============================================================
@@ -57,6 +64,7 @@ export async function submitLockFundsTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -64,8 +72,8 @@ export async function submitLockFundsTransaction(
 			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -95,6 +103,7 @@ export async function submitResultTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -102,8 +111,8 @@ export async function submitResultTransaction(
 			transactionType: 'SubmitResult',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -133,6 +142,7 @@ export async function submitRequestRefundTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -140,8 +150,8 @@ export async function submitRequestRefundTransaction(
 			transactionType: 'RequestRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -171,6 +181,7 @@ export async function submitCancelRefundTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -178,8 +189,8 @@ export async function submitCancelRefundTransaction(
 			transactionType: 'CancelRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -209,6 +220,7 @@ export async function submitAuthorizeRefundTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -216,8 +228,8 @@ export async function submitAuthorizeRefundTransaction(
 			transactionType: 'AuthorizeRefund',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -247,6 +259,7 @@ export async function submitCollectPaymentTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -254,8 +267,8 @@ export async function submitCollectPaymentTransaction(
 			transactionType: 'CollectPayment',
 			paymentSourceId: context.paymentSourceId,
 			paymentRequestId: context.paymentRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -285,6 +298,7 @@ export async function submitCollectRefundTransaction(
 	});
 
 	const router = getTransactionRouter();
+	const [walletIdA, walletIdB] = sortWalletIds(context.buyerWalletId, context.sellerWalletId);
 
 	return router.submitTransaction(
 		signedTx,
@@ -292,8 +306,8 @@ export async function submitCollectRefundTransaction(
 			transactionType: 'CollectRefund',
 			paymentSourceId: context.paymentSourceId,
 			purchaseRequestId: context.purchaseRequestId,
-			participantIdA: context.buyerParticipantId,
-			participantIdB: context.sellerParticipantId,
+			walletIdA,
+			walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -314,8 +328,8 @@ export async function fetchUtxosForTransaction(
 	address: string,
 	context: {
 		paymentSourceId: string;
-		participantIdA?: string;
-		participantIdB?: string;
+		walletIdA?: string;
+		walletIdB?: string;
 		network: Network;
 		forceLayer?: TransactionLayer;
 	},
@@ -328,8 +342,8 @@ export async function fetchUtxosForTransaction(
 		{
 			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
-			participantIdA: context.participantIdA,
-			participantIdB: context.participantIdB,
+			walletIdA: context.walletIdA,
+			walletIdB: context.walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -344,8 +358,8 @@ export async function fetchUtxosByTxHashForTransaction(
 	txHash: string,
 	context: {
 		paymentSourceId: string;
-		participantIdA?: string;
-		participantIdB?: string;
+		walletIdA?: string;
+		walletIdB?: string;
 		network: Network;
 		forceLayer?: TransactionLayer;
 	},
@@ -358,8 +372,8 @@ export async function fetchUtxosByTxHashForTransaction(
 		{
 			transactionType: 'LockFunds',
 			paymentSourceId: context.paymentSourceId,
-			participantIdA: context.participantIdA,
-			participantIdB: context.participantIdB,
+			walletIdA: context.walletIdA,
+			walletIdB: context.walletIdB,
 			network: context.network,
 			forceLayer: context.forceLayer,
 		},
@@ -372,21 +386,21 @@ export async function fetchUtxosByTxHashForTransaction(
 // ============================================================
 
 /**
- * Check if L2 (Hydra) is available for a transaction between two participants.
- * Uses symmetric participant IDs (no buyer/seller distinction).
+ * Check if L2 (Hydra) is available for a transaction between two HotWallets.
+ * Uses lexicographically ordered wallet IDs (no buyer/seller distinction).
  */
 export async function isHydraAvailable(context: {
 	paymentSourceId: string;
-	participantIdA: string;
-	participantIdB: string;
+	walletIdA: string;
+	walletIdB: string;
 	network: Network;
 }): Promise<boolean> {
 	const router = getTransactionRouter();
 	const layer = await router.determineLayer({
 		transactionType: 'LockFunds',
 		paymentSourceId: context.paymentSourceId,
-		participantIdA: context.participantIdA,
-		participantIdB: context.participantIdB,
+		walletIdA: context.walletIdA,
+		walletIdB: context.walletIdB,
 		network: context.network,
 	});
 

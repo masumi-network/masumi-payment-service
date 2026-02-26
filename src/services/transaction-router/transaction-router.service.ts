@@ -21,23 +21,22 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
 };
 
 /**
- * Function type for finding an active Hydra head between two participants.
+ * Function type for finding an active Hydra head between two HotWallets.
  *
- * Takes two symmetric participant IDs (no buyer/seller distinction) and returns
- * the resolved Hydra head info if an active (Open) head exists, or null.
- * Participants can be agents or external buyers (marketplace frontend users).
+ * Takes two wallet IDs (lexicographically ordered, no buyer/seller distinction)
+ * and returns the resolved Hydra head info if an active (Open) head exists, or null.
  *
  * Typically backed by a DB query: HydraRelation → Heads (Open) → Participants.
  *
  * @example
  * ```typescript
- * router.setHydraHeadFinder(async (participantIdA, participantIdB, network) => {
- *   const [sortedA, sortedB] = participantIdA < participantIdB
- *     ? [participantIdA, participantIdB] : [participantIdB, participantIdA];
+ * router.setHydraHeadFinder(async (walletIdA, walletIdB, network) => {
+ *   const [sortedA, sortedB] = walletIdA < walletIdB
+ *     ? [walletIdA, walletIdB] : [walletIdB, walletIdA];
  *
  *   const relation = await prisma.hydraRelation.findUnique({
- *     where: { network_participantIdA_participantIdB:
- *       { network, participantIdA: sortedA, participantIdB: sortedB } },
+ *     where: { network_walletIdA_walletIdB:
+ *       { network, walletIdA: sortedA, walletIdB: sortedB } },
  *     include: {
  *       Heads: {
  *         where: { status: 'Open' },
@@ -52,12 +51,13 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
  *   if (!openHead) return null;
  *
  *   const ourParticipant = openHead.Participants.find(
- *     p => p.participantId === ourParticipantId,
+ *     p => p.walletId === ourWalletId,
  *   );
  *   if (!ourParticipant) return null;
  *
  *   return {
  *     id: openHead.id,
+ *     headId: openHead.headId!,
  *     nodeUrl: ourParticipant.nodeUrl,
  *     nodeHttpUrl: ourParticipant.nodeHttpUrl,
  *   };
@@ -65,8 +65,8 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
  * ```
  */
 export type FindActiveHydraHead = (
-	participantIdA: string,
-	participantIdB: string,
+	walletIdA: string,
+	walletIdB: string,
 	network: Network,
 ) => ActiveHydraHeadInfo | null | Promise<ActiveHydraHeadInfo | null>;
 
@@ -74,7 +74,7 @@ export type FindActiveHydraHead = (
  * Transaction Router Service
  *
  * Routes transactions to Layer 1 (Cardano) or Layer 2 (Hydra) based on whether
- * an open Hydra head exists between the two participants.
+ * an open Hydra head exists between the two HotWallets.
  *
  * Decision flow:
  * 1. If forceLayer is set → use it
@@ -104,7 +104,7 @@ export class TransactionRouter {
 	}
 
 	/**
-	 * Set a function to find an active Hydra head between two participants.
+	 * Set a function to find an active Hydra head between two HotWallets.
 	 * When not set, all transactions go to L1.
 	 */
 	setHydraHeadFinder(fn: FindActiveHydraHead | null): void {
@@ -127,7 +127,7 @@ export class TransactionRouter {
 	 * Submit a signed transaction to L1 (Cardano) or L2 (Hydra).
 	 *
 	 * @param signedTx - CBOR-encoded signed transaction (hex string)
-	 * @param context - Routing context (agent IDs, payment source, etc.)
+	 * @param context - Routing context (wallet IDs, payment source, etc.)
 	 * @param wallet - MeshWallet for L1 submission
 	 * @returns Result with txHash and layer used
 	 */
@@ -144,8 +144,8 @@ export class TransactionRouter {
 				layer: routing.layer,
 				hydraHeadId: routing.hydraHead?.id,
 				paymentSourceId: context.paymentSourceId,
-				participantIdA: context.participantIdA,
-				participantIdB: context.participantIdB,
+				walletIdA: context.walletIdA,
+				walletIdB: context.walletIdB,
 			});
 		}
 
@@ -260,7 +260,7 @@ export class TransactionRouter {
 	 * Resolve the full routing decision (layer + Hydra head info if L2).
 	 *
 	 * Uses findActiveHydraHead to query the DB for an open HydraHead
-	 * between the two participants (via HydraRelation).
+	 * between the two HotWallets (via HydraRelation).
 	 * Falls back to L1 if no finder is set or no active head is found.
 	 */
 	private async resolveRouting(context: TransactionRoutingContext): Promise<RoutingDecision> {
@@ -272,11 +272,11 @@ export class TransactionRouter {
 			return { layer: 'L1' };
 		}
 
-		const participantA = context.participantIdA ?? '';
-		const participantB = context.participantIdB ?? '';
+		const walletA = context.walletIdA ?? '';
+		const walletB = context.walletIdB ?? '';
 
-		if (this.findActiveHydraHead && participantA && participantB) {
-			const head = await Promise.resolve(this.findActiveHydraHead(participantA, participantB, context.network));
+		if (this.findActiveHydraHead && walletA && walletB) {
+			const head = await Promise.resolve(this.findActiveHydraHead(walletA, walletB, context.network));
 			if (head) {
 				return { layer: 'L2', hydraHead: head };
 			}

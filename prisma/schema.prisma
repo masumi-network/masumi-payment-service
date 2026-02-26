@@ -68,6 +68,9 @@ model HotWallet {
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
+  HydraRelationsA      HydraRelation[]    @relation("HydraRelationWalletA")
+  HydraRelationsB      HydraRelation[]    @relation("HydraRelationWalletB")
+  HydraParticipants    HydraParticipant[] @relation("HydraParticipantWallet")
 }
 
 model Transaction {
@@ -579,43 +582,39 @@ enum HydraHeadStatus {
   Final
 }
 
-enum HydraParticipantType {
-  Agent
-  ExternalBuyer
-}
-
-/// Persistent relation between exactly 2 participants for Hydra L2.
-/// This is the lookup key for routing decisions: "is there a head between A and B?"
+/// Persistent relation between exactly 2 HotWallets for Hydra L2.
+/// This is the lookup key for routing decisions: "is there a head between wallet X and wallet Y?"
 /// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
 ///
-/// Participants are stored in deterministic order (participantIdA < participantIdB
-/// lexicographically) so the same pair is never duplicated with swapped columns.
-/// Participants can be agents or external buyers (marketplace frontend users).
+/// Wallets are stored in deterministic order (walletIdA < walletIdB lexicographically)
+/// so the same pair is never duplicated with swapped columns.
+/// The buyer/seller role is not encoded here — it is resolved from HotWallet.type at query time.
 model HydraRelation {
-  id             String      @id @default(cuid())
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id        String    @id @default(cuid())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   /// Cardano network this relation operates on
-  network        Network
+  network   Network
 
-  /// First participant (lexicographically smaller ID)
-  participantIdA String
-
-  /// Second participant (lexicographically larger ID)
-  participantIdB String
+  /// First wallet (lexicographically smaller HotWallet ID)
+  walletIdA String
+  /// Second wallet (lexicographically larger HotWallet ID)
+  walletIdB String
+  WalletA   HotWallet @relation("HydraRelationWalletA", fields: [walletIdA], references: [id], onDelete: Restrict)
+  WalletB   HotWallet @relation("HydraRelationWalletB", fields: [walletIdB], references: [id], onDelete: Restrict)
 
   /// Individual head sessions within this relation (1:N)
-  Heads            HydraHead[]
+  Heads     HydraHead[]
 
-  /// One relation per participant pair per network
-  @@unique([network, participantIdA, participantIdB])
+  /// One relation per wallet pair per network
+  @@unique([network, walletIdA, walletIdB])
 
-  /// Primary lookup: find relation between two specific participants
-  @@index([participantIdA, participantIdB])
+  /// Primary lookup: find relation between two specific wallets
+  @@index([walletIdA, walletIdB])
 
   /// Reverse lookup
-  @@index([participantIdB, participantIdA])
+  @@index([walletIdB, walletIdA])
 }
 
 /// A single Hydra head instance within a participant relation.
@@ -628,7 +627,7 @@ model HydraHead {
 
   /// The participant relation this head belongs to
   hydraRelationId      String
-  HydraRelation        HydraRelation      @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
+  HydraRelation        HydraRelation      @relation(fields: [hydraRelationId], references: [id], onDelete: Restrict)
 
   /// Hydra protocol head ID (assigned by Hydra node after Init)
   headId               String?            @unique
@@ -682,13 +681,11 @@ model HydraParticipant {
 
   /// Which head this participant belongs to
   hydraHeadId            String
-  HydraHead              HydraHead             @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+  HydraHead              HydraHead             @relation(fields: [hydraHeadId], references: [id], onDelete: Restrict)
 
-  /// Unique identifier for this participant (agent ID or external buyer ID)
-  participantId          String
-
-  /// Whether this participant is a registered agent or an external buyer
-  participantType        HydraParticipantType @default(Agent)
+  /// The HotWallet this participant represents
+  walletId               String
+  Wallet                 HotWallet             @relation("HydraParticipantWallet", fields: [walletId], references: [id], onDelete: Restrict)
 
   /// Participant order/index in the head (0-based)
   participantIndex       Int
@@ -715,31 +712,24 @@ model HydraParticipant {
   hydraSecretId          String?               @unique
   HydraSecret            HydraSecret?          @relation(fields: [hydraSecretId], references: [id])
 
-  /// Same participant cannot join the same head twice
-  @@unique([hydraHeadId, participantId])
+  /// Same wallet cannot join the same head twice
+  @@unique([hydraHeadId, walletId])
 
-  /// Index for "find all heads where participant X is involved"
-  @@index([participantId])
-  @@index([participantId, hydraHeadId])
+  /// Index for "find all heads where a wallet is involved"
+  @@index([walletId])
+  @@index([walletId, hydraHeadId])
 }
 
-/// Encrypted secret key material for a Hydra participant (1:1 with HydraParticipant).
-/// Stores the three secret keys needed to operate a Hydra node participant:
-/// fundWalletSK, nodeWalletSK, and hydraSK as encrypted JSON key envelopes.
+/// Encrypted Hydra signing key for a participant (1:1 with HydraParticipant).
+/// Fund and node wallet keys are not needed here — those come from the HotWallet.
 /// Uses the project's encrypt()/decrypt() from @/utils/security/encryption.
 model HydraSecret {
   id                      String            @id @default(cuid())
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
-  /// Encrypted JSON key envelope for the fund wallet signing key
-  encryptedFundWalletSK   String
-
-  /// Encrypted JSON key envelope for the node wallet signing key
-  encryptedNodeWalletSK   String
-
-  /// Encrypted JSON key envelope for the Hydra signing key
-  encryptedHydraSK        String
+  /// Encrypted Hydra signing key (cborHex of the signing key)
+  hydraSK                 String
 
   HydraParticipant        HydraParticipant?
 }
