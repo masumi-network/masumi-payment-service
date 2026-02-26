@@ -702,6 +702,11 @@ model HydraParticipant {
   /// Hydra verification key for this participant in the head
   hydraVerificationKey   String?
 
+  /// UTxO identifier (<tx-hash>#<output-index>) used for L1 Hydra lifecycle transactions
+  /// (init, commit, incremental commit, close, fanout)
+  /// This will be updated everytime Participant submit Hydra Lifecycle Transactions.
+  nodeUTxO                   String
+
   /// Whether this participant has committed funds to the head
   hasCommitted           Boolean               @default(false)
 
