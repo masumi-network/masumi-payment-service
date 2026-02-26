@@ -27,6 +27,13 @@ export default function Developers() {
 
   const handleIframeLoad = useCallback(() => setIsIframeLoaded(true), []);
 
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+    if (tab !== 'OpenAPI') {
+      setIsIframeLoaded(false);
+    }
+  }, []);
+
   // Sync app theme to swagger iframe via data-theme attribute
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -67,7 +74,7 @@ export default function Developers() {
               </div>
             </div>
 
-            <Tabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+            <Tabs tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange} />
 
             {activeTab === 'Testing' && (
               <div className="space-y-6 animate-fade-in-up opacity-0">
