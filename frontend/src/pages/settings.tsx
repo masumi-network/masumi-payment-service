@@ -21,9 +21,9 @@ export default function Settings() {
         <title>Settings | Admin Interface</title>
       </Head>
       <AnimatedPage>
-        <div>
-          <div className="mb-6">
-            <h1 className="text-xl font-semibold mb-1">Settings</h1>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-semibold">Settings</h1>
             <p className="text-sm text-muted-foreground">
               Manage your account settings and preferences
             </p>

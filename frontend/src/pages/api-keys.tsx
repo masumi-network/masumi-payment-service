@@ -132,203 +132,198 @@ export default function ApiKeys() {
         <title>API Keys | Admin Interface</title>
       </Head>
       <AnimatedPage>
-        <div>
-          <div className="mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-semibold mb-1">API keys</h1>
-                <p className="text-sm text-muted-foreground">
-                  Manage your API keys for accessing the payment service.{' '}
-                  <a
-                    href="https://docs.masumi.network/api-reference"
-                    target="_blank"
-                    className="text-primary hover:underline"
-                  >
-                    Learn more
-                  </a>
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <RefreshButton
-                  onRefresh={() => {
-                    refetch();
-                  }}
-                  isRefreshing={isLoading}
-                />
-                <Button className="btn-hover-lift" onClick={() => setIsAddDialogOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Add API key
-                </Button>
-              </div>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold">API keys</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage your API keys for accessing the payment service.{' '}
+                <a
+                  href="https://docs.masumi.network/api-reference"
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  Learn more
+                </a>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => {
+                  refetch();
+                }}
+                isRefreshing={isLoading}
+              />
+              <Button className="btn-hover-lift" onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Add API key
+              </Button>
+            </div>
+          </div>
+          <Tabs
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              refetch();
+            }}
+          />
+
+          <div className="flex justify-between items-center">
+            <div className="flex-1">
+              <SearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search by name, key ID, permission, status, network, or usage"
+                className="max-w-xs"
+              />
             </div>
           </div>
 
-          <div className="space-y-6">
-            <Tabs
-              tabs={tabs}
-              activeTab={activeTab}
-              onTabChange={(tab) => {
-                setActiveTab(tab);
-                refetch();
-              }}
-            />
-
-            <div className="flex justify-between items-center">
-              <div className="flex-1">
-                <SearchInput
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  placeholder="Search by name, key ID, permission, status, network, or usage"
-                  className="max-w-xs"
-                />
-              </div>
-            </div>
-
-            <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
+          <div className="border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="p-4 pl-6">ID</TableHead>
+                  <TableHead className="p-4">Key</TableHead>
+                  <TableHead className="p-4">Permission</TableHead>
+                  <TableHead className="p-4">Network Limits</TableHead>
+                  <TableHead className="p-4">Usage Limits</TableHead>
+                  <TableHead className="p-4">Status</TableHead>
+                  <TableHead className="w-10 p-4"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <ApiKeyTableSkeleton rows={5} />
+                ) : filteredApiKeys.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-4">ID</TableHead>
-                    <TableHead>Key</TableHead>
-                    <TableHead>Permission</TableHead>
-                    <TableHead>Network Limits</TableHead>
-                    <TableHead>Usage Limits</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-10"></TableHead>
+                    <TableCell colSpan={7}>
+                      <EmptyState
+                        icon={searchQuery ? 'search' : 'inbox'}
+                        title={
+                          searchQuery
+                            ? 'No API keys found matching your search'
+                            : 'No API keys found'
+                        }
+                        description={
+                          searchQuery
+                            ? 'Try adjusting your search terms'
+                            : 'Add an API key to get started'
+                        }
+                      />
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading ? (
-                    <ApiKeyTableSkeleton rows={5} />
-                  ) : filteredApiKeys.length === 0 ? (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={7}>
-                        <EmptyState
-                          icon={searchQuery ? 'search' : 'inbox'}
-                          title={
-                            searchQuery
-                              ? 'No API keys found matching your search'
-                              : 'No API keys found'
+                ) : (
+                  filteredApiKeys.map((key, index) => (
+                    <TableRow
+                      key={index}
+                      className="animate-fade-in opacity-0"
+                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                    >
+                      <TableCell className="p-4 pl-6 font-mono text-xs text-muted-foreground">
+                        {shortenAddress(key.id)}
+                      </TableCell>
+                      <TableCell className="p-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm text-muted-foreground">
+                            {shortenAddress(key.token)}
+                          </span>
+                          <CopyButton value={key.token} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="p-4">
+                        <Badge
+                          variant={
+                            key.permission === 'Admin'
+                              ? 'default'
+                              : key.permission === 'ReadAndPay'
+                                ? 'secondary'
+                                : 'outline'
                           }
-                          description={
-                            searchQuery
-                              ? 'Try adjusting your search terms'
-                              : 'Add an API key to get started'
+                        >
+                          {key.permission}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="p-4">
+                        {key.networkLimit.length > 0 ? (
+                          <div className="flex gap-1">
+                            {key.networkLimit.map((net) => (
+                              <Badge key={net} variant="outline" className="font-normal">
+                                {net}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Unlimited</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-4 text-sm">
+                        {key.usageLimited ? (
+                          <div className="space-y-0.5">
+                            {key.RemainingUsageCredits.map((credit, i) => (
+                              <div key={i} className="text-muted-foreground">
+                                {credit.unit === 'lovelace'
+                                  ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
+                                  : `${credit.amount} ${credit.unit}`}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">Unlimited</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-4">
+                        <Badge
+                          variant={key.status === 'Active' ? 'default' : 'destructive'}
+                          className={
+                            key.status === 'Active'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
+                              : ''
                           }
-                        />
+                        >
+                          {key.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="p-4">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                              <span className="sr-only">Actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-[120px]">
+                            <DropdownMenuItem
+                              onClick={() => setKeyToUpdate(key)}
+                              className="whitespace-nowrap"
+                            >
+                              <Pencil className="mr-2 h-4 w-4 shrink-0" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              disabled={key.token === apiKey}
+                              onClick={() => setKeyToDelete(key)}
+                              className="whitespace-nowrap text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4 shrink-0" />
+                              <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredApiKeys.map((key, index) => (
-                      <TableRow
-                        key={index}
-                        className="animate-fade-in opacity-0"
-                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                      >
-                        <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
-                          {shortenAddress(key.id)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm text-muted-foreground">
-                              {shortenAddress(key.token)}
-                            </span>
-                            <CopyButton value={key.token} />
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              key.permission === 'Admin'
-                                ? 'default'
-                                : key.permission === 'ReadAndPay'
-                                  ? 'secondary'
-                                  : 'outline'
-                            }
-                          >
-                            {key.permission}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {key.networkLimit.length > 0 ? (
-                            <div className="flex gap-1">
-                              {key.networkLimit.map((net) => (
-                                <Badge key={net} variant="outline" className="font-normal">
-                                  {net}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">Unlimited</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {key.usageLimited ? (
-                            <div className="space-y-0.5">
-                              {key.RemainingUsageCredits.map((credit, i) => (
-                                <div key={i} className="text-muted-foreground">
-                                  {credit.unit === 'lovelace'
-                                    ? `${(Number(credit.amount) / 1000000).toLocaleString()} ADA`
-                                    : `${credit.amount} ${credit.unit}`}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">Unlimited</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={key.status === 'Active' ? 'default' : 'destructive'}
-                            className={
-                              key.status === 'Active'
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30'
-                                : ''
-                            }
-                          >
-                            {key.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                                <span className="sr-only">Actions</span>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="min-w-[120px]">
-                              <DropdownMenuItem
-                                onClick={() => setKeyToUpdate(key)}
-                                className="whitespace-nowrap"
-                              >
-                                <Pencil className="mr-2 h-4 w-4 shrink-0" />
-                                Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                disabled={key.token === apiKey}
-                                onClick={() => setKeyToDelete(key)}
-                                className="whitespace-nowrap text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4 shrink-0" />
-                                <span>{key.token === apiKey ? 'In use' : 'Delete'}</span>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-            <div className="flex flex-col gap-4 items-center">
-              {!isLoading && (
-                <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
-              )}
-            </div>
+          <div className="flex flex-col gap-4 items-center">
+            {!isLoading && (
+              <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
+            )}
           </div>
         </div>
 

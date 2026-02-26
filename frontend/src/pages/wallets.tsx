@@ -260,7 +260,7 @@ export default function WalletsPage() {
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
               <Button
-                className="flex items-center gap-2 bg-black text-white hover:bg-black/90 btn-hover-lift"
+                className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
@@ -286,7 +286,7 @@ export default function WalletsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-7">Type</th>
+                  <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
                   <th className="p-4 text-left text-sm font-medium">Note</th>
                   <th className="p-4 text-left text-sm font-medium">Address</th>
                   <th className="p-4 text-left text-sm font-medium">Collection Address</th>
@@ -317,7 +317,7 @@ export default function WalletsPage() {
                         style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => handleWalletClick(wallet)}
                       >
-                        <td className="p-4 pl-7">
+                        <td className="p-4 pl-6">
                           {wallet.type === 'Collection' ? (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
                               Collection

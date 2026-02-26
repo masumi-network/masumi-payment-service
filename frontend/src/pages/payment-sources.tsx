@@ -232,7 +232,7 @@ export default function PaymentSourcesPage() {
                 isRefreshing={isLoading}
               />
               <Button
-                className="flex items-center gap-2 bg-black text-white hover:bg-black/90 btn-hover-lift"
+                className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />

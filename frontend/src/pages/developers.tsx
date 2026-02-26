@@ -34,11 +34,13 @@ export default function Developers() {
       <MainLayout>
         <AnimatedPage>
           <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold">Developers</h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                API documentation and testing tools.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold">Developers</h1>
+                <p className="text-sm text-muted-foreground">
+                  API documentation and testing tools.
+                </p>
+              </div>
             </div>
 
             <Tabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />

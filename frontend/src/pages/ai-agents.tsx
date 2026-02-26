@@ -301,7 +301,7 @@ export default function AIAgentsPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold mb-1">AI agents</h1>
+              <h1 className="text-2xl font-semibold">AI agents</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your AI agents and their configurations.{' '}
                 <a
@@ -341,7 +341,7 @@ export default function AIAgentsPage() {
             />
 
             <div className="flex items-center justify-between gap-4">
-              <div className="flex-1 max-w-sm">
+              <div className="flex-1 max-w-xs">
                 <SearchInput
                   value={searchQuery}
                   onChange={setSearchQuery}
