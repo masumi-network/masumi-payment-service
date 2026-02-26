@@ -696,12 +696,6 @@ model HydraParticipant {
   /// HTTP URL for this participant's Hydra node (e.g. http://127.0.0.1:4001)
   nodeHttpUrl            String
 
-  /// Cardano verification key for this participant in the head
-  cardanoVerificationKey String?
-
-  /// Hydra verification key for this participant in the head
-  hydraVerificationKey   String?
-
   /// Whether this participant has committed funds to the head
   hasCommitted           Boolean               @default(false)
 
