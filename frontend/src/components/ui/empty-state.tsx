@@ -20,7 +20,7 @@ export function EmptyState({
 
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 text-center', className)}>
-      <div className="animate-empty-bounce mb-4">
+      <div className="mb-4">
         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
           <Icon className="h-6 w-6 text-muted-foreground" />
         </div>

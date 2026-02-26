@@ -151,7 +151,7 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
-@keyframes bounceBottom {
+@keyframes slideUpFromBottom {
   0% {
     transform: translateY(100px);
     opacity: 0;
@@ -162,8 +162,8 @@ input[type='number'] {
   }
 }
 
-.animate-bounce-bottom {
-  animation: bounceBottom 0.3s ease forwards;
+.animate-slide-up-from-bottom {
+  animation: slideUpFromBottom 0.3s ease forwards;
 }
 
 #__next {
@@ -183,17 +183,6 @@ input[type='number'] {
   animation: spin 1s linear infinite;
 }
 
-@keyframes scaleIn {
-  0% {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 @keyframes rotateIn {
   0% {
     transform: rotate(-360deg);
@@ -208,15 +197,15 @@ input[type='number'] {
 /* Highlight animation for searched elements */
 @keyframes highlight {
   0% {
-    opacity: 1;
+    box-shadow: 0 0 0 2px hsl(var(--ring));
   }
   100% {
-    opacity: 0;
+    box-shadow: 0 0 0 4px hsl(var(--ring) / 0.3);
   }
 }
 
 .highlight-element {
-  animation: highlight 0.5s ease infinite alternate;
+  animation: highlight 0.7s ease-in-out infinite alternate;
   border-radius: var(--radius);
   transition: all 0.2s ease;
 }
@@ -254,11 +243,13 @@ input[type='number'] {
 @keyframes slideDown {
   from {
     opacity: 0;
-    max-height: 0;
+    transform: scaleY(0);
+    transform-origin: top;
   }
   to {
     opacity: 1;
-    max-height: 500px;
+    transform: scaleY(1);
+    transform-origin: top;
   }
 }
 
@@ -379,16 +370,6 @@ input[type='number'] {
   }
 }
 
-@keyframes glowPulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
 .animate-slide-in-bottom {
   animation: slideInFromBottom 0.3s ease-out forwards;
 }
@@ -405,33 +386,29 @@ input[type='number'] {
   animation: popIn 0.25s ease-out forwards;
 }
 
-.animate-glow-pulse {
-  animation: glowPulse 3s ease-in-out infinite;
-}
-
 /* Staggered animation delays for setup wizard */
-.animate-delay-75 {
+.animate-delay-50 {
   animation-delay: 50ms;
 }
-.animate-delay-100 {
+.animate-delay-75 {
   animation-delay: 75ms;
 }
-.animate-delay-150 {
+.animate-delay-100 {
   animation-delay: 100ms;
 }
-.animate-delay-200 {
+.animate-delay-125 {
   animation-delay: 125ms;
 }
-.animate-delay-250 {
+.animate-delay-150 {
   animation-delay: 150ms;
 }
-.animate-delay-300 {
+.animate-delay-175 {
   animation-delay: 175ms;
 }
-.animate-delay-400 {
+.animate-delay-225 {
   animation-delay: 225ms;
 }
-.animate-delay-500 {
+.animate-delay-275 {
   animation-delay: 275ms;
 }
 
@@ -482,17 +459,6 @@ input[type='number'] {
   }
 }
 
-/* Floating icon for empty states */
-@keyframes emptyBounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
 .animate-content-reveal {
   animation: contentReveal 0.3s ease-out forwards;
 }
@@ -520,10 +486,6 @@ input[type='number'] {
   to {
     opacity: 1;
   }
-}
-
-.animate-empty-bounce {
-  animation: emptyBounce 3s ease-in-out infinite;
 }
 
 /* Extended stagger delays */

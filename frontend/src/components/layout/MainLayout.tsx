@@ -357,12 +357,18 @@ export function MainLayout({ children }: MainLayoutProps) {
                   {item.icon}
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
                   {!(collapsed && !isHovered) && item.badge && (
-                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    <span
+                      key={item.badge}
+                      className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
                       {item.badge}
                     </span>
                   )}
                   {collapsed && !isHovered && item.badge && (
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    <span
+                      key={item.badge}
+                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
                       {item.badge}
                     </span>
                   )}
@@ -485,9 +491,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                   )}
                   onClick={() => setIsNotificationsOpen(true)}
                 >
-                  <Bell
-                    className={cn('h-4 w-4', newTransactionsCount > 0 && 'animate-subtle-pulse')}
-                  />
+                  <Bell className="h-4 w-4" />
                   {formatCount(newTransactionsCount)}
                 </Button>
               </div>

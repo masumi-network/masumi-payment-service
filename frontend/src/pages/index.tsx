@@ -203,7 +203,7 @@ export default function Overview() {
                       <div
                         key={agent.id}
                         className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer transition-all duration-150 hover:bg-muted/30 hover:pl-1 animate-fade-in-up opacity-0"
-                        style={{ animationDelay: `${Math.min(index, 9) * 50}ms` }}
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                         onClick={() => setSelectedAgentForDetails(agent)}
                       >
                         <div className="flex flex-col gap-1 max-w-[80%]">
@@ -313,7 +313,7 @@ export default function Overview() {
                               <tr
                                 key={wallet.id}
                                 className="border-b last:border-0 cursor-pointer hover:bg-muted/10 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
-                                style={{ animationDelay: `${Math.min(index, 9) * 50}ms` }}
+                                style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                                 onClick={() => setSelectedWalletForDetails(wallet)}
                               >
                                 <td className="py-3 px-2">

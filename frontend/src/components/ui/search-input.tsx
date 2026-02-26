@@ -16,8 +16,8 @@ export function SearchInput({
   className,
 }: SearchInputProps) {
   return (
-    <div className="relative">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    <div className="relative group">
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-all duration-200 group-focus-within:scale-90 group-focus-within:text-foreground" />
       <Input
         className={cn('pl-9 h-9', value && 'pr-8', className)}
         placeholder={placeholder}
