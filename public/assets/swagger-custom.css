@@ -83,9 +83,9 @@
 	--swg-content-max: 1280px;
 }
 
-/* ─── Dark Theme ─── */
+/* ─── Dark Theme (OS preference OR manual toggle) ─── */
 @media (prefers-color-scheme: dark) {
-	:root {
+	:root:not([data-theme='light']) {
 		--swg-bg: #0a0e14;
 		--swg-surface: #12171f;
 		--swg-surface-raised: #1a2030;
@@ -117,24 +117,95 @@
 
 		--swg-focus-ring: 0 0 0 3px rgba(255, 100, 0, 0.2);
 	}
+}
 
-	.swagger-ui .unlocked,
-	.swagger-ui .arrow,
-	.swagger-ui .unlocked svg,
-	.swagger-ui .arrow svg {
+/* Manual dark override */
+:root[data-theme='dark'] {
+	--swg-bg: #0a0e14;
+	--swg-surface: #12171f;
+	--swg-surface-raised: #1a2030;
+	--swg-surface-sunken: #080b10;
+	--swg-surface-overlay: rgba(18, 23, 31, 0.6);
+
+	--swg-border: #1e2736;
+	--swg-border-subtle: #161d28;
+	--swg-border-strong: #2e3a4d;
+
+	--swg-text: #e8ecf1;
+	--swg-text-secondary: #b0b8c7;
+	--swg-text-muted: #6b7a90;
+
+	--swg-brand-glow: rgba(255, 100, 0, 0.06);
+
+	--swg-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.15);
+	--swg-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+	--swg-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.15);
+	--swg-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.15);
+	--swg-shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.2);
+
+	--swg-glass-bg: rgba(18, 23, 31, 0.8);
+	--swg-glass-border: var(--swg-border);
+
+	--swg-code-bg: #0f141b;
+	--swg-code-border: #1e2736;
+	--swg-code-text: #d1d9e5;
+
+	--swg-focus-ring: 0 0 0 3px rgba(255, 100, 0, 0.2);
+}
+
+/* Dark mode element overrides (both OS + manual) */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) .swagger-ui .unlocked,
+	:root:not([data-theme='light']) .swagger-ui .arrow,
+	:root:not([data-theme='light']) .swagger-ui .unlocked svg,
+	:root:not([data-theme='light']) .swagger-ui .arrow svg {
 		fill: #e8ecf1 !important;
 	}
 
-	.swagger-ui .errors-wrapper {
+	:root:not([data-theme='light']) .swagger-ui .errors-wrapper {
 		background-color: rgba(127, 29, 29, 0.5) !important;
 		border: 1px solid rgba(239, 68, 68, 0.4) !important;
 		color: #fecaca !important;
 		border-radius: var(--swg-radius-sm) !important;
 	}
 
-	.swagger-ui .errors-wrapper .error-wrapper {
+	:root:not([data-theme='light']) .swagger-ui .errors-wrapper .error-wrapper {
 		color: #fecaca !important;
 	}
+}
+
+:root[data-theme='dark'] .swagger-ui .unlocked,
+:root[data-theme='dark'] .swagger-ui .arrow,
+:root[data-theme='dark'] .swagger-ui .unlocked svg,
+:root[data-theme='dark'] .swagger-ui .arrow svg {
+	fill: #e8ecf1 !important;
+}
+
+:root[data-theme='dark'] .swagger-ui .errors-wrapper {
+	background-color: rgba(127, 29, 29, 0.5) !important;
+	border: 1px solid rgba(239, 68, 68, 0.4) !important;
+	color: #fecaca !important;
+	border-radius: var(--swg-radius-sm) !important;
+}
+
+:root[data-theme='dark'] .swagger-ui .errors-wrapper .error-wrapper {
+	color: #fecaca !important;
+}
+
+/* ─── Dark Mode Toggle (built-in lightbulb) ─── */
+.swagger-ui .dark-mode-toggle {
+	position: relative;
+	z-index: 1;
+	margin-left: var(--swg-space-3);
+}
+
+.swagger-ui .dark-mode-toggle button {
+	cursor: pointer;
+	transition: transform var(--swg-duration-fast) var(--swg-ease);
+}
+
+.swagger-ui .dark-mode-toggle button:hover {
+	transform: scale(1.15);
 }
 
 /* ─── Keyframes ─── */
@@ -229,6 +300,21 @@
 	color: var(--swg-text) !important;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	padding-bottom: var(--swg-space-16) !important;
+}
+
+/* Theme transition overlay — fades out after toggle */
+.theme-fade-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 99999;
+	pointer-events: none;
+	opacity: 1;
+	transition: opacity 750ms var(--swg-ease);
+}
+
+.theme-fade-overlay.fade-out {
+	opacity: 0;
 }
 
 /* Constrain content width for readability */
@@ -260,6 +346,7 @@
 	font-size: 0.8125rem !important;
 	line-height: 1.65 !important;
 	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	min-height: calc(1.65em * 8 + var(--swg-space-3) * 2) !important;
 }
 
 /* Code blocks */
@@ -411,12 +498,15 @@
    SCHEME CONTAINER + SERVERS
    ══════════════════════════════════════════════════════════════════════ */
 .swagger-ui .scheme-container {
-	background: var(--swg-surface) !important;
-	border: 1px solid var(--swg-border) !important;
-	border-radius: var(--swg-radius) !important;
-	box-shadow: var(--swg-shadow-sm);
-	padding: var(--swg-space-5) var(--swg-space-6) !important;
-	margin-bottom: var(--swg-space-8) !important;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	padding: 0 var(--swg-space-8) var(--swg-space-4) !important;
+	margin-bottom: var(--swg-space-4) !important;
+	max-width: var(--swg-content-max) !important;
+	margin-left: auto !important;
+	margin-right: auto !important;
 }
 
 /* Hide the servers dropdown */
@@ -438,12 +528,27 @@
 	font-weight: 700 !important;
 	letter-spacing: -0.02em;
 	border-bottom: 1px solid var(--swg-border-subtle) !important;
-	padding: var(--swg-space-3) var(--swg-space-2) !important;
+	padding: var(--swg-space-4) var(--swg-space-4) !important;
 	margin-bottom: var(--swg-space-3) !important;
 	cursor: pointer;
 	transition:
 		color var(--swg-duration-fast) var(--swg-ease),
 		border-color var(--swg-duration) var(--swg-ease);
+}
+
+/* Make the full tag row clickable */
+.swagger-ui .opblock-tag > a,
+.swagger-ui .opblock-tag > small,
+.swagger-ui .opblock-tag > button {
+	pointer-events: none !important;
+}
+
+.swagger-ui .opblock-tag {
+	position: relative !important;
+}
+
+.swagger-ui .opblock-tag * {
+	cursor: pointer !important;
 }
 
 .swagger-ui .opblock-tag:hover {
@@ -478,7 +583,7 @@
    OPERATION BLOCKS — Endpoint cards
    ══════════════════════════════════════════════════════════════════════ */
 .swagger-ui .opblock {
-	background: var(--swg-surface) !important;
+	background: transparent !important;
 	border: 1px solid var(--swg-border) !important;
 	border-radius: var(--swg-radius-sm) !important;
 	margin-bottom: var(--swg-space-2) !important;
@@ -499,10 +604,11 @@
 /* ─── Opblock Summary (the clickable row) ─── */
 .swagger-ui .opblock .opblock-summary {
 	border-color: transparent !important;
-	padding: var(--swg-space-2) var(--swg-space-4) !important;
-	min-height: 40px;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	min-height: 48px;
 	display: flex;
 	align-items: center;
+	cursor: pointer !important;
 }
 
 .swagger-ui .opblock-summary-method {
@@ -760,14 +866,34 @@
 	font-weight: 700 !important;
 	padding: var(--swg-space-2) var(--swg-space-6) !important;
 	min-height: 40px;
+	display: inline-flex !important;
+	align-items: center !important;
+	gap: var(--swg-space-2) !important;
 }
 
 .swagger-ui .btn.authorize:hover {
 	box-shadow: 0 4px 16px rgba(255, 100, 0, 0.3);
 }
 
+.swagger-ui .btn.authorize span {
+	line-height: 1 !important;
+	position: relative !important;
+	top: -1px !important;
+}
+
 .swagger-ui .btn.authorize svg {
-	fill: #fff;
+	fill: #fff !important;
+	width: 14px !important;
+	height: 14px !important;
+	flex-shrink: 0 !important;
+}
+
+/* Execute / Clear button wrapper */
+.swagger-ui .execute-wrapper {
+	display: flex !important;
+	gap: var(--swg-space-3) !important;
+	align-items: center !important;
+	margin-top: var(--swg-space-4) !important;
 }
 
 /* Execute button */
@@ -783,6 +909,15 @@
 
 .swagger-ui .btn.execute:hover {
 	box-shadow: 0 4px 16px rgba(255, 100, 0, 0.3);
+}
+
+/* Clear button (appears after Execute) */
+.swagger-ui .btn-clear {
+	margin-top: var(--swg-space-3) !important;
+}
+
+.swagger-ui .execute-wrapper .btn-clear {
+	margin-top: 0 !important;
 }
 
 /* Cancel button */
@@ -817,54 +952,95 @@
 	position: fixed !important;
 	inset: 0 !important;
 	z-index: 9999;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
 }
 
 .swagger-ui .dialog-ux .backdrop-ux {
-	background: rgba(0, 0, 0, 0.4) !important;
-	backdrop-filter: blur(6px);
-	-webkit-backdrop-filter: blur(6px);
+	position: fixed !important;
+	inset: 0 !important;
+	background: rgba(0, 0, 0, 0.5) !important;
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
 }
 
 .swagger-ui .dialog-ux .modal-ux {
+	position: relative !important;
+	z-index: 1;
 	background: var(--swg-surface) !important;
 	border: 1px solid var(--swg-border) !important;
-	border-radius: var(--swg-radius-xl) !important;
+	border-radius: var(--swg-radius-lg) !important;
 	box-shadow: var(--swg-shadow-lg) !important;
 	animation: fadeInUp var(--swg-duration-slow) var(--swg-ease-out) both;
-	max-width: 560px !important;
+	width: 480px !important;
+	max-width: calc(100vw - var(--swg-space-8)) !important;
+	max-height: calc(100vh - var(--swg-space-16)) !important;
+	overflow-y: auto;
 	padding: 0 !important;
-	overflow: hidden;
+	margin: 0 !important;
+	top: auto !important;
+	left: auto !important;
+	right: auto !important;
+	bottom: auto !important;
+	transform: none !important;
 }
 
 .swagger-ui .modal-ux-header {
 	background-color: transparent !important;
 	border-bottom: 1px solid var(--swg-border-subtle) !important;
-	padding: var(--swg-space-6) var(--swg-space-8) var(--swg-space-5) !important;
+	padding: var(--swg-space-5) var(--swg-space-6) !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: space-between !important;
+	min-height: 56px !important;
+	box-sizing: border-box !important;
 }
 
 .swagger-ui .modal-ux-header h3 {
 	color: var(--swg-text) !important;
-	font-size: 1.15rem !important;
+	font-size: 1.05rem !important;
 	font-weight: 700 !important;
 	letter-spacing: -0.02em;
+	margin: 0 !important;
+	padding: 0 !important;
+	line-height: 1.4 !important;
+	display: flex !important;
+	align-items: center !important;
+	gap: 10px !important;
+}
+
+/* Lock icon before modal title */
+.swagger-ui .modal-ux-header h3::before {
+	content: '';
+	display: inline-flex;
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	border-radius: var(--swg-radius-xs);
+	background-color: var(--swg-surface-sunken);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ff6400' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 16px 16px;
 }
 
 .swagger-ui .modal-ux-content {
-	padding: var(--swg-space-6) var(--swg-space-8) var(--swg-space-8) !important;
+	padding: var(--swg-space-5) var(--swg-space-6) var(--swg-space-6) !important;
 }
 
 .swagger-ui .modal-ux-content h4 {
 	color: var(--swg-text) !important;
-	font-size: 0.9rem !important;
+	font-size: 0.875rem !important;
 	font-weight: 600 !important;
-	margin-bottom: var(--swg-space-3) !important;
+	margin-bottom: var(--swg-space-2) !important;
 }
 
 .swagger-ui .modal-ux-content p {
 	color: var(--swg-text-secondary) !important;
-	font-size: 0.875rem !important;
+	font-size: 0.8125rem !important;
 	line-height: 1.6;
-	margin-bottom: var(--swg-space-4) !important;
+	margin-bottom: var(--swg-space-3) !important;
 }
 
 .swagger-ui .modal-ux-content label {
@@ -882,8 +1058,8 @@
 	border: 1.5px solid var(--swg-border) !important;
 	color: var(--swg-text) !important;
 	border-radius: var(--swg-radius-sm) !important;
-	padding: var(--swg-space-3) var(--swg-space-4) !important;
-	min-height: 42px;
+	padding: var(--swg-space-2) var(--swg-space-3) !important;
+	min-height: 38px;
 	font-size: 0.875rem !important;
 }
 
@@ -896,16 +1072,31 @@
 
 .swagger-ui .close-modal {
 	color: var(--swg-text-muted) !important;
-	transition: color var(--swg-duration-fast) var(--swg-ease);
-	padding: var(--swg-space-2) !important;
+	transition:
+		color var(--swg-duration-fast) var(--swg-ease),
+		background-color var(--swg-duration-fast) var(--swg-ease);
+	padding: 6px !important;
+	border-radius: var(--swg-radius-xs) !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: 32px !important;
+	height: 32px !important;
+	margin: 0 !important;
+	flex-shrink: 0 !important;
 }
 
 .swagger-ui .close-modal:hover {
 	color: var(--swg-text) !important;
+	background-color: var(--swg-surface-sunken) !important;
 }
 
 .swagger-ui .auth-container {
-	margin: var(--swg-space-4) 0 !important;
+	margin: var(--swg-space-3) 0 !important;
+	padding: var(--swg-space-4) !important;
+	background: var(--swg-surface-sunken) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	border: 1px solid var(--swg-border-subtle) !important;
 }
 
 .swagger-ui .auth-container h4 {
@@ -920,9 +1111,27 @@
 .swagger-ui .auth-btn-wrapper {
 	display: flex !important;
 	gap: var(--swg-space-3) !important;
-	margin-top: var(--swg-space-6) !important;
-	padding-top: var(--swg-space-5) !important;
+	justify-content: center !important;
+	align-items: center !important;
+	margin-top: var(--swg-space-5) !important;
+	padding-top: var(--swg-space-4) !important;
 	border-top: 1px solid var(--swg-border-subtle) !important;
+}
+
+/* Close button in auth modal */
+.swagger-ui .auth-btn-wrapper .btn-done {
+	background-color: var(--swg-surface-sunken) !important;
+	border: 1.5px solid var(--swg-border-strong) !important;
+	color: var(--swg-text-secondary) !important;
+	font-weight: 600 !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	min-height: 40px;
+}
+
+.swagger-ui .auth-btn-wrapper .btn-done:hover {
+	background-color: var(--swg-border) !important;
+	color: var(--swg-text) !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1324,7 +1533,7 @@
 
 	.swagger-ui .opblock-tag {
 		font-size: 1.1rem !important;
-		padding: var(--swg-space-3) var(--swg-space-1) !important;
+		padding: var(--swg-space-4) var(--swg-space-3) !important;
 	}
 
 	.swagger-ui .btn.execute {
@@ -1333,18 +1542,144 @@
 	}
 
 	.swagger-ui .dialog-ux .modal-ux {
-		margin: var(--swg-space-4) !important;
-		max-width: calc(100vw - var(--swg-space-8)) !important;
-		border-radius: var(--swg-radius-lg) !important;
+		width: calc(100vw - var(--swg-space-8)) !important;
+		border-radius: var(--swg-radius) !important;
 	}
 
 	.swagger-ui .modal-ux-header {
-		padding: var(--swg-space-5) var(--swg-space-5) var(--swg-space-4) !important;
+		padding: var(--swg-space-4) var(--swg-space-4) var(--swg-space-3) !important;
 	}
 
 	.swagger-ui .modal-ux-content {
-		padding: var(--swg-space-5) !important;
+		padding: var(--swg-space-4) !important;
 	}
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   FILTER / SEARCH BAR
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .operation-filter-input {
+	background-color: var(--swg-surface) !important;
+	border: 1.5px solid var(--swg-border) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	color: var(--swg-text) !important;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	font-size: 0.875rem !important;
+	min-height: 42px;
+	width: 100%;
+	max-width: var(--swg-content-max);
+	margin: 0 !important;
+	transition: border-color var(--swg-duration) var(--swg-ease),
+				box-shadow var(--swg-duration) var(--swg-ease);
+}
+
+.swagger-ui .operation-filter-input:focus {
+	border-color: var(--swg-brand-orange) !important;
+	animation: focusRingPulse 0.35s var(--swg-ease) forwards;
+	outline: none !important;
+}
+
+.swagger-ui .operation-filter-input::placeholder {
+	color: var(--swg-text-muted) !important;
+}
+
+/* Filter wrapper + clear button */
+.filter-wrapper {
+	position: relative;
+	width: 100%;
+	max-width: var(--swg-content-max);
+	margin-bottom: var(--swg-space-6);
+}
+
+.filter-wrapper .operation-filter-input {
+	margin-bottom: 0 !important;
+	padding-right: var(--swg-space-10) !important;
+	width: 100% !important;
+	box-sizing: border-box !important;
+}
+
+.filter-clear-btn {
+	position: absolute;
+	right: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 1;
+	background: transparent;
+	border: none;
+	color: var(--swg-text-muted);
+	font-size: 1.1rem;
+	line-height: 1;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	padding: 0;
+	border-radius: 50%;
+	transition: color var(--swg-duration-fast) var(--swg-ease),
+				background-color var(--swg-duration-fast) var(--swg-ease);
+}
+
+.filter-clear-btn:hover {
+	color: var(--swg-text);
+	background-color: var(--swg-border);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   REQUEST DURATION BADGE
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .response-col_duration {
+	color: var(--swg-text-muted) !important;
+	font-family: 'JetBrains Mono', monospace !important;
+	font-size: 0.75rem !important;
+	font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   DEEP LINK ANCHORS
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .opblock-tag a.nostyle {
+	color: var(--swg-text) !important;
+	text-decoration: none !important;
+	transition: color var(--swg-duration-fast) var(--swg-ease);
+}
+
+.swagger-ui .opblock-tag:hover a.nostyle {
+	color: var(--swg-brand-orange) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   VALIDATOR BADGE (hidden)
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .swagger-ui-wrap > .validator {
+	display: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LIVE RESPONSE SECTION
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .live-responses-table .response-col_status {
+	font-family: 'JetBrains Mono', monospace !important;
+}
+
+.swagger-ui .responses-wrapper .curl-command {
+	background: var(--swg-code-bg) !important;
+	border: 1px solid var(--swg-code-border) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LOADING SPINNER
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .loading-container {
+	padding: var(--swg-space-16) !important;
+}
+
+.swagger-ui .loading-container .loading::after {
+	color: var(--swg-brand-orange) !important;
+	font-family: 'Inter', sans-serif !important;
 }
 
 /* Larger screens — more breathing room */
