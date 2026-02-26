@@ -301,7 +301,7 @@ export default function AIAgentsPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">AI agents</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">AI agents</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your AI agents and their configurations.{' '}
                 <a
@@ -352,15 +352,29 @@ export default function AIAgentsPage() {
 
             <div className="rounded-lg border overflow-x-auto">
               <table className="w-full">
-                <thead>
+                <thead className="bg-muted/30 dark:bg-muted/15">
                   <tr className="border-b">
-                    <th className="p-4 text-left text-sm font-medium pl-6">Name</th>
-                    <th className="p-4 text-left text-sm font-medium">Added</th>
-                    <th className="p-4 text-left text-sm font-medium">Agent ID</th>
-                    <th className="p-4 text-left text-sm font-medium">Linked wallet</th>
-                    <th className="p-4 text-left text-sm font-medium">Price</th>
-                    <th className="p-4 text-left text-sm font-medium">Tags</th>
-                    <th className="p-4 text-left text-sm font-medium">Status</th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                      Name
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Added
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Agent ID
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Linked wallet
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Price
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Tags
+                    </th>
+                    <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                      Status
+                    </th>
                     <th className="w-20 p-4 pr-8"></th>
                   </tr>
                 </thead>

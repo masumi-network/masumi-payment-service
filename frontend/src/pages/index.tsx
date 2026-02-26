@@ -3,7 +3,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
@@ -32,6 +32,7 @@ import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { WelcomeBanner } from '@/components/ui/welcome-banner';
 
 type AIAgent = RegistryEntry;
 
@@ -103,7 +104,7 @@ export default function Overview() {
         <AnimatedPage>
           <div className="space-y-6">
             <div>
-              <h1 className="text-2xl font-semibold">Dashboard</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
                 Overview of your AI agents, wallets, and transactions.
               </p>
@@ -120,12 +121,24 @@ export default function Overview() {
               </p>
             </div>
 
+            <WelcomeBanner
+              agentCount={agents.length}
+              walletCount={walletsList.length}
+              transactionCount={newTransactionsCount}
+              hasPaymentSource={!!selectedPaymentSource}
+            />
+
             <div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {isLoadingAgents ? (
                   <StatCardSkeleton />
                 ) : (
-                  <StatCard label="Total AI agents" index={0}>
+                  <StatCard
+                    label="Total AI agents"
+                    index={0}
+                    icon={<Bot className="h-4 w-4 text-blue-500" />}
+                    accentColor="rgb(59, 130, 246)"
+                  >
                     <div className="text-2xl font-semibold">
                       {agents.length}
                       {hasMoreAgents ? '+' : ''}
@@ -135,7 +148,12 @@ export default function Overview() {
                 {isLoadingWallets || isLoadingBalances ? (
                   <StatCardSkeleton />
                 ) : (
-                  <StatCard label="Total USDM" index={1}>
+                  <StatCard
+                    label="Total USDM"
+                    index={1}
+                    icon={<DollarSign className="h-4 w-4 text-green-500" />}
+                    accentColor="rgb(34, 197, 94)"
+                  >
                     <div className="text-2xl font-semibold flex items-center gap-1">
                       <span className="text-xs font-normal text-muted-foreground">$</span>
                       {formatBalance(
@@ -147,7 +165,12 @@ export default function Overview() {
                 {isLoadingWallets || isLoadingBalances ? (
                   <StatCardSkeleton />
                 ) : (
-                  <StatCard label="Total ada balance" index={2}>
+                  <StatCard
+                    label="Total ada balance"
+                    index={2}
+                    icon={<Wallet className="h-4 w-4 text-orange-500" />}
+                    accentColor="rgb(249, 115, 22)"
+                  >
                     <div className="flex flex-col gap-2">
                       <div className="text-2xl font-semibold flex items-center gap-1">
                         {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ??
@@ -165,7 +188,12 @@ export default function Overview() {
                 {isLoadingTransactions ? (
                   <StatCardSkeleton />
                 ) : (
-                  <StatCard label="New Transactions" index={3}>
+                  <StatCard
+                    label="New Transactions"
+                    index={3}
+                    icon={<ArrowUpDown className="h-4 w-4 text-purple-500" />}
+                    accentColor="rgb(168, 85, 247)"
+                  >
                     <>
                       <div className="text-2xl font-semibold">{newTransactionsCount}</div>
                       <Link
@@ -296,7 +324,7 @@ export default function Overview() {
                   ) : (
                     <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
                       <table className="w-full">
-                        <thead className="sticky top-0 bg-background z-10">
+                        <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
                           <tr className="text-sm text-muted-foreground border-b">
                             <th className="text-left py-2 px-2 w-20">Type</th>
                             <th className="text-left py-2 px-2">Name</th>

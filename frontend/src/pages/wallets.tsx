@@ -245,7 +245,7 @@ export default function WalletsPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Wallets</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Wallets</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your buying and selling wallets.{' '}
                 <Link
@@ -284,14 +284,24 @@ export default function WalletsPage() {
 
           <div className="rounded-lg border overflow-x-auto">
             <table className="w-full">
-              <thead>
+              <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">Note</th>
-                  <th className="p-4 text-left text-sm font-medium">Address</th>
-                  <th className="p-4 text-left text-sm font-medium">Collection Address</th>
-                  <th className="p-4 text-left text-sm font-medium">Balance, ADA</th>
-                  <th className="p-4 text-left text-sm font-medium">Balance, USDM</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    Type
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Note</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Address
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Collection Address
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Balance, ADA
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Balance, USDM
+                  </th>
                   <th className="w-20 p-4 pr-8"></th>
                 </tr>
               </thead>
@@ -351,9 +361,7 @@ export default function WalletsPage() {
                               <CopyButton value={wallet.collectionAddress} />
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              {wallet.type === 'Selling' ? 'Not set' : '—'}
-                            </span>
+                            <span className="text-xs text-muted-foreground/50">{'\u2014'}</span>
                           )}
                         </td>
                         <td className="p-4">

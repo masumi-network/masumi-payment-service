@@ -87,10 +87,12 @@ export default function Transactions() {
       {
         name: 'Refund Requests',
         count: refundCount || null,
+        variant: 'alert' as const,
       },
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
       },
     ];
   }, [allTransactions]);
@@ -274,7 +276,7 @@ export default function Transactions() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">Transactions</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
@@ -339,16 +341,28 @@ export default function Transactions() {
 
           <div className="border rounded-lg overflow-x-auto">
             <table className="w-full">
-              <thead>
+              <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">Transaction Hash</th>
-                  <th className="p-4 text-left text-sm font-medium">Amount</th>
-                  <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="p-4 text-left text-sm font-medium">Unlock Time</th>
-                  <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium pr-8"></th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    Type
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Transaction Hash
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Amount
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Network
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Unlock Time
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Date</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pr-8"></th>
                 </tr>
               </thead>
               <tbody>

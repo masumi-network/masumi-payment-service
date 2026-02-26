@@ -97,14 +97,23 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    // Pages accessible even without payment sources (shown in setup sidebar)
+    const setupAccessiblePages = ['/api-keys', '/developers', '/settings'];
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
-      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions', '/api-keys'];
+      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     }
     // If setup mode is active (persisted from before reload), redirect back to setup
-    if (apiKey && isHealthy && isSetupMode && router.pathname !== '/setup') {
+    // but allow access to pages shown in the setup sidebar
+    if (
+      apiKey &&
+      isHealthy &&
+      isSetupMode &&
+      router.pathname !== '/setup' &&
+      !setupAccessiblePages.includes(router.pathname)
+    ) {
       router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
     }
   }, [

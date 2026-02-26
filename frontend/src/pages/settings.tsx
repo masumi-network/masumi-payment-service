@@ -15,6 +15,8 @@ export default function Settings() {
   const { preference, setThemePreference } = useTheme();
   const [showApiKey, setShowApiKey] = useState(false);
 
+  const themeLabel = preference === 'light' ? 'Light' : preference === 'dark' ? 'Dark' : 'System';
+
   return (
     <MainLayout>
       <Head>
@@ -23,16 +25,16 @@ export default function Settings() {
       <AnimatedPage>
         <div className="space-y-6">
           <div>
-            <h1 className="text-2xl font-semibold">Settings</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
             <p className="text-sm text-muted-foreground">
               Manage your account settings and preferences
             </p>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Admin API Key */}
             <div
-              className="space-y-4 animate-fade-in-up opacity-0"
+              className="border rounded-lg p-6 space-y-4 animate-fade-in-up opacity-0"
               style={{ animationDelay: '0ms' }}
             >
               <div>
@@ -70,7 +72,7 @@ export default function Settings() {
 
             {/* Theme Toggle */}
             <div
-              className="space-y-4 animate-fade-in-up opacity-0"
+              className="border rounded-lg p-6 space-y-4 animate-fade-in-up opacity-0"
               id="settings-theme-toggle"
               style={{ animationDelay: '75ms' }}
             >
@@ -78,7 +80,7 @@ export default function Settings() {
                 <h2 className="text-sm font-medium">Theme</h2>
                 <p className="text-sm text-muted-foreground">Select your preferred theme</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <div className="relative bg-[#F4F4F5] dark:bg-secondary rounded-full p-1 flex items-center w-[110px] h-8 gap-1">
                   <div
                     className={cn(
@@ -116,14 +118,19 @@ export default function Settings() {
                     <LuMoon className="h-3.5 w-3.5" />
                   </button>
                 </div>
+                <span className="text-sm text-muted-foreground">{themeLabel}</span>
               </div>
             </div>
 
-            {/* Sign Out */}
+            {/* Danger Zone */}
             <div
-              className="pt-4 border-t w-full animate-fade-in-up opacity-0"
+              className="border border-destructive/20 rounded-lg p-6 animate-fade-in-up opacity-0"
               style={{ animationDelay: '150ms' }}
             >
+              <h2 className="text-sm font-medium">Danger Zone</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Sign out of the admin interface. You will need your API key to sign back in.
+              </p>
               <Button
                 variant="destructive"
                 className="text-sm btn-hover-lift"

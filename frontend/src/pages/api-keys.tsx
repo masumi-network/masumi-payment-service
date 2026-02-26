@@ -135,7 +135,7 @@ export default function ApiKeys() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-semibold">API keys</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">API keys</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
@@ -240,6 +240,11 @@ export default function ApiKeys() {
                               : key.permission === 'ReadAndPay'
                                 ? 'secondary'
                                 : 'outline'
+                          }
+                          className={
+                            key.permission === 'Admin'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80 dark:hover:bg-amber-900/40'
+                              : ''
                           }
                         >
                           {key.permission}

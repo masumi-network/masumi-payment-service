@@ -10,6 +10,14 @@ interface PaginationProps {
 }
 
 export function Pagination({ hasMore, isLoading, onLoadMore, className = '' }: PaginationProps) {
+  if (!hasMore && !isLoading) {
+    return (
+      <div className={`flex justify-center ${className}`}>
+        <span className="text-xs text-muted-foreground/60">End of results</span>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex justify-center space-x-2 ${className}`}>
       <Button
@@ -34,7 +42,7 @@ export function Pagination({ hasMore, isLoading, onLoadMore, className = '' }: P
             isLoading ? 'opacity-0 -translate-y-full' : 'opacity-100 translate-y-0',
           )}
         >
-          {hasMore ? 'Load More' : 'No More Data'}
+          Load More
         </span>
       </Button>
     </div>

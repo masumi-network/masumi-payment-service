@@ -36,7 +36,7 @@ export default function Developers() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-semibold">Developers</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Developers</h1>
                 <p className="text-sm text-muted-foreground">
                   API documentation and testing tools.
                 </p>
@@ -127,7 +127,7 @@ export default function Developers() {
                   )}
                   <iframe
                     src="/docs"
-                    className="w-full h-full"
+                    className="w-full h-full dark:invert dark:hue-rotate-180"
                     title="OpenAPI Documentation"
                     onLoad={handleIframeLoad}
                   />

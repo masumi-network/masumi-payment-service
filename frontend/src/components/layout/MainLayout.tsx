@@ -400,27 +400,34 @@ export function MainLayout({ children }: MainLayoutProps) {
               {!(collapsed && !isHovered) && <span className="truncate">Settings</span>}
             </Link>
           </div>
+          <div className="border-t border-border mx-2 mb-2" />
           <div className="flex items-center justify-between px-2">
             <div
               className={cn(
-                'flex gap-4 text-xs text-muted-foreground',
+                'flex items-center gap-0 text-xs text-muted-foreground',
                 collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link href="https://www.masumi.network/about" target="_blank" className="truncate">
+              <Link
+                href="https://www.masumi.network/about"
+                target="_blank"
+                className="truncate hover:text-foreground transition-colors"
+              >
                 About
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
-                Privacy Policy
+                Privacy
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
                 Changelog
               </Link>
