@@ -48,14 +48,22 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const { collapsed, setCollapsed, isHovered, setIsHovered, shouldAnimateIcon } = useSidebar();
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+    hasAnimatedNav,
+    markNavAnimated,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
   const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
-  const [isFirstNavMount, setIsFirstNavMount] = useState(true);
+  const isFirstNavMount = !hasAnimatedNav;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -64,9 +72,11 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsFirstNavMount(false), 600);
-    return () => clearTimeout(timer);
-  }, []);
+    if (!hasAnimatedNav) {
+      const timer = setTimeout(() => markNavAnimated(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasAnimatedNav, markNavAnimated]);
 
   const applyBlurTransition = useCallback((isActive: boolean) => {
     if (!isActive) return;
@@ -360,7 +370,9 @@ export function MainLayout({ children }: MainLayoutProps) {
                 key={item.href}
                 className={isFirstNavMount ? 'animate-fade-in-up opacity-0' : undefined}
                 style={
-                  isFirstNavMount ? { animationDelay: `${Math.min(index, 7) * 40}ms` } : undefined
+                  isFirstNavMount
+                    ? { animationDelay: `${300 + Math.min(index, 7) * 40}ms` }
+                    : undefined
                 }
               >
                 {isDev && (
@@ -513,7 +525,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
         </div>
 
-        <main className="flex-1 relative z-10 w-full">
+        <main className="flex-1 relative z-10 w-full animate-content-fade-in">
           <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>
