@@ -8,7 +8,7 @@ import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry
 import { DEFAULTS, SERVICE_CONSTANTS } from '@/utils/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { blake2b } from 'ethereum-cryptography/blake2b';
-import { stringToMetadata } from '@/utils/converter/metadata-string-convert';
+import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { errorToString } from '@/utils/converter/error-string-convert';
@@ -118,25 +118,6 @@ function buildAgentMetadata(request: {
 	};
 	// Clean undefined values from metadata - MeshSDK cannot serialize undefined
 	return cleanMetadata(metadata) as AgentMetadata;
-}
-
-function cleanMetadata(obj: unknown): unknown {
-	if (obj === undefined || obj === null) {
-		return obj;
-	}
-	if (Array.isArray(obj)) {
-		return obj.map(cleanMetadata);
-	}
-	if (typeof obj === 'object') {
-		const cleaned: Record<string, unknown> = {};
-		for (const [key, value] of Object.entries(obj)) {
-			if (value !== undefined) {
-				cleaned[key] = cleanMetadata(value);
-			}
-		}
-		return cleaned;
-	}
-	return obj;
 }
 
 export async function registerAgentV1() {
