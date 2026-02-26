@@ -84,7 +84,9 @@ export function ConfirmDialog({
                 />
               </div>
               {confirmationInput.trim() && !isConfirmationValid && (
-                <p className="text-xs text-destructive">The entered text does not match</p>
+                <p className="text-xs text-destructive animate-slide-in-left">
+                  The entered text does not match
+                </p>
               )}
             </div>
           )}
@@ -106,7 +108,9 @@ export function ConfirmDialog({
             onClick={handleConfirm}
             disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
           >
-            {isLoading ? <Spinner size={16} /> : 'Confirm'}
+            <span className="transition-opacity duration-150">
+              {isLoading ? <Spinner size={16} /> : 'Confirm'}
+            </span>
           </Button>
         </div>
       </DialogContent>

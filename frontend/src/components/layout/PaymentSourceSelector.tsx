@@ -54,7 +54,10 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             )}
             onClick={() => onNetworkChange('Preprod')}
           >
-            {network === 'Preprod' && <span className="mr-0.5 text-[8px] text-primary">●</span>}P
+            {network === 'Preprod' && (
+              <span className="mr-0.5 text-[8px] text-primary animate-pop-in">●</span>
+            )}
+            P
           </Button>
           <Button
             variant="ghost"
@@ -67,7 +70,10 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             )}
             onClick={() => onNetworkChange('Mainnet')}
           >
-            {network === 'Mainnet' && <span className="mr-0.5 text-[8px] text-primary">●</span>}M
+            {network === 'Mainnet' && (
+              <span className="mr-0.5 text-[8px] text-primary animate-pop-in">●</span>
+            )}
+            M
           </Button>
         </div>
         {hasSources && (
@@ -111,7 +117,9 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           )}
           onClick={() => onNetworkChange('Preprod')}
         >
-          {network === 'Preprod' && <span className="mr-1 text-[8px] text-primary">●</span>}
+          {network === 'Preprod' && (
+            <span className="mr-1 text-[8px] text-primary animate-pop-in">●</span>
+          )}
           Preprod
         </Button>
         <Button
@@ -125,7 +133,9 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           )}
           onClick={() => onNetworkChange('Mainnet')}
         >
-          {network === 'Mainnet' && <span className="mr-1 text-[8px] text-primary">●</span>}
+          {network === 'Mainnet' && (
+            <span className="mr-1 text-[8px] text-primary animate-pop-in">●</span>
+          )}
           Mainnet
         </Button>
       </div>
@@ -207,7 +217,12 @@ function SourceDropdown({
             className="cursor-pointer flex items-center gap-2"
             onSelect={() => setSelectedPaymentSourceId(source.id)}
           >
-            <Check className={cn('h-4 w-4 shrink-0', isSelected ? 'opacity-100' : 'opacity-0')} />
+            <Check
+              className={cn(
+                'h-4 w-4 shrink-0 transition-opacity duration-150',
+                isSelected ? 'opacity-100' : 'opacity-0',
+              )}
+            />
             <div className="flex flex-col gap-0.5">
               {isDefault ? (
                 <span className="text-sm">Default Contract</span>

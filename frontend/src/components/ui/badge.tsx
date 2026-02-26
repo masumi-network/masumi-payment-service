@@ -17,7 +17,7 @@ const badgeVariants = cva(
         pending:
           'border-transparent bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 animate-subtle-pulse',
         processing:
-          'border-transparent bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+          'border-transparent bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 animate-subtle-pulse',
         outline: 'text-foreground',
       },
     },
