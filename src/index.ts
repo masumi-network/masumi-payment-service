@@ -102,7 +102,33 @@ initialize()
 						swaggerOptions: {
 							persistAuthorization: true,
 							tryItOutEnabled: true,
+							displayRequestDuration: true,
+							deepLinking: true,
+							filter: true,
+							validatorUrl: 'none',
+							docExpansion: 'list',
+							defaultModelsExpandDepth: 0,
+							syntaxHighlight: {
+								activate: true,
+								theme: 'agate',
+							},
 						},
+						customJsStr: `
+							document.addEventListener('DOMContentLoaded', function() {
+								var topbarLink = document.querySelector('.topbar-wrapper .link');
+								if (topbarLink) topbarLink.style.display = 'none';
+							});
+							document.addEventListener('keydown', function(e) {
+								if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+									e.preventDefault();
+									var filterInput = document.querySelector('.operation-filter-input');
+									if (filterInput) {
+										filterInput.focus();
+										filterInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+									}
+								}
+							});
+						`,
 					}),
 				);
 				app.get('/api-docs', (_, res) => {

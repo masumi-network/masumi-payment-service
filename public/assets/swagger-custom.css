@@ -229,6 +229,7 @@
 	color: var(--swg-text) !important;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	padding-bottom: var(--swg-space-16) !important;
 }
 
 /* Constrain content width for readability */
@@ -481,7 +482,7 @@
    OPERATION BLOCKS — Endpoint cards
    ══════════════════════════════════════════════════════════════════════ */
 .swagger-ui .opblock {
-	background: var(--swg-surface) !important;
+	background: transparent !important;
 	border: 1px solid var(--swg-border) !important;
 	border-radius: var(--swg-radius-sm) !important;
 	margin-bottom: var(--swg-space-2) !important;
@@ -763,14 +764,26 @@
 	font-weight: 700 !important;
 	padding: var(--swg-space-2) var(--swg-space-6) !important;
 	min-height: 40px;
+	display: inline-flex !important;
+	align-items: center !important;
+	gap: var(--swg-space-2) !important;
 }
 
 .swagger-ui .btn.authorize:hover {
 	box-shadow: 0 4px 16px rgba(255, 100, 0, 0.3);
 }
 
+.swagger-ui .btn.authorize span {
+	line-height: 1 !important;
+	position: relative !important;
+	top: -1px !important;
+}
+
 .swagger-ui .btn.authorize svg {
-	fill: #fff;
+	fill: #fff !important;
+	width: 14px !important;
+	height: 14px !important;
+	flex-shrink: 0 !important;
 }
 
 /* Execute button */
@@ -979,7 +992,8 @@
 .swagger-ui .auth-btn-wrapper {
 	display: flex !important;
 	gap: var(--swg-space-3) !important;
-	justify-content: flex-end !important;
+	justify-content: center !important;
+	align-items: center !important;
 	margin-top: var(--swg-space-5) !important;
 	padding-top: var(--swg-space-4) !important;
 	border-top: 1px solid var(--swg-border-subtle) !important;
@@ -991,6 +1005,9 @@
 	border: 1.5px solid var(--swg-border-strong) !important;
 	color: var(--swg-text-secondary) !important;
 	font-weight: 600 !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	min-height: 40px;
 }
 
 .swagger-ui .auth-btn-wrapper .btn-done:hover {
@@ -1417,6 +1434,90 @@
 	.swagger-ui .modal-ux-content {
 		padding: var(--swg-space-4) !important;
 	}
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   FILTER / SEARCH BAR
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .operation-filter-input {
+	background-color: var(--swg-surface) !important;
+	border: 1.5px solid var(--swg-border) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	color: var(--swg-text) !important;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	font-size: 0.875rem !important;
+	min-height: 42px;
+	width: 100%;
+	max-width: var(--swg-content-max);
+	margin-bottom: var(--swg-space-6) !important;
+	transition: border-color var(--swg-duration) var(--swg-ease),
+				box-shadow var(--swg-duration) var(--swg-ease);
+}
+
+.swagger-ui .operation-filter-input:focus {
+	border-color: var(--swg-brand-orange) !important;
+	animation: focusRingPulse 0.35s var(--swg-ease) forwards;
+	outline: none !important;
+}
+
+.swagger-ui .operation-filter-input::placeholder {
+	color: var(--swg-text-muted) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   REQUEST DURATION BADGE
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .response-col_duration {
+	color: var(--swg-text-muted) !important;
+	font-family: 'JetBrains Mono', monospace !important;
+	font-size: 0.75rem !important;
+	font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   DEEP LINK ANCHORS
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .opblock-tag a.nostyle {
+	color: var(--swg-text) !important;
+	text-decoration: none !important;
+	transition: color var(--swg-duration-fast) var(--swg-ease);
+}
+
+.swagger-ui .opblock-tag:hover a.nostyle {
+	color: var(--swg-brand-orange) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   VALIDATOR BADGE (hidden)
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .swagger-ui-wrap > .validator {
+	display: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LIVE RESPONSE SECTION
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .live-responses-table .response-col_status {
+	font-family: 'JetBrains Mono', monospace !important;
+}
+
+.swagger-ui .responses-wrapper .curl-command {
+	background: var(--swg-code-bg) !important;
+	border: 1px solid var(--swg-code-border) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LOADING SPINNER
+   ══════════════════════════════════════════════════════════════════════ */
+.swagger-ui .loading-container {
+	padding: var(--swg-space-16) !important;
+}
+
+.swagger-ui .loading-container .loading::after {
+	color: var(--swg-brand-orange) !important;
+	font-family: 'Inter', sans-serif !important;
 }
 
 /* Larger screens — more breathing room */

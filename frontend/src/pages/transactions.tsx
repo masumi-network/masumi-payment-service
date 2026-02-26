@@ -291,20 +291,21 @@ export default function Transactions() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
-              <Link href="/developers">
-                <Button variant="outline" className="flex items-center gap-2 btn-hover-lift">
-                  <FlaskConical className="h-4 w-4" />
-                  Test transaction
-                </Button>
-              </Link>
               <Button
                 onClick={() => setShowDownloadDialog(true)}
                 disabled={filteredTransactions.length === 0}
+                variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
                 <Download className="h-4 w-4" />
                 Download CSV
               </Button>
+              <Link href="/developers">
+                <Button className="flex items-center gap-2 btn-hover-lift">
+                  <FlaskConical className="h-4 w-4" />
+                  Test transaction
+                </Button>
+              </Link>
             </div>
           </div>
 
