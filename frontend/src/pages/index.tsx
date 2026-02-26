@@ -46,7 +46,11 @@ export default function Overview() {
   const { network, selectedPaymentSource } = useAppContext();
 
   const queryClient = useQueryClient();
-  const { transactions, newTransactionsCount, isLoading: isLoadingTransactions } = useTransactions();
+  const {
+    transactions,
+    newTransactionsCount,
+    isLoading: isLoadingTransactions,
+  } = useTransactions();
 
   // Use React Query hooks for cached data
   const {
