@@ -3,7 +3,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
 import { RegistryEntry } from '@/lib/api/generated';
@@ -29,6 +29,10 @@ import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialo
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { StatCard } from '@/components/ui/stat-card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { WelcomeBanner } from '@/components/ui/welcome-banner';
 
 type AIAgent = RegistryEntry;
 
@@ -97,302 +101,337 @@ export default function Overview() {
         <title>Masumi | Admin Interface</title>
       </Head>
       <MainLayout>
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-3xl font-semibold mb-1">Dashboard</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Overview of your AI agents, wallets, and transactions.
-          </p>
-          <p className="text-xs text-muted-foreground mt-5">
-            Showing data for{' '}
-            {selectedPaymentSource?.smartContractAddress
-              ? shortenAddress(selectedPaymentSource?.smartContractAddress)
-              : 'all payment sources'}
-            . This can be changed in the{' '}
-            <Link href="/payment-sources" className="text-primary hover:underline">
-              payment sources
-            </Link>{' '}
-            page.
-          </p>
-        </div>
-
-        <div className="mb-8">
-          <div className="grid grid-cols-4 gap-4">
-            {isLoadingAgents ? (
-              <StatCardSkeleton />
-            ) : (
-              <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">Total AI agents</div>
-                <div className="text-2xl font-semibold">
-                  {agents.length}
-                  {hasMoreAgents ? '+' : ''}
-                </div>
-              </div>
-            )}
-            {isLoadingWallets || isLoadingBalances ? (
-              <StatCardSkeleton />
-            ) : (
-              <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">Total USDM</div>
-                <div className="text-2xl font-semibold flex items-center gap-1">
-                  <span className="text-xs font-normal text-muted-foreground">$</span>
-                  {formatBalance((parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString()) ??
-                    ''}
-                </div>
-              </div>
-            )}
-            {isLoadingWallets || isLoadingBalances ? (
-              <StatCardSkeleton />
-            ) : (
-              <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">Total ada balance</div>
-                <div className="flex flex-col gap-2">
-                  <div className="text-2xl font-semibold flex items-center gap-1">
-                    {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ?? ''}
-                    <span className="text-xs font-normal text-muted-foreground">ADA</span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {isLoadingRate && !totalUsdmBalance
-                      ? '...'
-                      : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
-                  </div>
-                </div>
-              </div>
-            )}
-            {isLoadingTransactions ? (
-              <StatCardSkeleton />
-            ) : (
-              <div className="border rounded-lg p-6">
-                <div className="text-sm text-muted-foreground mb-2">New Transactions</div>
-                <>
-                  <div className="text-2xl font-semibold">{newTransactionsCount}</div>
-                  <Link
-                    href="/transactions"
-                    className="text-sm text-primary hover:underline flex justify-items-center items-center"
-                  >
-                    View all transactions <ChevronRight size={14} />
-                  </Link>
-                </>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <div className="border rounded-lg">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <Link href="/ai-agents" className="font-medium hover:underline">
-                    AI agents
-                  </Link>
-                  <ChevronRight className="h-4 w-4" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Manage your AI agents and their configurations.
+        <AnimatedPage>
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+              <p className="text-sm text-muted-foreground">
+                Overview of your AI agents, wallets, and transactions.
               </p>
-
-              {isLoadingAgents ? (
-                <AgentListSkeleton items={3} />
-              ) : agents.length > 0 ? (
-                <div className="mb-4 max-h-[500px] overflow-y-auto">
-                  {agents.map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                      onClick={() => setSelectedAgentForDetails(agent)}
-                    >
-                      <div className="flex flex-col gap-1 max-w-[80%]">
-                        <div className="text-sm font-medium hover:underline">{agent.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {agent.description}
-                        </div>
-                      </div>
-                      <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                          <span className="text-xs font-normal text-muted-foreground">Free</span>
-                        )}
-                        {agent.AgentPricing &&
-                        agent.AgentPricing.pricingType == 'Fixed' &&
-                        agent.AgentPricing.Pricing?.[0] ? (
-                          <>
-                            <span className="text-xs font-normal text-muted-foreground">
-                              {(() => {
-                                const price = agent.AgentPricing.Pricing[0];
-                                const unit = price.unit;
-                                if (unit === 'free') return 'Free';
-                                const formatted = (parseInt(price.amount) / 1_000_000).toFixed(2);
-                                if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
-                                if (unit === getUsdmConfig(network).fullAssetId)
-                                  return `${formatted} USDM`;
-                                if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
-                                return `${formatted} ${unit}`;
-                              })()}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-xs font-normal text-muted-foreground">—</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {hasMoreAgents && (
-                    <div className="flex justify-center pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => loadMoreAgents()}
-                        disabled={!hasMoreAgents || isLoadingAgents}
-                      >
-                        Load more
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground mb-4 py-4">No AI agents found.</div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <Button
-                  className="flex items-center gap-2"
-                  onClick={() => setRegisterAgentDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Register agent
-                </Button>
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Showing data for{' '}
+                {selectedPaymentSource?.smartContractAddress
+                  ? shortenAddress(selectedPaymentSource?.smartContractAddress)
+                  : 'all payment sources'}
+                . This can be changed in the{' '}
+                <Link href="/payment-sources" className="text-primary hover:underline">
+                  payment sources
+                </Link>{' '}
+                page.
+              </p>
             </div>
-          </div>
 
-          <div className="border rounded-lg p-6">
-            <div className="">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <Link href="/wallets" className="font-medium hover:underline">
-                    Wallets
-                  </Link>
-                  <ChevronRight className="h-4 w-4" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Manage your buying and selling wallets.
-              </p>
+            <WelcomeBanner
+              agentCount={agents.length}
+              walletCount={walletsList.length}
+              transactionCount={newTransactionsCount}
+              hasPaymentSource={!!selectedPaymentSource}
+            />
 
-              <div className="mb-4">
-                {isLoadingWallets ? (
-                  <WalletListSkeleton rows={2} />
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {isLoadingAgents ? (
+                  <StatCardSkeleton />
                 ) : (
-                  <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
-                    <table className="w-full">
-                      <thead className="sticky top-0 bg-background z-10">
-                        <tr className="text-sm text-muted-foreground border-b">
-                          <th className="text-left py-2 px-2 w-20">Type</th>
-                          <th className="text-left py-2 px-2">Name</th>
-                          <th className="text-left py-2 px-2">Address</th>
-                          <th className="text-left py-2 px-2">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {walletsList.map((wallet) => (
-                          <tr
-                            key={wallet.id}
-                            className="border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                            onClick={() => setSelectedWalletForDetails(wallet)}
-                          >
-                            <td className="py-3 px-2">
-                              <WalletTypeBadge type={wallet.type} />
-                            </td>
-                            <td className="py-3 px-2 max-w-[100px]">
-                              <div className="text-sm font-medium truncate">
-                                {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
-                              </div>
-                              <div className="text-xs text-muted-foreground truncate">
-                                {wallet.note || 'Created by seeding'}
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 max-w-[100px]">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs text-muted-foreground truncate">
-                                  {wallet.walletAddress}
-                                </span>
-                                <CopyButton value={wallet.walletAddress} />
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 w-32">
-                              <div className="text-xs flex items-center gap-1">
-                                {wallet.isLoadingBalance ? (
-                                  <Spinner className="h-3 w-3" />
-                                ) : (
-                                  <>
-                                    {formatBalance(
-                                      (parseInt(wallet.balance || '0') / 1000000)
-                                        .toFixed(2)
-                                        ?.toString(),
-                                    )}{' '}
-                                    <span className="text-xs text-muted-foreground">ADA</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="text-xs flex items-center gap-1">
-                                {!wallet.isLoadingBalance && (
-                                  <>
-                                    {formatBalance(
-                                      (parseInt(wallet.usdmBalance || '0') / 1000000)
-                                        .toFixed(2)
-                                        ?.toString(),
-                                    )}{' '}
-                                    <span className="text-xs text-muted-foreground">USDM</span>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 w-32">
-                              <div className="flex items-center gap-2">
-                                {/*<Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedWalletForSwap(wallet);
-                                  }}
-                                >
-                                  <FaExchangeAlt className="h-2 w-2" />
-                                </Button>*/}
-                                <Button
-                                  variant="muted"
-                                  className="h-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedWalletForTopup(wallet);
-                                  }}
-                                >
-                                  Top Up
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <StatCard
+                    label="Total AI agents"
+                    index={0}
+                    icon={<Bot className="h-4 w-4 text-blue-500" />}
+                    accentColor="rgb(59, 130, 246)"
+                  >
+                    <div className="text-2xl font-semibold">
+                      {agents.length}
+                      {hasMoreAgents ? '+' : ''}
+                    </div>
+                  </StatCard>
+                )}
+                {isLoadingWallets || isLoadingBalances ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="Total USDM"
+                    index={1}
+                    icon={<DollarSign className="h-4 w-4 text-green-500" />}
+                    accentColor="rgb(34, 197, 94)"
+                  >
+                    <div className="text-2xl font-semibold flex items-center gap-1">
+                      <span className="text-xs font-normal text-muted-foreground">$</span>
+                      {formatBalance(
+                        (parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString(),
+                      ) ?? ''}
+                    </div>
+                  </StatCard>
+                )}
+                {isLoadingWallets || isLoadingBalances ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="Total ada balance"
+                    index={2}
+                    icon={<Wallet className="h-4 w-4 text-orange-500" />}
+                    accentColor="rgb(249, 115, 22)"
+                  >
+                    <div className="flex flex-col gap-2">
+                      <div className="text-2xl font-semibold flex items-center gap-1">
+                        {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ??
+                          ''}
+                        <span className="text-xs font-normal text-muted-foreground">ADA</span>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {isLoadingRate && !totalUsdmBalance
+                          ? '...'
+                          : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
+                      </div>
+                    </div>
+                  </StatCard>
+                )}
+                {isLoadingTransactions ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="New Transactions"
+                    index={3}
+                    icon={<ArrowUpDown className="h-4 w-4 text-purple-500" />}
+                    accentColor="rgb(168, 85, 247)"
+                  >
+                    <>
+                      <div className="text-2xl font-semibold">{newTransactionsCount}</div>
+                      <Link
+                        href="/transactions"
+                        className="text-sm text-primary hover:underline flex justify-items-center items-center"
+                      >
+                        View all transactions <ChevronRight size={14} />
+                      </Link>
+                    </>
+                  </StatCard>
                 )}
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <Button
-                className="flex items-center gap-2"
-                onClick={() => setAddWalletDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Add wallet
-              </Button>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="border rounded-lg p-6 flex flex-col">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <Link href="/ai-agents" className="font-medium hover:underline">
+                        AI agents
+                      </Link>
+                      <ChevronRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage your AI agents and their configurations.
+                  </p>
+
+                  {isLoadingAgents ? (
+                    <AgentListSkeleton items={3} />
+                  ) : agents.length > 0 ? (
+                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto">
+                      {agents.map((agent, index) => (
+                        <div
+                          key={agent.id}
+                          className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer transition-all duration-150 hover:bg-muted/30 hover:pl-1 animate-fade-in-up opacity-0"
+                          style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                          onClick={() => setSelectedAgentForDetails(agent)}
+                        >
+                          <div className="flex flex-col gap-1 max-w-[80%]">
+                            <div className="text-sm font-medium hover:underline">{agent.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {agent.description}
+                            </div>
+                          </div>
+                          <div className="text-sm min-w-content flex items-center gap-1">
+                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                Free
+                              </span>
+                            )}
+                            {agent.AgentPricing &&
+                            agent.AgentPricing.pricingType == 'Fixed' &&
+                            agent.AgentPricing.Pricing?.[0] ? (
+                              <>
+                                <span className="text-xs font-normal text-muted-foreground">
+                                  {(() => {
+                                    const price = agent.AgentPricing.Pricing[0];
+                                    const unit = price.unit;
+                                    if (unit === 'free') return 'Free';
+                                    const formatted = (parseInt(price.amount) / 1_000_000).toFixed(
+                                      2,
+                                    );
+                                    if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
+                                    if (unit === getUsdmConfig(network).fullAssetId)
+                                      return `${formatted} USDM`;
+                                    if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
+                                    return `${formatted} ${unit}`;
+                                  })()}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-normal text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {hasMoreAgents && (
+                        <div className="flex justify-center pt-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="btn-hover-lift"
+                            onClick={() => loadMoreAgents()}
+                            disabled={!hasMoreAgents || isLoadingAgents}
+                          >
+                            Load more
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="No AI agents found"
+                      description="Register your first AI agent to get started."
+                    />
+                  )}
+                </div>
+
+                <div className="pt-4">
+                  <Button
+                    className="flex items-center gap-2 btn-hover-lift"
+                    onClick={() => setRegisterAgentDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Register agent
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-6 flex flex-col">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <Link href="/wallets" className="font-medium hover:underline">
+                        Wallets
+                      </Link>
+                      <ChevronRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage your buying and selling wallets.
+                  </p>
+
+                  {isLoadingWallets ? (
+                    <WalletListSkeleton rows={2} />
+                  ) : (
+                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
+                          <tr className="text-sm text-muted-foreground border-b">
+                            <th className="text-left py-2 px-2 w-20">Type</th>
+                            <th className="text-left py-2 px-2">Name</th>
+                            <th className="text-left py-2 px-2">Address</th>
+                            <th className="text-left py-2 px-2">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {walletsList.length === 0 ? (
+                            <tr>
+                              <td colSpan={4}>
+                                <EmptyState title="No wallets found" />
+                              </td>
+                            </tr>
+                          ) : (
+                            walletsList.map((wallet, index) => (
+                              <tr
+                                key={wallet.id}
+                                className="border-b last:border-0 cursor-pointer hover:bg-muted/10 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
+                                style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                                onClick={() => setSelectedWalletForDetails(wallet)}
+                              >
+                                <td className="py-3 px-2">
+                                  <WalletTypeBadge type={wallet.type} />
+                                </td>
+                                <td className="py-3 px-2 max-w-25">
+                                  <div className="text-sm font-medium truncate">
+                                    {wallet.type === 'Purchasing'
+                                      ? 'Buying wallet'
+                                      : 'Selling wallet'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground truncate">
+                                    {wallet.note || 'Created by seeding'}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 max-w-25">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-muted-foreground truncate">
+                                      {wallet.walletAddress}
+                                    </span>
+                                    <CopyButton value={wallet.walletAddress} />
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 w-32">
+                                  <div className="text-xs flex items-center gap-1">
+                                    {wallet.isLoadingBalance ? (
+                                      <Spinner className="h-3 w-3" />
+                                    ) : (
+                                      <>
+                                        {formatBalance(
+                                          (parseInt(wallet.balance || '0') / 1000000)
+                                            .toFixed(2)
+                                            ?.toString(),
+                                        )}{' '}
+                                        <span className="text-xs text-muted-foreground">ADA</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="text-xs flex items-center gap-1">
+                                    {!wallet.isLoadingBalance && (
+                                      <>
+                                        {formatBalance(
+                                          (parseInt(wallet.usdmBalance || '0') / 1000000)
+                                            .toFixed(2)
+                                            ?.toString(),
+                                        )}{' '}
+                                        <span className="text-xs text-muted-foreground">USDM</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 w-32">
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="muted"
+                                      className="h-8 btn-hover-lift"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedWalletForTopup(wallet);
+                                      }}
+                                    >
+                                      Top Up
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4">
+                  <Button
+                    className="flex items-center gap-2 btn-hover-lift"
+                    onClick={() => setAddWalletDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add wallet
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </AnimatedPage>
       </MainLayout>
 
       <AddWalletDialog

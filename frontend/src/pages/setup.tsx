@@ -1,4 +1,5 @@
 import { SetupWelcome } from '@/components/setup/SetupWelcome';
+import { AnimatedPage } from '@/components/ui/animated-page';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
@@ -33,7 +34,9 @@ export default function SetupPage() {
         <title>{network} Setup | Admin Interface</title>
       </Head>
       <MainLayout>
-        <SetupWelcome networkType={network} />
+        <AnimatedPage>
+          <SetupWelcome networkType={network} />
+        </AnimatedPage>
       </MainLayout>
     </>
   );

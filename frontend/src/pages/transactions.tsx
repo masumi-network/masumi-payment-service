@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -9,7 +8,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { Search } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -18,6 +17,9 @@ import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetails
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
+import { EmptyState } from '@/components/ui/empty-state';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -85,10 +87,12 @@ export default function Transactions() {
       {
         name: 'Refund Requests',
         count: refundCount || null,
+        variant: 'alert' as const,
       },
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
       },
     ];
   }, [allTransactions]);
@@ -268,11 +272,11 @@ export default function Transactions() {
       <Head>
         <title>Transactions | Admin Interface</title>
       </Head>
-      <div>
-        <div className="mb-6">
+      <AnimatedPage>
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold mb-1">Transactions</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
@@ -303,18 +307,19 @@ export default function Transactions() {
                 );
               })()}
             </div>
-            <Button
-              onClick={() => setShowDownloadDialog(true)}
-              disabled={filteredTransactions.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
+            <div className="flex items-center gap-2">
+              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              <Button
+                onClick={() => setShowDownloadDialog(true)}
+                disabled={filteredTransactions.length === 0}
+                className="flex items-center gap-2 btn-hover-lift"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-6">
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
@@ -324,32 +329,40 @@ export default function Transactions() {
           />
 
           <div className="flex items-center justify-between">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by ID, hash, status, amount..."
-                className="max-w-xs pl-10"
+            <div className="flex-1">
+              <SearchInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={setSearchQuery}
+                placeholder="Search by ID, hash, status, amount..."
+                className="max-w-xs"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
             </div>
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
             <table className="w-full">
-              <thead>
+              <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium pl-6">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">Transaction Hash</th>
-                  <th className="p-4 text-left text-sm font-medium">Amount</th>
-                  <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="p-4 text-left text-sm font-medium">Unlock Time</th>
-                  <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium pr-8"></th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    Type
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Transaction Hash
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Amount
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Network
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Unlock Time
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Date</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pr-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -363,19 +376,26 @@ export default function Transactions() {
                   </tr>
                 ) : filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
-                      No transactions found
+                    <td colSpan={8}>
+                      <EmptyState
+                        icon="inbox"
+                        title="No transactions found"
+                        description="Transactions will appear here once payments are made"
+                      />
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction) => (
+                  filteredTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(
-                        'border-b last:border-b-0',
-                        transaction.NextAction?.errorType ? 'bg-destructive/10' : '',
+                        'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                        transaction.NextAction?.errorType
+                          ? 'bg-destructive/10 border-l-2 border-l-destructive'
+                          : '',
                         'cursor-pointer hover:bg-muted/50',
                       )}
+                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
                       <td className="p-4 pl-6">
@@ -426,7 +446,7 @@ export default function Transactions() {
                         >
                           {transaction.onChainState === 'Disputed' ? (
                             <span className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                              <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
                               {formatStatus(transaction.onChainState)}
                             </span>
                           ) : (
@@ -442,7 +462,7 @@ export default function Transactions() {
                       <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
                       <td className="p-4 pr-8">
                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                          ⋮
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </td>
                     </tr>
@@ -458,24 +478,24 @@ export default function Transactions() {
             )}
           </div>
         </div>
-      </div>
 
-      <TransactionDetailsDialog
-        transaction={selectedTransaction}
-        onClose={() => setSelectedTransaction(null)}
-        onRefresh={refreshTransactions}
-      />
+        <TransactionDetailsDialog
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+          onRefresh={refreshTransactions}
+        />
 
-      <DownloadDetailsDialog
-        open={showDownloadDialog}
-        onClose={() => setShowDownloadDialog(false)}
-        onDownload={(startDate, endDate, filteredTransactions) => {
-          downloadCSV(
-            filteredTransactions,
-            `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
-          );
-        }}
-      />
+        <DownloadDetailsDialog
+          open={showDownloadDialog}
+          onClose={() => setShowDownloadDialog(false)}
+          onDownload={(startDate, endDate, filteredTransactions) => {
+            downloadCSV(
+              filteredTransactions,
+              `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
+            );
+          }}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

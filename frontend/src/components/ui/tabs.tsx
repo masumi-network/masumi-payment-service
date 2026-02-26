@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 interface Tab {
   name: string;
   count?: number | null;
+  variant?: 'default' | 'alert';
 }
 
 interface TabsProps {
@@ -31,7 +32,7 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
   return (
     <div className={cn('flex gap-6 border-b relative', className)}>
       <div
-        className="absolute bottom-0 h-0.5 bg-primary transition-all duration-300 ease-out"
+        className="absolute bottom-0 h-[3px] bg-primary rounded-full transition-all duration-300 ease-out"
         style={{ left: indicatorStyle.left, width: indicatorStyle.width }}
       />
       {tabs.map((tab, index) => (
@@ -43,13 +44,20 @@ export function Tabs({ tabs, activeTab, onTabChange, className }: TabsProps) {
           onClick={() => onTabChange(tab.name)}
           className={cn(
             'pb-4 relative text-sm transition-colors duration-200',
-            activeTab === tab.name ? 'text-primary' : 'text-muted-foreground',
+            activeTab === tab.name ? 'text-primary font-medium' : 'text-muted-foreground',
           )}
         >
           <div className="flex items-center gap-2">
             {tab.name}
-            {tab.count && (
-              <span className="bg-destructive text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">
+            {tab.count != null && tab.count > 0 && (
+              <span
+                className={cn(
+                  'rounded-full min-w-5 h-5 px-1.5 text-xs flex items-center justify-center animate-pop-in',
+                  tab.variant === 'alert'
+                    ? 'bg-destructive text-white'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
                 {tab.count}
               </span>
             )}
