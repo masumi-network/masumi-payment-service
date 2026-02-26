@@ -8,7 +8,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -20,6 +20,7 @@ import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -287,28 +288,15 @@ export default function Transactions() {
                   Learn more
                 </a>
               </p>
-              {(() => {
-                const feeRate = selectedPaymentSource?.feeRatePermille;
-
-                if (!feeRate) {
-                  return (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Fee rate: none applied
-                      {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
-                    </p>
-                  );
-                }
-
-                return (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Fee rate: {(feeRate / 10).toFixed(1)}%
-                    {selectedPaymentSource ? ` (${selectedPaymentSource.network})` : ' (default)'}
-                  </p>
-                );
-              })()}
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              <Link href="/developers">
+                <Button variant="outline" className="flex items-center gap-2 btn-hover-lift">
+                  <FlaskConical className="h-4 w-4" />
+                  Test transaction
+                </Button>
+              </Link>
               <Button
                 onClick={() => setShowDownloadDialog(true)}
                 disabled={filteredTransactions.length === 0}
@@ -380,7 +368,16 @@ export default function Transactions() {
                       <EmptyState
                         icon="inbox"
                         title="No transactions found"
-                        description="Transactions will appear here once payments are made"
+                        description="Transactions will appear here once payments are made."
+                        action={
+                          <Link
+                            href="/developers"
+                            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                          >
+                            <FlaskConical className="h-3.5 w-3.5" />
+                            Create a test transaction
+                          </Link>
+                        }
                       />
                     </td>
                   </tr>

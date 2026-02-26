@@ -411,12 +411,15 @@
    SCHEME CONTAINER + SERVERS
    ══════════════════════════════════════════════════════════════════════ */
 .swagger-ui .scheme-container {
-	background: var(--swg-surface) !important;
-	border: 1px solid var(--swg-border) !important;
-	border-radius: var(--swg-radius) !important;
-	box-shadow: var(--swg-shadow-sm);
-	padding: var(--swg-space-5) var(--swg-space-6) !important;
-	margin-bottom: var(--swg-space-8) !important;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	padding: 0 var(--swg-space-8) var(--swg-space-4) !important;
+	margin-bottom: var(--swg-space-4) !important;
+	max-width: var(--swg-content-max) !important;
+	margin-left: auto !important;
+	margin-right: auto !important;
 }
 
 /* Hide the servers dropdown */
@@ -817,54 +820,95 @@
 	position: fixed !important;
 	inset: 0 !important;
 	z-index: 9999;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
 }
 
 .swagger-ui .dialog-ux .backdrop-ux {
-	background: rgba(0, 0, 0, 0.4) !important;
-	backdrop-filter: blur(6px);
-	-webkit-backdrop-filter: blur(6px);
+	position: fixed !important;
+	inset: 0 !important;
+	background: rgba(0, 0, 0, 0.5) !important;
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
 }
 
 .swagger-ui .dialog-ux .modal-ux {
+	position: relative !important;
+	z-index: 1;
 	background: var(--swg-surface) !important;
 	border: 1px solid var(--swg-border) !important;
-	border-radius: var(--swg-radius-xl) !important;
+	border-radius: var(--swg-radius-lg) !important;
 	box-shadow: var(--swg-shadow-lg) !important;
 	animation: fadeInUp var(--swg-duration-slow) var(--swg-ease-out) both;
-	max-width: 560px !important;
+	width: 480px !important;
+	max-width: calc(100vw - var(--swg-space-8)) !important;
+	max-height: calc(100vh - var(--swg-space-16)) !important;
+	overflow-y: auto;
 	padding: 0 !important;
-	overflow: hidden;
+	margin: 0 !important;
+	top: auto !important;
+	left: auto !important;
+	right: auto !important;
+	bottom: auto !important;
+	transform: none !important;
 }
 
 .swagger-ui .modal-ux-header {
 	background-color: transparent !important;
 	border-bottom: 1px solid var(--swg-border-subtle) !important;
-	padding: var(--swg-space-6) var(--swg-space-8) var(--swg-space-5) !important;
+	padding: var(--swg-space-5) var(--swg-space-6) !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: space-between !important;
+	min-height: 56px !important;
+	box-sizing: border-box !important;
 }
 
 .swagger-ui .modal-ux-header h3 {
 	color: var(--swg-text) !important;
-	font-size: 1.15rem !important;
+	font-size: 1.05rem !important;
 	font-weight: 700 !important;
 	letter-spacing: -0.02em;
+	margin: 0 !important;
+	padding: 0 !important;
+	line-height: 1.4 !important;
+	display: flex !important;
+	align-items: center !important;
+	gap: 10px !important;
+}
+
+/* Lock icon before modal title */
+.swagger-ui .modal-ux-header h3::before {
+	content: '';
+	display: inline-flex;
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	border-radius: var(--swg-radius-xs);
+	background-color: var(--swg-surface-sunken);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ff6400' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 16px 16px;
 }
 
 .swagger-ui .modal-ux-content {
-	padding: var(--swg-space-6) var(--swg-space-8) var(--swg-space-8) !important;
+	padding: var(--swg-space-5) var(--swg-space-6) var(--swg-space-6) !important;
 }
 
 .swagger-ui .modal-ux-content h4 {
 	color: var(--swg-text) !important;
-	font-size: 0.9rem !important;
+	font-size: 0.875rem !important;
 	font-weight: 600 !important;
-	margin-bottom: var(--swg-space-3) !important;
+	margin-bottom: var(--swg-space-2) !important;
 }
 
 .swagger-ui .modal-ux-content p {
 	color: var(--swg-text-secondary) !important;
-	font-size: 0.875rem !important;
+	font-size: 0.8125rem !important;
 	line-height: 1.6;
-	margin-bottom: var(--swg-space-4) !important;
+	margin-bottom: var(--swg-space-3) !important;
 }
 
 .swagger-ui .modal-ux-content label {
@@ -882,8 +926,8 @@
 	border: 1.5px solid var(--swg-border) !important;
 	color: var(--swg-text) !important;
 	border-radius: var(--swg-radius-sm) !important;
-	padding: var(--swg-space-3) var(--swg-space-4) !important;
-	min-height: 42px;
+	padding: var(--swg-space-2) var(--swg-space-3) !important;
+	min-height: 38px;
 	font-size: 0.875rem !important;
 }
 
@@ -896,16 +940,31 @@
 
 .swagger-ui .close-modal {
 	color: var(--swg-text-muted) !important;
-	transition: color var(--swg-duration-fast) var(--swg-ease);
-	padding: var(--swg-space-2) !important;
+	transition:
+		color var(--swg-duration-fast) var(--swg-ease),
+		background-color var(--swg-duration-fast) var(--swg-ease);
+	padding: 6px !important;
+	border-radius: var(--swg-radius-xs) !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: 32px !important;
+	height: 32px !important;
+	margin: 0 !important;
+	flex-shrink: 0 !important;
 }
 
 .swagger-ui .close-modal:hover {
 	color: var(--swg-text) !important;
+	background-color: var(--swg-surface-sunken) !important;
 }
 
 .swagger-ui .auth-container {
-	margin: var(--swg-space-4) 0 !important;
+	margin: var(--swg-space-3) 0 !important;
+	padding: var(--swg-space-4) !important;
+	background: var(--swg-surface-sunken) !important;
+	border-radius: var(--swg-radius-sm) !important;
+	border: 1px solid var(--swg-border-subtle) !important;
 }
 
 .swagger-ui .auth-container h4 {
@@ -920,9 +979,23 @@
 .swagger-ui .auth-btn-wrapper {
 	display: flex !important;
 	gap: var(--swg-space-3) !important;
-	margin-top: var(--swg-space-6) !important;
-	padding-top: var(--swg-space-5) !important;
+	justify-content: flex-end !important;
+	margin-top: var(--swg-space-5) !important;
+	padding-top: var(--swg-space-4) !important;
 	border-top: 1px solid var(--swg-border-subtle) !important;
+}
+
+/* Close button in auth modal */
+.swagger-ui .auth-btn-wrapper .btn-done {
+	background-color: var(--swg-surface-sunken) !important;
+	border: 1.5px solid var(--swg-border-strong) !important;
+	color: var(--swg-text-secondary) !important;
+	font-weight: 600 !important;
+}
+
+.swagger-ui .auth-btn-wrapper .btn-done:hover {
+	background-color: var(--swg-border) !important;
+	color: var(--swg-text) !important;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1333,17 +1406,16 @@
 	}
 
 	.swagger-ui .dialog-ux .modal-ux {
-		margin: var(--swg-space-4) !important;
-		max-width: calc(100vw - var(--swg-space-8)) !important;
-		border-radius: var(--swg-radius-lg) !important;
+		width: calc(100vw - var(--swg-space-8)) !important;
+		border-radius: var(--swg-radius) !important;
 	}
 
 	.swagger-ui .modal-ux-header {
-		padding: var(--swg-space-5) var(--swg-space-5) var(--swg-space-4) !important;
+		padding: var(--swg-space-4) var(--swg-space-4) var(--swg-space-3) !important;
 	}
 
 	.swagger-ui .modal-ux-content {
-		padding: var(--swg-space-5) !important;
+		padding: var(--swg-space-4) !important;
 	}
 }
 
