@@ -716,7 +716,6 @@ model HydraParticipant {
 
 /// Encrypted Hydra signing key for a participant (1:1 with HydraParticipant).
 /// Fund and node wallet keys are not needed here — those come from the HotWallet.
-/// Uses the project's encrypt()/decrypt() from @/utils/security/encryption.
 model HydraSecret {
   id                      String            @id @default(cuid())
   createdAt               DateTime          @default(now())
