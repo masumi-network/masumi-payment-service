@@ -4,8 +4,9 @@ import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
 import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
@@ -21,7 +22,30 @@ const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAP
 export default function Developers() {
   const [activeTab, setActiveTab] = useState('Testing');
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { theme } = useTheme();
+
   const handleIframeLoad = useCallback(() => setIsIframeLoaded(true), []);
+
+  // Sync app theme to swagger iframe via data-theme attribute
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !isIframeLoaded) return;
+    try {
+      const doc = iframe.contentDocument;
+      if (doc?.documentElement) {
+        doc.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'dark') {
+          doc.documentElement.classList.add('dark-mode');
+        } else {
+          doc.documentElement.classList.remove('dark-mode');
+        }
+      }
+    } catch {
+      // cross-origin — ignore
+    }
+  }, [theme, isIframeLoaded]);
+
   const [isPaymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [isFullCycleDialogOpen, setFullCycleDialogOpen] = useState(false);
@@ -126,8 +150,9 @@ export default function Developers() {
                     <Skeleton className="absolute inset-0 w-full h-full rounded-none" />
                   )}
                   <iframe
+                    ref={iframeRef}
                     src="/docs"
-                    className="w-full h-full dark:invert dark:hue-rotate-180"
+                    className="w-full h-full"
                     title="OpenAPI Documentation"
                     onLoad={handleIframeLoad}
                   />

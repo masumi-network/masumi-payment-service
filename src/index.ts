@@ -114,6 +114,7 @@ initialize()
 							},
 						},
 						customJsStr: `
+							// hide the default Swagger branding text inside the topbar link
 							document.addEventListener('DOMContentLoaded', function() {
 								var topbarLink = document.querySelector('.topbar-wrapper .link');
 								if (topbarLink) topbarLink.style.display = 'none';
@@ -128,6 +129,87 @@ initialize()
 									}
 								}
 							});
+
+							// Enhanced filter: match tags, paths, and descriptions
+							(function() {
+								var input, debounceTimer;
+								function waitForFilter() {
+									input = document.querySelector('.operation-filter-input');
+									if (!input) return setTimeout(waitForFilter, 300);
+									input.setAttribute('placeholder', 'Filter by tag, endpoint, or description...');
+									input.addEventListener('input', function() {
+										clearTimeout(debounceTimer);
+										debounceTimer = setTimeout(applyFilter, 150);
+									});
+								}
+								function applyFilter() {
+									var query = (input.value || '').toLowerCase().trim();
+									var sections = document.querySelectorAll('.opblock-tag-section');
+									sections.forEach(function(section) {
+										if (!query) {
+											section.style.display = '';
+											section.querySelectorAll('.opblock').forEach(function(op) { op.style.display = ''; });
+											return;
+										}
+										var tag = (section.querySelector('.opblock-tag') || {}).textContent || '';
+										var tagMatch = tag.toLowerCase().indexOf(query) !== -1;
+										var ops = section.querySelectorAll('.opblock');
+										var anyOpMatch = false;
+										ops.forEach(function(op) {
+											var path = (op.querySelector('.opblock-summary-path') || {}).textContent || '';
+											var desc = (op.querySelector('.opblock-summary-description') || {}).textContent || '';
+											var method = (op.querySelector('.opblock-summary-method') || {}).textContent || '';
+											var match = tagMatch
+												|| path.toLowerCase().indexOf(query) !== -1
+												|| desc.toLowerCase().indexOf(query) !== -1
+												|| method.toLowerCase().indexOf(query) !== -1;
+											op.style.display = match ? '' : 'none';
+											if (match) anyOpMatch = true;
+										});
+										section.style.display = (tagMatch || anyOpMatch) ? '' : 'none';
+									});
+								}
+								waitForFilter();
+							})();
+
+							// Sync the built-in dark-mode toggle (lightbulb) with data-theme
+							(function() {
+								var ready = false;
+								function getOldBg() {
+									var el = document.querySelector('.swagger-ui');
+									return el ? getComputedStyle(el).backgroundColor : null;
+								}
+								function syncTheme() {
+									var isDark = document.documentElement.classList.contains('dark-mode')
+										|| (!ready && window.matchMedia('(prefers-color-scheme: dark)').matches);
+									var oldBg = ready ? getOldBg() : null;
+									document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+									if (ready && oldBg) {
+										var overlay = document.createElement('div');
+										overlay.className = 'theme-fade-overlay';
+										overlay.style.backgroundColor = oldBg;
+										document.body.appendChild(overlay);
+										requestAnimationFrame(function() {
+											overlay.classList.add('fade-out');
+											overlay.addEventListener('transitionend', function() {
+												overlay.remove();
+											});
+										});
+									}
+								}
+								// Initial sync — no overlay
+								syncTheme();
+								// Start observing only after a delay so startup class changes are ignored
+								setTimeout(function() {
+									ready = true;
+									var observer = new MutationObserver(function(mutations) {
+										mutations.forEach(function(m) {
+											if (m.attributeName === 'class') syncTheme();
+										});
+									});
+									observer.observe(document.documentElement, { attributes: true });
+								}, 750);
+							})();
 						`,
 					}),
 				);

@@ -83,9 +83,9 @@
 	--swg-content-max: 1280px;
 }
 
-/* ─── Dark Theme ─── */
+/* ─── Dark Theme (OS preference OR manual toggle) ─── */
 @media (prefers-color-scheme: dark) {
-	:root {
+	:root:not([data-theme='light']) {
 		--swg-bg: #0a0e14;
 		--swg-surface: #12171f;
 		--swg-surface-raised: #1a2030;
@@ -117,24 +117,95 @@
 
 		--swg-focus-ring: 0 0 0 3px rgba(255, 100, 0, 0.2);
 	}
+}
 
-	.swagger-ui .unlocked,
-	.swagger-ui .arrow,
-	.swagger-ui .unlocked svg,
-	.swagger-ui .arrow svg {
+/* Manual dark override */
+:root[data-theme='dark'] {
+	--swg-bg: #0a0e14;
+	--swg-surface: #12171f;
+	--swg-surface-raised: #1a2030;
+	--swg-surface-sunken: #080b10;
+	--swg-surface-overlay: rgba(18, 23, 31, 0.6);
+
+	--swg-border: #1e2736;
+	--swg-border-subtle: #161d28;
+	--swg-border-strong: #2e3a4d;
+
+	--swg-text: #e8ecf1;
+	--swg-text-secondary: #b0b8c7;
+	--swg-text-muted: #6b7a90;
+
+	--swg-brand-glow: rgba(255, 100, 0, 0.06);
+
+	--swg-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.15);
+	--swg-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+	--swg-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.15);
+	--swg-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.15);
+	--swg-shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.2);
+
+	--swg-glass-bg: rgba(18, 23, 31, 0.8);
+	--swg-glass-border: var(--swg-border);
+
+	--swg-code-bg: #0f141b;
+	--swg-code-border: #1e2736;
+	--swg-code-text: #d1d9e5;
+
+	--swg-focus-ring: 0 0 0 3px rgba(255, 100, 0, 0.2);
+}
+
+/* Dark mode element overrides (both OS + manual) */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) .swagger-ui .unlocked,
+	:root:not([data-theme='light']) .swagger-ui .arrow,
+	:root:not([data-theme='light']) .swagger-ui .unlocked svg,
+	:root:not([data-theme='light']) .swagger-ui .arrow svg {
 		fill: #e8ecf1 !important;
 	}
 
-	.swagger-ui .errors-wrapper {
+	:root:not([data-theme='light']) .swagger-ui .errors-wrapper {
 		background-color: rgba(127, 29, 29, 0.5) !important;
 		border: 1px solid rgba(239, 68, 68, 0.4) !important;
 		color: #fecaca !important;
 		border-radius: var(--swg-radius-sm) !important;
 	}
 
-	.swagger-ui .errors-wrapper .error-wrapper {
+	:root:not([data-theme='light']) .swagger-ui .errors-wrapper .error-wrapper {
 		color: #fecaca !important;
 	}
+}
+
+:root[data-theme='dark'] .swagger-ui .unlocked,
+:root[data-theme='dark'] .swagger-ui .arrow,
+:root[data-theme='dark'] .swagger-ui .unlocked svg,
+:root[data-theme='dark'] .swagger-ui .arrow svg {
+	fill: #e8ecf1 !important;
+}
+
+:root[data-theme='dark'] .swagger-ui .errors-wrapper {
+	background-color: rgba(127, 29, 29, 0.5) !important;
+	border: 1px solid rgba(239, 68, 68, 0.4) !important;
+	color: #fecaca !important;
+	border-radius: var(--swg-radius-sm) !important;
+}
+
+:root[data-theme='dark'] .swagger-ui .errors-wrapper .error-wrapper {
+	color: #fecaca !important;
+}
+
+/* ─── Dark Mode Toggle (built-in lightbulb) ─── */
+.swagger-ui .dark-mode-toggle {
+	position: relative;
+	z-index: 1;
+	margin-left: var(--swg-space-3);
+}
+
+.swagger-ui .dark-mode-toggle button {
+	cursor: pointer;
+	transition: transform var(--swg-duration-fast) var(--swg-ease);
+}
+
+.swagger-ui .dark-mode-toggle button:hover {
+	transform: scale(1.15);
 }
 
 /* ─── Keyframes ─── */
@@ -232,6 +303,20 @@
 	padding-bottom: var(--swg-space-16) !important;
 }
 
+/* Theme transition overlay — fades out after toggle */
+.theme-fade-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 99999;
+	pointer-events: none;
+	opacity: 1;
+	transition: opacity 750ms var(--swg-ease);
+}
+
+.theme-fade-overlay.fade-out {
+	opacity: 0;
+}
+
 /* Constrain content width for readability */
 .swagger-ui .wrapper {
 	max-width: var(--swg-content-max) !important;
@@ -261,6 +346,7 @@
 	font-size: 0.8125rem !important;
 	line-height: 1.65 !important;
 	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	min-height: calc(1.65em * 8 + var(--swg-space-3) * 2) !important;
 }
 
 /* Code blocks */
@@ -442,12 +528,27 @@
 	font-weight: 700 !important;
 	letter-spacing: -0.02em;
 	border-bottom: 1px solid var(--swg-border-subtle) !important;
-	padding: var(--swg-space-3) var(--swg-space-2) !important;
+	padding: var(--swg-space-4) var(--swg-space-4) !important;
 	margin-bottom: var(--swg-space-3) !important;
 	cursor: pointer;
 	transition:
 		color var(--swg-duration-fast) var(--swg-ease),
 		border-color var(--swg-duration) var(--swg-ease);
+}
+
+/* Make the full tag row clickable */
+.swagger-ui .opblock-tag > a,
+.swagger-ui .opblock-tag > small,
+.swagger-ui .opblock-tag > button {
+	pointer-events: none !important;
+}
+
+.swagger-ui .opblock-tag {
+	position: relative !important;
+}
+
+.swagger-ui .opblock-tag * {
+	cursor: pointer !important;
 }
 
 .swagger-ui .opblock-tag:hover {
@@ -503,10 +604,11 @@
 /* ─── Opblock Summary (the clickable row) ─── */
 .swagger-ui .opblock .opblock-summary {
 	border-color: transparent !important;
-	padding: var(--swg-space-2) var(--swg-space-4) !important;
-	min-height: 40px;
+	padding: var(--swg-space-3) var(--swg-space-4) !important;
+	min-height: 48px;
 	display: flex;
 	align-items: center;
+	cursor: pointer !important;
 }
 
 .swagger-ui .opblock-summary-method {
@@ -786,6 +888,14 @@
 	flex-shrink: 0 !important;
 }
 
+/* Execute / Clear button wrapper */
+.swagger-ui .execute-wrapper {
+	display: flex !important;
+	gap: var(--swg-space-3) !important;
+	align-items: center !important;
+	margin-top: var(--swg-space-4) !important;
+}
+
 /* Execute button */
 .swagger-ui .btn.execute {
 	background: var(--swg-brand-gradient) !important;
@@ -799,6 +909,15 @@
 
 .swagger-ui .btn.execute:hover {
 	box-shadow: 0 4px 16px rgba(255, 100, 0, 0.3);
+}
+
+/* Clear button (appears after Execute) */
+.swagger-ui .btn-clear {
+	margin-top: var(--swg-space-3) !important;
+}
+
+.swagger-ui .execute-wrapper .btn-clear {
+	margin-top: 0 !important;
 }
 
 /* Cancel button */
@@ -1414,7 +1533,7 @@
 
 	.swagger-ui .opblock-tag {
 		font-size: 1.1rem !important;
-		padding: var(--swg-space-3) var(--swg-space-1) !important;
+		padding: var(--swg-space-4) var(--swg-space-3) !important;
 	}
 
 	.swagger-ui .btn.execute {
