@@ -7,7 +7,6 @@ import {
   Bot,
   Wallet,
   FileText,
-  FileInput,
   Key,
   Settings,
   Sun,
@@ -38,6 +37,7 @@ import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -138,30 +138,21 @@ export function MainLayout({ children }: MainLayoutProps) {
           name: 'Setup',
           icon: <Wand2 className="h-4 w-4" />,
           badge: null,
-        },
-        {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: <FileInput className="h-4 w-4" />,
-          badge: null,
+          group: 0,
         },
         {
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
           badge: null,
-        },
-        {
-          href: '/settings',
-          name: 'Settings',
-          icon: <Settings className="h-4 w-4" />,
-          badge: null,
+          group: 1,
         },
         {
           href: '/developers',
           name: 'Developers',
           icon: <Code className="h-4 w-4 text-violet-500" />,
           badge: null,
+          group: 1,
         },
       ];
     }
@@ -171,48 +162,42 @@ export function MainLayout({ children }: MainLayoutProps) {
         name: 'Dashboard',
         icon: <LayoutDashboard className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/ai-agents',
         name: 'AI Agents',
         icon: <Bot className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/wallets',
         name: 'Wallets',
         icon: <Wallet className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/transactions',
         name: 'Transactions',
         icon: <FileText className="h-4 w-4" />,
         badge: formatCount(newTransactionsCount),
-      },
-      {
-        href: '/payment-sources',
-        name: 'Payment sources',
-        icon: <FileInput className="h-4 w-4" />,
-        badge: null,
+        group: 0,
       },
       {
         href: '/api-keys',
         name: 'API keys',
         icon: <Key className="h-4 w-4" />,
         badge: null,
-      },
-      {
-        href: '/settings',
-        name: 'Settings',
-        icon: <Settings className="h-4 w-4" />,
-        badge: null,
+        group: 1,
       },
       {
         href: '/developers',
         name: 'Developers',
         icon: <Code className="h-4 w-4 text-violet-500" />,
         badge: null,
+        group: 1,
       },
     ];
   }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
@@ -275,47 +260,6 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div className="flex flex-col">
           <div
             className={cn(
-              'flex gap-2 border-b p-2.5 px-4 w-full',
-              collapsed && !isHovered ? 'justify-center items-center' : '',
-            )}
-          >
-            <div
-              className={cn(
-                'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed && !isHovered ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
-              )}
-            >
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  network === 'Preprod' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Preprod')}
-              >
-                {collapsed && !isHovered ? 'P' : 'Preprod'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  network === 'Mainnet' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Mainnet')}
-              >
-                {collapsed && !isHovered ? 'M' : 'Mainnet'}
-              </Button>
-            </div>
-          </div>
-
-          <div
-            className={cn(
               'flex items-center p-2 px-4 border-b border-border',
               collapsed && !isHovered ? 'justify-center' : 'justify-between',
             )}
@@ -354,17 +298,27 @@ export function MainLayout({ children }: MainLayoutProps) {
               </Button>
             )}
           </div>
+
+          <div
+            className={cn('p-2 w-full', collapsed && !isHovered ? 'flex justify-center' : 'px-2')}
+          >
+            <NetworkSourceCard
+              collapsed={collapsed && !isHovered}
+              onNetworkChange={handleNetworkChange}
+            />
+          </div>
         </div>
 
         <nav
           className={cn(
-            'flex flex-col gap-1 mt-2 p-2',
+            'flex flex-col gap-1 p-2',
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
           {navItems.map((item, index) => {
             const isDev = item.href === '/developers';
             const isActive = router.pathname === item.href;
+            const showSeparator = index > 0 && item.group !== navItems[index - 1].group;
             return (
               <div
                 key={item.href}
@@ -375,7 +329,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     : undefined
                 }
               >
-                {isDev && (
+                {showSeparator && (
                   <div
                     className={cn(
                       'my-1.5',
@@ -421,10 +375,26 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div
           className={cn(
             'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
-            collapsed && !isHovered ? 'px-2' : 'px-4',
+            collapsed && !isHovered ? 'px-0' : 'px-2',
           )}
         >
-          <div className="flex items-center justify-between">
+          <div className={cn('mb-2', collapsed && !isHovered ? 'flex justify-center' : '')}>
+            <Link
+              href="/settings"
+              className={cn(
+                'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
+                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                router.pathname === '/settings' &&
+                  'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
+                collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+              )}
+              title={collapsed && !isHovered ? 'Settings' : undefined}
+            >
+              <Settings className="h-4 w-4" />
+              {!(collapsed && !isHovered) && <span className="truncate">Settings</span>}
+            </Link>
+          </div>
+          <div className="flex items-center justify-between px-2">
             <div
               className={cn(
                 'flex gap-4 text-xs text-muted-foreground',

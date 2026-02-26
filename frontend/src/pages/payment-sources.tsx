@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Trash2, Edit2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Wand2 } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useMemo } from 'react';
 import { AddPaymentSourceDialog } from '@/components/payment-sources/AddPaymentSourceDialog';
@@ -278,6 +278,14 @@ export default function PaymentSourcesPage() {
                           icon="inbox"
                           title="No payment sources found"
                           description="Add a payment source to get started"
+                          action={
+                            <Button asChild>
+                              <Link href={`/setup?network=${network}`}>
+                                <Wand2 className="h-4 w-4 mr-2" />
+                                Set up for {network}
+                              </Link>
+                            </Button>
+                          }
                         />
                       </td>
                     </tr>

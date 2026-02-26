@@ -6,6 +6,7 @@ interface EmptyStateProps {
   description?: string;
   icon?: 'search' | 'inbox';
   className?: string;
+  action?: React.ReactNode;
 }
 
 export function EmptyState({
@@ -13,6 +14,7 @@ export function EmptyState({
   description,
   icon = 'inbox',
   className,
+  action,
 }: EmptyStateProps) {
   const Icon = icon === 'search' ? SearchX : Inbox;
 
@@ -33,6 +35,11 @@ export function EmptyState({
         >
           {description}
         </p>
+      )}
+      {action && (
+        <div className="mt-4 animate-fade-in-up opacity-0" style={{ animationDelay: '150ms' }}>
+          {action}
+        </div>
       )}
     </div>
   );
