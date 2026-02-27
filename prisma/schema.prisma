@@ -582,6 +582,17 @@ enum HydraHeadStatus {
   Final
 }
 
+enum HydraErrorType {
+  /// When well-formed client input was not processsable.
+  CommandFailed
+  /// Something went wrong while posting Hydra Layer1 transaction.
+  PostTxOnChainFailed
+  /// Transaction is invalid inside the Hydra Head.
+  TxInvalid
+  /// Client input was invalid.
+  InvalidInput
+}
+
 /// Persistent relation between exactly 2 wallets for Hydra L2.
 /// This is the lookup key for routing decisions: "is there a head between wallet X and wallet Y?"
 /// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
@@ -657,9 +668,8 @@ model HydraHead {
   closeTxHash          String?
   fanoutTxHash         String?
 
-  /// Last error message (if any)
-  lastError            String?
-  lastErrorAt          DateTime?
+  /// Errors that have occurred during the head's lifecycle
+  errors               HydraHeadError[]
 
   /// Participants in this head (node config, keys per head)
   Participants         HydraParticipant[]
@@ -712,6 +722,34 @@ model HydraParticipant {
   /// Index for "find all heads where a wallet is involved"
   @@index([walletId])
   @@index([walletId, hydraHeadId])
+}
+
+/// An error that has occurred during a Hydra head's lifecycle.
+model HydraHeadError {
+  id           String          @id @default(cuid())
+  createdAt    DateTime        @default(now())
+
+
+  /// Which head this error belongs to
+  hydraHeadId  String
+  HydraHead    HydraHead       @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The type of error
+  errorType    HydraErrorType
+  errorMessage String
+
+  /// The status of the head when the error occurred
+  headStatus   HydraHeadStatus
+
+  /// The client input that caused the error
+  clientInput  String?
+
+  /// The transaction hash that caused the error
+  txHash       String?
+  errorAt      DateTime
+
+  @@index([hydraHeadId])
+  @@index([hydraHeadId, errorAt])
 }
 
 /// Encrypted Hydra signing key for a participant (1:1 with HydraParticipant).
