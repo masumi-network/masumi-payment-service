@@ -565,18 +565,6 @@ export const getRegistryWallet = <ThrowOnError extends boolean = false>(options:
 });
 
 /**
- * Fetch the current metadata for a given agentIdentifier. (READ access required)
- *
- * Gets the on-chain metadata for a specific agent by its identifier.
- */
-export const getRegistryAgentIdentifier = <ThrowOnError extends boolean = false>(options: Options<GetRegistryAgentIdentifierData, ThrowOnError>) => (options.client ?? client).get<GetRegistryAgentIdentifierResponses, GetRegistryAgentIdentifierErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ name: 'token', type: 'apiKey' }],
-    url: '/registry/agent-identifier',
-    ...options
-});
-
-/**
  * Delete an agent registration record. (admin access required)
  *
  * Permanently deletes an agent registration record from the database. This action is irreversible and should only be used for registrations in specific failed or completed states.
@@ -834,56 +822,4 @@ export const postWebhooks = <ThrowOnError extends boolean = false>(options?: Opt
         'Content-Type': 'application/json',
         ...options?.headers
     }
-});
-
-/**
- * Get monitoring service status. (admin access required)
- *
- * Gets the current status of the blockchain state monitoring service
- */
-export const getMonitoring = <ThrowOnError extends boolean = false>(options?: Options<GetMonitoringData, ThrowOnError>) => (options?.client ?? client).get<GetMonitoringResponses, GetMonitoringErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ name: 'token', type: 'apiKey' }],
-    url: '/monitoring/',
-    ...options
-});
-
-/**
- * Trigger a manual monitoring cycle. (admin access required)
- *
- * Manually triggers a monitoring cycle to check blockchain state
- */
-export const postMonitoringTriggerCycle = <ThrowOnError extends boolean = false>(options?: Options<PostMonitoringTriggerCycleData, ThrowOnError>) => (options?.client ?? client).post<PostMonitoringTriggerCycleResponses, PostMonitoringTriggerCycleErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ name: 'token', type: 'apiKey' }],
-    url: '/monitoring/trigger-cycle/',
-    ...options
-});
-
-/**
- * Start the monitoring service. (admin access required)
- *
- * Starts the blockchain state monitoring service with a specified interval
- */
-export const postMonitoringStart = <ThrowOnError extends boolean = false>(options?: Options<PostMonitoringStartData, ThrowOnError>) => (options?.client ?? client).post<PostMonitoringStartResponses, PostMonitoringStartErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ name: 'token', type: 'apiKey' }],
-    url: '/monitoring/start/',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers
-    }
-});
-
-/**
- * Stop the monitoring service. (admin access required)
- *
- * Stops the blockchain state monitoring service
- */
-export const postMonitoringStop = <ThrowOnError extends boolean = false>(options?: Options<PostMonitoringStopData, ThrowOnError>) => (options?.client ?? client).post<PostMonitoringStopResponses, PostMonitoringStopErrors, ThrowOnError>({
-    responseType: 'json',
-    security: [{ name: 'token', type: 'apiKey' }],
-    url: '/monitoring/stop/',
-    ...options
 });
