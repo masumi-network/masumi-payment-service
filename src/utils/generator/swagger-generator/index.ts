@@ -43,7 +43,10 @@ import {
 } from '@/routes/api/registry';
 import { queryRegistryDiffSchemaInput } from '@/routes/api/registry/diff';
 import { unregisterAgentSchemaInput, unregisterAgentSchemaOutput } from '@/routes/api/registry/deregister';
-import { queryAgentByIdentifierSchemaInput, queryAgentByIdentifierSchemaOutput } from '@/routes/api/registry/agent-identifier';
+import {
+	queryAgentByIdentifierSchemaInput,
+	queryAgentByIdentifierSchemaOutput,
+} from '@/routes/api/registry/agent-identifier';
 import { getAPIKeyStatusSchemaOutput } from '@/routes/api/api-key-status';
 import {
 	getWalletSchemaInput,
@@ -2803,7 +2806,8 @@ export function generateOpenAPI() {
 	registry.registerPath({
 		method: 'get',
 		path: '/registry/agent-identifier',
-		description: 'Retrieves on-chain metadata for a specific agent identified by its full agent identifier (policy ID + asset name).',
+		description:
+			'Retrieves on-chain metadata for a specific agent identified by its full agent identifier (policy ID + asset name).',
 		summary: 'Look up a single agent by its on-chain identifier. (READ access required)',
 		tags: ['registry'],
 		security: [{ [apiKeyAuth.name]: [] }],
