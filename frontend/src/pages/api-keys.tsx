@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,7 +59,6 @@ export default function ApiKeys() {
   const router = useRouter();
   const { apiClient, network, apiKey } = useAppContext();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [filteredApiKeys, setFilteredApiKeys] = useState<ApiKey[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [keyToUpdate, setKeyToUpdate] = useState<ApiKey | null>(null);
@@ -68,6 +66,7 @@ export default function ApiKeys() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
   const { allApiKeys, isLoading, hasMore, loadMore, refetch } = useApiKey();
+  const handledActionRef = useRef(false);
 
   const tabs = [
     { name: 'All', count: null },
@@ -76,13 +75,12 @@ export default function ApiKeys() {
     { name: 'Admin', count: null },
   ];
 
-  const filterApiKeys = useCallback(() => {
+  // Derive filtered API keys from state (no setState in effect needed)
+  const filteredApiKeys = useMemo(() => {
     let filtered = [...allApiKeys];
 
     // Filter by network first (admin keys have access to all networks)
-    filtered = filtered.filter(
-      (key) => key.networkLimit.includes(network) || key.canAdmin,
-    );
+    filtered = filtered.filter((key) => key.networkLimit.includes(network) || key.canAdmin);
 
     // Then filter by permission tab using flag-based logic
     filtered = filtered.filter((key) => matchesPermissionTab(key, activeTab));
@@ -93,35 +91,26 @@ export default function ApiKeys() {
       filtered = filtered.filter((key) => {
         const nameMatch = key.id?.toLowerCase().includes(query) || false;
         const tokenMatch = key.token?.toLowerCase().includes(query) || false;
-        const permissionMatch =
-          getPermissionLabel(key).toLowerCase().includes(query) || false;
+        const permissionMatch = getPermissionLabel(key).toLowerCase().includes(query) || false;
         const statusMatch = key.status?.toLowerCase().includes(query) || false;
         const networkMatch =
-          key.networkLimit?.some((network) =>
-            network.toLowerCase().includes(query),
-          ) || false;
+          key.networkLimit?.some((n) => n.toLowerCase().includes(query)) || false;
 
-        return (
-          nameMatch ||
-          tokenMatch ||
-          permissionMatch ||
-          statusMatch ||
-          networkMatch
-        );
+        return nameMatch || tokenMatch || permissionMatch || statusMatch || networkMatch;
       });
     }
 
-    setFilteredApiKeys(filtered);
+    return filtered;
   }, [allApiKeys, searchQuery, activeTab, network]);
-
-  useEffect(() => {
-    filterApiKeys();
-  }, [filterApiKeys, searchQuery, activeTab]);
 
   // Handle action query parameter from search
   useEffect(() => {
-    if (router.query.action === 'add_api_key') {
-      setIsAddDialogOpen(true);
+    if (router.query.action === 'add_api_key' && !handledActionRef.current) {
+      handledActionRef.current = true;
+      // Use queueMicrotask to avoid synchronous setState within the effect
+      queueMicrotask(() => {
+        setIsAddDialogOpen(true);
+      });
       // Clean up the query parameter
       router.replace('/api-keys', undefined, { shallow: true });
     }
@@ -139,9 +128,7 @@ export default function ApiKeys() {
 
   const handleSelectAll = () => {
     setSelectedKeys(
-      selectedKeys.length === allApiKeys.length
-        ? []
-        : allApiKeys.map((key) => key.token),
+      selectedKeys.length === allApiKeys.length ? [] : allApiKeys.map((key) => key.token),
     );
   };
 
@@ -239,24 +226,15 @@ export default function ApiKeys() {
                 <tr className="border-b">
                   <th className="w-12 p-4">
                     <Checkbox
-                      checked={
-                        allApiKeys.length > 0 &&
-                        selectedKeys.length === allApiKeys.length
-                      }
+                      checked={allApiKeys.length > 0 && selectedKeys.length === allApiKeys.length}
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
                   <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Permission
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Networks
-                  </th>
-                  <th className="p-4 text-left text-sm font-medium">
-                    Usage Limits
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium">Permission</th>
+                  <th className="p-4 text-left text-sm font-medium">Networks</th>
+                  <th className="p-4 text-left text-sm font-medium">Usage Limits</th>
                   <th className="p-4 text-left text-sm font-medium">Status</th>
                   <th className="w-12 p-4"></th>
                 </tr>
@@ -267,9 +245,7 @@ export default function ApiKeys() {
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-8">
-                      {searchQuery
-                        ? 'No API keys found matching your search'
-                        : 'No API keys found'}
+                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
                     </td>
                   </tr>
                 ) : (
@@ -352,9 +328,7 @@ export default function ApiKeys() {
                               value="delete"
                               className="text-red-600"
                             >
-                              {key.token === apiKey
-                                ? 'Cannot delete current API key'
-                                : 'Delete'}
+                              {key.token === apiKey ? 'Cannot delete current API key' : 'Delete'}
                             </SelectItem>
                           </SelectContent>
                         </Select>
@@ -368,11 +342,7 @@ export default function ApiKeys() {
 
           <div className="flex flex-col gap-4 items-center">
             {!isLoading && (
-              <Pagination
-                hasMore={hasMore}
-                isLoading={isLoading}
-                onLoadMore={handleLoadMore}
-              />
+              <Pagination hasMore={hasMore} isLoading={isLoading} onLoadMore={handleLoadMore} />
             )}
           </div>
         </div>
