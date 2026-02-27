@@ -33,7 +33,6 @@ export interface TokenBalance {
   policyId: string;
   assetName: string;
   quantity: number;
-  displayName: string;
 }
 
 export interface WalletWithBalance {
@@ -110,7 +109,6 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   policyId: '',
                   assetName: 'ADA',
                   quantity,
-                  displayName: 'ADA',
                 });
               } else {
                 // For other tokens, split into policy ID and asset name
@@ -123,7 +121,6 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   policyId,
                   assetName,
                   quantity,
-                  displayName: assetNameHex || unit,
                 });
               }
             });
