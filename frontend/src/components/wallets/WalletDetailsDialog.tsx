@@ -406,13 +406,16 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                         token.policyId === usdmConfig.policyId &&
                         token.assetName === hexToAscii(usdmConfig.assetName);
                       const assetHex = !isADA ? token.unit.slice(56) : '';
-                      const displayName = isUSDM && token.policyId
-                        ? `USDM (${shortenAddress(token.policyId)})`
-                        : assetHex
-                          ? (assetHex.length > 12 ? shortenAddress(assetHex) : assetHex)
-                          : isADA
-                            ? 'ADA'
-                            : shortenAddress(token.policyId);
+                      const displayName =
+                        isUSDM && token.policyId
+                          ? `USDM (${shortenAddress(token.policyId)})`
+                          : assetHex
+                            ? assetHex.length > 12
+                              ? shortenAddress(assetHex)
+                              : assetHex
+                            : isADA
+                              ? 'ADA'
+                              : shortenAddress(token.policyId);
                       const tokenUrl =
                         !isADA && !isUSDM
                           ? getExplorerUrl(token.unit, network, 'token')
