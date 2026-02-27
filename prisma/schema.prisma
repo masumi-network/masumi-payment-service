@@ -14,7 +14,15 @@ model ApiKey {
   token                 String            @unique
   tokenHash             String            @unique
   status                ApiKeyStatus
+
+  // Flag-based permissions (new system)
+  canRead               Boolean           @default(true)
+  canPay                Boolean           @default(false)
+  canAdmin              Boolean           @default(false)
+
+  // Legacy permission field (deprecated - kept for backward compatibility during migration)
   permission            Permission
+
   networkLimit          Network[]
   usageLimited          Boolean           @default(false)
   deletedAt             DateTime?

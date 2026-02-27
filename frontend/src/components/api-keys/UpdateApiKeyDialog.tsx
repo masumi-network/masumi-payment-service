@@ -1,18 +1,14 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { useState, useRef } from 'react';
-import { Eye, EyeOff, X } from 'lucide-react';
+import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { patchApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -25,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
 import { handleApiCall } from '@/lib/utils';
-import { useForm, Controller, useWatch } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -36,6 +32,11 @@ interface UpdateApiKeyDialogProps {
   apiKey: {
     id: string;
     token: string;
+    // Flag-based permissions
+    canRead: boolean;
+    canPay: boolean;
+    canAdmin: boolean;
+    // Legacy permission (for display)
     permission: 'Read' | 'ReadAndPay' | 'Admin';
     networkLimit: Array<'Preprod' | 'Mainnet'>;
     usageLimited: boolean;
@@ -89,10 +90,26 @@ const updateApiKeySchema = z
 
 type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
 
-export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateApiKeyDialogProps) {
+/**
+ * Get a human-readable permission label from flags.
+ */
+function getPermissionLabel(
+  canRead: boolean,
+  canPay: boolean,
+  canAdmin: boolean,
+): string {
+  if (canAdmin) return 'Admin';
+  if (canPay) return 'Read and Pay';
+  return 'Read Only';
+}
+
+export function UpdateApiKeyDialog({
+  open,
+  onClose,
+  onSuccess,
+  apiKey,
+}: UpdateApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [showToken, setShowToken] = useState(false);
-  const tokenInputRef = useRef<HTMLInputElement | null>(null);
   const { apiClient } = useAppContext();
 
   const {
@@ -100,9 +117,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     handleSubmit,
     control,
     reset,
-    setValue,
     formState: { errors },
-  } = useForm<UpdateApiKeyFormValues, { apiKeyContext: { apiKey: typeof apiKey } }>({
+  } = useForm<
+    UpdateApiKeyFormValues,
+    { apiKeyContext: { apiKey: typeof apiKey } }
+  >({
     resolver: zodResolver(updateApiKeySchema),
     defaultValues: {
       newToken: '',
@@ -111,8 +130,6 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     },
     context: { apiKeyContext: { apiKey } },
   });
-
-  const tokenValue = useWatch({ control, name: 'newToken' });
 
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
     const usageCredits: Array<{ unit: string; amount: string }> = [];
@@ -145,7 +162,9 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         onSuccess: (response) => {
           const responseData = response?.data as PatchApiKeyResponse;
           if (!responseData?.data?.id) {
-            toast.error('Failed to update API key: Invalid response from server');
+            toast.error(
+              'Failed to update API key: Invalid response from server',
+            );
             return;
           }
           toast.success('API key updated successfully');
@@ -162,7 +181,6 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
 
   const handleClose = () => {
     reset();
-    setShowToken(false);
     onClose();
   };
 
@@ -171,103 +189,45 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Update API key</DialogTitle>
-          <DialogDescription>
-            Modify the token, status, or usage credits for this key.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
-          <span className="text-muted-foreground">Permission:</span>
-          <Badge
-            variant={
-              apiKey.permission === 'Admin'
-                ? 'default'
-                : apiKey.permission === 'ReadAndPay'
-                  ? 'secondary'
-                  : 'outline'
-            }
-          >
-            {apiKey.permission}
-          </Badge>
-          <Separator orientation="vertical" className="mx-1 h-4" />
-          <span className="text-muted-foreground">Networks:</span>
-          <div className="flex gap-1">
-            {apiKey.networkLimit.map((net) => (
-              <Badge key={net} variant="outline" className="font-normal">
-                {net}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
-        <Separator />
-
         <div className="space-y-4">
+          {/* Display current permission level */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="newToken">
-                Replace Token <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
+            <label className="text-sm font-medium">Permission Level</label>
+            <div className="p-2 bg-muted rounded-md text-sm">
+              {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
             </div>
-            <div className="relative">
-              <Input
-                id="newToken"
-                type={showToken ? 'text' : 'password'}
-                placeholder="Enter new token to replace current"
-                className="pr-16"
-                {...register('newToken')}
-                ref={(e) => {
-                  register('newToken').ref(e);
-                  tokenInputRef.current = e;
-                }}
-              />
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center">
-                {tokenValue && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => {
-                      setValue('newToken', '');
-                      if (tokenInputRef.current) tokenInputRef.current.value = '';
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setShowToken((v) => !v)}
-                >
-                  {showToken ? (
-                    <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                  )}
-                </Button>
-              </div>
-            </div>
-            {errors.newToken ? (
-              <p className="text-xs text-destructive">{errors.newToken.message}</p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Minimum 15 characters. Leave empty to keep the current token.
+            <p className="text-xs text-muted-foreground">
+              Permission level cannot be changed after creation
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">New Token (Optional)</label>
+            <Input
+              type="text"
+              placeholder="Leave empty to keep current token"
+              {...register('newToken')}
+            />
+            {errors.newToken && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.newToken.message}
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Must be at least 15 characters if provided
+            </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
+            <label className="text-sm font-medium">Status</label>
             <Controller
               control={control}
               name="status"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="status">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -277,110 +237,67 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                 </Select>
               )}
             />
-            {errors.status && <p className="text-xs text-destructive">{errors.status.message}</p>}
+            {errors.status && (
+              <p className="text-xs text-destructive mt-1">
+                {errors.status.message}
+              </p>
+            )}
           </div>
 
-          {apiKey.usageLimited && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-sm">Adjust Usage Credits</Label>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  Enter a positive value to add credits, or negative to remove.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                      ADA
-                    </Label>
-                    <Input
-                      id="credits-ada"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.lovelace')}
-                    />
-                    {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.lovelace as any).message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
-                    </Label>
-                    <Input
-                      id="credits-usdm"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.usdm')}
-                    />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Add/Remove ADA Credits
+              </label>
+              <Input
+                type="number"
+                placeholder="Enter amount (positive to add, negative to remove)"
+                {...register('credits.lovelace')}
+              />
+              {errors.credits &&
+                'lovelace' in errors.credits &&
+                errors.credits.lovelace && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.lovelace as any).message}
+                  </p>
+                )}
+              <p className="text-xs text-muted-foreground">
+                Amount in ADA (will be converted to lovelace)
+              </p>
+            </div>
 
-          {!apiKey.usageLimited && (
-            <>
-              <Separator />
-              <div>
-                <Label className="text-sm">Add Usage Credits</Label>
-                <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-                  This key is unlimited, but you can still add tracked credits.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                      ADA
-                    </Label>
-                    <Input
-                      id="credits-ada"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.lovelace')}
-                    />
-                    {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.lovelace as any).message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="credits-usdm" className="text-xs text-muted-foreground">
-                      USDM
-                    </Label>
-                    <Input
-                      id="credits-usdm"
-                      type="number"
-                      placeholder="0.00"
-                      {...register('credits.usdm')}
-                    />
-                    {errors.credits && 'usdm' in errors.credits && errors.credits.usdm && (
-                      <p className="text-xs text-destructive">
-                        {(errors.credits.usdm as any).message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Add/Remove USDM Credits
+              </label>
+              <Input
+                type="number"
+                placeholder="Enter amount (positive to add, negative to remove)"
+                {...register('credits.usdm')}
+              />
+              {errors.credits &&
+                'usdm' in errors.credits &&
+                errors.credits.usdm && (
+                  <p className="text-xs text-destructive mt-1">
+                    {(errors.credits.usdm as any).message}
+                  </p>
+                )}
+            </div>
+          </div>
         </div>
 
-        <DialogFooter className="mt-2">
+        <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button disabled={isLoading} onClick={handleSubmit(onSubmit)}>
+          <Button
+            type="submit"
+            disabled={isLoading}
+            onClick={handleSubmit(onSubmit)}
+          >
             {isLoading ? 'Updating...' : 'Update'}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

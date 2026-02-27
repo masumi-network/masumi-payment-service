@@ -31,6 +31,18 @@
                         "type": "string",
                         "description": "The API key token"
                     },
+                    "canRead": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access read endpoints"
+                    },
+                    "canPay": {
+                        "type": "boolean",
+                        "description": "Whether this API key can access payment/purchase endpoints"
+                    },
+                    "canAdmin": {
+                        "type": "boolean",
+                        "description": "Whether this API key has admin access"
+                    },
                     "permission": {
                         "type": "string",
                         "enum": [
@@ -38,7 +50,7 @@
                             "ReadAndPay",
                             "Admin"
                         ],
-                        "description": "Permission level of the API key"
+                        "description": "Permission level of the API key (computed from flags for backward compatibility)"
                     },
                     "usageLimited": {
                         "type": "boolean",
@@ -88,6 +100,9 @@
                 "required": [
                     "id",
                     "token",
+                    "canRead",
+                    "canPay",
+                    "canAdmin",
                     "permission",
                     "usageLimited",
                     "networkLimit",
@@ -2992,6 +3007,9 @@
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "permission": "Admin",
                                             "usageLimited": true,
                                             "networkLimit": [
@@ -3394,6 +3412,9 @@
                                                 {
                                                     "id": "api_key_id",
                                                     "token": "masumi_payment_api_key_secret",
+                                                    "canRead": true,
+                                                    "canPay": true,
+                                                    "canAdmin": true,
                                                     "permission": "Admin",
                                                     "usageLimited": true,
                                                     "networkLimit": [
@@ -3487,6 +3508,18 @@
                                         ],
                                         "description": "The networks the API key is allowed to use"
                                     },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
+                                    },
                                     "permission": {
                                         "type": "string",
                                         "enum": [
@@ -3494,8 +3527,7 @@
                                             "ReadAndPay",
                                             "Admin"
                                         ],
-                                        "default": "Read",
-                                        "description": "The permission of the API key"
+                                        "description": "Legacy permission field (use canRead/canPay/canAdmin instead)"
                                     }
                                 },
                                 "required": [
@@ -3539,6 +3571,9 @@
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "permission": "Admin",
                                             "usageLimited": true,
                                             "networkLimit": [
@@ -3649,6 +3684,18 @@
                                             "Preprod"
                                         ],
                                         "description": "The networks the API key is allowed to use"
+                                    },
+                                    "canRead": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access read endpoints"
+                                    },
+                                    "canPay": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key can access payment/purchase endpoints"
+                                    },
+                                    "canAdmin": {
+                                        "type": "boolean",
+                                        "description": "Whether this API key has admin access"
                                     }
                                 },
                                 "required": [
@@ -3697,6 +3744,9 @@
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "permission": "Admin",
                                             "usageLimited": true,
                                             "networkLimit": [
@@ -3785,6 +3835,9 @@
                                         "data": {
                                             "id": "api_key_id",
                                             "token": "masumi_payment_api_key_secret",
+                                            "canRead": true,
+                                            "canPay": true,
+                                            "canAdmin": true,
                                             "permission": "Admin",
                                             "usageLimited": true,
                                             "networkLimit": [
