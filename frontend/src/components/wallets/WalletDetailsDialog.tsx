@@ -123,7 +123,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   policyId,
                   assetName,
                   quantity,
-                  displayName: assetName || unit,
+                  displayName: assetNameHex || unit,
                 });
               }
             });
@@ -401,20 +401,27 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                     );
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
+                      const isADA = token.unit === 'lovelace';
                       const isUSDM =
                         token.policyId === usdmConfig.policyId &&
                         token.assetName === hexToAscii(usdmConfig.assetName);
-                      const displayName =
-                        isUSDM && token.policyId
-                          ? `USDM (${shortenAddress(token.policyId)})`
-                          : token.displayName;
-                      return (
-                        <div
-                          key={token.unit}
-                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
-                        >
+                      const assetHex = !isADA ? token.unit.slice(56) : '';
+                      const displayName = isUSDM && token.policyId
+                        ? `USDM (${shortenAddress(token.policyId)})`
+                        : assetHex
+                          ? (assetHex.length > 12 ? shortenAddress(assetHex) : assetHex)
+                          : isADA
+                            ? 'ADA'
+                            : shortenAddress(token.policyId);
+                      const tokenUrl =
+                        !isADA && !isUSDM
+                          ? getExplorerUrl(token.unit, network, 'token')
+                          : undefined;
+
+                      const inner = (
+                        <>
                           <div>
-                            <div className="font-medium">{displayName}</div>
+                            <div className="font-medium font-mono">{displayName}</div>
                             {!isUSDM && token.policyId && (
                               <div className="text-xs text-muted-foreground">
                                 Policy ID: {shortenAddress(token.policyId)}
@@ -423,11 +430,35 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                           </div>
                           <div className="text-right">
                             <div>{amount}</div>
-                            {/* Only show USD value for non-USDM tokens */}
                             {usdValue && !isUSDM && (
                               <div className="text-xs text-muted-foreground">{usdValue}</div>
                             )}
                           </div>
+                        </>
+                      );
+
+                      if (tokenUrl) {
+                        return (
+                          <a
+                            key={token.unit}
+                            href={tokenUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded-md border dark:border-muted-foreground/20 hover:bg-accent transition-colors"
+                          >
+                            <div className="flex items-center justify-between p-3 cursor-pointer">
+                              {inner}
+                            </div>
+                          </a>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
+                        >
+                          {inner}
                         </div>
                       );
                     });
