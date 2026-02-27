@@ -43,6 +43,7 @@ import {
 } from '@/routes/api/registry';
 import { queryRegistryDiffSchemaInput } from '@/routes/api/registry/diff';
 import { unregisterAgentSchemaInput, unregisterAgentSchemaOutput } from '@/routes/api/registry/deregister';
+import { queryAgentByIdentifierSchemaInput, queryAgentByIdentifierSchemaOutput } from '@/routes/api/registry/agent-identifier';
 import { getAPIKeyStatusSchemaOutput } from '@/routes/api/api-key-status';
 import {
 	getWalletSchemaInput,
@@ -2795,6 +2796,92 @@ export function generateOpenAPI() {
 						}),
 					},
 				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/registry/agent-identifier',
+		description: 'Retrieves on-chain metadata for a specific agent identified by its full agent identifier (policy ID + asset name).',
+		summary: 'Look up a single agent by its on-chain identifier. (READ access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryAgentByIdentifierSchemaInput.openapi({
+				example: {
+					agentIdentifier: 'policy_id_asset_name_policy_id_asset_name_policy_id_asset_name',
+					network: Network.Preprod,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Agent metadata',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryAgentByIdentifierSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										policyId: 'policy_id',
+										assetName: 'asset_name',
+										agentIdentifier: 'policy_id_asset_name',
+										Metadata: {
+											name: 'Agent Name',
+											description: 'Agent Description',
+											apiBaseUrl: 'https://api.example.com',
+											ExampleOutputs: [],
+											Tags: ['tag1', 'tag2'],
+											Capability: {
+												name: 'capability_name',
+												version: 'capability_version',
+											},
+											Legal: {
+												privacyPolicy: 'privacy_policy',
+												terms: 'terms',
+												other: 'other',
+											},
+											Author: {
+												name: 'author_name',
+												contactEmail: 'author@example.com',
+												contactOther: 'other_contact',
+												organization: 'author_organization',
+											},
+											AgentPricing: {
+												pricingType: PricingType.Fixed,
+												Pricing: [
+													{
+														unit: '',
+														amount: '10000000',
+													},
+												],
+											},
+											image: 'https://example.com/image.png',
+											metadataVersion: 1,
+										},
+									},
+								},
+							}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (invalid agent identifier format)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Agent identifier not found',
+			},
+			500: {
+				description: 'Internal Server Error',
 			},
 		},
 	});

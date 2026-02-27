@@ -642,6 +642,18 @@ export const postRegistryDeregister = <ThrowOnError extends boolean = false>(opt
 });
 
 /**
+ * Look up a single agent by its on-chain identifier. (READ access required)
+ *
+ * Retrieves on-chain metadata for a specific agent identified by its full agent identifier (policy ID + asset name).
+ */
+export const getRegistryAgentIdentifier = <ThrowOnError extends boolean = false>(options: Options<GetRegistryAgentIdentifierData, ThrowOnError>) => (options.client ?? client).get<GetRegistryAgentIdentifierResponses, GetRegistryAgentIdentifierErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/registry/agent-identifier',
+    ...options
+});
+
+/**
  * List payment sources with their public details. (READ access required)
  *
  * Gets the payment source.
