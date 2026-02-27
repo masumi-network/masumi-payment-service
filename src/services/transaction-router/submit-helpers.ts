@@ -18,9 +18,9 @@ interface BaseSubmitContext {
  */
 interface PurchaseSubmitContext extends BaseSubmitContext {
 	purchaseRequestId: string;
-	/** HotWallet ID of the buyer (Purchasing type) */
+	/** WalletBase ID of the buyer */
 	buyerWalletId: string;
-	/** HotWallet ID of the seller (Selling type) */
+	/** WalletBase ID of the seller */
 	sellerWalletId: string;
 }
 
@@ -29,9 +29,9 @@ interface PurchaseSubmitContext extends BaseSubmitContext {
  */
 interface PaymentSubmitContext extends BaseSubmitContext {
 	paymentRequestId: string;
-	/** HotWallet ID of the buyer (Purchasing type) */
+	/** WalletBase ID of the buyer */
 	buyerWalletId: string;
-	/** HotWallet ID of the seller (Selling type) */
+	/** WalletBase ID of the seller */
 	sellerWalletId: string;
 }
 
@@ -386,7 +386,7 @@ export async function fetchUtxosByTxHashForTransaction(
 // ============================================================
 
 /**
- * Check if L2 (Hydra) is available for a transaction between two HotWallets.
+ * Check if L2 (Hydra) is available for a transaction between two wallets.
  * Uses lexicographically ordered wallet IDs (no buyer/seller distinction).
  */
 export async function isHydraAvailable(context: {

@@ -68,8 +68,6 @@ model HotWallet {
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
-  HydraRelationsA      HydraRelation[]    @relation("HydraRelationWalletA")
-  HydraRelationsB      HydraRelation[]    @relation("HydraRelationWalletB")
   HydraParticipants    HydraParticipant[] @relation("HydraParticipantWallet")
 }
 
@@ -133,6 +131,8 @@ model WalletBase {
   PaymentRequest  PaymentRequest[]
   PurchaseRequest PurchaseRequest[]
   PaymentSource   PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  HydraRelationsA HydraRelation[]   @relation("HydraRelationWalletA")
+  HydraRelationsB HydraRelation[]   @relation("HydraRelationWalletB")
 
   @@unique([paymentSourceId, walletVkey, walletAddress, type])
 }
@@ -582,13 +582,13 @@ enum HydraHeadStatus {
   Final
 }
 
-/// Persistent relation between exactly 2 HotWallets for Hydra L2.
+/// Persistent relation between exactly 2 wallets for Hydra L2.
 /// This is the lookup key for routing decisions: "is there a head between wallet X and wallet Y?"
 /// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
 ///
 /// Wallets are stored in deterministic order (walletIdA < walletIdB lexicographically)
 /// so the same pair is never duplicated with swapped columns.
-/// The buyer/seller role is not encoded here — it is resolved from HotWallet.type at query time.
+/// The buyer/seller role is not encoded here — it is resolved from WalletBase.type at query time.
 model HydraRelation {
   id        String    @id @default(cuid())
   createdAt DateTime  @default(now())
@@ -597,12 +597,12 @@ model HydraRelation {
   /// Cardano network this relation operates on
   network   Network
 
-  /// First wallet (lexicographically smaller HotWallet ID)
+  /// First wallet (lexicographically smaller WalletBase ID)
   walletIdA String
-  /// Second wallet (lexicographically larger HotWallet ID)
+  /// Second wallet (lexicographically larger WalletBase ID)
   walletIdB String
-  WalletA   HotWallet @relation("HydraRelationWalletA", fields: [walletIdA], references: [id], onDelete: Restrict)
-  WalletB   HotWallet @relation("HydraRelationWalletB", fields: [walletIdB], references: [id], onDelete: Restrict)
+  WalletA   WalletBase @relation("HydraRelationWalletA", fields: [walletIdA], references: [id], onDelete: Restrict)
+  WalletB   WalletBase @relation("HydraRelationWalletB", fields: [walletIdB], references: [id], onDelete: Restrict)
 
   /// Individual head sessions within this relation (1:N)
   Heads     HydraHead[]

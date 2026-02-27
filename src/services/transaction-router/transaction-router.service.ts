@@ -21,7 +21,7 @@ const DEFAULT_CONFIG: TransactionRouterConfig = {
 };
 
 /**
- * Function type for finding an active Hydra head between two HotWallets.
+ * Function type for finding an active Hydra head between two wallets.
  *
  * Takes two wallet IDs (lexicographically ordered, no buyer/seller distinction)
  * and returns the resolved Hydra head info if an active (Open) head exists, or null.
@@ -74,7 +74,7 @@ export type FindActiveHydraHead = (
  * Transaction Router Service
  *
  * Routes transactions to Layer 1 (Cardano) or Layer 2 (Hydra) based on whether
- * an open Hydra head exists between the two HotWallets.
+ * an open Hydra head exists between the two wallets (via HydraRelation).
  *
  * Decision flow:
  * 1. If forceLayer is set → use it
@@ -104,7 +104,7 @@ export class TransactionRouter {
 	}
 
 	/**
-	 * Set a function to find an active Hydra head between two HotWallets.
+	 * Set a function to find an active Hydra head between two wallets.
 	 * When not set, all transactions go to L1.
 	 */
 	setHydraHeadFinder(fn: FindActiveHydraHead | null): void {
@@ -260,7 +260,7 @@ export class TransactionRouter {
 	 * Resolve the full routing decision (layer + Hydra head info if L2).
 	 *
 	 * Uses findActiveHydraHead to query the DB for an open HydraHead
-	 * between the two HotWallets (via HydraRelation).
+	 * between the two wallets (via HydraRelation).
 	 * Falls back to L1 if no finder is set or no active head is found.
 	 */
 	private async resolveRouting(context: TransactionRoutingContext): Promise<RoutingDecision> {

@@ -29,7 +29,7 @@ export interface TransactionRoutingContext {
 	purchaseRequestId?: string;
 	paymentRequestId?: string;
 
-	// HotWallet IDs for Hydra head lookup (lexicographically ordered; no buyer/seller distinction).
+	// WalletBase IDs for Hydra head lookup (lexicographically ordered; no buyer/seller distinction).
 	walletIdA?: string;
 	walletIdB?: string;
 
