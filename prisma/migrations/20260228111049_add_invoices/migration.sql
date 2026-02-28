@@ -1,4 +1,7 @@
 -- CreateEnum
+CREATE TYPE "InvoiceType" AS ENUM ('Monthly', 'OneTime');
+
+-- CreateEnum
 CREATE TYPE "SymbolPosition" AS ENUM ('Before', 'After');
 
 -- CreateTable
@@ -6,6 +9,8 @@ CREATE TABLE "InvoiceBase" (
     "id" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "invoiceType" "InvoiceType" NOT NULL,
+    "invoiceId" TEXT NOT NULL,
 
     CONSTRAINT "InvoiceBase_pkey" PRIMARY KEY ("id")
 );
@@ -17,7 +22,7 @@ CREATE TABLE "InvoiceRevision" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "invoiceBaseId" TEXT NOT NULL,
     "revisionNumber" INTEGER NOT NULL DEFAULT 0,
-    "completeInvoiceId" TEXT NOT NULL,
+    "currencyShortId" TEXT NOT NULL,
     "invoiceTitle" TEXT NOT NULL,
     "invoiceDescription" TEXT,
     "invoiceDate" TIMESTAMP(3) NOT NULL,
@@ -77,15 +82,21 @@ CREATE TABLE "InvoiceItem" (
     "name" TEXT NOT NULL,
     "quantity" DECIMAL(65,30) NOT NULL,
     "pricePerUnitWithoutVat" DECIMAL(65,30) NOT NULL,
-    "conversionFactor" DECIMAL(65,30) NOT NULL,
     "vatRate" DECIMAL(65,30) NOT NULL,
     "vatAmount" DECIMAL(65,30) NOT NULL,
     "totalAmount" DECIMAL(65,30) NOT NULL,
+    "decimals" INTEGER NOT NULL,
+    "conversionFactor" DECIMAL(65,30) NOT NULL,
+    "convertedUnit" TEXT NOT NULL,
+    "conversionDate" TIMESTAMP(3) NOT NULL,
     "referencedPaymentId" TEXT,
     "invoiceRevisionId" TEXT NOT NULL,
 
     CONSTRAINT "InvoiceItem_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "InvoiceBase_invoiceId_key" ON "InvoiceBase"("invoiceId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "InvoiceRevision_invoiceBaseId_revisionNumber_key" ON "InvoiceRevision"("invoiceBaseId", "revisionNumber");

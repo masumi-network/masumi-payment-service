@@ -69,6 +69,10 @@ export const ModelName = {
   PaymentSource: 'PaymentSource',
   AdminWallet: 'AdminWallet',
   PaymentSourceConfig: 'PaymentSourceConfig',
+  InvoiceBase: 'InvoiceBase',
+  InvoiceRevision: 'InvoiceRevision',
+  InvoicePrefix: 'InvoicePrefix',
+  InvoiceItem: 'InvoiceItem',
   WebhookEndpoint: 'WebhookEndpoint',
   WebhookDelivery: 'WebhookDelivery'
 } as const
@@ -408,6 +412,97 @@ export const PaymentSourceConfigScalarFieldEnum = {
 } as const
 
 export type PaymentSourceConfigScalarFieldEnum = (typeof PaymentSourceConfigScalarFieldEnum)[keyof typeof PaymentSourceConfigScalarFieldEnum]
+
+
+export const InvoiceBaseScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  invoiceType: 'invoiceType',
+  invoiceId: 'invoiceId'
+} as const
+
+export type InvoiceBaseScalarFieldEnum = (typeof InvoiceBaseScalarFieldEnum)[keyof typeof InvoiceBaseScalarFieldEnum]
+
+
+export const InvoiceRevisionScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  invoiceBaseId: 'invoiceBaseId',
+  revisionNumber: 'revisionNumber',
+  currencyShortId: 'currencyShortId',
+  invoiceTitle: 'invoiceTitle',
+  invoiceDescription: 'invoiceDescription',
+  invoiceDate: 'invoiceDate',
+  invoiceGreetings: 'invoiceGreetings',
+  invoiceClosing: 'invoiceClosing',
+  invoiceSignature: 'invoiceSignature',
+  invoiceLogo: 'invoiceLogo',
+  invoiceFooter: 'invoiceFooter',
+  invoiceTerms: 'invoiceTerms',
+  invoicePrivacy: 'invoicePrivacy',
+  invoiceDisclaimer: 'invoiceDisclaimer',
+  correctionInvoiceOriginalNumber: 'correctionInvoiceOriginalNumber',
+  correctionInvoiceOriginalDate: 'correctionInvoiceOriginalDate',
+  correctionInvoiceReason: 'correctionInvoiceReason',
+  correctionInvoiceTitle: 'correctionInvoiceTitle',
+  correctionInvoiceDescription: 'correctionInvoiceDescription',
+  language: 'language',
+  localizationFormat: 'localizationFormat',
+  sellerCountry: 'sellerCountry',
+  sellerCity: 'sellerCity',
+  sellerZipCode: 'sellerZipCode',
+  sellerStreet: 'sellerStreet',
+  sellerStreetNumber: 'sellerStreetNumber',
+  sellerEmail: 'sellerEmail',
+  sellerPhone: 'sellerPhone',
+  sellerName: 'sellerName',
+  sellerCompanyName: 'sellerCompanyName',
+  sellerVatNumber: 'sellerVatNumber',
+  buyerCountry: 'buyerCountry',
+  buyerCity: 'buyerCity',
+  buyerZipCode: 'buyerZipCode',
+  buyerStreet: 'buyerStreet',
+  buyerStreetNumber: 'buyerStreetNumber',
+  buyerEmail: 'buyerEmail',
+  buyerPhone: 'buyerPhone',
+  buyerName: 'buyerName',
+  buyerCompanyName: 'buyerCompanyName',
+  buyerVatNumber: 'buyerVatNumber',
+  generatedPDFInvoice: 'generatedPDFInvoice'
+} as const
+
+export type InvoiceRevisionScalarFieldEnum = (typeof InvoiceRevisionScalarFieldEnum)[keyof typeof InvoiceRevisionScalarFieldEnum]
+
+
+export const InvoicePrefixScalarFieldEnum = {
+  id: 'id',
+  count: 'count'
+} as const
+
+export type InvoicePrefixScalarFieldEnum = (typeof InvoicePrefixScalarFieldEnum)[keyof typeof InvoicePrefixScalarFieldEnum]
+
+
+export const InvoiceItemScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  name: 'name',
+  quantity: 'quantity',
+  pricePerUnitWithoutVat: 'pricePerUnitWithoutVat',
+  vatRate: 'vatRate',
+  vatAmount: 'vatAmount',
+  totalAmount: 'totalAmount',
+  decimals: 'decimals',
+  conversionFactor: 'conversionFactor',
+  convertedUnit: 'convertedUnit',
+  conversionDate: 'conversionDate',
+  referencedPaymentId: 'referencedPaymentId',
+  invoiceRevisionId: 'invoiceRevisionId'
+} as const
+
+export type InvoiceItemScalarFieldEnum = (typeof InvoiceItemScalarFieldEnum)[keyof typeof InvoiceItemScalarFieldEnum]
 
 
 export const WebhookEndpointScalarFieldEnum = {

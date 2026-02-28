@@ -435,6 +435,7 @@ export type PaymentRequestWhereInput = {
   WithdrawnForBuyer?: Prisma.UnitValueListRelationFilter
   RequestedFunds?: Prisma.UnitValueListRelationFilter
   WithdrawnForSeller?: Prisma.UnitValueListRelationFilter
+  InvoiceItem?: Prisma.InvoiceItemListRelationFilter
 }
 
 export type PaymentRequestOrderByWithRelationInput = {
@@ -476,6 +477,7 @@ export type PaymentRequestOrderByWithRelationInput = {
   WithdrawnForBuyer?: Prisma.UnitValueOrderByRelationAggregateInput
   RequestedFunds?: Prisma.UnitValueOrderByRelationAggregateInput
   WithdrawnForSeller?: Prisma.UnitValueOrderByRelationAggregateInput
+  InvoiceItem?: Prisma.InvoiceItemOrderByRelationAggregateInput
 }
 
 export type PaymentRequestWhereUniqueInput = Prisma.AtLeast<{
@@ -520,6 +522,7 @@ export type PaymentRequestWhereUniqueInput = Prisma.AtLeast<{
   WithdrawnForBuyer?: Prisma.UnitValueListRelationFilter
   RequestedFunds?: Prisma.UnitValueListRelationFilter
   WithdrawnForSeller?: Prisma.UnitValueListRelationFilter
+  InvoiceItem?: Prisma.InvoiceItemListRelationFilter
 }, "id" | "nextActionId" | "blockchainIdentifier" | "currentTransactionId">
 
 export type PaymentRequestOrderByWithAggregationInput = {
@@ -623,6 +626,7 @@ export type PaymentRequestCreateInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateInput = {
@@ -658,6 +662,7 @@ export type PaymentRequestUncheckedCreateInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUpdateInput = {
@@ -693,6 +698,7 @@ export type PaymentRequestUpdateInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateInput = {
@@ -728,6 +734,7 @@ export type PaymentRequestUncheckedUpdateInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestCreateManyInput = {
@@ -1255,6 +1262,22 @@ export type PaymentRequestUncheckedUpdateManyWithoutPaymentSourceNestedInput = {
   deleteMany?: Prisma.PaymentRequestScalarWhereInput | Prisma.PaymentRequestScalarWhereInput[]
 }
 
+export type PaymentRequestCreateNestedOneWithoutInvoiceItemInput = {
+  create?: Prisma.XOR<Prisma.PaymentRequestCreateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedCreateWithoutInvoiceItemInput>
+  connectOrCreate?: Prisma.PaymentRequestCreateOrConnectWithoutInvoiceItemInput
+  connect?: Prisma.PaymentRequestWhereUniqueInput
+}
+
+export type PaymentRequestUpdateOneWithoutInvoiceItemNestedInput = {
+  create?: Prisma.XOR<Prisma.PaymentRequestCreateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedCreateWithoutInvoiceItemInput>
+  connectOrCreate?: Prisma.PaymentRequestCreateOrConnectWithoutInvoiceItemInput
+  upsert?: Prisma.PaymentRequestUpsertWithoutInvoiceItemInput
+  disconnect?: Prisma.PaymentRequestWhereInput | boolean
+  delete?: Prisma.PaymentRequestWhereInput | boolean
+  connect?: Prisma.PaymentRequestWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.PaymentRequestUpdateToOneWithWhereWithoutInvoiceItemInput, Prisma.PaymentRequestUpdateWithoutInvoiceItemInput>, Prisma.PaymentRequestUncheckedUpdateWithoutInvoiceItemInput>
+}
+
 export type PaymentRequestCreateWithoutRequestedByInput = {
   id?: string
   createdAt?: Date | string
@@ -1287,6 +1310,7 @@ export type PaymentRequestCreateWithoutRequestedByInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutRequestedByInput = {
@@ -1321,6 +1345,7 @@ export type PaymentRequestUncheckedCreateWithoutRequestedByInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutRequestedByInput = {
@@ -1414,6 +1439,7 @@ export type PaymentRequestCreateWithoutWithdrawnForBuyerInput = {
   TransactionHistory?: Prisma.TransactionCreateNestedManyWithoutPaymentRequestHistoryInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutWithdrawnForBuyerInput = {
@@ -1448,6 +1474,7 @@ export type PaymentRequestUncheckedCreateWithoutWithdrawnForBuyerInput = {
   TransactionHistory?: Prisma.TransactionUncheckedCreateNestedManyWithoutPaymentRequestHistoryInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutWithdrawnForBuyerInput = {
@@ -1487,6 +1514,7 @@ export type PaymentRequestCreateWithoutRequestedFundsInput = {
   TransactionHistory?: Prisma.TransactionCreateNestedManyWithoutPaymentRequestHistoryInput
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutRequestedFundsInput = {
@@ -1521,6 +1549,7 @@ export type PaymentRequestUncheckedCreateWithoutRequestedFundsInput = {
   TransactionHistory?: Prisma.TransactionUncheckedCreateNestedManyWithoutPaymentRequestHistoryInput
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutRequestedFundsInput = {
@@ -1560,6 +1589,7 @@ export type PaymentRequestCreateWithoutWithdrawnForSellerInput = {
   TransactionHistory?: Prisma.TransactionCreateNestedManyWithoutPaymentRequestHistoryInput
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutWithdrawnForSellerInput = {
@@ -1594,6 +1624,7 @@ export type PaymentRequestUncheckedCreateWithoutWithdrawnForSellerInput = {
   TransactionHistory?: Prisma.TransactionUncheckedCreateNestedManyWithoutPaymentRequestHistoryInput
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutWithdrawnForSellerInput = {
@@ -1644,6 +1675,7 @@ export type PaymentRequestUpdateWithoutWithdrawnForBuyerInput = {
   TransactionHistory?: Prisma.TransactionUpdateManyWithoutPaymentRequestHistoryNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutWithdrawnForBuyerInput = {
@@ -1678,6 +1710,7 @@ export type PaymentRequestUncheckedUpdateWithoutWithdrawnForBuyerInput = {
   TransactionHistory?: Prisma.TransactionUncheckedUpdateManyWithoutPaymentRequestHistoryNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUpsertWithoutRequestedFundsInput = {
@@ -1723,6 +1756,7 @@ export type PaymentRequestUpdateWithoutRequestedFundsInput = {
   TransactionHistory?: Prisma.TransactionUpdateManyWithoutPaymentRequestHistoryNestedInput
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutRequestedFundsInput = {
@@ -1757,6 +1791,7 @@ export type PaymentRequestUncheckedUpdateWithoutRequestedFundsInput = {
   TransactionHistory?: Prisma.TransactionUncheckedUpdateManyWithoutPaymentRequestHistoryNestedInput
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUpsertWithoutWithdrawnForSellerInput = {
@@ -1802,6 +1837,7 @@ export type PaymentRequestUpdateWithoutWithdrawnForSellerInput = {
   TransactionHistory?: Prisma.TransactionUpdateManyWithoutPaymentRequestHistoryNestedInput
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutWithdrawnForSellerInput = {
@@ -1836,6 +1872,7 @@ export type PaymentRequestUncheckedUpdateWithoutWithdrawnForSellerInput = {
   TransactionHistory?: Prisma.TransactionUncheckedUpdateManyWithoutPaymentRequestHistoryNestedInput
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestCreateWithoutSmartContractWalletInput = {
@@ -1870,6 +1907,7 @@ export type PaymentRequestCreateWithoutSmartContractWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutSmartContractWalletInput = {
@@ -1904,6 +1942,7 @@ export type PaymentRequestUncheckedCreateWithoutSmartContractWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutSmartContractWalletInput = {
@@ -1964,6 +2003,7 @@ export type PaymentRequestCreateWithoutCurrentTransactionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutCurrentTransactionInput = {
@@ -1998,6 +2038,7 @@ export type PaymentRequestUncheckedCreateWithoutCurrentTransactionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutCurrentTransactionInput = {
@@ -2037,6 +2078,7 @@ export type PaymentRequestCreateWithoutTransactionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutTransactionHistoryInput = {
@@ -2071,6 +2113,7 @@ export type PaymentRequestUncheckedCreateWithoutTransactionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutTransactionHistoryInput = {
@@ -2121,6 +2164,7 @@ export type PaymentRequestUpdateWithoutCurrentTransactionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutCurrentTransactionInput = {
@@ -2155,6 +2199,7 @@ export type PaymentRequestUncheckedUpdateWithoutCurrentTransactionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUpsertWithoutTransactionHistoryInput = {
@@ -2200,6 +2245,7 @@ export type PaymentRequestUpdateWithoutTransactionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutTransactionHistoryInput = {
@@ -2234,6 +2280,7 @@ export type PaymentRequestUncheckedUpdateWithoutTransactionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestCreateWithoutBuyerWalletInput = {
@@ -2268,6 +2315,7 @@ export type PaymentRequestCreateWithoutBuyerWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutBuyerWalletInput = {
@@ -2302,6 +2350,7 @@ export type PaymentRequestUncheckedCreateWithoutBuyerWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutBuyerWalletInput = {
@@ -2362,6 +2411,7 @@ export type PaymentRequestCreateWithoutNextActionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutNextActionInput = {
@@ -2396,6 +2446,7 @@ export type PaymentRequestUncheckedCreateWithoutNextActionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutNextActionInput = {
@@ -2435,6 +2486,7 @@ export type PaymentRequestCreateWithoutActionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutActionHistoryInput = {
@@ -2469,6 +2521,7 @@ export type PaymentRequestUncheckedCreateWithoutActionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutActionHistoryInput = {
@@ -2519,6 +2572,7 @@ export type PaymentRequestUpdateWithoutNextActionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutNextActionInput = {
@@ -2553,6 +2607,7 @@ export type PaymentRequestUncheckedUpdateWithoutNextActionInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUpsertWithoutActionHistoryInput = {
@@ -2598,6 +2653,7 @@ export type PaymentRequestUpdateWithoutActionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutActionHistoryInput = {
@@ -2632,6 +2688,7 @@ export type PaymentRequestUncheckedUpdateWithoutActionHistoryInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestCreateWithoutPaymentSourceInput = {
@@ -2666,6 +2723,7 @@ export type PaymentRequestCreateWithoutPaymentSourceInput = {
   WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestUncheckedCreateWithoutPaymentSourceInput = {
@@ -2700,6 +2758,7 @@ export type PaymentRequestUncheckedCreateWithoutPaymentSourceInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
   RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedCreateNestedManyWithoutReferencedPaymentInput
 }
 
 export type PaymentRequestCreateOrConnectWithoutPaymentSourceInput = {
@@ -2726,6 +2785,162 @@ export type PaymentRequestUpdateWithWhereUniqueWithoutPaymentSourceInput = {
 export type PaymentRequestUpdateManyWithWhereWithoutPaymentSourceInput = {
   where: Prisma.PaymentRequestScalarWhereInput
   data: Prisma.XOR<Prisma.PaymentRequestUpdateManyMutationInput, Prisma.PaymentRequestUncheckedUpdateManyWithoutPaymentSourceInput>
+}
+
+export type PaymentRequestCreateWithoutInvoiceItemInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lastCheckedAt?: Date | string | null
+  nextActionLastChangedAt?: Date | string
+  metadata?: string | null
+  blockchainIdentifier: string
+  submitResultTime: bigint | number
+  unlockTime: bigint | number
+  externalDisputeUnlockTime: bigint | number
+  inputHash: string
+  resultHash?: string | null
+  onChainState?: $Enums.OnChainState | null
+  onChainStateOrResultLastChangedAt?: Date | string
+  nextActionOrOnChainStateOrResultLastChangedAt?: Date | string
+  sellerCoolDownTime: bigint | number
+  buyerCoolDownTime: bigint | number
+  collateralReturnLovelace?: bigint | number | null
+  payByTime?: bigint | number | null
+  totalBuyerCardanoFees?: bigint | number
+  totalSellerCardanoFees?: bigint | number
+  BuyerWallet?: Prisma.WalletBaseCreateNestedOneWithoutPaymentRequestInput
+  CurrentTransaction?: Prisma.TransactionCreateNestedOneWithoutPaymentRequestCurrentInput
+  NextAction: Prisma.PaymentActionDataCreateNestedOneWithoutPaymentRequestCurrentInput
+  ActionHistory?: Prisma.PaymentActionDataCreateNestedManyWithoutPaymentRequestHistoryInput
+  PaymentSource: Prisma.PaymentSourceCreateNestedOneWithoutPaymentRequestsInput
+  requestedBy: Prisma.ApiKeyCreateNestedOneWithoutPaymentRequestInput
+  SmartContractWallet?: Prisma.HotWalletCreateNestedOneWithoutPaymentRequestInput
+  TransactionHistory?: Prisma.TransactionCreateNestedManyWithoutPaymentRequestHistoryInput
+  WithdrawnForBuyer?: Prisma.UnitValueCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
+  RequestedFunds?: Prisma.UnitValueCreateNestedManyWithoutPaymentRequestInput
+  WithdrawnForSeller?: Prisma.UnitValueCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+}
+
+export type PaymentRequestUncheckedCreateWithoutInvoiceItemInput = {
+  id?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  lastCheckedAt?: Date | string | null
+  paymentSourceId: string
+  smartContractWalletId?: string | null
+  buyerWalletId?: string | null
+  nextActionId: string
+  nextActionLastChangedAt?: Date | string
+  metadata?: string | null
+  blockchainIdentifier: string
+  submitResultTime: bigint | number
+  unlockTime: bigint | number
+  externalDisputeUnlockTime: bigint | number
+  inputHash: string
+  resultHash?: string | null
+  onChainState?: $Enums.OnChainState | null
+  onChainStateOrResultLastChangedAt?: Date | string
+  nextActionOrOnChainStateOrResultLastChangedAt?: Date | string
+  sellerCoolDownTime: bigint | number
+  buyerCoolDownTime: bigint | number
+  requestedById: string
+  currentTransactionId?: string | null
+  collateralReturnLovelace?: bigint | number | null
+  payByTime?: bigint | number | null
+  totalBuyerCardanoFees?: bigint | number
+  totalSellerCardanoFees?: bigint | number
+  ActionHistory?: Prisma.PaymentActionDataUncheckedCreateNestedManyWithoutPaymentRequestHistoryInput
+  TransactionHistory?: Prisma.TransactionUncheckedCreateNestedManyWithoutPaymentRequestHistoryInput
+  WithdrawnForBuyer?: Prisma.UnitValueUncheckedCreateNestedManyWithoutBuyerWithdrawnPaymentRequestInput
+  RequestedFunds?: Prisma.UnitValueUncheckedCreateNestedManyWithoutPaymentRequestInput
+  WithdrawnForSeller?: Prisma.UnitValueUncheckedCreateNestedManyWithoutSellerWithdrawnPaymentRequestInput
+}
+
+export type PaymentRequestCreateOrConnectWithoutInvoiceItemInput = {
+  where: Prisma.PaymentRequestWhereUniqueInput
+  create: Prisma.XOR<Prisma.PaymentRequestCreateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedCreateWithoutInvoiceItemInput>
+}
+
+export type PaymentRequestUpsertWithoutInvoiceItemInput = {
+  update: Prisma.XOR<Prisma.PaymentRequestUpdateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedUpdateWithoutInvoiceItemInput>
+  create: Prisma.XOR<Prisma.PaymentRequestCreateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedCreateWithoutInvoiceItemInput>
+  where?: Prisma.PaymentRequestWhereInput
+}
+
+export type PaymentRequestUpdateToOneWithWhereWithoutInvoiceItemInput = {
+  where?: Prisma.PaymentRequestWhereInput
+  data: Prisma.XOR<Prisma.PaymentRequestUpdateWithoutInvoiceItemInput, Prisma.PaymentRequestUncheckedUpdateWithoutInvoiceItemInput>
+}
+
+export type PaymentRequestUpdateWithoutInvoiceItemInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  nextActionLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  metadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  blockchainIdentifier?: Prisma.StringFieldUpdateOperationsInput | string
+  submitResultTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  unlockTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  externalDisputeUnlockTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  inputHash?: Prisma.StringFieldUpdateOperationsInput | string
+  resultHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  onChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  onChainStateOrResultLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  nextActionOrOnChainStateOrResultLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sellerCoolDownTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  buyerCoolDownTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  collateralReturnLovelace?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  payByTime?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalBuyerCardanoFees?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  totalSellerCardanoFees?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  BuyerWallet?: Prisma.WalletBaseUpdateOneWithoutPaymentRequestNestedInput
+  CurrentTransaction?: Prisma.TransactionUpdateOneWithoutPaymentRequestCurrentNestedInput
+  NextAction?: Prisma.PaymentActionDataUpdateOneRequiredWithoutPaymentRequestCurrentNestedInput
+  ActionHistory?: Prisma.PaymentActionDataUpdateManyWithoutPaymentRequestHistoryNestedInput
+  PaymentSource?: Prisma.PaymentSourceUpdateOneRequiredWithoutPaymentRequestsNestedInput
+  requestedBy?: Prisma.ApiKeyUpdateOneRequiredWithoutPaymentRequestNestedInput
+  SmartContractWallet?: Prisma.HotWalletUpdateOneWithoutPaymentRequestNestedInput
+  TransactionHistory?: Prisma.TransactionUpdateManyWithoutPaymentRequestHistoryNestedInput
+  WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
+  RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
+  WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+}
+
+export type PaymentRequestUncheckedUpdateWithoutInvoiceItemInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  lastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  paymentSourceId?: Prisma.StringFieldUpdateOperationsInput | string
+  smartContractWalletId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  buyerWalletId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  nextActionId?: Prisma.StringFieldUpdateOperationsInput | string
+  nextActionLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  metadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  blockchainIdentifier?: Prisma.StringFieldUpdateOperationsInput | string
+  submitResultTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  unlockTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  externalDisputeUnlockTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  inputHash?: Prisma.StringFieldUpdateOperationsInput | string
+  resultHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  onChainState?: Prisma.NullableEnumOnChainStateFieldUpdateOperationsInput | $Enums.OnChainState | null
+  onChainStateOrResultLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  nextActionOrOnChainStateOrResultLastChangedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sellerCoolDownTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  buyerCoolDownTime?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  requestedById?: Prisma.StringFieldUpdateOperationsInput | string
+  currentTransactionId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  collateralReturnLovelace?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  payByTime?: Prisma.NullableBigIntFieldUpdateOperationsInput | bigint | number | null
+  totalBuyerCardanoFees?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  totalSellerCardanoFees?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  ActionHistory?: Prisma.PaymentActionDataUncheckedUpdateManyWithoutPaymentRequestHistoryNestedInput
+  TransactionHistory?: Prisma.TransactionUncheckedUpdateManyWithoutPaymentRequestHistoryNestedInput
+  WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
+  RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
+  WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
 }
 
 export type PaymentRequestCreateManyRequestedByInput = {
@@ -2789,6 +3004,7 @@ export type PaymentRequestUpdateWithoutRequestedByInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutRequestedByInput = {
@@ -2823,6 +3039,7 @@ export type PaymentRequestUncheckedUpdateWithoutRequestedByInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateManyWithoutRequestedByInput = {
@@ -2915,6 +3132,7 @@ export type PaymentRequestUpdateWithoutSmartContractWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutSmartContractWalletInput = {
@@ -2949,6 +3167,7 @@ export type PaymentRequestUncheckedUpdateWithoutSmartContractWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateManyWithoutSmartContractWalletInput = {
@@ -3041,6 +3260,7 @@ export type PaymentRequestUpdateWithoutBuyerWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutBuyerWalletInput = {
@@ -3075,6 +3295,7 @@ export type PaymentRequestUncheckedUpdateWithoutBuyerWalletInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateManyWithoutBuyerWalletInput = {
@@ -3167,6 +3388,7 @@ export type PaymentRequestUpdateWithoutPaymentSourceInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateWithoutPaymentSourceInput = {
@@ -3201,6 +3423,7 @@ export type PaymentRequestUncheckedUpdateWithoutPaymentSourceInput = {
   WithdrawnForBuyer?: Prisma.UnitValueUncheckedUpdateManyWithoutBuyerWithdrawnPaymentRequestNestedInput
   RequestedFunds?: Prisma.UnitValueUncheckedUpdateManyWithoutPaymentRequestNestedInput
   WithdrawnForSeller?: Prisma.UnitValueUncheckedUpdateManyWithoutSellerWithdrawnPaymentRequestNestedInput
+  InvoiceItem?: Prisma.InvoiceItemUncheckedUpdateManyWithoutReferencedPaymentNestedInput
 }
 
 export type PaymentRequestUncheckedUpdateManyWithoutPaymentSourceInput = {
@@ -3243,6 +3466,7 @@ export type PaymentRequestCountOutputType = {
   WithdrawnForBuyer: number
   RequestedFunds: number
   WithdrawnForSeller: number
+  InvoiceItem: number
 }
 
 export type PaymentRequestCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -3251,6 +3475,7 @@ export type PaymentRequestCountOutputTypeSelect<ExtArgs extends runtime.Types.Ex
   WithdrawnForBuyer?: boolean | PaymentRequestCountOutputTypeCountWithdrawnForBuyerArgs
   RequestedFunds?: boolean | PaymentRequestCountOutputTypeCountRequestedFundsArgs
   WithdrawnForSeller?: boolean | PaymentRequestCountOutputTypeCountWithdrawnForSellerArgs
+  InvoiceItem?: boolean | PaymentRequestCountOutputTypeCountInvoiceItemArgs
 }
 
 /**
@@ -3298,6 +3523,13 @@ export type PaymentRequestCountOutputTypeCountWithdrawnForSellerArgs<ExtArgs ext
   where?: Prisma.UnitValueWhereInput
 }
 
+/**
+ * PaymentRequestCountOutputType without action
+ */
+export type PaymentRequestCountOutputTypeCountInvoiceItemArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.InvoiceItemWhereInput
+}
+
 
 export type PaymentRequestSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -3338,6 +3570,7 @@ export type PaymentRequestSelect<ExtArgs extends runtime.Types.Extensions.Intern
   WithdrawnForBuyer?: boolean | Prisma.PaymentRequest$WithdrawnForBuyerArgs<ExtArgs>
   RequestedFunds?: boolean | Prisma.PaymentRequest$RequestedFundsArgs<ExtArgs>
   WithdrawnForSeller?: boolean | Prisma.PaymentRequest$WithdrawnForSellerArgs<ExtArgs>
+  InvoiceItem?: boolean | Prisma.PaymentRequest$InvoiceItemArgs<ExtArgs>
   _count?: boolean | Prisma.PaymentRequestCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["paymentRequest"]>
 
@@ -3456,6 +3689,7 @@ export type PaymentRequestInclude<ExtArgs extends runtime.Types.Extensions.Inter
   WithdrawnForBuyer?: boolean | Prisma.PaymentRequest$WithdrawnForBuyerArgs<ExtArgs>
   RequestedFunds?: boolean | Prisma.PaymentRequest$RequestedFundsArgs<ExtArgs>
   WithdrawnForSeller?: boolean | Prisma.PaymentRequest$WithdrawnForSellerArgs<ExtArgs>
+  InvoiceItem?: boolean | Prisma.PaymentRequest$InvoiceItemArgs<ExtArgs>
   _count?: boolean | Prisma.PaymentRequestCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type PaymentRequestIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -3489,6 +3723,7 @@ export type $PaymentRequestPayload<ExtArgs extends runtime.Types.Extensions.Inte
     WithdrawnForBuyer: Prisma.$UnitValuePayload<ExtArgs>[]
     RequestedFunds: Prisma.$UnitValuePayload<ExtArgs>[]
     WithdrawnForSeller: Prisma.$UnitValuePayload<ExtArgs>[]
+    InvoiceItem: Prisma.$InvoiceItemPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -3923,6 +4158,7 @@ export interface Prisma__PaymentRequestClient<T, Null = never, ExtArgs extends r
   WithdrawnForBuyer<T extends Prisma.PaymentRequest$WithdrawnForBuyerArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentRequest$WithdrawnForBuyerArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UnitValuePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   RequestedFunds<T extends Prisma.PaymentRequest$RequestedFundsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentRequest$RequestedFundsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UnitValuePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   WithdrawnForSeller<T extends Prisma.PaymentRequest$WithdrawnForSellerArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentRequest$WithdrawnForSellerArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UnitValuePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  InvoiceItem<T extends Prisma.PaymentRequest$InvoiceItemArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PaymentRequest$InvoiceItemArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$InvoiceItemPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -4549,6 +4785,30 @@ export type PaymentRequest$WithdrawnForSellerArgs<ExtArgs extends runtime.Types.
   take?: number
   skip?: number
   distinct?: Prisma.UnitValueScalarFieldEnum | Prisma.UnitValueScalarFieldEnum[]
+}
+
+/**
+ * PaymentRequest.InvoiceItem
+ */
+export type PaymentRequest$InvoiceItemArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the InvoiceItem
+   */
+  select?: Prisma.InvoiceItemSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the InvoiceItem
+   */
+  omit?: Prisma.InvoiceItemOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InvoiceItemInclude<ExtArgs> | null
+  where?: Prisma.InvoiceItemWhereInput
+  orderBy?: Prisma.InvoiceItemOrderByWithRelationInput | Prisma.InvoiceItemOrderByWithRelationInput[]
+  cursor?: Prisma.InvoiceItemWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.InvoiceItemScalarFieldEnum | Prisma.InvoiceItemScalarFieldEnum[]
 }
 
 /**

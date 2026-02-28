@@ -1,444 +1,408 @@
 import { z } from 'zod';
 import { postGenerateInvoiceSchemaInput } from '@/routes/api/invoice/index';
-import { generateHash } from '../crypto';
+import { generateSHA256Hash } from '../crypto';
 
 type InvoiceData = z.infer<typeof postGenerateInvoiceSchemaInput>;
 export function generateNewInvoiceBaseId(baseIdPrefix?: string): string {
-  const randomData = crypto.randomUUID();
-  const randomHash = generateHash(randomData);
-  //replace all non-numbers with their ASCII code
-  const numberHash = randomHash.replace(/[^0-9]/g, (char) =>
-    (char.charCodeAt(0) % 10).toString(),
-  );
-  const randomHashShort = `${numberHash.slice(0, 2)}-${numberHash.slice(2, 6)}`;
-  return `${baseIdPrefix ? `${baseIdPrefix}-` : ''}${randomHashShort}`;
+	const randomData = crypto.randomUUID();
+	const randomHash = generateSHA256Hash(randomData);
+	//replace all non-numbers with their ASCII code
+	const numberHash = randomHash.replace(/[^0-9]/g, (char) => (char.charCodeAt(0) % 10).toString());
+	const randomHashShort = `${numberHash.slice(0, 2)}-${numberHash.slice(2, 6)}`;
+	return `${baseIdPrefix ? `${baseIdPrefix}-` : ''}${randomHashShort}`;
 }
 
-export function generateInvoiceId(
-  revisionNumber: number,
-  baseId: string,
-): string {
-  return `${baseId}-${revisionNumber}`;
+export function generateInvoiceId(revisionNumber: number, baseId: string): string {
+	return `${baseId}-${revisionNumber}`;
 }
 
 // Runtime-safe list of supported currencies for validation and typing
-export const supportedCurrencies = [
-  'usd',
-  'eur',
-  'gbp',
-  'jpy',
-  'chf',
-  'aed',
-] as const;
+export const supportedCurrencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
 
 type InvoiceItem = {
-  name: string;
-  quantity: number;
-  // Base price per unit (assumed net, without VAT)
-  price: number;
-  // VAT metadata
-  vatRate: number;
-  // Calculated amounts for the total line (quantity * price)
-  priceWithoutVat: number;
-  priceWithVat: number;
-  vatAmount: number;
-  // Optional conversion display (does not affect totals)
-  conversionFactor: number;
-  decimals: number;
-  convertedUnit: string;
-  conversionDate: Date;
+	name: string;
+	quantity: number;
+	// Base price per unit (assumed net, without VAT)
+	price: number;
+	// VAT metadata
+	vatRate: number;
+	// Calculated amounts for the total line (quantity * price)
+	priceWithoutVat: number;
+	priceWithVat: number;
+	vatAmount: number;
+	// Optional conversion display (does not affect totals)
+	conversionFactor: number;
+	decimals: number;
+	convertedUnit: string;
+	conversionDate: Date;
 };
 
 export type InvoiceGroupItemInput = {
-  name: string;
-  quantity: number;
-  // Base price per unit (net, without VAT)
-  price: number;
-  vatRateOverride?: number | null;
+	name: string;
+	quantity: number;
+	// Base price per unit (net, without VAT)
+	price: number;
+	vatRateOverride?: number | null;
 
-  decimals: number;
-  conversionFactor: number;
-  convertedUnit: string;
-  conversionDate: Date;
+	decimals: number;
+	conversionFactor: number;
+	convertedUnit: string;
+	conversionDate: Date;
 };
 
 export interface InvoiceGroup {
-  vatRate: number;
-  items: InvoiceItem[];
-  netTotal: number;
-  vatAmount: number;
-  grossTotal: number;
+	vatRate: number;
+	items: InvoiceItem[];
+	netTotal: number;
+	vatAmount: number;
+	grossTotal: number;
 }
 
 // Language and region-specific configuration
 const LOCALE_CONFIG = {
-  en: {
-    texts: {
-      itemNamePrefix: 'Agent: ',
-      itemNameSuffix: '',
-      invoice: 'Invoice',
-      monthlyInvoice: 'Monthly Invoice',
-      correction: 'Correction',
-      correctionInvoice: 'CORRECTION INVOICE',
-      correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
-        `This invoice corrects the original invoice #${invoiceNumber} dated ${invoiceDate}.`,
-      defaultGreeting: 'Thank you for your business.',
-      defaultClosing: 'Best regards,',
-      defaultSignature: 'Accounts Receivable',
-      defaultFooter:
-        'This invoice was generated electronically and is valid without a signature.',
-      defaultTerms: '',
-      defaultPrivacy:
-        'We process your personal data in accordance with our privacy policy.',
-      reason: 'Reason',
-      from: 'From',
-      to: 'To',
-      description: 'Description',
-      quantity: 'Quantity',
-      unitPrice: 'Unit Price (Net)',
-      totalNet: 'Total (Net)',
-      vatRate: 'VAT Rate',
-      netTotal: 'Net Total',
-      totalVat: 'Total VAT',
-      totalAmount: 'Total Amount',
-      subtotal: 'Subtotal',
-      vat: 'VAT',
-      date: 'Date',
-      invoiceNumber: 'Invoice #',
-      email: 'Email',
-      phone: 'Phone',
-      termsAndConditions: 'Terms and Conditions',
-      privacyPolicy: 'Privacy Policy',
-      correctionReasonItemsChanged: 'Changes to items and/or their prices',
-      correctionReasonSellerChanged: 'Changes to seller data',
-      correctionReasonBuyerChanged: 'Changes to buyer data',
-      correctionReasonMetadataChanged: 'Changes to texts and formatting',
-      conversionText: 'Conversion Factor: ',
-      coingeckoAttribution: 'Conversions and price data by',
-    },
-  },
-  de: {
-    texts: {
-      itemNamePrefix: 'Agent: ',
-      itemNameSuffix: '',
-      invoice: 'Rechnung',
-      monthlyInvoice: 'Monatsrechnung',
-      correction: 'Korrektur',
-      correctionInvoice: 'KORREKTURRECHNUNG',
-      correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
-        `Diese Rechnung korrigiert die ursprüngliche Rechnung #${invoiceNumber} vom ${invoiceDate}.`,
-      defaultGreeting: 'Vielen Dank für Ihr Vertrauen.',
-      defaultClosing: 'Mit freundlichen Grüßen,',
-      defaultSignature: 'Buchhaltung',
-      defaultFooter:
-        'Diese Rechnung wurde elektronisch erstellt und ist auch ohne Unterschrift gültig.',
-      defaultTerms: '',
-      defaultPrivacy:
-        'Wir verarbeiten Ihre personenbezogenen Daten gemäß unserer Datenschutzerklärung.',
-      reason: 'Grund',
-      from: 'Von',
-      to: 'An',
-      description: 'Beschreibung',
-      quantity: 'Menge',
-      unitPrice: 'Einzelpreis (Netto)',
-      totalNet: 'Gesamt (Netto)',
-      vatRate: 'MwSt.-Satz',
-      netTotal: 'Nettosumme',
-      totalVat: 'Gesamte MwSt.',
-      totalAmount: 'Gesamtbetrag',
-      subtotal: 'Zwischensumme',
-      vat: 'MwSt.',
-      date: 'Datum',
-      invoiceNumber: 'Rechnung Nr.',
-      email: 'E-Mail',
-      phone: 'Telefon',
-      termsAndConditions: 'Allgemeine Geschäftsbedingungen',
-      privacyPolicy: 'Datenschutzerklärung',
-      correctionReasonItemsChanged:
-        'Änderungen an den Artikeln und/oder ihren Preisen',
-      correctionReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
-      correctionReasonBuyerChanged: 'Änderungen an den Käuferdaten',
-      correctionReasonMetadataChanged:
-        'Änderungen an Texten und Formatierungen',
-      conversionText: 'Umrechnungsfaktor: ',
-      coingeckoAttribution: 'Konvertierung und Preisdaten von',
-    },
-  },
+	en: {
+		texts: {
+			itemNamePrefix: 'Agent: ',
+			itemNameSuffix: '',
+			invoice: 'Invoice',
+			monthlyInvoice: 'Monthly Invoice',
+			correction: 'Correction',
+			correctionInvoice: 'CORRECTION INVOICE',
+			correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
+				`This invoice corrects the original invoice #${invoiceNumber} dated ${invoiceDate}.`,
+			defaultGreeting: 'Thank you for your business.',
+			defaultClosing: 'Best regards,',
+			defaultSignature: 'Accounts Receivable',
+			defaultFooter: 'This invoice was generated electronically and is valid without a signature.',
+			defaultTerms: '',
+			defaultPrivacy: 'We process your personal data in accordance with our privacy policy.',
+			reason: 'Reason',
+			from: 'From',
+			to: 'To',
+			description: 'Description',
+			quantity: 'Quantity',
+			unitPrice: 'Unit Price (Net)',
+			totalNet: 'Total (Net)',
+			vatRate: 'VAT Rate',
+			netTotal: 'Net Total',
+			totalVat: 'Total VAT',
+			totalAmount: 'Total Amount',
+			subtotal: 'Subtotal',
+			vat: 'VAT',
+			date: 'Date',
+			invoiceNumber: 'Invoice #',
+			email: 'Email',
+			phone: 'Phone',
+			termsAndConditions: 'Terms and Conditions',
+			privacyPolicy: 'Privacy Policy',
+			correctionReasonItemsChanged: 'Changes to items and/or their prices',
+			correctionReasonSellerChanged: 'Changes to seller data',
+			correctionReasonBuyerChanged: 'Changes to buyer data',
+			correctionReasonMetadataChanged: 'Changes to texts and formatting',
+			conversionText: 'Conversion Factor: ',
+			coingeckoAttribution: 'Conversions and price data by',
+		},
+	},
+	de: {
+		texts: {
+			itemNamePrefix: 'Agent: ',
+			itemNameSuffix: '',
+			invoice: 'Rechnung',
+			monthlyInvoice: 'Monatsrechnung',
+			correction: 'Korrektur',
+			correctionInvoice: 'KORREKTURRECHNUNG',
+			correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
+				`Diese Rechnung korrigiert die ursprüngliche Rechnung #${invoiceNumber} vom ${invoiceDate}.`,
+			defaultGreeting: 'Vielen Dank für Ihr Vertrauen.',
+			defaultClosing: 'Mit freundlichen Grüßen,',
+			defaultSignature: 'Buchhaltung',
+			defaultFooter: 'Diese Rechnung wurde elektronisch erstellt und ist auch ohne Unterschrift gültig.',
+			defaultTerms: '',
+			defaultPrivacy: 'Wir verarbeiten Ihre personenbezogenen Daten gemäß unserer Datenschutzerklärung.',
+			reason: 'Grund',
+			from: 'Von',
+			to: 'An',
+			description: 'Beschreibung',
+			quantity: 'Menge',
+			unitPrice: 'Einzelpreis (Netto)',
+			totalNet: 'Gesamt (Netto)',
+			vatRate: 'MwSt.-Satz',
+			netTotal: 'Nettosumme',
+			totalVat: 'Gesamte MwSt.',
+			totalAmount: 'Gesamtbetrag',
+			subtotal: 'Zwischensumme',
+			vat: 'MwSt.',
+			date: 'Datum',
+			invoiceNumber: 'Rechnung Nr.',
+			email: 'E-Mail',
+			phone: 'Telefon',
+			termsAndConditions: 'Allgemeine Geschäftsbedingungen',
+			privacyPolicy: 'Datenschutzerklärung',
+			correctionReasonItemsChanged: 'Änderungen an den Artikeln und/oder ihren Preisen',
+			correctionReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
+			correctionReasonBuyerChanged: 'Änderungen an den Käuferdaten',
+			correctionReasonMetadataChanged: 'Änderungen an Texten und Formatierungen',
+			conversionText: 'Umrechnungsfaktor: ',
+			coingeckoAttribution: 'Konvertierung und Preisdaten von',
+		},
+	},
 } as const;
 
 export type LanguageKey = keyof typeof LOCALE_CONFIG;
 
 export type InvoiceTexts = {
-  invoice: string;
-  monthlyInvoice?: string;
-  correction: string;
-  correctionInvoice: string;
-  correctionDefault: (invoiceNumber: string, invoiceDate: string) => string;
-  defaultGreeting: string;
-  defaultClosing: string;
-  defaultSignature: string;
-  defaultFooter: string;
-  defaultTerms: string;
-  defaultPrivacy: string;
-  reason: string;
-  from: string;
-  to: string;
-  description: string;
-  quantity: string;
-  unitPrice: string;
-  totalNet: string;
-  vatRate: string;
-  netTotal: string;
-  totalVat: string;
-  totalAmount: string;
-  subtotal: string;
-  vat: string;
-  date: string;
-  invoiceNumber: string;
-  email: string;
-  phone: string;
-  termsAndConditions: string;
-  privacyPolicy: string;
-  correctionReasonItemsChanged: string;
-  correctionReasonSellerChanged: string;
-  correctionReasonBuyerChanged: string;
-  correctionReasonMetadataChanged: string;
-  conversionText: string;
-  coingeckoAttribution: string;
+	invoice: string;
+	monthlyInvoice?: string;
+	correction: string;
+	correctionInvoice: string;
+	correctionDefault: (invoiceNumber: string, invoiceDate: string) => string;
+	defaultGreeting: string;
+	defaultClosing: string;
+	defaultSignature: string;
+	defaultFooter: string;
+	defaultTerms: string;
+	defaultPrivacy: string;
+	reason: string;
+	from: string;
+	to: string;
+	description: string;
+	quantity: string;
+	unitPrice: string;
+	totalNet: string;
+	vatRate: string;
+	netTotal: string;
+	totalVat: string;
+	totalAmount: string;
+	subtotal: string;
+	vat: string;
+	date: string;
+	invoiceNumber: string;
+	email: string;
+	phone: string;
+	termsAndConditions: string;
+	privacyPolicy: string;
+	correctionReasonItemsChanged: string;
+	correctionReasonSellerChanged: string;
+	correctionReasonBuyerChanged: string;
+	correctionReasonMetadataChanged: string;
+	conversionText: string;
+	coingeckoAttribution: string;
 };
 
 function isLanguageKey(value: unknown): value is keyof typeof LOCALE_CONFIG {
-  return (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(LOCALE_CONFIG, value)
-  );
+	return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LOCALE_CONFIG, value);
 }
 
 function resolveLanguageKey(value?: string): keyof typeof LOCALE_CONFIG {
-  return isLanguageKey(value) ? value : 'en';
+	return isLanguageKey(value) ? value : 'en';
 }
 
 // Extracts the localized texts based on the invoice's language field
 export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
-  const languageKey = resolveLanguageKey(language);
-  const locale = LOCALE_CONFIG[languageKey];
-  const t = locale.texts;
-  return {
-    invoice: t.invoice,
-    monthlyInvoice: t.monthlyInvoice,
-    correction: t.correction,
-    correctionInvoice: t.correctionInvoice,
-    correctionDefault: t.correctionDefault,
-    defaultGreeting: t.defaultGreeting,
-    defaultClosing: t.defaultClosing,
-    defaultSignature: t.defaultSignature,
-    defaultFooter: t.defaultFooter,
-    defaultTerms: t.defaultTerms,
-    defaultPrivacy: t.defaultPrivacy,
-    reason: t.reason,
-    from: t.from,
-    to: t.to,
-    description: t.description,
-    quantity: t.quantity,
-    unitPrice: t.unitPrice,
-    totalNet: t.totalNet,
-    vatRate: t.vatRate,
-    netTotal: t.netTotal,
-    totalVat: t.totalVat,
-    totalAmount: t.totalAmount,
-    subtotal: t.subtotal,
-    vat: t.vat,
-    date: t.date,
-    invoiceNumber: t.invoiceNumber,
-    email: t.email,
-    phone: t.phone,
-    termsAndConditions: t.termsAndConditions,
-    privacyPolicy: t.privacyPolicy,
-    correctionReasonItemsChanged: t.correctionReasonItemsChanged,
-    correctionReasonSellerChanged: t.correctionReasonSellerChanged,
-    correctionReasonBuyerChanged: t.correctionReasonBuyerChanged,
-    correctionReasonMetadataChanged: t.correctionReasonMetadataChanged,
-    conversionText: t.conversionText,
-    coingeckoAttribution: t.coingeckoAttribution,
-  };
+	const languageKey = resolveLanguageKey(language);
+	const locale = LOCALE_CONFIG[languageKey];
+	const t = locale.texts;
+	return {
+		invoice: t.invoice,
+		monthlyInvoice: t.monthlyInvoice,
+		correction: t.correction,
+		correctionInvoice: t.correctionInvoice,
+		correctionDefault: t.correctionDefault,
+		defaultGreeting: t.defaultGreeting,
+		defaultClosing: t.defaultClosing,
+		defaultSignature: t.defaultSignature,
+		defaultFooter: t.defaultFooter,
+		defaultTerms: t.defaultTerms,
+		defaultPrivacy: t.defaultPrivacy,
+		reason: t.reason,
+		from: t.from,
+		to: t.to,
+		description: t.description,
+		quantity: t.quantity,
+		unitPrice: t.unitPrice,
+		totalNet: t.totalNet,
+		vatRate: t.vatRate,
+		netTotal: t.netTotal,
+		totalVat: t.totalVat,
+		totalAmount: t.totalAmount,
+		subtotal: t.subtotal,
+		vat: t.vat,
+		date: t.date,
+		invoiceNumber: t.invoiceNumber,
+		email: t.email,
+		phone: t.phone,
+		termsAndConditions: t.termsAndConditions,
+		privacyPolicy: t.privacyPolicy,
+		correctionReasonItemsChanged: t.correctionReasonItemsChanged,
+		correctionReasonSellerChanged: t.correctionReasonSellerChanged,
+		correctionReasonBuyerChanged: t.correctionReasonBuyerChanged,
+		correctionReasonMetadataChanged: t.correctionReasonMetadataChanged,
+		conversionText: t.conversionText,
+		coingeckoAttribution: t.coingeckoAttribution,
+	};
 }
 
 export type SupportedCurrencies = (typeof supportedCurrencies)[number];
 export type ResolvedInvoiceConfig = {
-  // Display fields (fully resolved)
-  title: string;
-  date: Date;
-  greeting: string;
-  closing: string;
-  signature: string;
-  logo: string | null;
-  footer: string;
-  terms: string;
-  privacy: string;
-  itemNamePrefix: string;
-  itemNameSuffix: string;
-  currency: SupportedCurrencies;
-  // Resolved formatting
-  language: LanguageKey;
-  currencyFormatter: Intl.NumberFormat;
-  numberFormatter: Intl.NumberFormat;
-  dateFormatter: Intl.DateTimeFormat;
-  localizationFormat: string;
-  texts: InvoiceTexts;
+	// Display fields (fully resolved)
+	title: string;
+	date: Date;
+	greeting: string;
+	closing: string;
+	signature: string;
+	logo: string | null;
+	footer: string;
+	terms: string;
+	privacy: string;
+	itemNamePrefix: string;
+	itemNameSuffix: string;
+	currency: SupportedCurrencies;
+	// Resolved formatting
+	language: LanguageKey;
+	currencyFormatter: Intl.NumberFormat;
+	numberFormatter: Intl.NumberFormat;
+	dateFormatter: Intl.DateTimeFormat;
+	localizationFormat: string;
+	texts: InvoiceTexts;
 };
 
 export function resolveInvoiceConfig(
-  currency: InvoiceData['invoiceCurrency'],
-  invoice?: InvoiceData['invoice'],
-  options?: { invoiceType?: 'monthly' | 'single' },
+	currency: InvoiceData['invoiceCurrency'],
+	invoice?: InvoiceData['invoice'],
+	options?: { invoiceType?: 'monthly' | 'single' },
 ): ResolvedInvoiceConfig {
-  const languageKey = resolveLanguageKey(invoice?.language);
-  const locale = LOCALE_CONFIG[languageKey];
+	const languageKey = resolveLanguageKey(invoice?.language);
+	const locale = LOCALE_CONFIG[languageKey];
 
-  const resolvedDate = invoice?.date ? new Date(invoice?.date) : new Date();
-  const localizationFormat = invoice?.language ?? 'en-US';
-  const currencyFormatter = new Intl.NumberFormat(
-    invoice?.localizationFormat ?? localizationFormat,
-    {
-      style: 'currency',
-      currency: currency,
-    },
-  );
-  const numberFormatter = new Intl.NumberFormat(
-    invoice?.localizationFormat ?? localizationFormat,
-    {
-      style: 'decimal',
-    },
-  );
-  const dateFormatter = new Intl.DateTimeFormat(
-    invoice?.localizationFormat ?? localizationFormat,
-    {
-      dateStyle: 'short',
-    },
-  );
+	const resolvedDate = invoice?.date ? new Date(invoice?.date) : new Date();
+	const localizationFormat = invoice?.language ?? 'en-US';
+	const currencyFormatter = new Intl.NumberFormat(invoice?.localizationFormat ?? localizationFormat, {
+		style: 'currency',
+		currency: currency,
+	});
+	const numberFormatter = new Intl.NumberFormat(invoice?.localizationFormat ?? localizationFormat, {
+		style: 'decimal',
+	});
+	const dateFormatter = new Intl.DateTimeFormat(invoice?.localizationFormat ?? localizationFormat, {
+		dateStyle: 'short',
+	});
 
-  const texts = extractInvoiceTexts(languageKey);
-  const isMonthly = options?.invoiceType === 'monthly';
-  const defaultTitle = isMonthly
-    ? (texts.monthlyInvoice ?? locale.texts.invoice)
-    : locale.texts.invoice;
+	const texts = extractInvoiceTexts(languageKey);
+	const isMonthly = options?.invoiceType === 'monthly';
+	const defaultTitle = isMonthly ? (texts.monthlyInvoice ?? locale.texts.invoice) : locale.texts.invoice;
 
-  return {
-    itemNamePrefix: invoice?.itemNamePrefix ?? locale.texts.itemNamePrefix,
-    itemNameSuffix: invoice?.itemNameSuffix ?? locale.texts.itemNameSuffix,
-    currency: currency,
-    title: invoice?.title?.trim() || defaultTitle,
-    date: resolvedDate,
-    greeting: invoice?.greeting ?? locale.texts.defaultGreeting,
-    closing: invoice?.closing ?? locale.texts.defaultClosing,
-    signature: invoice?.signature ?? locale.texts.defaultSignature,
-    logo: invoice?.logo ?? null,
-    footer: invoice?.footer ?? locale.texts.defaultFooter,
-    terms: invoice?.terms ?? locale.texts.defaultTerms,
-    privacy: invoice?.privacy ?? locale.texts.defaultPrivacy,
-    language: languageKey,
-    currencyFormatter: currencyFormatter,
-    numberFormatter: numberFormatter,
-    dateFormatter: dateFormatter,
-    localizationFormat: invoice?.localizationFormat ?? 'en-US',
-    texts: texts,
-  };
+	return {
+		itemNamePrefix: invoice?.itemNamePrefix ?? locale.texts.itemNamePrefix,
+		itemNameSuffix: invoice?.itemNameSuffix ?? locale.texts.itemNameSuffix,
+		currency: currency,
+		title: invoice?.title?.trim() || defaultTitle,
+		date: resolvedDate,
+		greeting: invoice?.greeting ?? locale.texts.defaultGreeting,
+		closing: invoice?.closing ?? locale.texts.defaultClosing,
+		signature: invoice?.signature ?? locale.texts.defaultSignature,
+		logo: invoice?.logo ?? null,
+		footer: invoice?.footer ?? locale.texts.defaultFooter,
+		terms: invoice?.terms ?? locale.texts.defaultTerms,
+		privacy: invoice?.privacy ?? locale.texts.defaultPrivacy,
+		language: languageKey,
+		currencyFormatter: currencyFormatter,
+		numberFormatter: numberFormatter,
+		dateFormatter: dateFormatter,
+		localizationFormat: invoice?.localizationFormat ?? 'en-US',
+		texts: texts,
+	};
 }
 
 export function generateInvoiceGroups(
-  items: readonly InvoiceGroupItemInput[] | null | undefined,
-  vatRate: number,
+	items: readonly InvoiceGroupItemInput[] | null | undefined,
+	vatRate: number,
 ): InvoiceGroup[] {
-  const invoiceGroups = new Map<string, InvoiceGroup>();
-  if (!items) return [];
+	const invoiceGroups = new Map<string, InvoiceGroup>();
+	if (!items) return [];
 
-  items.forEach((item) => {
-    const itemVatRate = item.vatRateOverride ?? vatRate;
-    const groupKey = `${itemVatRate}`; // Group by VAT rate only
+	items.forEach((item) => {
+		const itemVatRate = item.vatRateOverride ?? vatRate;
+		const groupKey = `${itemVatRate}`; // Group by VAT rate only
 
-    if (!invoiceGroups.has(groupKey)) {
-      invoiceGroups.set(groupKey, {
-        vatRate: itemVatRate,
-        items: [],
-        netTotal: 0,
-        vatAmount: 0,
-        grossTotal: 0,
-      });
-    }
+		if (!invoiceGroups.has(groupKey)) {
+			invoiceGroups.set(groupKey, {
+				vatRate: itemVatRate,
+				items: [],
+				netTotal: 0,
+				vatAmount: 0,
+				grossTotal: 0,
+			});
+		}
 
-    const group = invoiceGroups.get(groupKey)!;
+		const group = invoiceGroups.get(groupKey)!;
 
-    // Calculate item-level VAT and prices (assume base prices are net)
-    const itemTotal = item.quantity * item.price;
-    const netAmount = itemTotal;
-    const vatAmount = itemTotal * itemVatRate;
-    const grossAmount = itemTotal + vatAmount;
+		// Calculate item-level VAT and prices (assume base prices are net)
+		const itemTotal = item.quantity * item.price;
+		const netAmount = itemTotal;
+		const vatAmount = itemTotal * itemVatRate;
+		const grossAmount = itemTotal + vatAmount;
 
-    // Create enhanced item with calculated values
-    const enhancedItem: InvoiceItem = {
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-      priceWithoutVat: netAmount,
-      priceWithVat: grossAmount,
-      vatRate: itemVatRate,
-      vatAmount: vatAmount,
-      decimals: item.decimals,
-      conversionFactor: item.conversionFactor,
-      convertedUnit: item.convertedUnit,
-      conversionDate: item.conversionDate,
-    };
+		// Create enhanced item with calculated values
+		const enhancedItem: InvoiceItem = {
+			name: item.name,
+			quantity: item.quantity,
+			price: item.price,
+			priceWithoutVat: netAmount,
+			priceWithVat: grossAmount,
+			vatRate: itemVatRate,
+			vatAmount: vatAmount,
+			decimals: item.decimals,
+			conversionFactor: item.conversionFactor,
+			convertedUnit: item.convertedUnit,
+			conversionDate: item.conversionDate,
+		};
 
-    group.items.push(enhancedItem);
+		group.items.push(enhancedItem);
 
-    // Update group totals
-    group.netTotal += netAmount;
-    group.vatAmount += vatAmount;
-    group.grossTotal += grossAmount;
-  });
+		// Update group totals
+		group.netTotal += netAmount;
+		group.vatAmount += vatAmount;
+		group.grossTotal += grossAmount;
+	});
 
-  return Array.from(invoiceGroups.values());
+	return Array.from(invoiceGroups.values());
 }
 
 export function generateInvoiceHTML(
-  config: ResolvedInvoiceConfig,
-  seller: InvoiceData['seller'],
-  buyer: InvoiceData['buyer'],
-  invoiceGroups: InvoiceGroup[],
-  newInvoiceId: string,
-  correctionInvoiceReference: {
-    correctionTitle: string;
-    correctionDescription: string;
-  } | null,
-  includeCoingeckoAttribution: boolean = false,
-  options?: { invoiceType?: 'monthly' | 'single' },
+	config: ResolvedInvoiceConfig,
+	seller: InvoiceData['seller'],
+	buyer: InvoiceData['buyer'],
+	invoiceGroups: InvoiceGroup[],
+	newInvoiceId: string,
+	correctionInvoiceReference: {
+		correctionTitle: string;
+		correctionDescription: string;
+	} | null,
+	includeCoingeckoAttribution: boolean = false,
+	options?: { invoiceType?: 'monthly' | 'single' },
 ): string {
-  const {
-    title,
-    date,
-    greeting,
-    closing,
-    signature,
-    logo,
-    footer,
-    terms,
-    privacy,
-    currencyFormatter,
-    numberFormatter,
-    dateFormatter,
-    texts,
-  } = config;
+	const {
+		title,
+		date,
+		greeting,
+		closing,
+		signature,
+		logo,
+		footer,
+		terms,
+		privacy,
+		currencyFormatter,
+		numberFormatter,
+		dateFormatter,
+		texts,
+	} = config;
 
-  const t = texts;
-  const defaultInvoiceTitle =
-    title ||
-    (options?.invoiceType === 'monthly'
-      ? t.monthlyInvoice || t.invoice
-      : t.invoice);
+	const t = texts;
+	const defaultInvoiceTitle = title || (options?.invoiceType === 'monthly' ? t.monthlyInvoice || t.invoice : t.invoice);
 
-  // Group items by VAT rate and inclusion setting
+	// Group items by VAT rate and inclusion setting
 
-  return `
+	return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -918,8 +882,8 @@ export function generateInvoiceHTML(
 
     <!-- Correction Invoice Notice -->
     ${
-      correctionInvoiceReference
-        ? `
+			correctionInvoiceReference
+				? `
     <div class="correction-notice">
       <div class="correction-title">${correctionInvoiceReference.correctionTitle}</div>
       <div class="correction-details">
@@ -927,16 +891,16 @@ export function generateInvoiceHTML(
       </div>
     </div>
     `
-        : ''
-    }
+				: ''
+		}
 
     <!-- Greeting -->
     ${greeting ? `<div class="greeting">${greeting}</div>` : ''}
 
     <!-- Items Table -->
     ${
-      invoiceGroups.length > 0
-        ? `
+			invoiceGroups.length > 0
+				? `
     <div class="table-wrapper">
       <table class="items-table">
         <thead>
@@ -949,18 +913,16 @@ export function generateInvoiceHTML(
         </thead>
         <tbody>
           ${Array.from(invoiceGroups.values())
-            .map((group) => {
-              const vatRateDisplay = numberFormatter.format(
-                group.vatRate * 100,
-              );
+						.map((group) => {
+							const vatRateDisplay = numberFormatter.format(group.vatRate * 100);
 
-              return `
+							return `
 
           ${group.items
-            .map((item) => {
-              const netUnitPrice = item.price;
-              const netAmount = item.priceWithoutVat || 0;
-              return `
+						.map((item) => {
+							const netUnitPrice = item.price;
+							const netAmount = item.priceWithoutVat || 0;
+							return `
           <tr>
             <td>${item.name}
             <br><small>${t.conversionText} ${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(item.convertedUnit, numberFormatter.format(item.conversionFactor / 10 ** item.decimals))}<br>(${dateFormatter.format(item.conversionDate)})</small>
@@ -970,8 +932,8 @@ export function generateInvoiceHTML(
             <td class="text-right num col-total-net">${currencyFormatter.format(netAmount)}</td>
           </tr>
           `;
-            })
-            .join('')}
+						})
+						.join('')}
 
           <tr class="vat-row">
             <td colspan="3"><strong>${t.vat} (${vatRateDisplay}%)</strong></td>
@@ -983,8 +945,8 @@ export function generateInvoiceHTML(
             <td class="text-right"><strong>${currencyFormatter.format(group.grossTotal)}</strong></td>
           </tr>
           `;
-            })
-            .join('')}
+						})
+						.join('')}
         </tbody>
       </table>
     </div>
@@ -992,17 +954,17 @@ export function generateInvoiceHTML(
     <!-- Total Section -->
     <div class="total-section">
       ${(() => {
-        const totals = invoiceGroups.reduce(
-          (acc, group) => {
-            acc.net += group.netTotal;
-            acc.vat += group.vatAmount;
-            acc.gross += group.grossTotal;
-            return acc;
-          },
-          { net: 0, vat: 0, gross: 0 },
-        );
+				const totals = invoiceGroups.reduce(
+					(acc, group) => {
+						acc.net += group.netTotal;
+						acc.vat += group.vatAmount;
+						acc.gross += group.grossTotal;
+						return acc;
+					},
+					{ net: 0, vat: 0, gross: 0 },
+				);
 
-        return `
+				return `
 
       <div class="totals-card">
         <div class="total-row">
@@ -1010,41 +972,41 @@ export function generateInvoiceHTML(
           <span class="total-value">${currencyFormatter.format(totals.net)}</span>
         </div>
         ${
-          totals.vat > 0
-            ? `
+					totals.vat > 0
+						? `
         <div class="total-row">
           <span class="total-label">${t.totalVat} </span>
           <span class="total-value">${currencyFormatter.format(totals.vat)}</span>
         </div>
         `
-            : ''
-        }
+						: ''
+				}
         <div class="total-row final">
           <span class="total-label">${t.totalAmount} </span>
           <span class="total-value">${currencyFormatter.format(totals.gross)}</span>
         </div>
       </div>
       `;
-      })()}
+			})()}
     </div>
     `
-        : ''
-    }
+				: ''
+		}
     
     ${closing ? `<div class="closing">${closing}</div>` : ''}
     ${signature ? `<div class="signature">${signature}</div>` : ''}
 
     ${
-      terms || privacy
-        ? `
+			terms || privacy
+				? `
     <div class="terms-section">
       ${terms ? `<div class="terms-title">${t.termsAndConditions}</div><div class="terms-text">${terms}</div>` : ''}
       ${privacy ? `<div class="privacy-title">${t.privacyPolicy}</div><div class="privacy-text">${privacy}</div>` : ''}
 
     </div>
     `
-        : ''
-    }
+				: ''
+		}
     ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer" class="coingecko-link">CoinGecko<svg class="coingecko-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5h6v6M11 5 5 11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a></span></div>` : ''}
     <div style="margin-top: 20px;"></div>
     ${footer ? `<div class="v-line" style="margin-top:auto;"></div>` : ''}
@@ -1057,20 +1019,15 @@ export function generateInvoiceHTML(
 </html>
   `.trim();
 }
-function formatCryptoUnitConversion(
-  convertedUnit: string,
-  conversionFactor: string,
-) {
-  let unitName = convertedUnit;
-  if (convertedUnit == '') {
-    unitName = 'ADA';
-  } else if (
-    convertedUnit ==
-      '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d' ||
-    convertedUnit ==
-      'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d'
-  ) {
-    unitName = 'USDM';
-  }
-  return ` ${conversionFactor} ${unitName}`;
+function formatCryptoUnitConversion(convertedUnit: string, conversionFactor: string) {
+	let unitName = convertedUnit;
+	if (convertedUnit == '') {
+		unitName = 'ADA';
+	} else if (
+		convertedUnit == '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d' ||
+		convertedUnit == 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d'
+	) {
+		unitName = 'USDM';
+	}
+	return ` ${conversionFactor} ${unitName}`;
 }
