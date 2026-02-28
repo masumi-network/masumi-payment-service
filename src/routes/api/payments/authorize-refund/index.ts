@@ -1,215 +1,141 @@
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
-import { z } from 'zod';
-import {
-  $Enums,
-  Network,
-  OnChainState,
-  PaymentAction,
-  PaymentErrorType,
-  PaymentType,
-  Permission,
-} from '@prisma/client';
+import { z } from '@/utils/zod-openapi';
+import { Network, OnChainState, PaymentAction, Permission } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
+import { paymentResponseSchema } from '@/routes/api/payments';
+import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 
 export const authorizePaymentRefundSchemaInput = z.object({
-  blockchainIdentifier: z
-    .string()
-    .max(8000)
-    .describe('The identifier of the purchase to be refunded'),
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the Cardano wallet will be used on'),
+	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
+	network: z.nativeEnum(Network).describe('The network the Cardano wallet will be used on'),
 });
 
-export const authorizePaymentRefundSchemaOutput = z.object({
-  id: z.string(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  blockchainIdentifier: z.string(),
-  payByTime: z.string().nullable(),
-  submitResultTime: z.string(),
-  unlockTime: z.string(),
-  externalDisputeUnlockTime: z.string(),
-  lastCheckedAt: z.date().nullable(),
-  requestedById: z.string(),
-  resultHash: z.string(),
-  inputHash: z.string(),
-  onChainState: z.nativeEnum(OnChainState).nullable(),
-  NextAction: z.object({
-    requestedAction: z.nativeEnum(PaymentAction),
-    errorType: z.nativeEnum(PaymentErrorType).nullable(),
-    errorNote: z.string().nullable(),
-    resultHash: z.string().nullable(),
-  }),
-  RequestedFunds: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForSeller: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  WithdrawnForBuyer: z.array(
-    z.object({
-      amount: z.string(),
-      unit: z.string(),
-    }),
-  ),
-  PaymentSource: z.object({
-    id: z.string(),
-    network: z.nativeEnum(Network),
-    smartContractAddress: z.string(),
-    policyId: z.string().nullable(),
-    paymentType: z.nativeEnum(PaymentType),
-  }),
-  BuyerWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-    })
-    .nullable(),
-  SmartContractWallet: z
-    .object({
-      id: z.string(),
-      walletVkey: z.string(),
-      walletAddress: z.string(),
-    })
-    .nullable(),
-  metadata: z.string().nullable(),
+export const authorizePaymentRefundSchemaOutput = paymentResponseSchema.omit({
+	TransactionHistory: true,
+	ActionHistory: true,
 });
 
-export const authorizePaymentRefundEndpointPost =
-  readAuthenticatedEndpointFactory.build({
-    method: 'post',
-    input: authorizePaymentRefundSchemaInput,
-    output: authorizePaymentRefundSchemaOutput,
-    handler: async ({
-      input,
-      options,
-    }: {
-      input: z.infer<typeof authorizePaymentRefundSchemaInput>;
-      options: {
-        id: string;
-        permission: $Enums.Permission;
-        networkLimit: $Enums.Network[];
-        usageLimited: boolean;
-      };
-    }) => {
-      await checkIsAllowedNetworkOrThrowUnauthorized(
-        options.networkLimit,
-        input.network,
-        options.permission,
-      );
+export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: authorizePaymentRefundSchemaInput,
+	output: authorizePaymentRefundSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof authorizePaymentRefundSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
-      const payment = await prisma.paymentRequest.findUnique({
-        where: {
-          blockchainIdentifier: input.blockchainIdentifier,
-          NextAction: {
-            requestedAction: {
-              in: [PaymentAction.WaitingForExternalAction],
-            },
-          },
-          onChainState: {
-            in: [OnChainState.Disputed],
-          },
-        },
-        include: {
-          PaymentSource: {
-            include: {
-              FeeReceiverNetworkWallet: true,
-              AdminWallets: true,
-              PaymentSourceConfig: true,
-            },
-          },
+		const payment = await prisma.paymentRequest.findUnique({
+			where: {
+				blockchainIdentifier: input.blockchainIdentifier,
+				PaymentSource: {
+					network: input.network,
+					deletedAt: null,
+				},
+				NextAction: {
+					requestedAction: {
+						in: [PaymentAction.WaitingForExternalAction],
+					},
+				},
+				onChainState: {
+					in: [OnChainState.Disputed, OnChainState.RefundRequested],
+				},
+				SmartContractWallet: {
+					deletedAt: null,
+				},
+				CurrentTransaction: {
+					isNot: null,
+				},
+			},
+		});
 
-          BuyerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          NextAction: true,
-          CurrentTransaction: true,
-          TransactionHistory: true,
-        },
-      });
+		if (payment == null) {
+			throw createHttpError(404, 'Payment not found or in invalid state');
+		}
 
-      if (payment == null) {
-        throw createHttpError(404, 'Payment not found or in invalid state');
-      }
-      if (payment.PaymentSource == null) {
-        throw createHttpError(404, 'Payment has no payment source');
-      }
-      if (payment.PaymentSource.deletedAt != null) {
-        throw createHttpError(404, 'Payment source is deleted');
-      }
-      if (payment.PaymentSource.network != input.network) {
-        throw createHttpError(
-          400,
-          'Payment was not made on the requested network',
-        );
-      }
-      if (payment.SmartContractWallet == null) {
-        throw createHttpError(404, 'Smart contract wallet not found');
-      }
-      if (payment.CurrentTransaction == null) {
-        throw createHttpError(400, 'Payment in invalid state');
-      }
-      if (
-        payment.requestedById != options.id &&
-        options.permission != Permission.Admin
-      ) {
-        throw createHttpError(
-          403,
-          'You are not authorized to authorize a refund for this payment',
-        );
-      }
-      const result = await prisma.paymentRequest.update({
-        where: { id: payment.id },
-        data: {
-          NextAction: {
-            update: {
-              requestedAction: PaymentAction.AuthorizeRefundRequested,
-            },
-          },
-        },
-        include: {
-          NextAction: true,
-          BuyerWallet: true,
-          SmartContractWallet: { where: { deletedAt: null } },
-          PaymentSource: true,
-          RequestedFunds: true,
-          WithdrawnForSeller: true,
-          WithdrawnForBuyer: true,
-        },
-      });
+		if (payment.requestedById != ctx.id && ctx.permission != Permission.Admin) {
+			throw createHttpError(403, 'You are not authorized to authorize a refund for this payment');
+		}
+		const result = await prisma.paymentRequest.update({
+			where: { id: payment.id },
+			data: {
+				ActionHistory: {
+					connect: {
+						id: payment.nextActionId,
+					},
+				},
+				NextAction: {
+					create: {
+						requestedAction: PaymentAction.AuthorizeRefundRequested,
+					},
+				},
+			},
+			include: {
+				BuyerWallet: { select: { id: true, walletVkey: true } },
+				SmartContractWallet: {
+					where: { deletedAt: null },
+					select: { id: true, walletVkey: true, walletAddress: true },
+				},
+				RequestedFunds: { select: { id: true, amount: true, unit: true } },
+				NextAction: {
+					select: {
+						id: true,
+						requestedAction: true,
+						errorType: true,
+						errorNote: true,
+						resultHash: true,
+					},
+				},
+				PaymentSource: {
+					select: {
+						id: true,
+						network: true,
+						smartContractAddress: true,
+						policyId: true,
+					},
+				},
+				CurrentTransaction: {
+					select: {
+						id: true,
+						createdAt: true,
+						updatedAt: true,
+						fees: true,
+						blockHeight: true,
+						blockTime: true,
+						txHash: true,
+						status: true,
+						previousOnChainState: true,
+						newOnChainState: true,
+						confirmations: true,
+					},
+				},
+				WithdrawnForSeller: {
+					select: { id: true, amount: true, unit: true },
+				},
+				WithdrawnForBuyer: {
+					select: { id: true, amount: true, unit: true },
+				},
+			},
+		});
+		if (result.inputHash == null) {
+			throw createHttpError(500, 'Internal server error: Payment has no input hash');
+		}
 
-      return {
-        ...result,
-        submitResultTime: result.submitResultTime.toString(),
-        payByTime: result.payByTime?.toString() ?? null,
-        unlockTime: result.unlockTime.toString(),
-        externalDisputeUnlockTime: result.externalDisputeUnlockTime.toString(),
-        RequestedFunds: (
-          result.RequestedFunds as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          ...amount,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForSeller: (
-          result.WithdrawnForSeller as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-        WithdrawnForBuyer: (
-          result.WithdrawnForBuyer as Array<{ unit: string; amount: bigint }>
-        ).map((amount) => ({
-          unit: amount.unit,
-          amount: amount.amount.toString(),
-        })),
-      };
-    },
-  });
+		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
+
+		return {
+			...result,
+			...transformPaymentGetTimestamps(result),
+			...transformPaymentGetAmounts(result),
+			totalBuyerCardanoFees: Number(result.totalBuyerCardanoFees.toString()) / 1_000_000,
+			totalSellerCardanoFees: Number(result.totalSellerCardanoFees.toString()) / 1_000_000,
+			agentIdentifier: decoded?.agentIdentifier ?? null,
+			CurrentTransaction: result.CurrentTransaction
+				? {
+						...result.CurrentTransaction,
+						fees: result.CurrentTransaction.fees?.toString() ?? null,
+					}
+				: null,
+		};
+	},
+});

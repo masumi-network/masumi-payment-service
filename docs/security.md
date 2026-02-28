@@ -9,7 +9,6 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 ### Required Wallet Types
 
 1. **Transaction Wallet**
-
    - Purpose: Handles incoming payments
    - Requirements:
      - Maintain sufficient funds for smart contract interactions
@@ -17,7 +16,6 @@ The Masumi Payment Service handles financial transactions and requires secure wa
    - Note: Can be split into multiple wallets for parallel processing
 
 2. **Collection Wallet**
-
    - Purpose: Stores accumulated funds
    - Requirements:
      - Should be a cold storage wallet
@@ -38,13 +36,11 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 ### Service Security
 
 1. **Network Security**
-
    - Never expose service to public networks
    - Use secure VPN or private network access
    - Implement strict firewall rules
 
 2. **Access Control**
-
    - Implement minimal role-based access control
    - Use strong API key authentication
    - Regular audit of access patterns
@@ -58,13 +54,11 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 ### Maintenance
 
 1. **Updates**
-
    - Deploy regular security patches
    - Version control monitoring
    - Dependency updates
 
 2. **Monitoring**
-
    - Transaction monitoring
    - Wallet balance alerts
    - Error rate tracking

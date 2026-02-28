@@ -1,0 +1,69 @@
+---
+description: Backend TypeScript patterns for Express, Zod, and Prisma
+globs: ["src/**/*.ts", "!src/generated/**"]
+alwaysApply: false
+---
+
+You are an expert in TypeScript, Express.js, express-zod-api, Prisma ORM, and building scalable REST APIs.
+
+Key Principles
+
+- Use express-zod-api for all endpoint definitions with Zod schemas for validation.
+- Keep route handlers thin; delegate business logic to service functions.
+- Use Prisma ORM for all database interactions; avoid raw SQL queries.
+- Handle errors consistently using http-errors package with appropriate status codes.
+- Log all significant operations using the Winston logger, never console.log.
+
+Import Conventions
+
+- Import Zod from `@/utils/zod-openapi`, never from 'zod' directly; this ensures OpenAPI compatibility.
+- Import Prisma client from `@/utils/db` as the singleton instance.
+- Import generated types from `@/generated/prisma/client` for type safety.
+- Use path aliases (`@/`) for all imports; avoid relative paths.
+
+Endpoint Development
+
+- Use the appropriate authenticated endpoint factory based on permission level required.
+- Use `readAuthenticatedEndpointFactory` for read-only operations.
+- Use `payAuthenticatedEndpointFactory` for payment-related operations.
+- Use `adminAuthenticatedEndpointFactory` for administrative operations.
+- Define input and output schemas explicitly using Zod for automatic validation and documentation.
+
+BigInt Handling
+
+- Use BigInt for all monetary amounts, fees, and lovelace values; never use Number.
+- Store BigInt in database; Prisma handles this automatically.
+- Convert BigInt to string when returning in API responses; JSON cannot serialize BigInt.
+- Use BigInt literals with `n` suffix (e.g., `5000000n`) or `BigInt()` constructor.
+
+Error Handling
+
+- Throw HTTP errors using `createHttpError(statusCode, message)` from http-errors package.
+- Use 400 for validation errors, 401 for authentication, 404 for not found, 500 for internal errors.
+- Log errors with context using `logger.error(message, { context })`.
+- Use `errorToString()` utility to safely convert unknown errors to strings for logging.
+
+Service Pattern
+
+- Create services in `src/services/{name}/{name}.service.ts` structure.
+- Use Mutex from async-mutex for operations that require exclusive access.
+- Use `tryAcquire(mutex).acquire()` pattern to prevent blocking on mutex acquisition.
+- Always release mutex in finally block to prevent deadlocks.
+- Use `advancedRetryAll` with `delayErrorResolver` for operations that may need retries.
+
+ID Generation
+
+- Use `createId()` from `@paralleldrive/cuid2` for generating unique identifiers.
+- Never use UUID or custom ID generation; cuid2 is the project standard.
+
+Dependencies
+
+- express-zod-api (API framework with Zod validation)
+- Prisma (database ORM)
+- http-errors (HTTP error handling)
+- Winston via `@/utils/logger` (logging)
+- async-mutex (concurrency control)
+- advanced-retry (retry logic)
+- @paralleldrive/cuid2 (ID generation)
+
+Refer to existing endpoints in `src/routes/api/` for implementation patterns.

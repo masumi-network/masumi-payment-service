@@ -1,12 +1,4 @@
-/* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,15 +12,17 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { postRegistry, getPaymentSource } from '@/lib/api/generated';
+import { PaymentSourceExtended, postRegistry, SellingWallet } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
-import { shortenAddress } from '@/lib/utils';
+import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2 } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { Separator } from '@/components/ui/separator';
+import { useWallets } from '@/lib/queries/useWallets';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -36,23 +30,21 @@ interface RegisterAIAgentDialogProps {
   onSuccess: () => void;
 }
 
-interface SellingWallet {
-  id: string;
-  walletVkey: string;
-  walletAddress: string;
-  note: string | null;
-}
-
-const priceSchema = z.object({
-  unit: z.enum(['lovelace', 'USDM'], { required_error: 'Token is required' }),
-  amount: z.string().min(1, 'Amount is required'),
-});
+const createPriceSchema = (network: 'Mainnet' | 'Preprod') => {
+  const usdmUnit = network === 'Mainnet' ? 'USDM' : 'tUSDM';
+  return z.object({
+    unit: z.enum(['lovelace', usdmUnit] as const, {
+      error: () => 'Token is required',
+    }),
+    amount: z.string().refine((val) => {
+      if (val === '0' || val === '0.0' || val === '0.00') return true;
+      return !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
+    }, 'Amount must be a valid number >= 0'),
+  });
+};
 
 const exampleOutputSchema = z.object({
-  name: z
-    .string()
-    .max(60, 'Name must be less than 60 characters')
-    .min(1, 'Name is required'),
+  name: z.string().max(60, 'Name must be less than 60 characters').min(1, 'Name is required'),
   url: z.string().url('URL must be a valid URL').min(1, 'URL is required'),
   mimeType: z
     .string()
@@ -60,89 +52,92 @@ const exampleOutputSchema = z.object({
     .min(1, 'MIME type is required'),
 });
 
-const agentSchema = z.object({
-  apiUrl: z
-    .string()
-    .url('API URL must be a valid URL')
-    .min(1, 'API URL is required')
-    .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
-      message: 'API URL must start with http:// or https://',
-    }),
-  name: z.string().min(1, 'Name is required'),
-  description: z
-    .string()
-    .min(1, 'Description is required')
-    .max(250, 'Description must be less than 250 characters'),
-  selectedWallet: z.string().min(1, 'Wallet is required'),
-  prices: z.array(priceSchema).min(1, 'At least one price is required'),
-  tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
+  const priceSchema = createPriceSchema(network);
+  return z.object({
+    apiUrl: z
+      .string()
+      .url('API URL must be a valid URL')
+      .min(1, 'API URL is required')
+      .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+        message: 'API URL must start with http:// or https://',
+      }),
+    name: z.string().min(1, 'Name is required'),
+    description: z
+      .string()
+      .min(1, 'Description is required')
+      .max(250, 'Description must be less than 250 characters'),
+    selectedWallet: z.string().min(1, 'Wallet is required'),
+    prices: z.array(priceSchema).min(1, 'At least one price is required'),
+    tags: z.array(z.string().min(1)).min(1, 'At least one tag is required'),
+    isFree: z.boolean().optional(),
+    // Additional Fields
+    authorName: z
+      .string()
+      .max(250, 'Author name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    authorEmail: z
+      .string()
+      .email('Author email must be a valid email')
+      .max(250, 'Author email must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    organization: z
+      .string()
+      .max(250, 'Organization must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    contactOther: z
+      .string()
+      .max(250, 'Contact other must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  // Additional Fields
-  authorName: z
-    .string()
-    .max(250, 'Author name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  authorEmail: z
-    .string()
-    .email('Author email must be a valid email')
-    .max(250, 'Author email must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  organization: z
-    .string()
-    .max(250, 'Organization must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  contactOther: z
-    .string()
-    .max(250, 'Contact other must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    termsOfUseUrl: z
+      .string()
+      .url('Terms of use URL must be a valid URL')
+      .max(250, 'Terms of use URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    privacyPolicyUrl: z
+      .string()
+      .url('Privacy policy URL must be a valid URL')
+      .max(250, 'Privacy policy URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    otherUrl: z
+      .string()
+      .url('Other URL must be a valid URL')
+      .max(250, 'Other URL must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  termsOfUseUrl: z
-    .string()
-    .url('Terms of use URL must be a valid URL')
-    .max(250, 'Terms of use URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  privacyPolicyUrl: z
-    .string()
-    .url('Privacy policy URL must be a valid URL')
-    .max(250, 'Privacy policy URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  otherUrl: z
-    .string()
-    .url('Other URL must be a valid URL')
-    .max(250, 'Other URL must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    capabilityName: z
+      .string()
+      .max(250, 'Capability name must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
+    capabilityVersion: z
+      .string()
+      .max(250, 'Capability version must be less than 250 characters')
+      .optional()
+      .or(z.literal('')),
 
-  capabilityName: z
-    .string()
-    .max(250, 'Capability name must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
-  capabilityVersion: z
-    .string()
-    .max(250, 'Capability version must be less than 250 characters')
-    .optional()
-    .or(z.literal('')),
+    exampleOutputs: z.array(exampleOutputSchema).optional(),
+  });
+};
 
-  exampleOutputs: z.array(exampleOutputSchema).optional(),
-});
+type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
-type AgentFormValues = z.infer<typeof agentSchema>;
-
-export function RegisterAIAgentDialog({
-  open,
-  onClose,
-  onSuccess,
-}: RegisterAIAgentDialogProps) {
+export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAgentDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [sellingWallets, setSellingWallets] = useState<SellingWallet[]>([]);
-  const { apiClient, state } = useAppContext();
+  const [sellingWallets, setSellingWallets] = useState<
+    { wallet: SellingWallet; balance: number }[]
+  >([]);
+
+  const { wallets, isLoading: isLoadingWallets } = useWallets();
+  const { apiClient, network } = useAppContext();
 
   const {
     register,
@@ -153,7 +148,7 @@ export function RegisterAIAgentDialog({
     formState: { errors },
     watch,
   } = useForm<AgentFormValues>({
-    resolver: zodResolver(agentSchema),
+    resolver: zodResolver(createAgentSchema(network)),
     defaultValues: {
       apiUrl: '',
       name: '',
@@ -161,6 +156,7 @@ export function RegisterAIAgentDialog({
       selectedWallet: '',
       prices: [{ unit: 'lovelace', amount: '' }],
       tags: [],
+      isFree: false,
       authorName: '',
       authorEmail: '',
       organization: '',
@@ -192,52 +188,67 @@ export function RegisterAIAgentDialog({
     name: 'exampleOutputs',
   });
 
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
+  useEffect(() => {
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
+  }, [paymentSources, network]);
+
   const tags = watch('tags');
   const [tagInput, setTagInput] = useState('');
+  useEffect(() => {
+    setSellingWallets(
+      wallets
+        .filter((w) => w.type === 'Selling')
+        .map((w) => ({
+          wallet: {
+            id: w.id,
+            walletVkey: w.walletVkey,
+            walletAddress: w.walletAddress,
+            collectionAddress: w.collectionAddress,
+            note: w.note,
+          },
+          balance: parseInt(w.balance, 10),
+        })),
+    );
+  }, [wallets]);
 
   useEffect(() => {
     if (open) {
-      fetchSellingWallets();
       reset();
     }
   }, [open, reset]);
-
-  const fetchSellingWallets = async () => {
-    try {
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
-
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (s) => s.network == state.network,
-        );
-        if (paymentSources.length > 0) {
-          const aggregatedWallets: SellingWallet[] = [];
-          paymentSources.forEach((ps) => {
-            ps.SellingWallets.forEach((w) => {
-              aggregatedWallets.push(w);
-            });
-          });
-          setSellingWallets(aggregatedWallets);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching selling wallets:', error);
-      toast.error('Failed to load selling wallets');
-    }
-  };
 
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
         setIsLoading(true);
-        const selectedWallet = data.selectedWallet;
-        const paymentSource = state.paymentSources?.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWallet),
+        const selectedWalletVkey = data.selectedWallet;
+        const selectedWalletBalance = sellingWallets.find(
+          (w) => w.wallet.walletVkey == selectedWalletVkey,
+        )?.balance;
+        data.prices.map((price) => {
+          const unit =
+            price.unit === 'USDM' || price.unit === 'tUSDM'
+              ? getUsdmConfig(network).fullAssetId
+              : price.unit;
+          return {
+            unit,
+            amount: (parseFloat(price.amount) * 1_000_000).toString(),
+          };
+        });
+        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+          toast.error('Insufficient balance in selected wallet');
+          return;
+        }
+        const paymentSource = currentNetworkPaymentSources.find((ps) =>
+          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
         );
         if (!paymentSource) {
-          throw new Error('Smart contract wallet not found in payment sources');
+          toast.error('Smart contract wallet not found in payment sources');
+          return;
         }
 
         const legal: {
@@ -272,26 +283,37 @@ export function RegisterAIAgentDialog({
         const response = await postRegistry({
           client: apiClient,
           body: {
-            network: state.network,
-            sellingWalletVkey: data.selectedWallet,
+            network: network,
+            sellingWalletVkey: selectedWalletVkey,
             name: data.name,
             description: data.description,
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
             Capability: capability,
-            AgentPricing: {
-              pricingType: 'Fixed',
-              Pricing: data.prices.map((price) => {
-                const unit =
-                  price.unit === 'USDM'
-                    ? getUsdmConfig(state.network).fullAssetId
-                    : price.unit;
+            AgentPricing: (() => {
+              const isFreeAgent = data.isFree;
+
+              if (isFreeAgent) {
                 return {
-                  unit,
-                  amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  pricingType: 'Free',
+                  Pricing: [],
                 };
-              }),
-            },
+              }
+
+              return {
+                pricingType: 'Fixed',
+                Pricing: data.prices.map((price) => {
+                  const unit =
+                    price.unit === 'USDM' || price.unit === 'tUSDM'
+                      ? getUsdmConfig(network).fullAssetId
+                      : price.unit;
+                  return {
+                    unit,
+                    amount: (parseFloat(price.amount) * 1_000_000).toString(),
+                  };
+                }),
+              };
+            })(),
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs:
@@ -304,9 +326,7 @@ export function RegisterAIAgentDialog({
         });
 
         if (!response.data?.data?.id) {
-          throw new Error(
-            'Failed to register AI agent: Invalid response from server',
-          );
+          throw new Error('Failed to register AI agent: Invalid response from server');
         }
 
         toast.success('AI agent registered successfully');
@@ -320,7 +340,7 @@ export function RegisterAIAgentDialog({
         setIsLoading(false);
       }
     },
-    [apiClient, state.network, state.paymentSources, onSuccess, onClose, reset],
+    [sellingWallets, currentNetworkPaymentSources, apiClient, network, onSuccess, onClose, reset],
   );
 
   // Tag management
@@ -345,8 +365,7 @@ export function RegisterAIAgentDialog({
         <DialogHeader>
           <DialogTitle>Register AI Agent</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
-            This registers your agent on the Masumi Network, making it visible
-            to everyone.
+            This registers your agent on the Masumi Network, making it visible to everyone.
           </p>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -359,9 +378,7 @@ export function RegisterAIAgentDialog({
               placeholder="Enter the API URL for your agent"
               className={errors.apiUrl ? 'border-red-500' : ''}
             />
-            {errors.apiUrl && (
-              <p className="text-sm text-red-500">{errors.apiUrl.message}</p>
-            )}
+            {errors.apiUrl && <p className="text-sm text-red-500">{errors.apiUrl.message}</p>}
           </div>
 
           <div className="space-y-2">
@@ -373,9 +390,7 @@ export function RegisterAIAgentDialog({
               placeholder="Enter a name for your agent"
               className={errors.name ? 'border-red-500' : ''}
             />
-            {errors.name && (
-              <p className="text-sm text-red-500">{errors.name.message}</p>
-            )}
+            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
           </div>
 
           <div className="space-y-2">
@@ -387,7 +402,7 @@ export function RegisterAIAgentDialog({
                 {...register('description')}
                 placeholder="Describe what your agent does"
                 rows={3}
-                className={errors.description ? 'border-red-500' : ''}
+                className={`resize-none overflow-y-auto h-[84px] ${errors.description ? 'border-red-500' : ''}`}
                 maxLength={250}
               />
               <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
@@ -395,9 +410,7 @@ export function RegisterAIAgentDialog({
               </div>
             </div>
             {errors.description && (
-              <p className="text-sm text-red-500">
-                {errors.description.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.description.message}</p>
             )}
           </div>
 
@@ -411,16 +424,24 @@ export function RegisterAIAgentDialog({
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger
-                    className={errors.selectedWallet ? 'border-red-500' : ''}
+                    disabled={isLoadingWallets}
+                    className={`${errors.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    <SelectValue placeholder="Select a wallet" />
+                    <SelectValue
+                      placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {sellingWallets.map((wallet) => (
-                      <SelectItem key={wallet.id} value={wallet.walletVkey}>
-                        {wallet.note
-                          ? `${wallet.note} (${shortenAddress(wallet.walletAddress)})`
-                          : shortenAddress(wallet.walletAddress)}
+                      <SelectItem
+                        disabled={wallet.balance <= 3000000}
+                        key={wallet.wallet.id}
+                        value={wallet.wallet.walletVkey}
+                      >
+                        {wallet.wallet.note
+                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                        {wallet.balance <= 3000000 ? ' - Insufficient balance' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -428,12 +449,33 @@ export function RegisterAIAgentDialog({
               )}
             />
             {errors.selectedWallet && (
-              <p className="text-sm text-red-500">
-                {errors.selectedWallet.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.selectedWallet.message}</p>
             )}
           </div>
-
+          {/* Free Agent Toggle */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Controller
+                control={control}
+                name="isFree"
+                render={({ field }) => (
+                  <input
+                    type="checkbox"
+                    id="isFree"
+                    checked={field.value || false}
+                    onChange={(e) => {
+                      field.onChange(e.target.checked);
+                      setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
+                    }}
+                    className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                  />
+                )}
+              />
+              <label htmlFor="isFree" className="text-sm font-medium">
+                This is a free agent (no cost for interactions)
+              </label>
+            </div>
+          </div>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
@@ -443,6 +485,7 @@ export function RegisterAIAgentDialog({
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={watch('isFree')}
                 onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
               >
                 Add Price
@@ -458,13 +501,18 @@ export function RegisterAIAgentDialog({
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
+                        disabled={watch('isFree')}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select token" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="lovelace">ADA</SelectItem>
-                          <SelectItem value="USDM">USDM</SelectItem>
+                          <SelectItem value="lovelace">
+                            {formatFundUnit('lovelace', network)}
+                          </SelectItem>
+                          <SelectItem value={network === 'Mainnet' ? 'USDM' : 'tUSDM'}>
+                            {formatFundUnit('USDM', network)}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     )}
@@ -474,6 +522,9 @@ export function RegisterAIAgentDialog({
                   <Input
                     type="number"
                     placeholder="0.00"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    disabled={watch('isFree')}
+                    value={watch(`prices.${index}.amount`) || ''}
                     {...register(`prices.${index}.amount` as const)}
                     min="0"
                     step="0.000001"
@@ -525,9 +576,7 @@ export function RegisterAIAgentDialog({
                   Add
                 </Button>
               </div>
-              {errors.tags && (
-                <p className="text-sm text-red-500">{errors.tags.message}</p>
-              )}
+              {errors.tags && <p className="text-sm text-red-500">{errors.tags.message}</p>}
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {tags.map((tag: string) => (
@@ -561,9 +610,7 @@ export function RegisterAIAgentDialog({
               className={errors.authorName ? 'border-red-500' : ''}
             />
             {errors.authorName && (
-              <p className="text-sm text-red-500">
-                {errors.authorName.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.authorName.message}</p>
             )}
           </div>
 
@@ -576,9 +623,7 @@ export function RegisterAIAgentDialog({
               className={errors.authorEmail ? 'border-red-500' : ''}
             />
             {errors.authorEmail && (
-              <p className="text-sm text-red-500">
-                {errors.authorEmail.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.authorEmail.message}</p>
             )}
           </div>
 
@@ -590,25 +635,19 @@ export function RegisterAIAgentDialog({
               className={errors.organization ? 'border-red-500' : ''}
             />
             {errors.organization && (
-              <p className="text-sm text-red-500">
-                {errors.organization.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.organization.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Contact Other (Website, Phone...)
-            </label>
+            <label className="text-sm font-medium">Contact Other (Website, Phone...)</label>
             <Input
               {...register('contactOther')}
               placeholder="Enter other contact"
               className={errors.contactOther ? 'border-red-500' : ''}
             />
             {errors.contactOther && (
-              <p className="text-sm text-red-500">
-                {errors.contactOther.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.contactOther.message}</p>
             )}
           </div>
 
@@ -620,9 +659,7 @@ export function RegisterAIAgentDialog({
               className={errors.termsOfUseUrl ? 'border-red-500' : ''}
             />
             {errors.termsOfUseUrl && (
-              <p className="text-sm text-red-500">
-                {errors.termsOfUseUrl.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.termsOfUseUrl.message}</p>
             )}
           </div>
 
@@ -634,24 +671,18 @@ export function RegisterAIAgentDialog({
               className={errors.privacyPolicyUrl ? 'border-red-500' : ''}
             />
             {errors.privacyPolicyUrl && (
-              <p className="text-sm text-red-500">
-                {errors.privacyPolicyUrl.message}
-              </p>
+              <p className="text-sm text-red-500">{errors.privacyPolicyUrl.message}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Other URL (Support...)
-            </label>
+            <label className="text-sm font-medium">Other URL (Support...)</label>
             <Input
               {...register('otherUrl')}
               placeholder="Enter the other URL"
               className={errors.otherUrl ? 'border-red-500' : ''}
             />
-            {errors.otherUrl && (
-              <p className="text-sm text-red-500">{errors.otherUrl.message}</p>
-            )}
+            {errors.otherUrl && <p className="text-sm text-red-500">{errors.otherUrl.message}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -663,9 +694,7 @@ export function RegisterAIAgentDialog({
                 className={errors.capabilityName ? 'border-red-500' : ''}
               />
               {errors.capabilityName && (
-                <p className="text-sm text-red-500">
-                  {errors.capabilityName.message}
-                </p>
+                <p className="text-sm text-red-500">{errors.capabilityName.message}</p>
               )}
             </div>
             <div className="space-y-2">
@@ -676,9 +705,7 @@ export function RegisterAIAgentDialog({
                 className={errors.capabilityVersion ? 'border-red-500' : ''}
               />
               {errors.capabilityVersion && (
-                <p className="text-sm text-red-500">
-                  {errors.capabilityVersion.message}
-                </p>
+                <p className="text-sm text-red-500">{errors.capabilityVersion.message}</p>
               )}
             </div>
           </div>
@@ -690,27 +717,19 @@ export function RegisterAIAgentDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  appendExampleOutput({ name: '', url: '', mimeType: '' })
-                }
+                onClick={() => appendExampleOutput({ name: '', url: '', mimeType: '' })}
               >
                 Add Example
               </Button>
             </div>
             {exampleOutputFields.map((field, index) => (
-              <div
-                key={field.id}
-                className="p-4 border rounded-md space-y-2 relative"
-              >
+              <div key={field.id} className="p-4 border rounded-md space-y-2 relative">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     placeholder="Name"
                     {...register(`exampleOutputs.${index}.name` as const)}
                   />
-                  <Input
-                    placeholder="URL"
-                    {...register(`exampleOutputs.${index}.url` as const)}
-                  />
+                  <Input placeholder="URL" {...register(`exampleOutputs.${index}.url` as const)} />
                   <Input
                     placeholder="MIME Type"
                     {...register(`exampleOutputs.${index}.mimeType` as const)}
@@ -731,13 +750,15 @@ export function RegisterAIAgentDialog({
             ))}
           </div>
 
-          <div className="flex justify-end gap-4">
+          <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Registering...' : 'Register'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={isLoading || isLoadingWallets}>
+                {isLoading ? 'Registering...' : 'Register'}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

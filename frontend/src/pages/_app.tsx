@@ -1,46 +1,84 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { AppProvider, initialAppState } from '@/lib/contexts/AppContext';
-import { useEffect, useState, useCallback } from 'react';
+import { AppProvider } from '@/lib/contexts/AppContext';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import '@/styles/globals.css';
 import '@/styles/styles.scss';
 import type { AppProps } from 'next/app';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { ApiKeyDialog } from '@/components/ApiKeyDialog';
-import {
-  getHealth,
-  getPaymentSource,
-  getRpcApiKeys,
-  getApiKeyStatus,
-} from '@/lib/api/generated';
-import { ThemeProvider } from '@/lib/contexts/ThemeContext';
+import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
+import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
+import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
+import { SidebarProvider } from '@/lib/contexts/SidebarContext';
+import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { Spinner } from '@/components/ui/spinner';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { handleApiCall } from '@/lib/utils';
+import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
     <ThemeProvider>
-      <AppProvider initialState={initialAppState}>
-        <ThemedApp
-          Component={Component}
-          pageProps={pageProps}
-          router={router}
-        />
-      </AppProvider>
+      <QueryProvider>
+        <AppProvider>
+          <SidebarProvider>
+            <TooltipProvider delayDuration={200}>
+              <ThemedApp Component={Component} pageProps={pageProps} router={router} />
+            </TooltipProvider>
+          </SidebarProvider>
+        </AppProvider>
+      </QueryProvider>
     </ThemeProvider>
+  );
+}
+
+function ToastWrapper() {
+  const { theme } = useTheme();
+  return createPortal(
+    <ToastContainer
+      position="top-right"
+      autoClose={3000}
+      hideProgressBar={false}
+      newestOnTop
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+      theme={theme === 'dark' ? 'dark' : 'light'}
+    />,
+    document.body,
   );
 }
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
-  const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { state, dispatch, setSelectedPaymentSourceId, apiClient } =
-    useAppContext();
+  const [mounted, setMounted] = useState(false);
+  const {
+    apiClient,
+    signOut,
+    apiKey,
+    setAuthorized,
+    updateApiKey,
+    network,
+    setNetwork,
+    authorized,
+    isSetupMode,
+  } = useAppContext();
+
+  // Add dynamic favicon functionality
+  useDynamicFavicon();
+
+  useEffect(() => {
+    queueMicrotask(() => setMounted(true));
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -53,130 +91,113 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const fetchPaymentSources = useCallback(async () => {
-    try {
-      const sourceResponse = await getPaymentSource({
-        client: apiClient,
-      });
-      const { data } = sourceResponse;
+  const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
-      const sources = data?.data?.PaymentSources ?? [];
-      // Filter by network
-      const filteredSources = sources.filter(
-        (source: any) => source.network === state.network,
-      );
-      const sortedByCreatedAt = filteredSources.sort(
-        (a: any, b: any) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-      const reversed = [...sortedByCreatedAt]?.reverse();
-      const sourcesMapped = reversed?.map((source: any, index: number) => ({
-        ...source,
-        index: index + 1,
-      }));
-      const reversedBack = [...sourcesMapped]?.reverse();
-
-      dispatch({ type: 'SET_PAYMENT_SOURCES', payload: reversedBack });
-
-      if (reversedBack.length === 1) {
-        setSelectedPaymentSourceId(reversedBack[0].id);
+  useEffect(() => {
+    if (isLoading) return;
+    const currentNetworkPaymentSources =
+      network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    // Pages accessible even without payment sources (shown in setup sidebar)
+    const setupAccessiblePages = ['/api-keys', '/developers', '/settings'];
+    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
+      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions'];
+      if (protectedPages.includes(router.pathname)) {
+        router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
-
-      // If no payment sources, redirect to setup
-      if (reversedBack.length === 0 && isHealthy && state.apiKey) {
-        if (router.pathname !== '/setup') {
-          router.push(`/setup?network=${encodeURIComponent(state.network)}`);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch payment sources:', error);
-      toast.error('Error fetching payment sources. Please try again later.');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiClient, dispatch, isHealthy, state.apiKey, state.network, router]); // setSelectedPaymentSourceId is stable, excluding to prevent infinite loop
-
-  const fetchRpcApiKeys = useCallback(async () => {
-    try {
-      const response = await getRpcApiKeys({
-        client: apiClient,
-      });
-
-      const rpcKeys = response.data?.RpcProviderKeys ?? [];
-      dispatch({ type: 'SET_RPC_API_KEYS', payload: rpcKeys });
-    } catch (error) {
-      console.error('Failed to fetch RPC API keys:', error);
-      toast.error('Error fetching RPC API keys. Please try again later.');
+    // If setup mode is active (persisted from before reload), redirect back to setup
+    // but allow access to pages shown in the setup sidebar
+    if (
+      apiKey &&
+      isHealthy &&
+      isSetupMode &&
+      router.pathname !== '/setup' &&
+      !setupAccessiblePages.includes(router.pathname)
+    ) {
+      router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
     }
-  }, [apiClient, dispatch]);
-
-  const signOut = () => {
-    localStorage.removeItem('payment_api_key');
-
-    dispatch({ type: 'SET_API_KEY', payload: '' });
-
-    router.push('/');
-  };
+  }, [
+    apiKey,
+    isHealthy,
+    router,
+    isLoading,
+    network,
+    mainnetPaymentSources,
+    preprodPaymentSources,
+    isSetupMode,
+  ]);
 
   useEffect(() => {
     const init = async () => {
-      try {
-        setIsUnauthorized(false);
-        const response = await getHealth({ client: apiClient });
-
-        if (response.status !== 200) {
+      const response = await handleApiCall(() => getHealth({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('Health check failed:', error);
           setIsHealthy(false);
-          return;
-        }
+        },
+        errorMessage: 'Health check failed',
+      });
 
-        const hexedKey = localStorage.getItem('payment_api_key');
-        if (!hexedKey) {
-          setIsHealthy(true);
-          return;
-        }
-
-        const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
-        apiClient.setConfig({
-          headers: {
-            token: storedApiKey,
-          },
-        });
-        const apiKeyStatus = await getApiKeyStatus({ client: apiClient });
-        if (apiKeyStatus.status !== 200) {
-          setIsHealthy(true);
-          setIsUnauthorized(true);
-          return;
-        }
-
-        // Check if the API key has admin permission
-        const permission = apiKeyStatus.data?.data?.permission;
-        if (!permission || permission !== 'Admin') {
-          setIsHealthy(true);
-          toast.error('Unauthorized access');
-          signOut();
-          return;
-        }
-        dispatch({ type: 'SET_API_KEY', payload: storedApiKey });
-        setIsHealthy(true);
-      } catch (error) {
-        console.error('Health check failed:', error);
+      if (!response) {
         setIsHealthy(false);
+        return;
       }
+
+      const hexedKey = localStorage.getItem('payment_api_key');
+      if (!hexedKey) {
+        setIsHealthy(true);
+        setAuthorized(false);
+        return;
+      }
+
+      const storedApiKey = Buffer.from(hexedKey, 'hex').toString('utf-8');
+      apiClient.setConfig({
+        headers: {
+          token: storedApiKey,
+        },
+      });
+      const apiKeyStatus = await handleApiCall(() => getApiKeyStatus({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('API key status check failed:', error);
+          setIsHealthy(true);
+          setAuthorized(false);
+        },
+        errorMessage: 'API key validation failed',
+      });
+
+      if (!apiKeyStatus) {
+        setIsHealthy(true);
+        setAuthorized(false);
+        return;
+      }
+
+      // Check if the API key has admin permission
+      const permission = apiKeyStatus.data?.data?.permission;
+      if (!permission || permission !== 'Admin') {
+        setIsHealthy(true);
+        toast.error('Unauthorized access');
+        signOut();
+        return;
+      }
+      setAuthorized(true);
+      updateApiKey(storedApiKey);
+      setIsHealthy(true);
     };
 
     init();
-  }, [apiClient, dispatch]);
+  }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
+  // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
+  // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
+  // this effect does not re-run with stale router.query and overwrite the new value.
   useEffect(() => {
-    if (isHealthy && state.apiKey) {
-      fetchPaymentSources();
+    const networkParam = router.query.network as string;
+    if (!networkParam) return;
+    if (networkParam.toLowerCase() === 'mainnet') {
+      setNetwork('Mainnet');
+    } else if (networkParam.toLowerCase() === 'preprod') {
+      setNetwork('Preprod');
     }
-  }, [isHealthy, state.apiKey, fetchPaymentSources, state.network]);
-
-  useEffect(() => {
-    if (isHealthy && state.apiKey) {
-      fetchRpcApiKeys();
-    }
-  }, [isHealthy, state.apiKey, fetchRpcApiKeys]);
+  }, [router.query.network, setNetwork]);
 
   if (isHealthy === null) {
     return (
@@ -188,14 +209,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     );
   }
 
-  if (isUnauthorized) {
+  if (!authorized && apiKey) {
     return (
       <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid or does not have admin permissions. Please
-            sign out and sign in with an admin API key.
+            Your API key is invalid or does not have admin permissions. Please sign out and sign in
+            with an admin API key.
           </div>
           <Button
             variant="destructive"
@@ -231,8 +252,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="flex-1 flex items-center justify-center bg-background text-foreground">
           <div className="text-center space-y-4 p-4">
             <div className="text-lg text-muted-foreground">
-              Please use a desktop device to <br /> access the Masumi Admin
-              Interface
+              Please use a desktop device to <br /> access the Masumi Admin Interface
             </div>
             <Button variant="muted">
               <Link href="https://docs.masumi.io" target="_blank">
@@ -248,19 +268,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
 
   return (
     <>
-      {state.apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
+      {apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
+      {mounted && <ToastWrapper />}
     </>
   );
 }

@@ -1,33 +1,31 @@
 import * as React from 'react';
 import { Badge, BadgeProps } from './badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
+import { cn } from '@/lib/utils';
 
 export interface BadgeWithTooltipProps extends BadgeProps {
   text: string;
   tooltipText: string;
 }
 
-function BadgeWithTooltip({
-  text,
-  tooltipText,
-  ...badgeProps
-}: BadgeWithTooltipProps) {
+function BadgeWithTooltip({ text, tooltipText, className, ...badgeProps }: BadgeWithTooltipProps) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge {...badgeProps}>{text}</Badge>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{tooltipText}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          {...badgeProps}
+          className={cn(
+            'text-muted-foreground hover:text-foreground cursor-help transition-colors',
+            className,
+          )}
+        >
+          {text}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm p-3">
+        <p className="text-sm">{tooltipText}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

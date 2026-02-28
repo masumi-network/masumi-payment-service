@@ -19,40 +19,46 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '20'
+          cache: 'pnpm'
 
       - name: Install Backend Dependencies
-        run: npm install
+        run: pnpm install
 
       - name: Generate Prisma Client
-        run: npm run prisma:generate
+        run: pnpm run prisma:generate
 
       - name: Run Jest
-        run: npm run test
+        run: pnpm run test
 
       - name: Run Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Run Open API Generator
-        run: npm run swagger-json
+        run: pnpm run swagger-json
 
       - name: Run ESLint for issues
         id: lint_fix_remaining
         run: |
-          npx eslint --fix --config eslint.config.mjs > lint-results.txt || true
+          pnpm exec eslint --fix --config eslint.config.mjs > lint-results.txt || true
 
       - name: Check Lint Results File
         run: |
           if [ -s lint-results.txt ]; then echo "Lint issues found. Please fix them." && exit 1; fi
 
       - name: Install Frontend Dependencies
-        run: cd frontend && npm install
+        run: cd frontend && pnpm install
 
       - name: Generate OpenAPI Types
-        run: cd frontend && npm run openapi-ts-latest
+        run: cd frontend && pnpm run openapi-ts-latest
 
       - name: Run Next Build
-        run: cd frontend && npm run build
+        run: cd frontend && pnpm run build

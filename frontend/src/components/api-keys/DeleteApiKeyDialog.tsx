@@ -1,13 +1,9 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { deleteApiKey } from '@/lib/api/generated';
+import { handleApiCall } from '@/lib/utils';
 
 interface DeleteApiKeyDialogProps {
   open: boolean;
@@ -28,12 +24,7 @@ interface ApiErrorResponse {
   };
 }
 
-export function DeleteApiKeyDialog({
-  open,
-  onClose,
-  onSuccess,
-  apiKey,
-}: DeleteApiKeyDialogProps) {
+export function DeleteApiKeyDialog({ open, onClose, onSuccess, apiKey }: DeleteApiKeyDialogProps) {
   const { apiClient } = useAppContext();
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,38 +32,40 @@ export function DeleteApiKeyDialog({
   const handleDelete = async () => {
     if (!apiKey.id) return;
 
-    try {
-      setIsDeleting(true);
-      setError(null);
+    setIsDeleting(true);
+    setError(null);
 
-      const response = await deleteApiKey({
-        client: apiClient,
-        body: {
-          id: apiKey.id,
+    await handleApiCall(
+      () =>
+        deleteApiKey({
+          client: apiClient,
+          body: {
+            id: apiKey.id,
+          },
+        }),
+      {
+        onSuccess: () => {
+          onSuccess();
+          onClose();
         },
-      });
+        onError: (error: any) => {
+          let message = 'An unexpected error occurred';
 
-      if (response.status !== 200) {
-        throw new Error('Failed to delete API key');
-      }
+          if (error instanceof Error) {
+            message = error.message;
+          } else if (typeof error === 'object' && error !== null) {
+            const apiError = error as { response?: ApiErrorResponse };
+            message = apiError.response?.data?.error?.message ?? message;
+          }
 
-      await onSuccess();
-      onClose();
-    } catch (e) {
-      let message = 'An unexpected error occurred';
-
-      if (e instanceof Error) {
-        message = e.message;
-      } else if (typeof e === 'object' && e !== null) {
-        const apiError = e as { response?: ApiErrorResponse };
-        message = apiError.response?.data?.error?.message ?? message;
-      }
-
-      setError(message);
-      throw e;
-    } finally {
-      setIsDeleting(false);
-    }
+          setError(message);
+        },
+        onFinally: () => {
+          setIsDeleting(false);
+        },
+        errorMessage: 'Failed to delete API key',
+      },
+    );
   };
 
   return (
@@ -84,8 +77,7 @@ export function DeleteApiKeyDialog({
 
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete this API key? This action cannot be
-            undone.
+            Are you sure you want to delete this API key? This action cannot be undone.
           </p>
 
           {error && (
@@ -98,11 +90,7 @@ export function DeleteApiKeyDialog({
             <Button variant="outline" onClick={onClose} disabled={isDeleting}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete'}
             </Button>
           </div>

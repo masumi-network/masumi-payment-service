@@ -19,20 +19,12 @@ export function Spinner({
   containerClassName,
 }: SpinnerProps) {
   const spinner = (
-    <PiSpinnerGap
-      className={cn('animate-spin', className)}
-      style={{ width: size, height: size }}
-    />
+    <PiSpinnerGap className={cn('animate-spin', className)} style={{ width: size, height: size }} />
   );
 
   if (addContainer) {
     return (
-      <div
-        className={cn(
-          'w-full p-5 flex justify-center items-center',
-          containerClassName,
-        )}
-      >
+      <div className={cn('w-full p-5 flex justify-center items-center', containerClassName)}>
         {spinner}
       </div>
     );

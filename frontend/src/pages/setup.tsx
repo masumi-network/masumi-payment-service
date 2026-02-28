@@ -1,37 +1,43 @@
 import { SetupWelcome } from '@/components/setup/SetupWelcome';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
 export default function SetupPage() {
-  const { state } = useAppContext();
+  const { apiKey, network, setIsSetupMode, setSetupWizardStep } = useAppContext();
   const router = useRouter();
-  const { network = 'preprod' } = router.query;
 
   useEffect(() => {
-    if (!state.apiKey) {
+    setIsSetupMode(true);
+    return () => {
+      setIsSetupMode(false);
+      setSetupWizardStep(0);
+    };
+  }, [setIsSetupMode, setSetupWizardStep]);
+
+  useEffect(() => {
+    if (!apiKey) {
       router.push('/');
     }
-  }, [state.apiKey, router]);
+  }, [apiKey, router]);
 
-  if (!state.apiKey) {
+  if (!apiKey) {
     return null;
   }
 
   return (
     <>
       <Head>
-        <title>
-          {network
-            ? network === 'preprod'
-              ? 'Preprod Setup'
-              : 'Mainnet Setup'
-            : 'Setup'}{' '}
-          | Admin Interface
-        </title>
+        <title>{network} Setup | Admin Interface</title>
       </Head>
-      <SetupWelcome networkType={network as string} />
+      <MainLayout>
+        <AnimatedPage>
+          <SetupWelcome networkType={network} />
+        </AnimatedPage>
+      </MainLayout>
     </>
   );
 }

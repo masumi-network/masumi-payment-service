@@ -11,13 +11,16 @@ variables
 ## Advanced Configuration
 
 - If you need to seed a new database, you will also need to set the following:
-
   - **BLOCKFROST_API_KEY**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
 
 - **DATABASE_URL**: The endpoint for a PostgreSQL database to be used
 - **PORT**: The port to run the server on (default is 3001)
 - **ENCRYPTION_KEY**: The key for encrypting the wallets in the database (Please see the [Security](#security)
   section for more details and security considerations)
+- **DATABASE_CA_CERT** *(optional)*: PEM-encoded CA certificate for database SSL connections (e.g. when using
+  self-signed certificates). Use literal `\n` for newlines in the env var value. When set, the service
+  automatically writes the certificate to `certs/ca-certificate.crt` at startup and appends
+  `sslrootcert=<path>` to the database connection string.
 - OPTIONAL: The services will run the following jobs whenever previous ones completed or after the provided
   time. (Defaults apply if not set)
   - **CHECK_WALLET_TRANSACTION_HASH_INTERVAL**: delay in seconds for checking wallet transaction hash. This also
@@ -35,7 +38,6 @@ variables
 
 1. If you're setting up the database for the first time (or want to provide some initial data) you also need the
    following variables:
-
    - **BLOCKFROST_API_KEY_PREPROD**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain
      network, you can create this for free
    - **BLOCKFROST_API_KEY_MAINNET**: An API Key from [https://blockfrost.io/](https://blockfrost.io/) for the correct blockchain

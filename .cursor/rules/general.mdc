@@ -1,0 +1,56 @@
+---
+description: Project-wide coding standards for Masumi Payment Service
+globs: ["**/*.{ts,tsx}"]
+alwaysApply: true
+---
+
+You are an expert in TypeScript, Node.js, Express, Prisma, and Cardano blockchain development.
+
+Key Principles
+
+- Write clear, technical TypeScript code with accurate examples.
+- Use functional and declarative programming patterns; avoid classes except for services.
+- Prioritize readability and maintainability; follow the project's established patterns.
+- Use descriptive variable and function names with auxiliary verbs (e.g., isLoading, hasError, canWithdraw).
+- Structure code in a modular way to promote reusability and separation of concerns.
+
+TypeScript Conventions
+
+- Use TypeScript for all code; prefer interfaces over types for object shapes.
+- Use path aliases consistently: `@/*` maps to `src/*`, `@smart-contracts/*` maps to `smart-contracts/*`; never use relative imports like `../../`.
+- Prefix unused variables with underscore (e.g., `_error`, `_unused`) to satisfy ESLint.
+- Avoid `any` type when possible, but it is allowed in this project when necessary.
+- Use strict null checks; handle null and undefined explicitly.
+
+Formatting Standards
+
+- Use single quotes for strings, never double quotes.
+- Use 2 spaces for indentation, never tabs.
+- Include trailing commas in all multi-line structures.
+- End all statements with semicolons.
+- Maximum line length of 100 characters.
+- Run `pnpm run lint` and `pnpm run format` before committing.
+
+Naming Conventions
+
+- Use kebab-case for file names (e.g., `my-service.ts`, `payment-handler.ts`).
+- Use PascalCase for classes, interfaces, and type aliases.
+- Use camelCase for functions, variables, and object properties.
+- Use UPPER_SNAKE_CASE for constants and environment variables.
+
+Commit Message Standards
+
+- Follow conventional commits format strictly: `type(scope): description`.
+- Types allowed: feat, fix, docs, style, refactor, test, chore, perf, ci, revert, build.
+- Keep header under 72 characters; type must be lowercase.
+- No period at end of subject line.
+- Use present tense ("add feature" not "added feature").
+
+Project Structure
+
+- Routes handle HTTP request/response only; keep them thin.
+- Services contain business logic and orchestrate operations.
+- Utilities provide reusable helper functions.
+- Generated code in `src/generated/` must never be manually edited.
+
+Refer to the project's ESLint and Prettier configurations for specific formatting rules.

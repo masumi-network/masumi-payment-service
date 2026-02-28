@@ -1,21 +1,15 @@
-/* eslint-disable react-hooks/rules-of-hooks */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus } from 'lucide-react';
-import { cn, shortenAddress } from '@/lib/utils';
-import { useEffect, useState, useCallback } from 'react';
-import {
-  getPaymentSource,
-  GetPaymentSourceResponses,
-  getRegistry,
-  getUtxos,
-  GetRegistryResponses,
-} from '@/lib/api/generated';
+import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
+import { shortenAddress } from '@/lib/utils';
+import { useState, useMemo } from 'react';
+import { RegistryEntry } from '@/lib/api/generated';
+import { useAgents } from '@/lib/queries/useAgents';
+import { useWallets, WalletWithBalance } from '@/lib/queries/useWallets';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import Link from 'next/link';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
@@ -23,32 +17,24 @@ import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDia
 //import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { useRate } from '@/lib/hooks/useRate';
+import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
+import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
+import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
 //import { FaExchangeAlt } from 'react-icons/fa';
-import useFormatBalance from '@/lib/hooks/useFormatBalance';
+import formatBalance from '@/lib/formatBalance';
+import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
 import { WalletDetailsDialog } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { StatCard } from '@/components/ui/stat-card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { WelcomeBanner } from '@/components/ui/welcome-banner';
 
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
-
-type Wallet =
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
-      type: 'Purchasing';
-    })
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
-      type: 'Selling';
-    });
-type WalletWithBalance = Wallet & {
-  balance: string;
-  usdmBalance: string;
-  collectionBalance?: {
-    ada: string;
-    usdm: string;
-  };
-};
+type AIAgent = RegistryEntry;
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -57,247 +43,60 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { apiClient, state, selectedPaymentSourceId } = useAppContext();
-  const [agents, setAgents] = useState<AIAgent[]>([]);
-  const [wallets, setWallets] = useState<WalletWithBalance[]>([]);
-  const [isLoadingAgents, setIsLoadingAgents] = useState(true);
-  const [isLoadingWallets, setIsLoadingWallets] = useState(true);
-  const [totalBalance, setTotalBalance] = useState('0');
-  const [totalUsdmBalance, setTotalUsdmBalance] = useState('0');
+  const { network, selectedPaymentSource } = useAppContext();
+
+  const queryClient = useQueryClient();
+  const {
+    transactions,
+    newTransactionsCount,
+    isLoading: isLoadingTransactions,
+  } = useTransactions();
+
+  // Use React Query hooks for cached data
+  const {
+    agents,
+    isLoading: isLoadingAgents,
+    hasMore: hasMoreAgents,
+    loadMore: loadMoreAgents,
+  } = useAgents();
+  const {
+    wallets: walletsList,
+    totalBalance: totalBalanceValue,
+    totalUsdmBalance: totalUsdmBalanceValue,
+    isLoading: isLoadingWallets,
+  } = useWallets();
+
+  const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
+  const totalUsdmBalance = useMemo(() => totalUsdmBalanceValue || '0', [totalUsdmBalanceValue]);
+  const isLoadingBalances = isLoadingWallets;
+
+  // Refetch functions for after mutations
+  const refetchAgents = () => {
+    queryClient.invalidateQueries({ queryKey: ['agents'] });
+  };
+
+  const refetchWallets = () => {
+    queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  };
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
-  const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] =
-    useState(false);
+  const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
   //const [selectedWalletForSwap, setSelectedWalletForSwap] =
   //  useState<WalletWithBalance | null>(null);
 
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const { rate, isLoading: isLoadingRate } = useRate();
-  const { newTransactionsCount, isLoading: isLoadingTransactions } =
-    useTransactions();
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [selectedAgentForDetails, setSelectedAgentForDetails] =
-    useState<AIAgent | null>(null);
+
+  const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
-  const fetchAgents = useCallback(
-    async (cursor?: string | null) => {
-      try {
-        if (!cursor) {
-          setIsLoadingAgents(true);
-          setAgents([]);
-        } else {
-          setIsLoadingMore(true);
-        }
-
-        const selectedPaymentSource = state.paymentSources?.find(
-          (ps) => ps.id === selectedPaymentSourceId,
-        );
-        const smartContractAddress =
-          selectedPaymentSource?.smartContractAddress ?? null;
-
-        const response = await getRegistry({
-          client: apiClient,
-          query: {
-            network: state.network,
-            cursorId: cursor || undefined,
-            filterSmartContractAddress: smartContractAddress
-              ? smartContractAddress
-              : undefined,
-          },
-        });
-
-        if (response.data?.data?.Assets) {
-          const newAgents = response.data.data.Assets;
-          if (cursor) {
-            setAgents((prev) => [...prev, ...newAgents]);
-          } else {
-            setAgents(newAgents);
-          }
-          setHasMore(newAgents.length === 10);
-        } else {
-          if (!cursor) {
-            setAgents([]);
-          }
-          setHasMore(false);
-        }
-      } catch {
-        toast.error('Failed to load AI agents');
-      } finally {
-        setIsLoadingAgents(false);
-        setIsLoadingMore(false);
-      }
-    },
-    [apiClient, state.network, state.paymentSources, selectedPaymentSourceId],
-  );
-
-  const handleLoadMore = () => {
-    if (!isLoadingMore && hasMore && agents.length > 0) {
-      const lastAgent = agents[agents.length - 1];
-      fetchAgents(lastAgent.id);
-    }
-  };
-
-  const fetchWalletBalance = useCallback(
-    async (address: string) => {
-      try {
-        const response = await getUtxos({
-          client: apiClient,
-          query: {
-            address: address,
-            network: state.network,
-          },
-        });
-
-        if (response.data?.data?.Utxos) {
-          let adaBalance = 0;
-          let usdmBalance = 0;
-
-          response.data.data.Utxos.forEach((utxo) => {
-            utxo.Amounts.forEach((amount) => {
-              if (amount.unit === 'lovelace' || amount.unit == '') {
-                adaBalance += amount.quantity || 0;
-              } else if (amount.unit === 'USDM') {
-                usdmBalance += amount.quantity || 0;
-              }
-            });
-          });
-
-          return {
-            ada: adaBalance.toString(),
-            usdm: usdmBalance.toString(),
-          };
-        }
-        return { ada: '0', usdm: '0' };
-      } catch (error) {
-        console.error('Error fetching wallet balance:', error);
-        return { ada: '0', usdm: '0' };
-      }
-    },
-    [apiClient, state.network],
-  );
-
-  const fetchWallets = useCallback(async () => {
-    try {
-      setIsLoadingWallets(true);
-      const response = await getPaymentSource({
-        client: apiClient,
-      });
-
-      if (response.data?.data?.PaymentSources) {
-        const paymentSources = response.data.data.PaymentSources.filter(
-          (source) =>
-            selectedPaymentSourceId
-              ? source.id === selectedPaymentSourceId
-              : true,
-        );
-        const purchasingWallets = paymentSources
-          .map((source) => source.PurchasingWallets)
-          .flat();
-        const sellingWallets = paymentSources
-          .map((source) => source.SellingWallets)
-          .flat();
-        if (paymentSources.length > 0) {
-          const allWallets: Wallet[] = [
-            ...purchasingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Purchasing' as const,
-            })),
-            ...sellingWallets.map((wallet) => ({
-              ...wallet,
-              type: 'Selling' as const,
-            })),
-          ];
-
-          const walletsWithBalances = await Promise.all(
-            allWallets.map(async (wallet) => {
-              const balance = await fetchWalletBalance(wallet.walletAddress);
-              let collectionBalance = { ada: '0', usdm: '0' };
-              if (wallet.collectionAddress) {
-                collectionBalance = await fetchWalletBalance(
-                  wallet.collectionAddress,
-                );
-              }
-              return {
-                ...wallet,
-                usdmBalance: balance.usdm,
-                balance: balance.ada,
-                collectionBalance,
-              };
-            }),
-          );
-
-          const totalAdaBalance = walletsWithBalances.reduce((sum, wallet) => {
-            const main = parseInt(wallet.balance || '0') || 0;
-            const collection =
-              wallet.collectionBalance && wallet.collectionBalance.ada
-                ? parseInt(wallet.collectionBalance.ada)
-                : 0;
-            return sum + main + collection;
-          }, 0);
-          const totalUsdmBalance = walletsWithBalances.reduce((sum, wallet) => {
-            const main = parseInt(wallet.usdmBalance || '0') || 0;
-            const collection =
-              wallet.collectionBalance && wallet.collectionBalance.usdm
-                ? parseInt(wallet.collectionBalance.usdm)
-                : 0;
-            return sum + main + collection;
-          }, 0);
-
-          setTotalBalance(totalAdaBalance.toString());
-          setTotalUsdmBalance(totalUsdmBalance.toString());
-          setWallets(walletsWithBalances);
-        } else {
-          setWallets([]);
-          setTotalBalance('0');
-          setTotalUsdmBalance('0');
-        }
-      }
-    } catch {
-      toast.error('Failed to load wallets');
-    } finally {
-      setIsLoadingWallets(false);
-    }
-  }, [apiClient, fetchWalletBalance, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    if (
-      state.paymentSources &&
-      state.paymentSources.length > 0 &&
-      selectedPaymentSourceId
-    ) {
-      fetchAgents();
-    }
-  }, [
-    fetchAgents,
-    state.paymentSources,
-    state.network,
-    selectedPaymentSourceId,
-  ]);
-
-  useEffect(() => {
-    if (
-      state.paymentSources &&
-      state.paymentSources.length > 0 &&
-      selectedPaymentSourceId
-    ) {
-      fetchWallets();
-    }
-  }, [
-    fetchWallets,
-    state.paymentSources,
-    state.network,
-    selectedPaymentSourceId,
-  ]);
-
-  const formatUsdValue = (adaAmount: string, usdmAmount: string) => {
+  const formatUsdValue = (adaAmount: string) => {
     if (!rate || !adaAmount) return '—';
     const ada = parseInt(adaAmount) / 1000000;
-    const usdm = parseInt(usdmAmount) / 1000000;
-    return `≈ $${(ada * rate + usdm).toFixed(2)}`;
+    return `≈ $${(ada * rate).toFixed(2)}`;
   };
 
   return (
@@ -306,364 +105,343 @@ export default function Overview() {
         <title>Masumi | Admin Interface</title>
       </Head>
       <MainLayout>
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-3xl font-semibold mb-1">Dashboard</h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Overview of your AI agents, wallets, and transactions.
-          </p>
-          <p className="text-xs text-muted-foreground mt-5">
-            Showing data for{' '}
-            {selectedPaymentSourceId
-              ? shortenAddress(
-                  state.paymentSources.find(
-                    (source) => source.id === selectedPaymentSourceId,
-                  )?.smartContractAddress ?? 'invalid',
-                )
-              : 'all payment sources'}
-            . This can be changed in the{' '}
-            <Link
-              href="/payment-sources"
-              className="text-primary hover:underline"
-            >
-              payment sources
-            </Link>{' '}
-            page.
-          </p>
-        </div>
-
-        <div className="mb-8">
-          <div className="grid grid-cols-4 gap-4">
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total AI agents
-              </div>
-              {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
-              ) : (
-                <div className="text-2xl font-semibold">
-                  {
-                    agents.filter(
-                      (agent) => agent.state === 'RegistrationConfirmed',
-                    ).length
-                  }
-                </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total USDM
-              </div>
-              {isLoadingWallets ? (
-                <Spinner size={20} addContainer />
-              ) : (
-                <div className="text-2xl font-semibold flex items-center gap-1">
-                  <span className="text-xs font-normal text-muted-foreground">
-                    $
-                  </span>
-                  {useFormatBalance(
-                    (parseInt(totalUsdmBalance) / 1000000)
-                      .toFixed(2)
-                      ?.toString(),
-                  ) ?? ''}
-                </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                Total ada balance
-              </div>
-              {isLoadingWallets ? (
-                <Spinner size={20} addContainer />
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="text-2xl font-semibold flex items-center gap-1">
-                    {useFormatBalance(
-                      (parseInt(totalBalance) / 1000000).toFixed(2)?.toString(),
-                    ) ?? ''}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ADA
-                    </span>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {isLoadingRate && !totalUsdmBalance
-                      ? '...'
-                      : `~ $${useFormatBalance(formatUsdValue(totalBalance, totalUsdmBalance))}`}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="border rounded-lg p-6">
-              <div className="text-sm text-muted-foreground mb-2">
-                New Transactions
-              </div>
-              {isLoadingTransactions ? (
-                <Spinner size={20} addContainer />
-              ) : (
-                <>
-                  <div className="text-2xl font-semibold">
-                    {newTransactionsCount}
-                  </div>
-                  <Link
-                    href="/transactions"
-                    className="text-sm text-primary hover:underline flex justify-items-center items-center"
-                  >
-                    View all transactions <ChevronRight size={14} />
-                  </Link>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          <div className="border rounded-lg">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <Link
-                    href="/ai-agents"
-                    className="font-medium hover:underline"
-                  >
-                    AI agents
-                  </Link>
-                  <ChevronRight className="h-4 w-4" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Manage your AI agents and their configurations.
+        <AnimatedPage>
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+              <p className="text-sm text-muted-foreground">
+                Overview of your AI agents, wallets, and transactions.
               </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Showing data for{' '}
+                {selectedPaymentSource?.smartContractAddress
+                  ? shortenAddress(selectedPaymentSource?.smartContractAddress)
+                  : 'all payment sources'}
+                . This can be changed in the{' '}
+                <Link href="/payment-sources" className="text-primary hover:underline">
+                  payment sources
+                </Link>{' '}
+                page.
+              </p>
+            </div>
 
-              {isLoadingAgents ? (
-                <Spinner size={20} addContainer />
-              ) : agents.length > 0 ? (
-                <div className="mb-4 max-h-[500px] overflow-y-auto">
-                  {agents.map((agent) => (
-                    <div
-                      key={agent.id}
-                      className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                      onClick={() => setSelectedAgentForDetails(agent)}
-                    >
-                      <div className="flex flex-col gap-1 max-w-[80%]">
-                        <div className="text-sm font-medium hover:underline">
-                          {agent.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {agent.description}
-                        </div>
+            <WelcomeBanner
+              agentCount={agents.length}
+              walletCount={walletsList.length}
+              transactionCount={transactions.length}
+              hasPaymentSource={!!selectedPaymentSource}
+            />
+
+            <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {isLoadingAgents ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="Total AI agents"
+                    index={0}
+                    icon={<Bot className="h-4 w-4 text-blue-500" />}
+                    accentColor="rgb(59, 130, 246)"
+                  >
+                    <div className="text-2xl font-semibold">
+                      {agents.length}
+                      {hasMoreAgents ? '+' : ''}
+                    </div>
+                  </StatCard>
+                )}
+                {isLoadingWallets || isLoadingBalances ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="Total USDM"
+                    index={1}
+                    icon={<DollarSign className="h-4 w-4 text-green-500" />}
+                    accentColor="rgb(34, 197, 94)"
+                  >
+                    <div className="text-2xl font-semibold flex items-center gap-1">
+                      <span className="text-xs font-normal text-muted-foreground">$</span>
+                      {formatBalance(
+                        (parseInt(totalUsdmBalance) / 1000000).toFixed(2)?.toString(),
+                      ) ?? ''}
+                    </div>
+                  </StatCard>
+                )}
+                {isLoadingWallets || isLoadingBalances ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="Total ada balance"
+                    index={2}
+                    icon={<Wallet className="h-4 w-4 text-orange-500" />}
+                    accentColor="rgb(249, 115, 22)"
+                  >
+                    <div className="flex flex-col gap-2">
+                      <div className="text-2xl font-semibold flex items-center gap-1">
+                        {formatBalance((parseInt(totalBalance) / 1000000).toFixed(2)?.toString()) ??
+                          ''}
+                        <span className="text-xs font-normal text-muted-foreground">ADA</span>
                       </div>
-                      <div className="text-sm min-w-content flex items-center gap-1">
-                        {agent.AgentPricing?.Pricing?.[0] ? (
-                          <>
-                            <span className="text-xs font-normal text-muted-foreground">
-                              {(() => {
-                                const price = agent.AgentPricing.Pricing[0];
-                                const unit = price.unit;
-                                const formatted = (
-                                  parseInt(price.amount) / 1_000_000
-                                ).toFixed(2);
-                                if (unit === 'lovelace' || !unit)
-                                  return `${formatted} ADA`;
-                                if (
-                                  unit ===
-                                  getUsdmConfig(state.network).fullAssetId
-                                )
-                                  return `${formatted} USDM`;
-                                if (unit === TESTUSDM_CONFIG.unit)
-                                  return `${formatted} tUSDM`;
-                                return `${formatted} ${unit}`;
-                              })()}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-xs font-normal text-muted-foreground">
-                            —
-                          </span>
-                        )}
+                      <div className="text-sm text-muted-foreground">
+                        {isLoadingRate && !totalUsdmBalance
+                          ? '...'
+                          : `~ $${formatBalance(formatUsdValue(totalBalance))}`}
                       </div>
                     </div>
-                  ))}
-                  {hasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleLoadMore}
-                        disabled={isLoadingMore}
+                  </StatCard>
+                )}
+                {isLoadingTransactions ? (
+                  <StatCardSkeleton />
+                ) : (
+                  <StatCard
+                    label="New Transactions"
+                    index={3}
+                    icon={<ArrowUpDown className="h-4 w-4 text-purple-500" />}
+                    accentColor="rgb(168, 85, 247)"
+                  >
+                    <>
+                      <div className="text-2xl font-semibold">{newTransactionsCount}</div>
+                      <Link
+                        href="/transactions"
+                        className="text-sm text-primary hover:underline flex justify-items-center items-center"
                       >
-                        {isLoadingMore ? <Spinner size={16} /> : 'Load more'}
-                      </Button>
+                        View all transactions <ChevronRight size={14} />
+                      </Link>
+                    </>
+                  </StatCard>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="border rounded-lg p-6 flex flex-col">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <Link href="/ai-agents" className="font-medium hover:underline">
+                        AI agents
+                      </Link>
+                      <ChevronRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage your AI agents and their configurations.
+                  </p>
+
+                  {isLoadingAgents ? (
+                    <AgentListSkeleton items={3} />
+                  ) : agents.length > 0 ? (
+                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto">
+                      {agents.map((agent, index) => (
+                        <div
+                          key={agent.id}
+                          className="flex items-center justify-between py-4 border-b last:border-0 cursor-pointer transition-all duration-150 hover:bg-muted/30 hover:pl-1 animate-fade-in-up opacity-0"
+                          style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                          onClick={() => setSelectedAgentForDetails(agent)}
+                        >
+                          <div className="flex flex-col gap-1 max-w-[80%]">
+                            <div className="text-sm font-medium hover:underline">{agent.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {agent.description}
+                            </div>
+                          </div>
+                          <div className="text-sm min-w-content flex items-center gap-1">
+                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
+                              <span className="text-xs font-normal text-muted-foreground">
+                                Free
+                              </span>
+                            )}
+                            {agent.AgentPricing &&
+                            agent.AgentPricing.pricingType == 'Fixed' &&
+                            agent.AgentPricing.Pricing?.[0] ? (
+                              <>
+                                <span className="text-xs font-normal text-muted-foreground">
+                                  {(() => {
+                                    const price = agent.AgentPricing.Pricing[0];
+                                    const unit = price.unit;
+                                    if (unit === 'free') return 'Free';
+                                    const formatted = (parseInt(price.amount) / 1_000_000).toFixed(
+                                      2,
+                                    );
+                                    if (unit === 'lovelace' || !unit) return `${formatted} ADA`;
+                                    if (unit === getUsdmConfig(network).fullAssetId)
+                                      return `${formatted} USDM`;
+                                    if (unit === TESTUSDM_CONFIG.unit) return `${formatted} tUSDM`;
+                                    return `${formatted} ${unit}`;
+                                  })()}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-xs font-normal text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {hasMoreAgents && (
+                        <div className="flex justify-center pt-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="btn-hover-lift"
+                            onClick={() => loadMoreAgents()}
+                            disabled={!hasMoreAgents || isLoadingAgents}
+                          >
+                            Load more
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      title="No AI agents found"
+                      description="Register your first AI agent to get started."
+                    />
+                  )}
+                </div>
+
+                <div className="pt-4">
+                  <Button
+                    className="flex items-center gap-2 btn-hover-lift"
+                    onClick={() => setRegisterAgentDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Register agent
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-6 flex flex-col">
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      <Link href="/wallets" className="font-medium hover:underline">
+                        Wallets
+                      </Link>
+                      <ChevronRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage your buying and selling wallets.
+                  </p>
+
+                  {isLoadingWallets ? (
+                    <WalletListSkeleton rows={2} />
+                  ) : (
+                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
+                          <tr className="text-sm text-muted-foreground border-b">
+                            <th className="text-left py-2 px-2 w-20">Type</th>
+                            <th className="text-left py-2 px-2">Name</th>
+                            <th className="text-left py-2 px-2">Address</th>
+                            <th className="text-left py-2 px-2">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {walletsList.length === 0 ? (
+                            <tr>
+                              <td colSpan={4}>
+                                <EmptyState title="No wallets found" />
+                              </td>
+                            </tr>
+                          ) : (
+                            walletsList.map((wallet, index) => (
+                              <tr
+                                key={wallet.id}
+                                className="border-b last:border-0 cursor-pointer hover:bg-muted/10 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
+                                style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                                onClick={() => setSelectedWalletForDetails(wallet)}
+                              >
+                                <td className="py-3 px-2">
+                                  <WalletTypeBadge type={wallet.type} />
+                                </td>
+                                <td className="py-3 px-2 max-w-25">
+                                  <div className="text-sm font-medium truncate">
+                                    {wallet.type === 'Purchasing'
+                                      ? 'Buying wallet'
+                                      : 'Selling wallet'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground truncate">
+                                    {wallet.note || 'Created by seeding'}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 max-w-25">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-muted-foreground truncate">
+                                      {wallet.walletAddress}
+                                    </span>
+                                    <CopyButton value={wallet.walletAddress} />
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 w-32">
+                                  <div className="text-xs flex items-center gap-1">
+                                    {wallet.isLoadingBalance ? (
+                                      <Spinner className="h-3 w-3" />
+                                    ) : (
+                                      <>
+                                        {formatBalance(
+                                          (parseInt(wallet.balance || '0') / 1000000)
+                                            .toFixed(2)
+                                            ?.toString(),
+                                        )}{' '}
+                                        <span className="text-xs text-muted-foreground">ADA</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="text-xs flex items-center gap-1">
+                                    {!wallet.isLoadingBalance && (
+                                      <>
+                                        {formatBalance(
+                                          (parseInt(wallet.usdmBalance || '0') / 1000000)
+                                            .toFixed(2)
+                                            ?.toString(),
+                                        )}{' '}
+                                        <span className="text-xs text-muted-foreground">USDM</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-2 w-32">
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="muted"
+                                      className="h-8 btn-hover-lift"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedWalletForTopup(wallet);
+                                      }}
+                                    >
+                                      Top Up
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="text-sm text-muted-foreground mb-4 py-4">
-                  No AI agents found.
-                </div>
-              )}
 
-              <div className="flex items-center justify-between">
-                <Button
-                  className="flex items-center gap-2"
-                  onClick={() => setRegisterAgentDialogOpen(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Register agent
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <div className="border rounded-lg">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <Link href="/wallets" className="font-medium hover:underline">
-                    Wallets
-                  </Link>
-                  <ChevronRight className="h-4 w-4" />
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Manage your buying and selling wallets.
-              </p>
-
-              <div className="mb-4">
-                {isLoadingWallets ? (
-                  <Spinner size={20} addContainer />
-                ) : (
-                  <div className="mb-4 max-h-[500px] overflow-y-auto overflow-x-auto w-full">
-                    <table className="w-full">
-                      <thead className="sticky top-0 bg-background z-10">
-                        <tr className="text-sm text-muted-foreground border-b">
-                          <th className="text-left py-2 px-2 w-20">Type</th>
-                          <th className="text-left py-2 px-2">Name</th>
-                          <th className="text-left py-2 px-2">Address</th>
-                          <th className="text-left py-2 px-2">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {wallets.map((wallet) => (
-                          <tr
-                            key={wallet.id}
-                            className="border-b last:border-0 cursor-pointer hover:bg-muted/10"
-                            onClick={() => setSelectedWalletForDetails(wallet)}
-                          >
-                            <td className="py-3 px-2">
-                              <span
-                                className={cn(
-                                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                                  wallet.type === 'Purchasing'
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'bg-orange-50 dark:bg-[#f002] text-orange-600 dark:text-orange-400',
-                                )}
-                              >
-                                {wallet.type === 'Purchasing'
-                                  ? 'Buying'
-                                  : 'Selling'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-2 max-w-[100px]">
-                              <div className="text-sm font-medium truncate">
-                                {wallet.type === 'Purchasing'
-                                  ? 'Buying wallet'
-                                  : 'Selling wallet'}
-                              </div>
-                              <div className="text-xs text-muted-foreground truncate">
-                                {wallet.note || 'Created by seeding'}
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 max-w-[100px]">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-xs text-muted-foreground truncate">
-                                  {wallet.walletAddress}
-                                </span>
-                                <CopyButton value={wallet.walletAddress} />
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 w-32">
-                              <div className="text-xs flex items-center gap-1">
-                                {useFormatBalance(
-                                  (parseInt(wallet.balance || '0') / 1000000)
-                                    .toFixed(2)
-                                    ?.toString(),
-                                )}{' '}
-                                <span className="text-xs text-muted-foreground">
-                                  ADA
-                                </span>
-                              </div>
-                              <div className="text-xs flex items-center gap-1">
-                                {useFormatBalance(
-                                  (
-                                    parseInt(wallet.usdmBalance || '0') /
-                                    1000000
-                                  )
-                                    .toFixed(2)
-                                    ?.toString(),
-                                )}{' '}
-                                <span className="text-xs text-muted-foreground">
-                                  USDM
-                                </span>
-                              </div>
-                            </td>
-                            <td className="py-3 px-2 w-32">
-                              <div className="flex items-center gap-2">
-                                {/*<Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedWalletForSwap(wallet);
-                                  }}
-                                >
-                                  <FaExchangeAlt className="h-2 w-2" />
-                                </Button>*/}
-                                <Button
-                                  variant="muted"
-                                  className="h-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedWalletForTopup(wallet);
-                                  }}
-                                >
-                                  Top Up
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-3 text-sm font-normal"
-                  onClick={() => setAddWalletDialogOpen(true)}
-                >
-                  + Add wallet
-                </Button>
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="text-muted-foreground">
-                    Total: {wallets.length}
-                  </span>
+                <div className="pt-4">
+                  <Button
+                    className="flex items-center gap-2 btn-hover-lift"
+                    onClick={() => setAddWalletDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add wallet
+                  </Button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        </AnimatedPage>
       </MainLayout>
 
       <AddWalletDialog
         open={isAddWalletDialogOpen}
         onClose={() => setAddWalletDialogOpen(false)}
-        onSuccess={fetchWallets}
+        onSuccess={refetchWallets}
       />
 
       <RegisterAIAgentDialog
@@ -671,7 +449,7 @@ export default function Overview() {
         onClose={() => setRegisterAgentDialogOpen(false)}
         onSuccess={() => {
           setTimeout(() => {
-            fetchAgents();
+            refetchAgents();
           }, 2000);
         }}
       />
@@ -681,7 +459,7 @@ export default function Overview() {
         onClose={() => setSelectedAgentForDetails(null)}
         onSuccess={() => {
           setTimeout(() => {
-            fetchAgents();
+            refetchAgents();
           }, 2000);
         }}
       />
@@ -702,7 +480,7 @@ export default function Overview() {
         walletAddress={selectedWalletForTopup?.walletAddress || ''}
         onSuccess={() => {
           toast.success('Top up successful');
-          fetchWallets();
+          refetchWallets();
         }}
       />
 

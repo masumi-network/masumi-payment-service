@@ -1,0 +1,78 @@
+---
+description: Security-critical patterns for authentication, encryption, and secret handling
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: true
+---
+
+You are an expert in application security, encryption, authentication, and secure handling of sensitive data.
+
+Key Principles
+
+- Never log, expose, or store unencrypted secrets, mnemonics, or private keys.
+- Use the project's encryption utilities for all sensitive data storage.
+- Validate authentication and authorization on every endpoint.
+- Follow the principle of least privilege for API key permissions.
+- Protect against common vulnerabilities: injection, XSS, CSRF.
+
+Secret Management
+
+- Always encrypt wallet mnemonics before storing using `encrypt()` from `@/utils/security/encryption`.
+- Always decrypt wallet mnemonics when needed using `decrypt()` from `@/utils/security/encryption`.
+- Never log mnemonic phrases, private keys, or encryption keys.
+- Never commit .env files or expose API keys in source code.
+- Use environment variables for all sensitive configuration.
+
+API Key Authentication
+
+- All endpoints must use authenticated endpoint factories; no unauthenticated routes.
+- The project has three permission levels: Read, ReadAndPay, and Admin.
+- Read permission allows read-only access to resources.
+- ReadAndPay permission allows read access plus payment operations.
+- Admin permission allows full access including administrative operations.
+- API keys can be restricted to specific networks; validate network access.
+
+Endpoint Security
+
+- Use `readAuthenticatedEndpointFactory` for endpoints requiring Read permission.
+- Use `payAuthenticatedEndpointFactory` for endpoints requiring ReadAndPay permission.
+- Use `adminAuthenticatedEndpointFactory` for endpoints requiring Admin permission.
+- Use `checkIsAllowedNetworkOrThrowUnauthorized()` to validate network restrictions.
+- Throw 401 errors using `createHttpError(401, 'Unauthorized')` for auth failures.
+
+Authentication Flow
+
+- API keys are passed in the `token` header.
+- Keys are hashed with SHA256 and looked up in database.
+- Validate key status is Active; reject Revoked keys.
+- Validate permission level meets endpoint requirements.
+- Validate network restrictions if applicable.
+
+Logging Security Events
+
+- Log authentication failures with context but without exposing tokens.
+- Include API key ID, requested permission, and endpoint in security logs.
+- Never log the actual token value or sensitive request data.
+- Use structured logging with `logger.error()` or `logger.warn()`.
+
+Branch Protection
+
+- Never push directly to main or dev branches; use feature branches.
+- Pre-push hooks enforce linting and block protected branch pushes.
+- All changes should go through pull request review process.
+
+Data Validation
+
+- Validate all input data using Zod schemas before processing.
+- Sanitize user input to prevent injection attacks.
+- Use parameterized queries through Prisma; never construct raw SQL.
+- Validate file paths and prevent path traversal attacks.
+
+Secure Coding Practices
+
+- Use HTTPS for all external API communications.
+- Implement proper CORS configuration for API endpoints.
+- Set secure headers for HTTP responses.
+- Use timing-safe comparison for sensitive string comparisons.
+- Handle errors gracefully without exposing internal details to clients.
+
+Refer to `docs/security.md` for detailed security documentation and best practices.

@@ -1,0 +1,7 @@
+node_modules/
+.next/
+dist/
+src/lib/api/generated/
+**/*.gen.ts
+openapi-docs.json
+tsconfig.tsbuildinfo
