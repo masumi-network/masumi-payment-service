@@ -37,7 +37,10 @@ export const postGenerateInvoiceSchemaInput = z
 		signatureData: z.string().describe('The data to verify the signature'),
 		action: z.enum(['retrieve_invoice']).describe('The action to perform'),
 		invoiceCurrency: z.enum(supportedCurrencies).describe('The currency of the invoice'),
-		currencyConversion: z.record(z.number().gt(0)).optional().describe('Currency conversion settings for this item'),
+		currencyConversion: z
+			.record(z.string(), z.number().gt(0))
+			.optional()
+			.describe('Currency conversion settings for this item'),
 		invoice: z
 			.object({
 				itemNamePrefix: z.string().min(1).max(100).optional().describe('The prefix of the item name'),

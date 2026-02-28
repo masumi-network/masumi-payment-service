@@ -39,7 +39,7 @@ export const postGenerateMonthlyInvoiceSchemaInput = z
 			.describe('Target month in format YYYY-MM (UTC calendar)'),
 		invoiceCurrency: z.enum(supportedCurrencies).describe('The currency of the invoice'),
 		currencyConversion: z
-			.record(z.number().gt(0))
+			.record(z.string(), z.number().gt(0))
 			.optional()
 			.describe('Currency conversion settings by unit for this invoice'),
 		invoice: z
