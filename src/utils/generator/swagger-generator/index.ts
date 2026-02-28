@@ -320,7 +320,7 @@ import {
 	postPurchaseRequestSchemaInput,
 	postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
-import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/reveal-data';
+import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
@@ -345,7 +345,7 @@ import {
 	stopMonitoringResponseSchema,
 } from '@/routes/api/monitoring';
 import { postGenerateInvoiceSchemaInput, postGenerateInvoiceSchemaOutput } from '@/routes/api/invoice';
-import { postSignatureSchemaInput, postSignatureSchemaOutput } from '@/routes/api/invoice/signature';
+import { postSignatureSchemaInput, postSignatureSchemaOutput } from '@/routes/api/signature/sign/create-invoice';
 import {
 	postGenerateMonthlyInvoiceSchemaInput,
 	postGenerateMonthlyInvoiceSchemaOutput,
@@ -353,7 +353,7 @@ import {
 import {
 	postMonthlySignatureSchemaInput,
 	postMonthlySignatureSchemaOutput,
-} from '@/routes/api/invoice/signature/monthly';
+} from '@/routes/api/signature/sign/create-invoice/monthly';
 
 extendZodWithOpenApi(z);
 
@@ -522,10 +522,10 @@ export function generateOpenAPI() {
 	/********************* REVEAL DATA *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/reveal-data/',
+		path: '/signature/verify/reveal-data/',
 		description: 'Verifies the reveal data signature is valid.',
 		summary: 'Verifies the reveal data signature is valid. (read access required)',
-		tags: ['reveal-data'],
+		tags: ['signature'],
 		request: {
 			body: {
 				description: '',
@@ -1381,11 +1381,11 @@ export function generateOpenAPI() {
 	});
 	registry.registerPath({
 		method: 'post',
-		path: '/invoice/signature',
+		path: '/signature/sign/create-invoice',
 		description:
 			'Provides a signed message from the smart contract wallet to authorize invoice retrieval for a purchase. (+PAY access required)',
 		summary: 'Get a signed message to request an invoice. (+PAY access required)',
-		tags: ['invoice'],
+		tags: ['signature'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
 			body: {
@@ -1442,11 +1442,11 @@ export function generateOpenAPI() {
 	});
 	registry.registerPath({
 		method: 'post',
-		path: '/invoice/signature/monthly',
+		path: '/signature/sign/create-invoice/monthly',
 		description:
 			'Provides a signed message from the smart contract wallet to authorize monthly invoice retrieval for a buyer wallet. (+PAY access required)',
 		summary: 'Get a signed message to request a monthly invoice. (+PAY access required)',
-		tags: ['invoice'],
+		tags: ['signature'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
 			body: {
