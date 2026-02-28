@@ -30,9 +30,9 @@ import { queryAgentFromWalletGet } from './registry/wallet';
 import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identifier';
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
-import { revealDataEndpointPost } from './reveal-data';
-import { postSignatureEndpoint } from './invoice/signature';
-import { postMonthlySignatureEndpoint } from './invoice/signature/monthly';
+import { revealDataEndpointPost } from './signature/verify/reveal-data';
+import { postSignatureEndpoint } from './signature/sign/create-invoice';
+import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
 import { postGenerateInvoiceEndpoint } from './invoice';
 import { postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
@@ -54,9 +54,6 @@ import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonit
 
 export const apiRouter: Routing = {
 	v1: {
-		'reveal-data': {
-			post: revealDataEndpointPost,
-		},
 		health: healthEndpointGet,
 		purchase: {
 			get: queryPurchaseRequestGet,
@@ -162,14 +159,23 @@ export const apiRouter: Routing = {
 		},
 		invoice: {
 			post: postGenerateInvoiceEndpoint,
-			signature: {
-				post: postSignatureEndpoint,
-				monthly: {
-					post: postMonthlySignatureEndpoint,
-				},
-			},
 			monthly: {
 				post: postGenerateMonthlyInvoiceEndpoint,
+			},
+		},
+		signature: {
+			verify: {
+				'reveal-data': {
+					post: revealDataEndpointPost,
+				},
+			},
+			sign: {
+				'create-invoice': {
+					post: postSignatureEndpoint,
+					monthly: {
+						post: postMonthlySignatureEndpoint,
+					},
+				},
 			},
 		},
 		webhooks: {
