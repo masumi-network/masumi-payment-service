@@ -3219,12 +3219,12 @@
                 }
             }
         },
-        "/reveal-data/": {
+        "/signature/verify/reveal-data/": {
             "post": {
                 "description": "Verifies the reveal data signature is valid.",
                 "summary": "Verifies the reveal data signature is valid. (read access required)",
                 "tags": [
-                    "reveal-data"
+                    "signature"
                 ],
                 "security": [
                     {
@@ -7281,7 +7281,11 @@
                                     },
                                     "currencyConversion": {
                                         "type": "object",
-                                        "additionalProperties": {},
+                                        "additionalProperties": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true
+                                        },
                                         "description": "Currency conversion settings for this item"
                                     },
                                     "invoice": {
@@ -7655,12 +7659,12 @@
                 }
             }
         },
-        "/invoice/signature": {
+        "/signature/sign/create-invoice": {
             "post": {
                 "description": "Provides a signed message from the smart contract wallet to authorize invoice retrieval for a purchase. (+PAY access required)",
                 "summary": "Get a signed message to request an invoice. (+PAY access required)",
                 "tags": [
-                    "invoice"
+                    "signature"
                 ],
                 "security": [
                     {
@@ -7849,12 +7853,12 @@
                 }
             }
         },
-        "/invoice/signature/monthly": {
+        "/signature/sign/create-invoice/monthly": {
             "post": {
                 "description": "Provides a signed message from the smart contract wallet to authorize monthly invoice retrieval for a buyer wallet. (+PAY access required)",
                 "summary": "Get a signed message to request a monthly invoice. (+PAY access required)",
                 "tags": [
-                    "invoice"
+                    "signature"
                 ],
                 "security": [
                     {
@@ -8122,7 +8126,11 @@
                                     },
                                     "currencyConversion": {
                                         "type": "object",
-                                        "additionalProperties": {},
+                                        "additionalProperties": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true
+                                        },
                                         "description": "Currency conversion settings by unit for this invoice"
                                     },
                                     "invoice": {

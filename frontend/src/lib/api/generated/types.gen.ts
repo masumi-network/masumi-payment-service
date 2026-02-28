@@ -1718,7 +1718,7 @@ export type PostWalletResponses = {
 
 export type PostWalletResponse = PostWalletResponses[keyof PostWalletResponses];
 
-export type PostRevealDataData = {
+export type PostSignatureVerifyRevealDataData = {
     body?: {
         /**
          * Cryptographic signature from the admin wallet
@@ -1747,10 +1747,10 @@ export type PostRevealDataData = {
     };
     path?: never;
     query?: never;
-    url: '/reveal-data/';
+    url: '/signature/verify/reveal-data/';
 };
 
-export type PostRevealDataResponses = {
+export type PostSignatureVerifyRevealDataResponses = {
     /**
      * Revealed data
      */
@@ -1762,7 +1762,7 @@ export type PostRevealDataResponses = {
     };
 };
 
-export type PostRevealDataResponse = PostRevealDataResponses[keyof PostRevealDataResponses];
+export type PostSignatureVerifyRevealDataResponse = PostSignatureVerifyRevealDataResponses[keyof PostSignatureVerifyRevealDataResponses];
 
 export type DeleteApiKeyData = {
     body?: {
@@ -3553,7 +3553,7 @@ export type PostInvoiceData = {
          * Currency conversion settings for this item
          */
         currencyConversion?: {
-            [key: string]: unknown;
+            [key: string]: number;
         };
         invoice?: {
             /**
@@ -3725,7 +3725,7 @@ export type PostInvoiceResponses = {
 
 export type PostInvoiceResponse = PostInvoiceResponses[keyof PostInvoiceResponses];
 
-export type PostInvoiceSignatureData = {
+export type PostSignatureSignCreateInvoiceData = {
     body?: {
         /**
          * The blockchain identifier, for which the invoice should be created
@@ -3780,10 +3780,10 @@ export type PostInvoiceSignatureData = {
     };
     path?: never;
     query?: never;
-    url: '/invoice/signature';
+    url: '/signature/sign/create-invoice';
 };
 
-export type PostInvoiceSignatureResponses = {
+export type PostSignatureSignCreateInvoiceResponses = {
     /**
      * Signature generated
      */
@@ -3798,9 +3798,9 @@ export type PostInvoiceSignatureResponses = {
     };
 };
 
-export type PostInvoiceSignatureResponse = PostInvoiceSignatureResponses[keyof PostInvoiceSignatureResponses];
+export type PostSignatureSignCreateInvoiceResponse = PostSignatureSignCreateInvoiceResponses[keyof PostSignatureSignCreateInvoiceResponses];
 
-export type PostInvoiceSignatureMonthlyData = {
+export type PostSignatureSignCreateInvoiceMonthlyData = {
     body?: {
         /**
          * The buyer wallet vkey for which to aggregate the month
@@ -3859,10 +3859,10 @@ export type PostInvoiceSignatureMonthlyData = {
     };
     path?: never;
     query?: never;
-    url: '/invoice/signature/monthly';
+    url: '/signature/sign/create-invoice/monthly';
 };
 
-export type PostInvoiceSignatureMonthlyResponses = {
+export type PostSignatureSignCreateInvoiceMonthlyResponses = {
     /**
      * Monthly signature generated
      */
@@ -3877,7 +3877,7 @@ export type PostInvoiceSignatureMonthlyResponses = {
     };
 };
 
-export type PostInvoiceSignatureMonthlyResponse = PostInvoiceSignatureMonthlyResponses[keyof PostInvoiceSignatureMonthlyResponses];
+export type PostSignatureSignCreateInvoiceMonthlyResponse = PostSignatureSignCreateInvoiceMonthlyResponses[keyof PostSignatureSignCreateInvoiceMonthlyResponses];
 
 export type PostInvoiceMonthlyData = {
     body?: {
@@ -3917,7 +3917,7 @@ export type PostInvoiceMonthlyData = {
          * Currency conversion settings by unit for this invoice
          */
         currencyConversion?: {
-            [key: string]: unknown;
+            [key: string]: number;
         };
         invoice?: {
             /**
