@@ -1078,21 +1078,24 @@ export function generateInvoiceHTML(
 			})()}
     </div>
     ${(() => {
-				const conversionMap = new Map<string, { convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }>();
-				for (const group of invoiceGroups) {
-					for (const item of group.items) {
-						if (!conversionMap.has(item.convertedUnit)) {
-							conversionMap.set(item.convertedUnit, {
-								convertedUnit: item.convertedUnit,
-								conversionFactor: item.conversionFactor,
-								decimals: item.decimals,
-								conversionDate: item.conversionDate,
-							});
-						}
+			const conversionMap = new Map<
+				string,
+				{ convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }
+			>();
+			for (const group of invoiceGroups) {
+				for (const item of group.items) {
+					if (!conversionMap.has(item.convertedUnit)) {
+						conversionMap.set(item.convertedUnit, {
+							convertedUnit: item.convertedUnit,
+							conversionFactor: item.conversionFactor,
+							decimals: item.decimals,
+							conversionDate: item.conversionDate,
+						});
 					}
 				}
-				if (conversionMap.size === 0) return '';
-				return `
+			}
+			if (conversionMap.size === 0) return '';
+			return `
     <div class="table-wrapper" style="margin-top: 8px;">
       <table class="items-table" style="font-size: 11px;">
         <thead>
@@ -1118,7 +1121,7 @@ export function generateInvoiceHTML(
         </tbody>
       </table>
     </div>`;
-			})()}
+		})()}
     `
 				: ''
 		}

@@ -397,7 +397,10 @@ function buildInvoicePDF(
 		y += cardTotalH + 6;
 
 		// ── 6b. Conversion rates table ──────────────────────────────────────
-		const conversionMap = new Map<string, { convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }>();
+		const conversionMap = new Map<
+			string,
+			{ convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }
+		>();
 		for (const group of invoiceGroups) {
 			for (const item of group.items) {
 				if (!conversionMap.has(item.convertedUnit)) {
