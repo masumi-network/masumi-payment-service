@@ -151,6 +151,7 @@ export const getInvoiceMonthlyResponseTransformer = async (data: any): Promise<G
 export const getInvoiceMonthlyUninvoicedResponseTransformer = async (data: any): Promise<GetInvoiceMonthlyUninvoicedResponse> => {
     data.data.UninvoicedPayments = data.data.UninvoicedPayments.map((item: any) => {
         item.createdAt = new Date(item.createdAt);
+        item.finalizedAt = new Date(item.finalizedAt);
         return item;
     });
     return data;

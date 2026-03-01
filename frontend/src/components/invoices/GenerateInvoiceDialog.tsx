@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,13 +24,28 @@ import {
 } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Save, Trash2, Pencil } from 'lucide-react';
+import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
+import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { useSellerTemplates, type SellerTemplateData } from '@/lib/hooks/useSellerTemplates';
 
 const currencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
 const languages = ['en-us', 'en-uk', 'de'] as const;
+
+const EMPTY_SELLER: SellerTemplateData = {
+  name: null,
+  companyName: null,
+  vatNumber: null,
+  country: '',
+  city: '',
+  zipCode: '',
+  street: '',
+  streetNumber: '',
+  email: null,
+  phone: null,
+};
 
 const formSchema = z.object({
   buyerWalletVkey: z.string().min(1, 'Required'),
@@ -81,8 +96,9 @@ interface GenerateInvoiceDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  prefillBuyerWalletVkey?: string;
-  prefillMonth?: string;
+  prefillBuyerWalletVkey: string;
+  prefillMonth: string;
+  formatMonth: (month: string) => string;
 }
 
 function downloadBase64Pdf(base64: string, filename: string) {
@@ -207,16 +223,29 @@ export function GenerateInvoiceDialog({
   onSuccess,
   prefillBuyerWalletVkey,
   prefillMonth,
+  formatMonth,
 }: GenerateInvoiceDialogProps) {
   const { apiClient } = useAppContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   const {
+    templates,
+    save: saveTemplate,
+    update: updateTemplate,
+    remove: removeTemplate,
+  } = useSellerTemplates();
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [templateNameInput, setTemplateNameInput] = useState('');
+  const [isNaming, setIsNaming] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const {
     register,
     handleSubmit,
     setValue,
     watch,
+    getValues,
     formState: { errors },
     reset,
   } = useForm<FormValues>({
@@ -228,18 +257,7 @@ export function GenerateInvoiceDialog({
       vatRate: 0,
       reverseCharge: false,
       forceRegenerate: false,
-      seller: {
-        name: null,
-        companyName: null,
-        vatNumber: null,
-        country: '',
-        city: '',
-        zipCode: '',
-        street: '',
-        streetNumber: '',
-        email: null,
-        phone: null,
-      },
+      seller: { ...EMPTY_SELLER },
       buyer: {
         name: null,
         companyName: null,
@@ -256,9 +274,139 @@ export function GenerateInvoiceDialog({
     },
   });
 
+  useEffect(() => {
+    if (open) {
+      reset({
+        buyerWalletVkey: prefillBuyerWalletVkey,
+        month: prefillMonth,
+        invoiceCurrency: 'usd',
+        vatRate: 0,
+        reverseCharge: false,
+        forceRegenerate: false,
+        seller: { ...EMPTY_SELLER },
+        buyer: {
+          name: null,
+          companyName: null,
+          vatNumber: null,
+          country: '',
+          city: '',
+          zipCode: '',
+          street: '',
+          streetNumber: '',
+          email: null,
+          phone: null,
+        },
+        invoice: {},
+      });
+      setSelectedTemplateId(null);
+      setIsNaming(false);
+      setIsEditing(false);
+      setTemplateNameInput('');
+    }
+  }, [open, prefillBuyerWalletVkey, prefillMonth, reset]);
+
   const reverseCharge = watch('reverseCharge');
   const forceRegenerate = watch('forceRegenerate');
   const invoiceCurrency = watch('invoiceCurrency');
+
+  const applyTemplate = useCallback(
+    (templateId: string) => {
+      const tpl = templates.find((t) => t.id === templateId);
+      if (!tpl) return;
+      setSelectedTemplateId(templateId);
+      setIsNaming(false);
+      setIsEditing(false);
+      const s = tpl.seller;
+      setValue('seller.name', s.name);
+      setValue('seller.companyName', s.companyName);
+      setValue('seller.vatNumber', s.vatNumber);
+      setValue('seller.country', s.country);
+      setValue('seller.city', s.city);
+      setValue('seller.zipCode', s.zipCode);
+      setValue('seller.street', s.street);
+      setValue('seller.streetNumber', s.streetNumber);
+      setValue('seller.email', s.email);
+      setValue('seller.phone', s.phone);
+    },
+    [templates, setValue],
+  );
+
+  const clearTemplate = useCallback(() => {
+    setSelectedTemplateId(null);
+    setIsNaming(false);
+    setIsEditing(false);
+    const s = EMPTY_SELLER;
+    setValue('seller.name', s.name);
+    setValue('seller.companyName', s.companyName);
+    setValue('seller.vatNumber', s.vatNumber);
+    setValue('seller.country', s.country);
+    setValue('seller.city', s.city);
+    setValue('seller.zipCode', s.zipCode);
+    setValue('seller.street', s.street);
+    setValue('seller.streetNumber', s.streetNumber);
+    setValue('seller.email', s.email);
+    setValue('seller.phone', s.phone);
+  }, [setValue]);
+
+  const getCurrentSellerData = useCallback((): SellerTemplateData => {
+    const v = getValues('seller');
+    return {
+      name: v.name ?? null,
+      companyName: v.companyName ?? null,
+      vatNumber: v.vatNumber ?? null,
+      country: v.country,
+      city: v.city,
+      zipCode: v.zipCode,
+      street: v.street,
+      streetNumber: v.streetNumber,
+      email: v.email ?? null,
+      phone: v.phone ?? null,
+    };
+  }, [getValues]);
+
+  const handleSaveTemplate = useCallback(() => {
+    const name = templateNameInput.trim();
+    if (!name) return;
+    const data = getCurrentSellerData();
+    const tpl = saveTemplate(name, data);
+    setSelectedTemplateId(tpl.id);
+    setIsNaming(false);
+    setTemplateNameInput('');
+    toast.success(`Template "${name}" saved`);
+  }, [templateNameInput, getCurrentSellerData, saveTemplate]);
+
+  const handleUpdateTemplate = useCallback(() => {
+    if (!selectedTemplateId) return;
+    const tpl = templates.find((t) => t.id === selectedTemplateId);
+    if (!tpl) return;
+    const label = templateNameInput.trim() || tpl.label;
+    const data = getCurrentSellerData();
+    updateTemplate(selectedTemplateId, label, data);
+    setIsEditing(false);
+    setTemplateNameInput('');
+    toast.success(`Template "${label}" updated`);
+  }, [selectedTemplateId, templateNameInput, templates, getCurrentSellerData, updateTemplate]);
+
+  const handleDeleteTemplate = useCallback(() => {
+    if (!selectedTemplateId) return;
+    const tpl = templates.find((t) => t.id === selectedTemplateId);
+    removeTemplate(selectedTemplateId);
+    setSelectedTemplateId(null);
+    setIsNaming(false);
+    setIsEditing(false);
+    const s = EMPTY_SELLER;
+    setValue('seller.name', s.name);
+    setValue('seller.companyName', s.companyName);
+    setValue('seller.vatNumber', s.vatNumber);
+    setValue('seller.country', s.country);
+    setValue('seller.city', s.city);
+    setValue('seller.zipCode', s.zipCode);
+    setValue('seller.street', s.street);
+    setValue('seller.streetNumber', s.streetNumber);
+    setValue('seller.email', s.email);
+    setValue('seller.phone', s.phone);
+    toast.success(`Template "${tpl?.label}" deleted`);
+  }, [selectedTemplateId, templates, removeTemplate, setValue]);
 
   const onSubmit = async (data: FormValues) => {
     setIsSubmitting(true);
@@ -279,11 +427,11 @@ export function GenerateInvoiceDialog({
               zipCode: data.seller.zipCode,
               street: data.seller.street,
               streetNumber: data.seller.streetNumber,
-              email: data.seller.email ?? null,
-              phone: data.seller.phone ?? null,
-              name: data.seller.name ?? null,
-              companyName: data.seller.companyName ?? null,
-              vatNumber: data.seller.vatNumber ?? null,
+              email: data.seller.email || null,
+              phone: data.seller.phone || null,
+              name: data.seller.name || null,
+              companyName: data.seller.companyName || null,
+              vatNumber: data.seller.vatNumber || null,
             },
             buyer: {
               country: data.buyer.country,
@@ -291,11 +439,11 @@ export function GenerateInvoiceDialog({
               zipCode: data.buyer.zipCode,
               street: data.buyer.street,
               streetNumber: data.buyer.streetNumber,
-              email: data.buyer.email ?? null,
-              phone: data.buyer.phone ?? null,
-              name: data.buyer.name ?? null,
-              companyName: data.buyer.companyName ?? null,
-              vatNumber: data.buyer.vatNumber ?? null,
+              email: data.buyer.email || null,
+              phone: data.buyer.phone || null,
+              name: data.buyer.name || null,
+              companyName: data.buyer.companyName || null,
+              vatNumber: data.buyer.vatNumber || null,
             },
             invoice: data.invoice,
           },
@@ -343,27 +491,21 @@ export function GenerateInvoiceDialog({
           {/* Core Fields */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <Label htmlFor="buyerWalletVkey">
-                Buyer Wallet VKey <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="buyerWalletVkey"
-                {...register('buyerWalletVkey')}
-                placeholder="Buyer wallet verification key"
-                className="font-mono text-sm"
-              />
-              {errors.buyerWalletVkey && (
-                <p className="text-xs text-destructive mt-1">{errors.buyerWalletVkey.message}</p>
-              )}
+              <Label>Buyer Wallet VKey</Label>
+              <div className="flex items-center gap-2 h-10 rounded-md border border-input bg-muted/50 px-3 py-2">
+                <span className="font-mono text-sm text-muted-foreground">
+                  {shortenAddress(prefillBuyerWalletVkey, 12)}
+                </span>
+                <CopyButton value={prefillBuyerWalletVkey} />
+              </div>
+              <input type="hidden" {...register('buyerWalletVkey')} />
             </div>
             <div>
-              <Label htmlFor="month">
-                Month <span className="text-destructive">*</span>
-              </Label>
-              <Input id="month" type="month" {...register('month')} />
-              {errors.month && (
-                <p className="text-xs text-destructive mt-1">{errors.month.message}</p>
-              )}
+              <Label>Month</Label>
+              <div className="flex items-center h-10 rounded-md border border-input bg-muted/50 px-3 py-2">
+                <span className="text-sm text-muted-foreground">{formatMonth(prefillMonth)}</span>
+              </div>
+              <input type="hidden" {...register('month')} />
             </div>
             <div>
               <Label htmlFor="invoiceCurrency">
@@ -421,7 +563,124 @@ export function GenerateInvoiceDialog({
 
           {/* Seller Details */}
           <div>
-            <h4 className="text-sm font-medium mb-3">Seller Details</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium">Seller Details</h4>
+              <div className="flex items-center gap-2">
+                {templates.length > 0 && (
+                  <Select
+                    value={selectedTemplateId ?? '__none__'}
+                    onValueChange={(val) => {
+                      if (val === '__none__') {
+                        clearTemplate();
+                      } else {
+                        applyTemplate(val);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-[180px] h-8 text-xs">
+                      <SelectValue placeholder="Load template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">No template</SelectItem>
+                      {templates.map((tpl) => (
+                        <SelectItem key={tpl.id} value={tpl.id}>
+                          {tpl.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {selectedTemplateId && !isNaming && !isEditing && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2"
+                      title="Update template with current values"
+                      onClick={() => {
+                        const tpl = templates.find((t) => t.id === selectedTemplateId);
+                        setTemplateNameInput(tpl?.label ?? '');
+                        setIsEditing(true);
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-destructive hover:text-destructive"
+                      title="Delete template"
+                      onClick={handleDeleteTemplate}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
+                {!isNaming && !isEditing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      setIsNaming(true);
+                      setTemplateNameInput('');
+                    }}
+                  >
+                    <Save className="h-3.5 w-3.5 mr-1" />
+                    Save as Template
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Save / Edit template name input */}
+            {(isNaming || isEditing) && (
+              <div className="flex items-center gap-2 mb-3">
+                <Input
+                  value={templateNameInput}
+                  onChange={(e) => setTemplateNameInput(e.target.value)}
+                  placeholder="Template name"
+                  className="h-8 text-sm flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (isEditing) handleUpdateTemplate();
+                      else handleSaveTemplate();
+                    }
+                    if (e.key === 'Escape') {
+                      setIsNaming(false);
+                      setIsEditing(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={!templateNameInput.trim()}
+                  onClick={isEditing ? handleUpdateTemplate : handleSaveTemplate}
+                >
+                  {isEditing ? 'Update' : 'Save'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    setIsNaming(false);
+                    setIsEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
+
             <AddressFields prefix="seller" register={register} errors={errors} />
           </div>
 

@@ -352,7 +352,7 @@ import {
 	postAdminGenerateMonthlyInvoiceSchemaInput,
 	postAdminGenerateMonthlyInvoiceSchemaOutput,
 } from '@/routes/api/invoice/monthly/admin';
-import { getMonthlyInvoiceListSchemaInput, getMonthlyInvoiceListSchemaOutput } from '@/routes/api/invoice/monthly/list';
+import { getMonthlyInvoiceListSchemaInput, getMonthlyInvoiceListSchemaOutput } from '@/routes/api/invoice/monthly';
 import {
 	getUninvoicedPaymentsSchemaInput,
 	getUninvoicedPaymentsSchemaOutput,

@@ -45,15 +45,18 @@ export function isPaymentBillable(payment: {
 	return false;
 }
 
+/** Normalize asset unit: "lovelace" → "" (empty string = ADA in MeshSDK convention) */
+function normalizeUnit(unit: string): string {
+	return unit === 'lovelace' ? '' : unit;
+}
+
 export function getBillableFunds(payment: {
 	onChainState: string | null;
 	RequestedFunds: Array<{ unit: string; amount: bigint }>;
 	WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;
 }): Array<{ unit: string; amount: bigint }> {
-	if (payment.onChainState === 'DisputedWithdrawn') {
-		return payment.WithdrawnForSeller;
-	}
-	return payment.RequestedFunds;
+	const funds = payment.onChainState === 'DisputedWithdrawn' ? payment.WithdrawnForSeller : payment.RequestedFunds;
+	return funds.map((f) => ({ unit: normalizeUnit(f.unit), amount: f.amount }));
 }
 
 export const invoiceGenerationBaseSchema = z.object({
@@ -139,14 +142,28 @@ export async function generateMonthlyInvoice(
 	const endOfMonth = new Date(Date.UTC(year, monthIdx + 1, 0, 0, 0, 0));
 	const invoiceMonth = monthIdx + 1; // 1-based for storage
 
+	const nowMs = BigInt(Date.now());
+
 	// ── Pre-resolve external data (outside txn – idempotent lookups) ──
 	const prePayments = await prisma.paymentRequest.findMany({
 		where: {
 			BuyerWallet: { walletVkey: input.buyerWalletVkey },
-			createdAt: {
-				gte: monthStart,
-				lt: nextMonthStart,
-			},
+			invoiceBaseId: null,
+			OR: [
+				{
+					onChainState: 'ResultSubmitted',
+					unlockTime: { lte: nowMs },
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+				{
+					onChainState: 'Withdrawn',
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+				{
+					onChainState: 'DisputedWithdrawn',
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+			],
 		},
 		include: {
 			BuyerWallet: true,
@@ -308,13 +325,26 @@ export async function generateMonthlyInvoice(
 	const createdInvoice = await prisma.$transaction(
 		async (tx) => {
 			// Re-query payments inside transaction for serializable consistency
+			const txNowMs = BigInt(Date.now());
 			const allPayments = await tx.paymentRequest.findMany({
 				where: {
 					BuyerWallet: { walletVkey: input.buyerWalletVkey },
-					createdAt: {
-						gte: monthStart,
-						lt: nextMonthStart,
-					},
+					invoiceBaseId: null,
+					OR: [
+						{
+							onChainState: 'ResultSubmitted',
+							unlockTime: { lte: txNowMs },
+							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+						},
+						{
+							onChainState: 'Withdrawn',
+							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+						},
+						{
+							onChainState: 'DisputedWithdrawn',
+							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+						},
+					],
 				},
 				include: {
 					BuyerWallet: true,
@@ -342,20 +372,18 @@ export async function generateMonthlyInvoice(
 			for (const payment of payments) {
 				const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
 				const agentIdentifier = decidedIdentifier?.agentIdentifier;
-				if (!agentIdentifier) {
-					throw createHttpError(404, 'Agent identifier not found');
+				const groupKey = agentIdentifier ?? `unknown-${payment.id}`;
+				if (!groupedPayments.has(groupKey)) {
+					groupedPayments.set(groupKey, []);
 				}
-				if (!groupedPayments.has(agentIdentifier)) {
-					groupedPayments.set(agentIdentifier, []);
-				}
-				groupedPayments.get(agentIdentifier)!.push(payment);
+				groupedPayments.get(groupKey)!.push(payment);
 			}
 
-			for (const [agentIdentifier, agentPayments] of groupedPayments) {
+			for (const [groupKey, agentPayments] of groupedPayments) {
 				const payment = agentPayments[0];
 				const quantity = agentPayments.length;
 
-				const agentDisplayName = agentDisplayNames.get(agentIdentifier) ?? '-';
+				const agentDisplayName = agentDisplayNames.get(groupKey) ?? '-';
 				const itemName = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
 
 				const funds = getBillableFunds(payment);

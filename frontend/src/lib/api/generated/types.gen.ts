@@ -4109,8 +4109,11 @@ export type GetInvoiceMonthlyUninvoicedResponses = {
                 blockchainIdentifier: string;
                 onChainState: string | null;
                 createdAt: Date;
+                finalizedAt: Date;
                 buyerWalletVkey: string | null;
                 buyerWalletAddress: string | null;
+                sellerWalletVkey: string | null;
+                sellerWalletAddress: string | null;
                 RequestedFunds: Array<{
                     unit: string;
                     amount: string;

@@ -8643,11 +8643,23 @@
                                                                 "type": "string",
                                                                 "format": "date-time"
                                                             },
+                                                            "finalizedAt": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            },
                                                             "buyerWalletVkey": {
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
                                                             "buyerWalletAddress": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "sellerWalletVkey": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "sellerWalletAddress": {
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
@@ -8675,8 +8687,11 @@
                                                             "blockchainIdentifier",
                                                             "onChainState",
                                                             "createdAt",
+                                                            "finalizedAt",
                                                             "buyerWalletVkey",
                                                             "buyerWalletAddress",
+                                                            "sellerWalletVkey",
+                                                            "sellerWalletAddress",
                                                             "RequestedFunds"
                                                         ]
                                                     }

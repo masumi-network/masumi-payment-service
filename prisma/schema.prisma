@@ -228,7 +228,7 @@ model PaymentRequest {
   WithdrawnForSeller                            UnitValue[]         @relation("SellerWithdrawnPaymentRequest")
   InvoiceItem                                   InvoiceItem[]
   invoiceBase                                   InvoiceBase?        @relation(fields: [invoiceBaseId], references: [id])
-  invoiceBaseId                                 String?             @unique
+  invoiceBaseId                                 String?
 
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])

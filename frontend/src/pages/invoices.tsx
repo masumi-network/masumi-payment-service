@@ -7,7 +7,7 @@ import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { InvoiceTableSkeleton } from '@/components/skeletons/InvoiceTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -17,31 +17,45 @@ import { Label } from '@/components/ui/label';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { MonthPicker } from '@/components/ui/month-picker';
 import { useInvoices, type InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUninvoicedPayments';
 import { InvoiceDetailsDialog } from '@/components/invoices/InvoiceDetailsDialog';
 import { GenerateInvoiceDialog } from '@/components/invoices/GenerateInvoiceDialog';
 
-function getCurrentMonth(): string {
+function getPreviousMonth(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(month: string): string {
+  const [yearStr, monthStr] = month.split('-');
+  const d = new Date(Number(yearStr), Number(monthStr) - 1, 1);
+  return d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 }
 
 interface WalletGroup {
+  sellerWalletVkey: string;
+  sellerWalletAddress: string | null;
   buyerWalletVkey: string;
   buyerWalletAddress: string | null;
   payments: UninvoicedPayment[];
   totalFunds: Record<string, bigint>;
 }
 
-function groupByWallet(payments: UninvoicedPayment[]): WalletGroup[] {
+function groupBySellerBuyer(payments: UninvoicedPayment[]): WalletGroup[] {
   const map = new Map<string, WalletGroup>();
   for (const p of payments) {
-    const key = p.buyerWalletVkey || 'unknown';
+    const sellerVkey = p.sellerWalletVkey || 'unknown';
+    const buyerVkey = p.buyerWalletVkey || 'unknown';
+    const key = `${sellerVkey}::${buyerVkey}`;
     let group = map.get(key);
     if (!group) {
       group = {
-        buyerWalletVkey: key,
+        sellerWalletVkey: sellerVkey,
+        sellerWalletAddress: p.sellerWalletAddress,
+        buyerWalletVkey: buyerVkey,
         buyerWalletAddress: p.buyerWalletAddress,
         payments: [],
         totalFunds: {},
@@ -94,15 +108,15 @@ export default function Invoices() {
   const { apiClient, network } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth);
+  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
   const [includeAllRevisions, setIncludeAllRevisions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceSummary | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generatePrefill, setGeneratePrefill] = useState<{
-    buyerWalletVkey?: string;
-    month?: string;
-  }>({});
+    buyerWalletVkey: string;
+    month: string;
+  }>({ buyerWalletVkey: '', month: '' });
   const [expandedWallets, setExpandedWallets] = useState<Set<string>>(new Set());
 
   const {
@@ -145,10 +159,14 @@ export default function Invoices() {
   }, [invoices, searchQuery]);
 
   const walletGroups = useMemo(() => {
-    const groups = groupByWallet(uninvoicedPayments);
+    const groups = groupBySellerBuyer(uninvoicedPayments);
     if (!searchQuery) return groups;
     const query = searchQuery.toLowerCase();
-    return groups.filter((g) => g.buyerWalletVkey.toLowerCase().includes(query));
+    return groups.filter(
+      (g) =>
+        g.buyerWalletVkey.toLowerCase().includes(query) ||
+        g.sellerWalletVkey.toLowerCase().includes(query),
+    );
   }, [uninvoicedPayments, searchQuery]);
 
   const toggleWallet = useCallback((vkey: string) => {
@@ -173,24 +191,23 @@ export default function Invoices() {
     refetchUninvoiced();
   }, [refetchInvoices, refetchUninvoiced]);
 
-  const handleRegenerate = useCallback(
-    (invoice: InvoiceSummary) => {
-      setSelectedInvoice(null);
-      setGeneratePrefill({
-        month: selectedMonth,
-      });
+  const handleRegenerate = useCallback((_invoice: InvoiceSummary) => {
+    setSelectedInvoice(null);
+  }, []);
+
+  const openGenerateFromGroup = useCallback(
+    (group: WalletGroup) => {
+      setGeneratePrefill({ buyerWalletVkey: group.buyerWalletVkey, month: selectedMonth });
       setShowGenerateDialog(true);
     },
     [selectedMonth],
   );
 
-  const openGenerateFromWallet = useCallback(
-    (vkey: string) => {
-      setGeneratePrefill({ buyerWalletVkey: vkey, month: selectedMonth });
-      setShowGenerateDialog(true);
-    },
-    [selectedMonth],
-  );
+  const isCurrentMonth = useMemo(() => {
+    const now = new Date();
+    const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return selectedMonth === current;
+  }, [selectedMonth]);
 
   const isLoading = activeTab === 'Generated Invoices' ? isLoadingInvoices : isLoadingUninvoiced;
 
@@ -209,19 +226,7 @@ export default function Invoices() {
                 View and generate monthly invoices for buyer wallets.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={handleRefresh} isRefreshing={isLoading} />
-              <Button
-                onClick={() => {
-                  setGeneratePrefill({ month: selectedMonth });
-                  setShowGenerateDialog(true);
-                }}
-                className="flex items-center gap-2 btn-hover-lift"
-              >
-                <Plus className="h-4 w-4" />
-                Generate Invoice
-              </Button>
-            </div>
+            <RefreshButton onRefresh={handleRefresh} isRefreshing={isLoading} />
           </div>
 
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
@@ -229,12 +234,7 @@ export default function Invoices() {
           {/* Controls */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
-              />
+              <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
               <SearchInput
                 value={searchQuery}
                 onChange={setSearchQuery}
@@ -386,13 +386,14 @@ export default function Invoices() {
                 ) : (
                   <div className="divide-y">
                     {walletGroups.map((group) => {
-                      const isExpanded = expandedWallets.has(group.buyerWalletVkey);
+                      const groupKey = `${group.sellerWalletVkey}::${group.buyerWalletVkey}`;
+                      const isExpanded = expandedWallets.has(groupKey);
                       return (
-                        <div key={group.buyerWalletVkey}>
+                        <div key={groupKey}>
                           {/* Wallet group header */}
                           <div
                             className="flex items-center gap-3 p-4 hover:bg-muted/50 cursor-pointer transition-colors"
-                            onClick={() => toggleWallet(group.buyerWalletVkey)}
+                            onClick={() => toggleWallet(groupKey)}
                           >
                             {isExpanded ? (
                               <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -400,20 +401,40 @@ export default function Invoices() {
                               <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                             )}
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm">
-                                  {shortenAddress(group.buyerWalletVkey, 8)}
-                                </span>
-                                <CopyButton value={group.buyerWalletVkey} />
-                              </div>
-                              {group.buyerWalletAddress && (
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-xs text-muted-foreground font-mono">
-                                    {shortenAddress(group.buyerWalletAddress, 8)}
+                              <div className="mb-1">
+                                <span className="text-xs text-muted-foreground">Seller</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-sm">
+                                    {shortenAddress(group.sellerWalletVkey, 8)}
                                   </span>
-                                  <CopyButton value={group.buyerWalletAddress} />
+                                  <CopyButton value={group.sellerWalletVkey} />
                                 </div>
-                              )}
+                                {group.sellerWalletAddress && (
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-xs text-muted-foreground font-mono">
+                                      {shortenAddress(group.sellerWalletAddress, 8)}
+                                    </span>
+                                    <CopyButton value={group.sellerWalletAddress} />
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground">Buyer</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-sm">
+                                    {shortenAddress(group.buyerWalletVkey, 8)}
+                                  </span>
+                                  <CopyButton value={group.buyerWalletVkey} />
+                                </div>
+                                {group.buyerWalletAddress && (
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-xs text-muted-foreground font-mono">
+                                      {shortenAddress(group.buyerWalletAddress, 8)}
+                                    </span>
+                                    <CopyButton value={group.buyerWalletAddress} />
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="flex items-center gap-4 shrink-0">
                               <div className="text-sm text-muted-foreground">
@@ -430,9 +451,15 @@ export default function Invoices() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={isCurrentMonth}
+                                title={
+                                  isCurrentMonth
+                                    ? 'Cannot generate invoices for the current month'
+                                    : undefined
+                                }
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openGenerateFromWallet(group.buyerWalletVkey);
+                                  openGenerateFromGroup(group);
                                 }}
                               >
                                 Generate Invoice
@@ -453,7 +480,7 @@ export default function Invoices() {
                                       Status
                                     </th>
                                     <th className="p-3 text-left text-xs font-medium text-muted-foreground">
-                                      Created
+                                      Finalized
                                     </th>
                                     <th className="p-3 text-left text-xs font-medium text-muted-foreground">
                                       Requested Funds
@@ -482,7 +509,7 @@ export default function Invoices() {
                                         </span>
                                       </td>
                                       <td className="p-3 text-xs text-muted-foreground">
-                                        {new Date(payment.createdAt).toLocaleString()}
+                                        {new Date(payment.finalizedAt).toLocaleString()}
                                       </td>
                                       <td className="p-3 text-xs">
                                         {payment.RequestedFunds.map((fund, i) => (
@@ -530,6 +557,7 @@ export default function Invoices() {
           onSuccess={handleGenerateSuccess}
           prefillBuyerWalletVkey={generatePrefill.buyerWalletVkey}
           prefillMonth={generatePrefill.month}
+          formatMonth={formatMonthLabel}
         />
       </AnimatedPage>
     </MainLayout>
