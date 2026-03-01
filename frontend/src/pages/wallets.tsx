@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, Search, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
@@ -28,6 +27,9 @@ import {
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SearchInput } from '@/components/ui/search-input';
 
 type UTXO = Utxo;
 
@@ -239,170 +241,182 @@ export default function WalletsPage() {
       <Head>
         <title>Wallets | Admin Interface</title>
       </Head>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Wallets</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage your buying and selling wallets.{' '}
-              <Link
-                href="https://docs.masumi.network/core-concepts/wallets"
-                target="_blank"
-                className="text-primary hover:underline"
+      <AnimatedPage>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Wallets</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage your buying and selling wallets.{' '}
+                <Link
+                  href="https://docs.masumi.network/core-concepts/wallets"
+                  target="_blank"
+                  className="text-primary hover:underline"
+                >
+                  Learn more
+                </Link>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
+              <Button
+                className="flex items-center gap-2 btn-hover-lift"
+                onClick={() => setIsAddDialogOpen(true)}
               >
-                Learn more
-              </Link>
-            </p>
+                <Plus className="h-4 w-4" />
+                Add wallet
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
-            <Button
-              className="flex items-center gap-2 bg-black text-white hover:bg-black/90"
-              onClick={() => setIsAddDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-              Add wallet
-            </Button>
+
+          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <SearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="Search by address, note, type, or balance..."
+                className="max-w-xs"
+              />
+            </div>
           </div>
-        </div>
 
-        <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative flex-1">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search by address, note, type, or balance..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-xs pl-10"
-            />
-          </div>
-        </div>
-
-        <div className="rounded-lg border overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b">
-                <th className="p-4 text-left text-sm font-medium pl-7">Type</th>
-                <th className="p-4 text-left text-sm font-medium">Note</th>
-                <th className="p-4 text-left text-sm font-medium">Address</th>
-                <th className="p-4 text-left text-sm font-medium">Collection Address</th>
-                <th className="p-4 text-left text-sm font-medium">Balance, ADA</th>
-                <th className="p-4 text-left text-sm font-medium">Balance, USDM</th>
-                <th className="w-20 p-4 pr-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <WalletTableSkeleton rows={2} />
-              ) : filteredWallets.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-8">
-                    No wallets found
-                  </td>
+          <div className="rounded-lg border overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/30 dark:bg-muted/15">
+                <tr className="border-b">
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    Type
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Note</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Address
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Collection Address
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Balance, ADA
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Balance, USDM
+                  </th>
+                  <th className="w-20 p-4 pr-8"></th>
                 </tr>
-              ) : (
-                <>
-                  {filteredWallets.map((wallet) => (
-                    <tr
-                      key={wallet.id}
-                      className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer"
-                      onClick={() => handleWalletClick(wallet)}
-                    >
-                      <td className="p-4 pl-7">
-                        {wallet.type === 'Collection' ? (
-                          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
-                            Collection
-                          </span>
-                        ) : (
-                          <WalletTypeBadge type={wallet.type} />
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm font-medium truncate">
-                          {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {wallet.note || 'Created by seeding'}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm" title={wallet.walletAddress}>
-                            {shortenAddress(wallet.walletAddress)}
-                          </span>
-                          <CopyButton value={wallet.walletAddress} />
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        {wallet.type === 'Selling' && wallet.collectionAddress ? (
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm" title={wallet.collectionAddress}>
-                              {shortenAddress(wallet.collectionAddress)}
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <WalletTableSkeleton rows={2} />
+                ) : filteredWallets.length === 0 ? (
+                  <tr>
+                    <td colSpan={7}>
+                      <EmptyState
+                        icon="inbox"
+                        title="No wallets found"
+                        description="Add a wallet to get started"
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {filteredWallets.map((wallet, index) => (
+                      <tr
+                        key={wallet.id}
+                        className="border-b last:border-b-0 hover:bg-muted/50 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150"
+                        style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                        onClick={() => handleWalletClick(wallet)}
+                      >
+                        <td className="p-4 pl-6">
+                          {wallet.type === 'Collection' ? (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-secondary text-secondary-foreground">
+                              Collection
                             </span>
-                            <CopyButton value={wallet.collectionAddress} />
+                          ) : (
+                            <WalletTypeBadge type={wallet.type} />
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <div className="text-sm font-medium truncate">
+                            {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {wallet.type === 'Selling' ? 'Not set' : '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1">
+                          <div className="text-xs text-muted-foreground truncate">
+                            {wallet.note || 'Created by seeding'}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm" title={wallet.walletAddress}>
+                              {shortenAddress(wallet.walletAddress)}
+                            </span>
+                            <CopyButton value={wallet.walletAddress} />
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          {wallet.type === 'Selling' && wallet.collectionAddress ? (
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm" title={wallet.collectionAddress}>
+                                {shortenAddress(wallet.collectionAddress)}
+                              </span>
+                              <CopyButton value={wallet.collectionAddress} />
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50">{'\u2014'}</span>
+                          )}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
+                                <Spinner size={16} />
+                              ) : (
+                                <span>
+                                  {wallet.balance
+                                    ? formatBalance((parseInt(wallet.balance) / 1000000).toFixed(2))
+                                    : '0'}
+                                </span>
+                              )}
+                            </div>
+                            {!refreshingBalances.has(wallet.id) &&
+                              !wallet.isLoadingBalance &&
+                              wallet.balance &&
+                              rate && (
+                                <span className="text-xs text-muted-foreground">
+                                  $
+                                  {formatBalance(
+                                    ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
+                                  ) || ''}
+                                </span>
+                              )}
+                          </div>
+                        </td>
+                        <td className="p-4">
                           <div className="flex items-center gap-2">
                             {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
-                                {wallet.balance
-                                  ? formatBalance((parseInt(wallet.balance) / 1000000).toFixed(2))
-                                  : '0'}
+                                {wallet.usdmBalance
+                                  ? `$${formatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
+                                  : '$0'}
                               </span>
                             )}
                           </div>
-                          {!refreshingBalances.has(wallet.id) &&
-                            !wallet.isLoadingBalance &&
-                            wallet.balance &&
-                            rate && (
-                              <span className="text-xs text-muted-foreground">
-                                $
-                                {formatBalance(
-                                  ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
-                                ) || ''}
-                              </span>
-                            )}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
-                            <Spinner size={16} />
-                          ) : (
-                            <span>
-                              {wallet.usdmBalance
-                                ? `$${formatBalance((parseInt(wallet.usdmBalance) / 1000000).toFixed(2))}`
-                                : '$0'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4 pr-8">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              refreshWalletBalance(wallet);
-                            }}
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-                          {/*<Button
+                        </td>
+                        <td className="p-4 pr-8">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                refreshWalletBalance(wallet);
+                              }}
+                            >
+                              <RefreshCw className="h-4 w-4" />
+                            </Button>
+                            {/*<Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
@@ -413,35 +427,35 @@ export default function WalletsPage() {
                           >
                             <FaExchangeAlt className="h-4 w-4" />
                           </Button>*/}
-                          <Button
-                            className="h-8"
-                            variant="muted"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedWalletForTopup(wallet);
-                            }}
-                          >
-                            Top Up
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </>
-              )}
-            </tbody>
-          </table>
+                            <Button
+                              className="h-8"
+                              variant="muted"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedWalletForTopup(wallet);
+                              }}
+                            >
+                              Top Up
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      {/* Dialogs */}
-      <AddWalletDialog
-        open={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={refetchWallets}
-      />
+        {/* Dialogs */}
+        <AddWalletDialog
+          open={isAddDialogOpen}
+          onClose={() => setIsAddDialogOpen(false)}
+          onSuccess={refetchWallets}
+        />
 
-      {/*<SwapDialog
+        {/*<SwapDialog
         isOpen={!!selectedWalletForSwap}
         onClose={() => setSelectedWalletForSwap(null)}
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
@@ -451,18 +465,19 @@ export default function WalletsPage() {
         walletId={selectedWalletForSwap?.id || ''}
       />*/}
 
-      <TransakWidget
-        isOpen={!!selectedWalletForTopup}
-        onClose={() => setSelectedWalletForTopup(null)}
-        walletAddress={selectedWalletForTopup?.walletAddress || ''}
-        onSuccess={refetchWallets}
-      />
+        <TransakWidget
+          isOpen={!!selectedWalletForTopup}
+          onClose={() => setSelectedWalletForTopup(null)}
+          walletAddress={selectedWalletForTopup?.walletAddress || ''}
+          onSuccess={refetchWallets}
+        />
 
-      <WalletDetailsDialog
-        isOpen={!!selectedWalletForDetails}
-        onClose={() => setSelectedWalletForDetails(null)}
-        wallet={selectedWalletForDetails}
-      />
+        <WalletDetailsDialog
+          isOpen={!!selectedWalletForDetails}
+          onClose={() => setSelectedWalletForDetails(null)}
+          wallet={selectedWalletForDetails}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

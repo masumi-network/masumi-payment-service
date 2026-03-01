@@ -1,8 +1,18 @@
 @import 'tailwindcss';
 
+@source "../../node_modules/masumi-schema-validator-component/dist/index.mjs";
+
 @plugin 'tailwindcss-animate';
 
 @custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/inter/InterVariable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-display: swap;
+  font-style: normal;
+}
 
 @theme {
   --color-background: hsl(var(--background));
@@ -38,6 +48,8 @@
   --color-chart-3: hsl(var(--chart-3));
   --color-chart-4: hsl(var(--chart-4));
   --color-chart-5: hsl(var(--chart-5));
+
+  --color-brand: hsl(var(--accent-brand));
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -84,14 +96,15 @@
     --input: 240 5.9% 90%;
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
+    --accent-brand: 174 60% 51%;
   }
 
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 97%;
-    --card: 0 0% 3.9%;
+    --card: 0 0% 5.5%;
     --card-foreground: 0 0% 97%;
-    --popover: 0 0% 3.9%;
+    --popover: 0 0% 5.5%;
     --popover-foreground: 0 0% 97%;
     --primary: 0 0% 97%;
     --primary-foreground: 0 0% 9%;
@@ -103,9 +116,10 @@
     --accent-foreground: 0 0% 97%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 97%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
     --ring: 0 0% 83.1%;
+    --accent-brand: 174 60% 55%;
   }
 }
 
@@ -117,7 +131,11 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family:
+      'Inter',
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 
   [role='dialog'],
@@ -151,7 +169,7 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
-@keyframes bounceBottom {
+@keyframes slideUpFromBottom {
   0% {
     transform: translateY(100px);
     opacity: 0;
@@ -162,8 +180,8 @@ input[type='number'] {
   }
 }
 
-.animate-bounce-bottom {
-  animation: bounceBottom 0.3s ease forwards;
+.animate-slide-up-from-bottom {
+  animation: slideUpFromBottom 0.3s ease forwards;
 }
 
 #__next {
@@ -183,17 +201,6 @@ input[type='number'] {
   animation: spin 1s linear infinite;
 }
 
-@keyframes scaleIn {
-  0% {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 @keyframes rotateIn {
   0% {
     transform: rotate(-360deg);
@@ -208,15 +215,15 @@ input[type='number'] {
 /* Highlight animation for searched elements */
 @keyframes highlight {
   0% {
-    opacity: 1;
+    box-shadow: 0 0 0 2px hsl(var(--ring));
   }
   100% {
-    opacity: 0;
+    box-shadow: 0 0 0 4px hsl(var(--ring) / 0.3);
   }
 }
 
 .highlight-element {
-  animation: highlight 0.5s ease infinite alternate;
+  animation: highlight 0.7s ease-in-out infinite alternate;
   border-radius: var(--radius);
   transition: all 0.2s ease;
 }
@@ -242,14 +249,25 @@ input[type='number'] {
   }
 }
 
+@keyframes fadeInToMuted {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.4;
+  }
+}
+
 @keyframes slideDown {
   from {
     opacity: 0;
-    max-height: 0;
+    transform: scaleY(0);
+    transform-origin: top;
   }
   to {
     opacity: 1;
-    max-height: 500px;
+    transform: scaleY(1);
+    transform-origin: top;
   }
 }
 
@@ -273,6 +291,10 @@ input[type='number'] {
 
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out forwards;
+}
+
+.animate-fade-in-to-muted {
+  animation: fadeInToMuted 0.2s ease-out forwards;
 }
 
 .animate-slide-down {
@@ -366,16 +388,6 @@ input[type='number'] {
   }
 }
 
-@keyframes glowPulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-
 .animate-slide-in-bottom {
   animation: slideInFromBottom 0.3s ease-out forwards;
 }
@@ -392,34 +404,146 @@ input[type='number'] {
   animation: popIn 0.25s ease-out forwards;
 }
 
-.animate-glow-pulse {
-  animation: glowPulse 3s ease-in-out infinite;
-}
-
 /* Staggered animation delays for setup wizard */
-.animate-delay-75 {
+.animate-delay-50 {
   animation-delay: 50ms;
 }
-.animate-delay-100 {
+.animate-delay-75 {
   animation-delay: 75ms;
 }
-.animate-delay-150 {
+.animate-delay-100 {
   animation-delay: 100ms;
 }
-.animate-delay-200 {
+.animate-delay-125 {
   animation-delay: 125ms;
 }
-.animate-delay-250 {
+.animate-delay-150 {
   animation-delay: 150ms;
 }
-.animate-delay-300 {
+.animate-delay-175 {
   animation-delay: 175ms;
 }
-.animate-delay-400 {
+.animate-delay-225 {
   animation-delay: 225ms;
 }
-.animate-delay-500 {
+.animate-delay-275 {
   animation-delay: 275ms;
+}
+
+/* Skeleton-to-content crossfade */
+@keyframes contentReveal {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+/* Stat number entrance */
+@keyframes numberReveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Infinite subtle pulse for pending/active states */
+@keyframes subtlePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Page entrance — wraps entire page content */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-content-reveal {
+  animation: contentReveal 0.3s ease-out forwards;
+}
+
+.animate-number-reveal {
+  animation: numberReveal 0.3s ease-out forwards;
+}
+
+.animate-subtle-pulse {
+  animation: subtlePulse 2s ease-in-out infinite;
+}
+
+.animate-page-enter {
+  animation: pageEnter 0.3s ease-out forwards;
+}
+
+.animate-content-fade-in {
+  animation: contentFadeIn 0.35s ease-out both;
+}
+
+@keyframes contentFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Extended stagger delays */
+.animate-stagger-5 {
+  animation-delay: 250ms;
+}
+.animate-stagger-6 {
+  animation-delay: 300ms;
+}
+.animate-stagger-7 {
+  animation-delay: 350ms;
+}
+.animate-stagger-8 {
+  animation-delay: 400ms;
+}
+
+/* Card hover lift (for div-based cards only, NOT <tr>) */
+.card-interactive {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.dark .card-interactive:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Accessibility: respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Button hover micro-interactions */
@@ -445,4 +569,90 @@ input[type='number'] {
 }
 .icon-bounce:active {
   transform: scale(0.95);
+}
+
+/* ─── Collapsible height animation (Radix CSS custom property) ─── */
+@keyframes collapsibleOpen {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+@keyframes collapsibleClose {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+.animate-collapsible-open {
+  animation: collapsibleOpen 0.25s ease-out forwards;
+}
+.animate-collapsible-close {
+  animation: collapsibleClose 0.2s ease-in forwards;
+}
+
+/* ─── Shake — invalid input feedback ─── */
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-4px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(3px);
+  }
+}
+.animate-shake {
+  animation: shake 0.35s ease-out;
+}
+
+/* ─── Step transition — slide in from right ─── */
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-slide-in-right {
+  animation: slideInFromRight 0.25s ease-out forwards;
+}
+
+/* ─── Sidebar active nav indicator (left bar) ─── */
+.sidebar-active-indicator {
+  position: relative;
+}
+.sidebar-active-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  border-radius: 0 2px 2px 0;
+  background-color: hsl(var(--primary));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.sidebar-active-indicator.is-active::before {
+  transform: translateY(-50%) scaleY(1);
 }

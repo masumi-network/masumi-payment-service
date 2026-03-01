@@ -29,6 +29,10 @@ smart-contracts/registry/wallet1.sk
 smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
 
+# Mock data scripts (local dev only)
+scripts/add-mock-payments.ts
+
 otelcol-contrib
-tests/e2e/.e2e-global-state.json
+test-output/example-invoice.pdf
+test-output/minimal-invoice.pdf
 tests/e2e/.e2e-global-state.json

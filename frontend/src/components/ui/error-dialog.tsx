@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './dialog';
 import { Button } from './button';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -23,7 +23,7 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="bg-destructive/10 text-destructive px-2 py-1 rounded-full text-sm font-medium">
+              <div className="bg-destructive/10 text-destructive px-2 py-1 rounded-full text-sm font-medium animate-pop-in">
                 {error.code || '500'}
               </div>
               <X className="h-4 w-4 text-destructive" />
@@ -45,23 +45,21 @@ export function ErrorDialog({ open, onClose, error }: ErrorDialogProps) {
                 onClick={() => setShowDetails(!showDetails)}
               >
                 <span className="text-sm">View Details</span>
-                {showDetails ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 transition-transform duration-200',
+                    showDetails && 'rotate-180',
+                  )}
+                />
               </Button>
 
-              <div
-                className={cn(
-                  'overflow-hidden transition-all',
-                  showDetails ? 'max-h-96' : 'max-h-0',
-                )}
-              >
-                <pre className="text-xs bg-muted/50 p-4 rounded-md overflow-auto">
-                  {JSON.stringify(error.details, null, 2)}
-                </pre>
-              </div>
+              {showDetails && (
+                <div className="animate-slide-down origin-top">
+                  <pre className="text-xs bg-muted/50 p-4 rounded-md overflow-auto">
+                    {JSON.stringify(error.details, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </div>

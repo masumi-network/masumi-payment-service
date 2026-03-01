@@ -7,7 +7,7 @@ import {
   Bot,
   Wallet,
   FileText,
-  FileInput,
+  Receipt,
   Key,
   Settings,
   Sun,
@@ -38,6 +38,7 @@ import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -48,19 +49,35 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const { collapsed, setCollapsed, isHovered, setIsHovered, shouldAnimateIcon } = useSidebar();
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+    hasAnimatedNav,
+    markNavAnimated,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
   const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
+  const isFirstNavMount = !hasAnimatedNav;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       queueMicrotask(() => setIsMac(window.navigator.userAgent.includes('Macintosh')));
     }
   }, []);
+
+  useEffect(() => {
+    if (!hasAnimatedNav) {
+      const timer = setTimeout(() => markNavAnimated(), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [hasAnimatedNav, markNavAnimated]);
 
   const applyBlurTransition = useCallback((isActive: boolean) => {
     if (!isActive) return;
@@ -122,30 +139,21 @@ export function MainLayout({ children }: MainLayoutProps) {
           name: 'Setup',
           icon: <Wand2 className="h-4 w-4" />,
           badge: null,
-        },
-        {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: <FileInput className="h-4 w-4" />,
-          badge: null,
+          group: 0,
         },
         {
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
           badge: null,
-        },
-        {
-          href: '/settings',
-          name: 'Settings',
-          icon: <Settings className="h-4 w-4" />,
-          badge: null,
+          group: 1,
         },
         {
           href: '/developers',
           name: 'Developers',
           icon: <Code className="h-4 w-4 text-violet-500" />,
           badge: null,
+          group: 1,
         },
       ];
     }
@@ -155,48 +163,49 @@ export function MainLayout({ children }: MainLayoutProps) {
         name: 'Dashboard',
         icon: <LayoutDashboard className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/ai-agents',
         name: 'AI Agents',
         icon: <Bot className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/wallets',
         name: 'Wallets',
         icon: <Wallet className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/transactions',
         name: 'Transactions',
         icon: <FileText className="h-4 w-4" />,
         badge: formatCount(newTransactionsCount),
+        group: 0,
       },
       {
-        href: '/payment-sources',
-        name: 'Payment sources',
-        icon: <FileInput className="h-4 w-4" />,
+        href: '/invoices',
+        name: 'Invoices',
+        icon: <Receipt className="h-4 w-4" />,
         badge: null,
+        group: 0,
       },
       {
         href: '/api-keys',
         name: 'API keys',
         icon: <Key className="h-4 w-4" />,
         badge: null,
-      },
-      {
-        href: '/settings',
-        name: 'Settings',
-        icon: <Settings className="h-4 w-4" />,
-        badge: null,
+        group: 1,
       },
       {
         href: '/developers',
         name: 'Developers',
         icon: <Code className="h-4 w-4 text-violet-500" />,
         badge: null,
+        group: 1,
       },
     ];
   }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
@@ -259,47 +268,6 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div className="flex flex-col">
           <div
             className={cn(
-              'flex gap-2 border-b p-2.5 px-4 w-full',
-              collapsed && !isHovered ? 'justify-center items-center' : '',
-            )}
-          >
-            <div
-              className={cn(
-                'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed && !isHovered ? 'grid-cols-2 w-auto gap-0.5' : 'grid-cols-2 gap-2',
-              )}
-            >
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  network === 'Preprod' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Preprod')}
-              >
-                {collapsed && !isHovered ? 'P' : 'Preprod'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  network === 'Mainnet' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Mainnet')}
-              >
-                {collapsed && !isHovered ? 'M' : 'Mainnet'}
-              </Button>
-            </div>
-          </div>
-
-          <div
-            className={cn(
               'flex items-center p-2 px-4 border-b border-border',
               collapsed && !isHovered ? 'justify-center' : 'justify-between',
             )}
@@ -338,20 +306,38 @@ export function MainLayout({ children }: MainLayoutProps) {
               </Button>
             )}
           </div>
+
+          <div
+            className={cn('p-2 w-full', collapsed && !isHovered ? 'flex justify-center' : 'px-2')}
+          >
+            <NetworkSourceCard
+              collapsed={collapsed && !isHovered}
+              onNetworkChange={handleNetworkChange}
+            />
+          </div>
         </div>
 
         <nav
           className={cn(
-            'flex flex-col gap-1 mt-2 p-2',
+            'flex flex-col gap-1 p-2',
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
             const isDev = item.href === '/developers';
             const isActive = router.pathname === item.href;
+            const showSeparator = index > 0 && item.group !== navItems[index - 1].group;
             return (
-              <div key={item.href}>
-                {isDev && (
+              <div
+                key={item.href}
+                className={isFirstNavMount ? 'animate-fade-in-up opacity-0' : undefined}
+                style={
+                  isFirstNavMount
+                    ? { animationDelay: `${300 + Math.min(index, 7) * 40}ms` }
+                    : undefined
+                }
+              >
+                {showSeparator && (
                   <div
                     className={cn(
                       'my-1.5',
@@ -363,14 +349,14 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <Link
                   href={item.href}
                   className={cn(
-                    'flex items-center rounded-lg text-sm transition-all relative',
+                    'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
                     isDev
                       ? isActive
-                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300'
+                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300 is-active'
                         : 'hover:bg-violet-500/10 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400'
                       : cn(
                           'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold',
+                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
                         ),
                     collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
                   )}
@@ -379,12 +365,18 @@ export function MainLayout({ children }: MainLayoutProps) {
                   {item.icon}
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
                   {!(collapsed && !isHovered) && item.badge && (
-                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    <span
+                      key={item.badge}
+                      className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
                       {item.badge}
                     </span>
                   )}
                   {collapsed && !isHovered && item.badge && (
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
+                    <span
+                      key={item.badge}
+                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
                       {item.badge}
                     </span>
                   )}
@@ -397,30 +389,53 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div
           className={cn(
             'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
-            collapsed && !isHovered ? 'px-2' : 'px-4',
+            collapsed && !isHovered ? 'px-0' : 'px-2',
           )}
         >
-          <div className="flex items-center justify-between">
+          <div className={cn('mb-2', collapsed && !isHovered ? 'flex justify-center' : '')}>
+            <Link
+              href="/settings"
+              className={cn(
+                'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
+                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                router.pathname === '/settings' &&
+                  'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
+                collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+              )}
+              title={collapsed && !isHovered ? 'Settings' : undefined}
+            >
+              <Settings className="h-4 w-4" />
+              {!(collapsed && !isHovered) && <span className="truncate">Settings</span>}
+            </Link>
+          </div>
+          <div className="border-t border-border mx-2 mb-2" />
+          <div className="flex items-center justify-between px-2">
             <div
               className={cn(
-                'flex gap-4 text-xs text-muted-foreground',
+                'flex items-center gap-0 text-xs text-muted-foreground',
                 collapsed && !isHovered && 'hidden',
               )}
             >
-              <Link href="https://www.masumi.network/about" target="_blank" className="truncate">
+              <Link
+                href="https://www.masumi.network/about"
+                target="_blank"
+                className="truncate hover:text-foreground transition-colors"
+              >
                 About
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
-                Privacy Policy
+                Privacy
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
                 Changelog
               </Link>
@@ -431,7 +446,11 @@ export function MainLayout({ children }: MainLayoutProps) {
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
               onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {theme === 'dark' ? (
+                <Sun key="sun" className="h-4 w-4 animate-pop-in" />
+              ) : (
+                <Moon key="moon" className="h-4 w-4 animate-pop-in" />
+              )}
             </Button>
           </div>
         </div>
@@ -495,7 +514,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
         </div>
 
-        <main className="flex-1 relative z-10 w-full">
+        <main className="flex-1 relative z-10 w-full animate-content-fade-in">
           <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>

@@ -29,6 +29,7 @@ export function ConfirmDialog({
   confirmationLabel,
 }: ConfirmDialogProps) {
   const [confirmationInput, setConfirmationInput] = useState('');
+  const [isShaking, setIsShaking] = useState(false);
   const isConfirmationValid = !requireConfirmation || confirmationInput.trim() === confirmationText;
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -65,15 +66,27 @@ export function ConfirmDialog({
                 </label>
                 <CopyButton value={confirmationText} className="h-6 w-6" />
               </div>
-              <Input
-                type="text"
-                value={confirmationInput}
-                onChange={(e) => setConfirmationInput(e.target.value)}
-                placeholder={confirmationText}
-                disabled={isLoading}
-              />
+              <div
+                className={isShaking ? 'animate-shake' : ''}
+                onAnimationEnd={() => setIsShaking(false)}
+              >
+                <Input
+                  type="text"
+                  value={confirmationInput}
+                  onChange={(e) => setConfirmationInput(e.target.value)}
+                  onBlur={() => {
+                    if (confirmationInput.trim() && !isConfirmationValid) {
+                      setIsShaking(true);
+                    }
+                  }}
+                  placeholder={confirmationText}
+                  disabled={isLoading}
+                />
+              </div>
               {confirmationInput.trim() && !isConfirmationValid && (
-                <p className="text-xs text-destructive">The entered text does not match</p>
+                <p className="text-xs text-destructive animate-slide-in-left">
+                  The entered text does not match
+                </p>
               )}
             </div>
           )}
@@ -95,7 +108,9 @@ export function ConfirmDialog({
             onClick={handleConfirm}
             disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
           >
-            {isLoading ? <Spinner size={16} /> : 'Confirm'}
+            <span className="transition-opacity duration-150">
+              {isLoading ? <Spinner size={16} /> : 'Confirm'}
+            </span>
           </Button>
         </div>
       </DialogContent>

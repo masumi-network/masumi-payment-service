@@ -1,10 +1,12 @@
 import { MainLayout } from '@/components/layout/MainLayout';
+import { AnimatedPage } from '@/components/ui/animated-page';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
 import { Tabs } from '@/components/ui/tabs';
 import { ExternalLink, CreditCard, ShoppingCart, ArrowRightLeft } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useTheme } from '@/lib/contexts/ThemeContext';
 import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
@@ -20,7 +22,37 @@ const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAP
 export default function Developers() {
   const [activeTab, setActiveTab] = useState('Testing');
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { theme } = useTheme();
+
   const handleIframeLoad = useCallback(() => setIsIframeLoaded(true), []);
+
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+    if (tab !== 'OpenAPI') {
+      setIsIframeLoaded(false);
+    }
+  }, []);
+
+  // Sync app theme to swagger iframe via data-theme attribute
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !isIframeLoaded) return;
+    try {
+      const doc = iframe.contentDocument;
+      if (doc?.documentElement) {
+        doc.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'dark') {
+          doc.documentElement.classList.add('dark-mode');
+        } else {
+          doc.documentElement.classList.remove('dark-mode');
+        }
+      }
+    } catch {
+      // cross-origin — ignore
+    }
+  }, [theme, isIframeLoaded]);
+
   const [isPaymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [isPurchaseDialogOpen, setPurchaseDialogOpen] = useState(false);
   const [isFullCycleDialogOpen, setFullCycleDialogOpen] = useState(false);
@@ -31,103 +63,111 @@ export default function Developers() {
         <title>Developers | Admin Interface</title>
       </Head>
       <MainLayout>
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold">Developers</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              API documentation and testing tools.
-            </p>
-          </div>
-
-          <Tabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-
-          {activeTab === 'Testing' && (
-            <div className="space-y-6 animate-fade-in-up opacity-0">
-              <div className="grid gap-4 md:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={() => setPaymentDialogOpen(true)}
-                  className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
-                      <CreditCard className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
-                    </div>
-                    <h2 className="font-medium">Test Payment</h2>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Create a single test payment to simulate a seller-side payment request.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPurchaseDialogOpen(true)}
-                  className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
-                      <ShoppingCart className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
-                    </div>
-                    <h2 className="font-medium">Test Purchase</h2>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Create a single test purchase to simulate a buyer-side purchase request.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setFullCycleDialogOpen(true)}
-                  className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
-                      <ArrowRightLeft className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
-                    </div>
-                    <h2 className="font-medium">Full Payment Cycle</h2>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Run a complete payment-to-purchase cycle in one step for end-to-end testing.
-                  </p>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Schema Validator' && (
-            <div className="animate-fade-in-up opacity-0">
-              <InputSchemaValidator />
-            </div>
-          )}
-
-          {activeTab === 'OpenAPI' && (
-            <div className="flex flex-col h-[calc(100vh-280px)] animate-fade-in-up opacity-0">
-              <div className="mb-4 flex items-center justify-between">
+        <AnimatedPage>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Developers</h1>
                 <p className="text-sm text-muted-foreground">
-                  Interactive API documentation powered by Swagger UI.
+                  API documentation and testing tools.
                 </p>
-                <Button variant="outline" size="sm" asChild>
-                  <a href="/docs" target="_blank" rel="noopener noreferrer">
-                    Open in new tab
-                    <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
-                  </a>
-                </Button>
-              </div>
-              <div className="flex-1 border rounded-lg overflow-hidden relative">
-                {!isIframeLoaded && (
-                  <Skeleton className="absolute inset-0 w-full h-full rounded-none" />
-                )}
-                <iframe
-                  src="/docs"
-                  className="w-full h-full"
-                  title="OpenAPI Documentation"
-                  onLoad={handleIframeLoad}
-                />
               </div>
             </div>
-          )}
-        </div>
+
+            <Tabs tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange} />
+
+            {activeTab === 'Testing' && (
+              <div className="space-y-6 animate-fade-in-up opacity-0">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentDialogOpen(true)}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    style={{ animationDelay: '0ms' }}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
+                        <CreditCard className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
+                      </div>
+                      <h2 className="font-medium">Test Payment</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Create a single test payment to simulate a seller-side payment request.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPurchaseDialogOpen(true)}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    style={{ animationDelay: '75ms' }}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
+                        <ShoppingCart className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
+                      </div>
+                      <h2 className="font-medium">Test Purchase</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Create a single test purchase to simulate a buyer-side purchase request.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFullCycleDialogOpen(true)}
+                    className="group border rounded-lg p-6 text-left transition-all duration-200 hover:shadow-md hover:border-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] animate-fade-in-up opacity-0"
+                    style={{ animationDelay: '150ms' }}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted group-hover:bg-primary/10 transition-colors duration-200">
+                        <ArrowRightLeft className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors duration-200" />
+                      </div>
+                      <h2 className="font-medium">Full Payment Cycle</h2>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Run a complete payment-to-purchase cycle in one step for end-to-end testing.
+                    </p>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Schema Validator' && (
+              <div className="animate-fade-in-up opacity-0">
+                <InputSchemaValidator />
+              </div>
+            )}
+
+            {activeTab === 'OpenAPI' && (
+              <div className="flex flex-col h-[calc(100vh-280px)] animate-fade-in-up opacity-0">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Interactive API documentation powered by Swagger UI.
+                  </p>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href="/docs" target="_blank" rel="noopener noreferrer">
+                      Open in new tab
+                      <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
+                    </a>
+                  </Button>
+                </div>
+                <div className="flex-1 border rounded-lg overflow-hidden relative">
+                  {!isIframeLoaded && (
+                    <Skeleton className="absolute inset-0 w-full h-full rounded-none" />
+                  )}
+                  <iframe
+                    ref={iframeRef}
+                    src="/docs"
+                    className="w-full h-full"
+                    title="OpenAPI Documentation"
+                    onLoad={handleIframeLoad}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </AnimatedPage>
       </MainLayout>
 
       <MockPaymentDialog open={isPaymentDialogOpen} onClose={() => setPaymentDialogOpen(false)} />

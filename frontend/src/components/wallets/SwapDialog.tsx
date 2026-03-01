@@ -548,7 +548,7 @@ export function SwapDialog({
                 </div>
               </div>
               {isSwapping && (
-                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-bounce-bottom">
+                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-slide-up-from-bottom">
                   <div
                     className={`h-full transition-all duration-1000 ease-in-out ${getProgressBarColor()}`}
                     style={{

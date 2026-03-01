@@ -130,6 +130,26 @@ export type AdminWallet = Prisma.AdminWalletModel
  */
 export type PaymentSourceConfig = Prisma.PaymentSourceConfigModel
 /**
+ * Model InvoiceBase
+ * 
+ */
+export type InvoiceBase = Prisma.InvoiceBaseModel
+/**
+ * Model InvoiceRevision
+ * 
+ */
+export type InvoiceRevision = Prisma.InvoiceRevisionModel
+/**
+ * Model InvoicePrefix
+ * 
+ */
+export type InvoicePrefix = Prisma.InvoicePrefixModel
+/**
+ * Model InvoiceItem
+ * 
+ */
+export type InvoiceItem = Prisma.InvoiceItemModel
+/**
  * Model WebhookEndpoint
  * 
  */
