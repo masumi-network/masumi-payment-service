@@ -226,6 +226,9 @@ model PaymentRequest {
   WithdrawnForBuyer                             UnitValue[]         @relation("BuyerWithdrawnPaymentRequest")
   RequestedFunds                                UnitValue[]
   WithdrawnForSeller                            UnitValue[]         @relation("SellerWithdrawnPaymentRequest")
+  InvoiceItem                                   InvoiceItem[]
+  invoiceBase                                   InvoiceBase?        @relation(fields: [invoiceBaseId], references: [id])
+  invoiceBaseId                                 String?
 
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
@@ -475,6 +478,120 @@ enum PurchasingAction {
   UnSetRefundRequestedInitiated
   WithdrawRefundRequested
   WithdrawRefundInitiated
+}
+
+model InvoiceBase {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  buyerWalletVkey  String
+  sellerWalletVkey String
+  invoiceMonth     Int
+  invoiceYear      Int
+
+  InvoiceRevisions InvoiceRevision[]
+  invoiceId        String            @unique
+
+  coveredPaymentRequests PaymentRequest[]
+
+  @@unique([buyerWalletVkey, sellerWalletVkey, invoiceYear, invoiceMonth])
+  @@index([invoiceYear, invoiceMonth, createdAt])
+}
+
+model InvoiceRevision {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  invoiceBaseId  String
+  InvoiceBase    InvoiceBase   @relation(fields: [invoiceBaseId], references: [id])
+  InvoiceItems   InvoiceItem[]
+  revisionNumber Int           @default(0)
+
+  currencyShortId String
+
+  // Invoice metadata
+  invoiceTitle         String
+  invoiceDescription   String?
+  invoiceDate          DateTime
+  reverseCharge        Boolean
+  invoiceGreetings   String?
+  invoiceClosing     String?
+  invoiceSignature   String?
+  invoiceLogo        String?
+  invoiceFooter      String?
+  invoiceTerms       String?
+  invoicePrivacy     String?
+
+  // Global formatting options
+  language           String?
+  localizationFormat String
+
+  // Seller information
+  sellerCountry       String
+  sellerCity          String
+  sellerZipCode       String
+  sellerStreet        String
+  sellerStreetNumber  String
+  sellerEmail         String?
+  sellerPhone         String?
+  sellerName          String?
+  sellerCompanyName   String?
+  sellerVatNumber     String?
+  sellerWalletAddress String?
+
+  // Buyer information
+  buyerCountry       String
+  buyerCity          String
+  buyerZipCode       String
+  buyerStreet        String
+  buyerStreetNumber  String
+  buyerEmail         String?
+  buyerPhone         String?
+  buyerName          String?
+  buyerCompanyName   String?
+  buyerVatNumber     String?
+  buyerWalletAddress String?
+
+  generatedPDFInvoice       Bytes
+  generatedInvoiceUpdatedAt DateTime
+
+  isCancelled                        Boolean   @default(false)
+  cancellationReason                 String?
+  cancellationDate                   DateTime?
+  cancellationId                     String?   @unique
+  generatedCancelledInvoice          Bytes?
+  generatedCancelledInvoiceUpdatedAt DateTime?
+
+  @@unique([invoiceBaseId, revisionNumber])
+}
+
+model InvoicePrefix {
+  id    String @id
+  count Int    @default(0)
+}
+
+model InvoiceItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name                   String
+  quantity               Decimal
+  pricePerUnitWithoutVat Decimal
+  vatRate                Decimal
+  vatAmount              Decimal
+  totalAmount            Decimal
+  decimals               Int
+  conversionFactor       Decimal
+  convertedUnit          String
+  conversionDate         DateTime
+
+  ReferencedPayment   PaymentRequest? @relation(fields: [referencedPaymentId], references: [id])
+  referencedPaymentId String?
+
+  InvoiceRevision   InvoiceRevision @relation(fields: [invoiceRevisionId], references: [id])
+  invoiceRevisionId String
 }
 
 enum Network {

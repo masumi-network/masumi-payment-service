@@ -68,4 +68,4 @@ The Masumi Payment Service handles financial transactions and requires secure wa
 - Smart contracts are audited by [TxPipe](https://txpipe.io/) please check the [audit report](audit.pdf)
 - The payment service is not yet audited by a third Party. Do check the codebase before exposing it publicly
 
-We follow security best practices, however this is in a MVP state. Any use is at your own risk.
+We follow security best practices, however this is in a MVP state. Any use is at your own discretion.

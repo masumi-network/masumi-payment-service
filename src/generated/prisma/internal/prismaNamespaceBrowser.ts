@@ -69,6 +69,10 @@ export const ModelName = {
   PaymentSource: 'PaymentSource',
   AdminWallet: 'AdminWallet',
   PaymentSourceConfig: 'PaymentSourceConfig',
+  InvoiceBase: 'InvoiceBase',
+  InvoiceRevision: 'InvoiceRevision',
+  InvoicePrefix: 'InvoicePrefix',
+  InvoiceItem: 'InvoiceItem',
   WebhookEndpoint: 'WebhookEndpoint',
   WebhookDelivery: 'WebhookDelivery'
 } as const
@@ -286,7 +290,8 @@ export const PaymentRequestScalarFieldEnum = {
   collateralReturnLovelace: 'collateralReturnLovelace',
   payByTime: 'payByTime',
   totalBuyerCardanoFees: 'totalBuyerCardanoFees',
-  totalSellerCardanoFees: 'totalSellerCardanoFees'
+  totalSellerCardanoFees: 'totalSellerCardanoFees',
+  invoiceBaseId: 'invoiceBaseId'
 } as const
 
 export type PaymentRequestScalarFieldEnum = (typeof PaymentRequestScalarFieldEnum)[keyof typeof PaymentRequestScalarFieldEnum]
@@ -408,6 +413,104 @@ export const PaymentSourceConfigScalarFieldEnum = {
 } as const
 
 export type PaymentSourceConfigScalarFieldEnum = (typeof PaymentSourceConfigScalarFieldEnum)[keyof typeof PaymentSourceConfigScalarFieldEnum]
+
+
+export const InvoiceBaseScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  buyerWalletVkey: 'buyerWalletVkey',
+  sellerWalletVkey: 'sellerWalletVkey',
+  invoiceMonth: 'invoiceMonth',
+  invoiceYear: 'invoiceYear',
+  invoiceId: 'invoiceId'
+} as const
+
+export type InvoiceBaseScalarFieldEnum = (typeof InvoiceBaseScalarFieldEnum)[keyof typeof InvoiceBaseScalarFieldEnum]
+
+
+export const InvoiceRevisionScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  invoiceBaseId: 'invoiceBaseId',
+  revisionNumber: 'revisionNumber',
+  currencyShortId: 'currencyShortId',
+  invoiceTitle: 'invoiceTitle',
+  invoiceDescription: 'invoiceDescription',
+  invoiceDate: 'invoiceDate',
+  reverseCharge: 'reverseCharge',
+  invoiceGreetings: 'invoiceGreetings',
+  invoiceClosing: 'invoiceClosing',
+  invoiceSignature: 'invoiceSignature',
+  invoiceLogo: 'invoiceLogo',
+  invoiceFooter: 'invoiceFooter',
+  invoiceTerms: 'invoiceTerms',
+  invoicePrivacy: 'invoicePrivacy',
+  language: 'language',
+  localizationFormat: 'localizationFormat',
+  sellerCountry: 'sellerCountry',
+  sellerCity: 'sellerCity',
+  sellerZipCode: 'sellerZipCode',
+  sellerStreet: 'sellerStreet',
+  sellerStreetNumber: 'sellerStreetNumber',
+  sellerEmail: 'sellerEmail',
+  sellerPhone: 'sellerPhone',
+  sellerName: 'sellerName',
+  sellerCompanyName: 'sellerCompanyName',
+  sellerVatNumber: 'sellerVatNumber',
+  sellerWalletAddress: 'sellerWalletAddress',
+  buyerCountry: 'buyerCountry',
+  buyerCity: 'buyerCity',
+  buyerZipCode: 'buyerZipCode',
+  buyerStreet: 'buyerStreet',
+  buyerStreetNumber: 'buyerStreetNumber',
+  buyerEmail: 'buyerEmail',
+  buyerPhone: 'buyerPhone',
+  buyerName: 'buyerName',
+  buyerCompanyName: 'buyerCompanyName',
+  buyerVatNumber: 'buyerVatNumber',
+  buyerWalletAddress: 'buyerWalletAddress',
+  generatedPDFInvoice: 'generatedPDFInvoice',
+  generatedInvoiceUpdatedAt: 'generatedInvoiceUpdatedAt',
+  isCancelled: 'isCancelled',
+  cancellationReason: 'cancellationReason',
+  cancellationDate: 'cancellationDate',
+  cancellationId: 'cancellationId',
+  generatedCancelledInvoice: 'generatedCancelledInvoice',
+  generatedCancelledInvoiceUpdatedAt: 'generatedCancelledInvoiceUpdatedAt'
+} as const
+
+export type InvoiceRevisionScalarFieldEnum = (typeof InvoiceRevisionScalarFieldEnum)[keyof typeof InvoiceRevisionScalarFieldEnum]
+
+
+export const InvoicePrefixScalarFieldEnum = {
+  id: 'id',
+  count: 'count'
+} as const
+
+export type InvoicePrefixScalarFieldEnum = (typeof InvoicePrefixScalarFieldEnum)[keyof typeof InvoicePrefixScalarFieldEnum]
+
+
+export const InvoiceItemScalarFieldEnum = {
+  id: 'id',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  name: 'name',
+  quantity: 'quantity',
+  pricePerUnitWithoutVat: 'pricePerUnitWithoutVat',
+  vatRate: 'vatRate',
+  vatAmount: 'vatAmount',
+  totalAmount: 'totalAmount',
+  decimals: 'decimals',
+  conversionFactor: 'conversionFactor',
+  convertedUnit: 'convertedUnit',
+  conversionDate: 'conversionDate',
+  referencedPaymentId: 'referencedPaymentId',
+  invoiceRevisionId: 'invoiceRevisionId'
+} as const
+
+export type InvoiceItemScalarFieldEnum = (typeof InvoiceItemScalarFieldEnum)[keyof typeof InvoiceItemScalarFieldEnum]
 
 
 export const WebhookEndpointScalarFieldEnum = {
