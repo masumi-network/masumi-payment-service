@@ -69,6 +69,13 @@ export default [
 			'@typescript-eslint/no-unsafe-argument': ['error'],
 			'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
 			'@typescript-eslint/require-await': ['off'],
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector: 'TSImportType',
+					message: 'Inline import() types are not allowed. Use a top-level import statement instead.',
+				},
+			],
 		},
 	},
 	// Add Jest environment for test files

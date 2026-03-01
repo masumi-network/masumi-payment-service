@@ -17,6 +17,14 @@ const eslintConfig = defineConfig([
     },
     rules: {
       'prettier/prettier': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSImportType',
+          message:
+            'Inline import() types are not allowed. Use a top-level import statement instead.',
+        },
+      ],
     },
   },
   {
