@@ -145,36 +145,62 @@ export async function generateMonthlyInvoice(
 	const nowMs = BigInt(Date.now());
 
 	// ── Pre-resolve external data (outside txn – idempotent lookups) ──
+	const billableStateFilter = [
+		{
+			onChainState: 'ResultSubmitted' as const,
+			unlockTime: { lte: nowMs },
+			onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+		},
+		{
+			onChainState: 'Withdrawn' as const,
+			onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+		},
+		{
+			onChainState: 'DisputedWithdrawn' as const,
+			onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+		},
+	];
+
+	const paymentIncludes = {
+		BuyerWallet: true as const,
+		RequestedFunds: true as const,
+		WithdrawnForSeller: true as const,
+		SmartContractWallet: true as const,
+		PaymentSource: { include: { PaymentSourceConfig: true as const } },
+	};
+
 	const prePayments = await prisma.paymentRequest.findMany({
 		where: {
 			BuyerWallet: { walletVkey: input.buyerWalletVkey },
 			invoiceBaseId: null,
-			OR: [
-				{
-					onChainState: 'ResultSubmitted',
-					unlockTime: { lte: nowMs },
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-				{
-					onChainState: 'Withdrawn',
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-				{
-					onChainState: 'DisputedWithdrawn',
-					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-				},
-			],
+			OR: billableStateFilter,
 		},
-		include: {
-			BuyerWallet: true,
-			RequestedFunds: true,
-			WithdrawnForSeller: true,
-			SmartContractWallet: true,
-			PaymentSource: { include: { PaymentSourceConfig: true } },
-		},
+		include: paymentIncludes,
 	});
 
-	const preBillable = prePayments.filter(isPaymentBillable);
+	let preBillable = prePayments.filter(isPaymentBillable);
+
+	// When force-regenerating, payments may already be linked to an existing invoice
+	if (preBillable.length === 0 && input.forceRegenerate) {
+		const existingBase = await prisma.invoiceBase.findFirst({
+			where: {
+				coveredPaymentRequests: {
+					some: { BuyerWallet: { walletVkey: input.buyerWalletVkey } },
+				},
+				InvoiceRevisions: {
+					some: { invoiceMonth: invoiceMonth, invoiceYear: year, isCancelled: false },
+				},
+			},
+			include: {
+				coveredPaymentRequests: {
+					include: paymentIncludes,
+				},
+			},
+		});
+		if (existingBase) {
+			preBillable = existingBase.coveredPaymentRequests.filter(isPaymentBillable);
+		}
+	}
 
 	if (preBillable.length === 0) {
 		recordBusinessEndpointError(metricPath, 'POST', 404, 'No billable payments found for month and wallet', {
@@ -326,36 +352,55 @@ export async function generateMonthlyInvoice(
 		async (tx) => {
 			// Re-query payments inside transaction for serializable consistency
 			const txNowMs = BigInt(Date.now());
+			const txBillableStateFilter = [
+				{
+					onChainState: 'ResultSubmitted' as const,
+					unlockTime: { lte: txNowMs },
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+				{
+					onChainState: 'Withdrawn' as const,
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+				{
+					onChainState: 'DisputedWithdrawn' as const,
+					onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
+				},
+			];
+
 			const allPayments = await tx.paymentRequest.findMany({
 				where: {
 					BuyerWallet: { walletVkey: input.buyerWalletVkey },
 					invoiceBaseId: null,
-					OR: [
-						{
-							onChainState: 'ResultSubmitted',
-							unlockTime: { lte: txNowMs },
-							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-						},
-						{
-							onChainState: 'Withdrawn',
-							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-						},
-						{
-							onChainState: 'DisputedWithdrawn',
-							onChainStateOrResultLastChangedAt: { gte: monthStart, lt: nextMonthStart },
-						},
-					],
+					OR: txBillableStateFilter,
 				},
-				include: {
-					BuyerWallet: true,
-					RequestedFunds: true,
-					WithdrawnForSeller: true,
-					SmartContractWallet: true,
-					PaymentSource: { include: { PaymentSourceConfig: true } },
-				},
+				include: paymentIncludes,
 			});
 
-			const payments = allPayments.filter(isPaymentBillable);
+			let payments = allPayments.filter(isPaymentBillable);
+
+			// When force-regenerating, also include payments already linked to the existing invoice
+			if (payments.length === 0 && input.forceRegenerate) {
+				const txExistingBase = await tx.invoiceBase.findFirst({
+					where: {
+						coveredPaymentRequests: {
+							some: { BuyerWallet: { walletVkey: input.buyerWalletVkey } },
+						},
+						InvoiceRevisions: {
+							some: { invoiceMonth: invoiceMonth, invoiceYear: year, isCancelled: false },
+						},
+					},
+					include: {
+						coveredPaymentRequests: {
+							include: paymentIncludes,
+						},
+					},
+				});
+				if (txExistingBase) {
+					payments = txExistingBase.coveredPaymentRequests.filter(isPaymentBillable);
+				}
+			}
+
 			if (payments.length === 0) {
 				throw createHttpError(404, 'No billable payments found for month and wallet');
 			}

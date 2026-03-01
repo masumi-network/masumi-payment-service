@@ -19,11 +19,10 @@ export const getMonthlyInvoiceListSchemaInput = z.object({
 		.describe('Target month in format YYYY-MM (UTC calendar)'),
 	cursorId: z.string().optional().describe('Cursor for pagination (InvoiceBase id)'),
 	limit: z.coerce.number().min(1).max(100).default(10).describe('Number of results to return'),
-	includeAllRevisions: z.coerce
-		.boolean()
+	invoiceBaseId: z
+		.string()
 		.optional()
-		.default(false)
-		.describe('When true, return all revisions including cancelled; when false, return only latest revision per base'),
+		.describe('When provided, return all revisions for this specific invoice base (ignores pagination)'),
 });
 
 const invoiceSummarySchema = z.object({
@@ -32,6 +31,7 @@ const invoiceSummarySchema = z.object({
 	createdAt: z.date(),
 	revisionId: z.string(),
 	revisionNumber: z.number(),
+	revisionCount: z.number().describe('Total number of revisions for this invoice base'),
 	invoiceMonth: z.number(),
 	invoiceYear: z.number(),
 	invoiceDate: z.date(),
@@ -49,6 +49,9 @@ const invoiceSummarySchema = z.object({
 	vatTotal: z.string(),
 	grossTotal: z.string(),
 	coveredPaymentRequestIds: z.array(z.string()),
+	buyerWalletVkey: z.string().nullable(),
+	invoicePdf: z.string().describe('Base64-encoded invoice PDF'),
+	cancellationInvoicePdf: z.string().nullable().describe('Base64-encoded cancellation PDF if cancelled'),
 });
 
 export const getMonthlyInvoiceListSchemaOutput = z.object({
@@ -64,34 +67,43 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 		const year = Number(yearStr);
 		const monthNum = Number(monthStr);
 
+		const isDetailQuery = !!input.invoiceBaseId;
+
 		const invoiceBases = await prisma.invoiceBase.findMany({
 			where: {
-				InvoiceRevisions: {
-					some: {
-						invoiceMonth: monthNum,
-						invoiceYear: year,
-					},
-				},
-				...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
+				...(isDetailQuery
+					? { id: input.invoiceBaseId }
+					: {
+							InvoiceRevisions: {
+								some: {
+									invoiceMonth: monthNum,
+									invoiceYear: year,
+								},
+							},
+							...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
+						}),
 			},
 			include: {
+				_count: {
+					select: { InvoiceRevisions: true },
+				},
 				InvoiceRevisions: {
 					where: {
 						invoiceMonth: monthNum,
 						invoiceYear: year,
 					},
 					orderBy: { revisionNumber: 'desc' },
-					...(input.includeAllRevisions ? {} : { take: 1 }),
+					...(isDetailQuery ? {} : { take: 1 }),
 					include: {
 						InvoiceItems: true,
 					},
 				},
 				coveredPaymentRequests: {
-					select: { id: true },
+					select: { id: true, BuyerWallet: { select: { walletVkey: true } } },
 				},
 			},
 			orderBy: { createdAt: 'desc' },
-			take: input.limit,
+			...(isDetailQuery ? {} : { take: input.limit }),
 		});
 
 		const invoices = invoiceBases.flatMap((base) =>
@@ -116,6 +128,7 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					createdAt: base.createdAt,
 					revisionId: rev.id,
 					revisionNumber: rev.revisionNumber,
+					revisionCount: base._count.InvoiceRevisions,
 					invoiceMonth: rev.invoiceMonth,
 					invoiceYear: rev.invoiceYear,
 					invoiceDate: rev.invoiceDate,
@@ -133,6 +146,11 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					vatTotal: vatTotal.toFixed(2),
 					grossTotal: grossTotal.toFixed(2),
 					coveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
+					buyerWalletVkey: base.coveredPaymentRequests[0]?.BuyerWallet?.walletVkey ?? null,
+					invoicePdf: Buffer.from(rev.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
+					cancellationInvoicePdf: rev.generatedCancelledInvoice
+						? Buffer.from(rev.generatedCancelledInvoice as unknown as Uint8Array).toString('base64')
+						: null,
 				};
 			}),
 		);

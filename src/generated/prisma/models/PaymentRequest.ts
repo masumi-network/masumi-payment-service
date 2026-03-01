@@ -496,7 +496,6 @@ export type PaymentRequestWhereUniqueInput = Prisma.AtLeast<{
   nextActionId?: string
   blockchainIdentifier?: string
   currentTransactionId?: string
-  invoiceBaseId?: string
   AND?: Prisma.PaymentRequestWhereInput | Prisma.PaymentRequestWhereInput[]
   OR?: Prisma.PaymentRequestWhereInput[]
   NOT?: Prisma.PaymentRequestWhereInput | Prisma.PaymentRequestWhereInput[]
@@ -523,6 +522,7 @@ export type PaymentRequestWhereUniqueInput = Prisma.AtLeast<{
   payByTime?: Prisma.BigIntNullableFilter<"PaymentRequest"> | bigint | number | null
   totalBuyerCardanoFees?: Prisma.BigIntFilter<"PaymentRequest"> | bigint | number
   totalSellerCardanoFees?: Prisma.BigIntFilter<"PaymentRequest"> | bigint | number
+  invoiceBaseId?: Prisma.StringNullableFilter<"PaymentRequest"> | string | null
   BuyerWallet?: Prisma.XOR<Prisma.WalletBaseNullableScalarRelationFilter, Prisma.WalletBaseWhereInput> | null
   CurrentTransaction?: Prisma.XOR<Prisma.TransactionNullableScalarRelationFilter, Prisma.TransactionWhereInput> | null
   NextAction?: Prisma.XOR<Prisma.PaymentActionDataScalarRelationFilter, Prisma.PaymentActionDataWhereInput>
@@ -536,7 +536,7 @@ export type PaymentRequestWhereUniqueInput = Prisma.AtLeast<{
   WithdrawnForSeller?: Prisma.UnitValueListRelationFilter
   InvoiceItem?: Prisma.InvoiceItemListRelationFilter
   invoiceBase?: Prisma.XOR<Prisma.InvoiceBaseNullableScalarRelationFilter, Prisma.InvoiceBaseWhereInput> | null
-}, "id" | "nextActionId" | "blockchainIdentifier" | "currentTransactionId" | "invoiceBaseId">
+}, "id" | "nextActionId" | "blockchainIdentifier" | "currentTransactionId">
 
 export type PaymentRequestOrderByWithAggregationInput = {
   id?: Prisma.SortOrder

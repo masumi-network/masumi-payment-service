@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { transformBigIntAmounts } from '@/utils/shared/transformers';
+import { isPaymentBillable } from '../shared';
 
 export const getUninvoicedPaymentsSchemaInput = z.object({
 	month: z
@@ -78,7 +79,9 @@ export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.b
 			take: input.limit,
 		});
 
-		const result = payments.map((payment) => {
+		const billable = payments.filter(isPaymentBillable);
+
+		const result = billable.map((payment) => {
 			return {
 				id: payment.id,
 				blockchainIdentifier: payment.blockchainIdentifier,

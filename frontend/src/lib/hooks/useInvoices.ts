@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthly } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
@@ -8,11 +8,11 @@ export type InvoiceSummary = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthly>>['data']
 >['data']['Invoices'][number];
 
-export function useInvoices(month: string, includeAllRevisions: boolean) {
+export function useInvoices(month: string) {
   const { apiClient } = useAppContext();
 
   const query = useInfiniteQuery({
-    queryKey: ['invoices', month, includeAllRevisions],
+    queryKey: ['invoices', month],
     queryFn: async ({ pageParam }) => {
       const result = await handleApiCall(
         () =>
@@ -22,7 +22,6 @@ export function useInvoices(month: string, includeAllRevisions: boolean) {
               month,
               cursorId: pageParam ?? undefined,
               limit: 20,
-              includeAllRevisions,
             },
           }),
         { errorMessage: 'Failed to fetch invoices' },
@@ -64,5 +63,36 @@ export function useInvoices(month: string, includeAllRevisions: boolean) {
     loadMore,
     isFetchingNextPage,
     refetch,
+  };
+}
+
+/** Fetch all revisions for a single invoice base (used by the details dialog). */
+export function useInvoiceRevisions(month: string, invoiceBaseId: string | null) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['invoice-revisions', month, invoiceBaseId],
+    queryFn: async () => {
+      const result = await handleApiCall(
+        () =>
+          getInvoiceMonthly({
+            client: apiClient,
+            query: {
+              month,
+              invoiceBaseId: invoiceBaseId!,
+            },
+          }),
+        { errorMessage: 'Failed to fetch invoice revisions' },
+      );
+
+      return result?.data?.data?.Invoices ?? [];
+    },
+    enabled: !!apiClient && !!month && !!invoiceBaseId,
+    staleTime: 15000,
+  });
+
+  return {
+    revisions: query.data ?? [],
+    isLoading: query.isLoading,
   };
 }

@@ -1369,7 +1369,7 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/invoice/monthly',
 		description:
-			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)',
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
 		summary: 'Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -1460,7 +1460,8 @@ export function generateOpenAPI() {
 	registry.registerPath({
 		method: 'get',
 		path: '/invoice/monthly',
-		description: 'Lists invoice summaries for a given month with pagination. (admin access required)',
+		description:
+			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
 		summary: 'List invoices for a month. (admin access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -1469,7 +1470,6 @@ export function generateOpenAPI() {
 				example: {
 					month: '2025-09',
 					limit: 10,
-					includeAllRevisions: false,
 				},
 			}),
 		},
@@ -1494,6 +1494,7 @@ export function generateOpenAPI() {
 												createdAt: '2025-09-30T23:59:59.000Z',
 												revisionId: 'revision_id',
 												revisionNumber: 0,
+												revisionCount: 1,
 												invoiceMonth: 9,
 												invoiceYear: 2025,
 												invoiceDate: '2025-09-30T00:00:00.000Z',
@@ -1511,6 +1512,9 @@ export function generateOpenAPI() {
 												vatTotal: '28.50',
 												grossTotal: '178.50',
 												coveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
+												buyerWalletVkey: 'buyer_wallet_vkey',
+												invoicePdf: 'BASE64_PDF_STRING',
+												cancellationInvoicePdf: null,
 											},
 										],
 									},
@@ -1526,7 +1530,7 @@ export function generateOpenAPI() {
 		method: 'post',
 		path: '/invoice/monthly/admin',
 		description:
-			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)',
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
 		summary: 'Admin generate a monthly invoice PDF. (admin access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -1612,7 +1616,7 @@ export function generateOpenAPI() {
 		method: 'get',
 		path: '/invoice/monthly/uninvoiced',
 		description:
-			'Finds billable payment requests that do not yet have an invoice for a given month. (admin access required)',
+			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
 		summary: 'List uninvoiced payments for a month. (admin access required)',
 		tags: ['invoice'],
 		security: [{ [apiKeyAuth.name]: [] }],

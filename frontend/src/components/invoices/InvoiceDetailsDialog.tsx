@@ -1,3 +1,4 @@
+import { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,19 +10,116 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Separator } from '@/components/ui/separator';
+import { Spinner } from '@/components/ui/spinner';
+import { Download } from 'lucide-react';
 import type { InvoiceSummary } from '@/lib/hooks/useInvoices';
+import { useInvoiceRevisions } from '@/lib/hooks/useInvoices';
 
 interface InvoiceDetailsDialogProps {
-  invoice: InvoiceSummary | null;
+  selectedInvoice: InvoiceSummary | null;
   onClose: () => void;
   onRegenerate: (invoice: InvoiceSummary) => void;
 }
 
+function downloadBase64Pdf(base64: string, filename: string) {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function base64ToBlobUrl(base64: string): string {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+}
+
 export function InvoiceDetailsDialog({
-  invoice,
+  selectedInvoice,
   onClose,
   onRegenerate,
 }: InvoiceDetailsDialogProps) {
+  const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
+  const [pdfTab, setPdfTab] = useState<'invoice' | 'cancellation'>('invoice');
+
+  // Build the month string for the revision query
+  const month = selectedInvoice
+    ? `${selectedInvoice.invoiceYear}-${String(selectedInvoice.invoiceMonth).padStart(2, '0')}`
+    : '';
+
+  // Fetch all revisions for this invoice base on demand
+  const { revisions, isLoading: isLoadingRevisions } = useInvoiceRevisions(
+    month,
+    selectedInvoice?.id ?? null,
+  );
+
+  // Use fetched revisions if available, otherwise fall back to selectedInvoice
+  const sortedRevisions = useMemo(() => {
+    if (revisions.length > 0) {
+      return [...revisions].sort((a, b) => b.revisionNumber - a.revisionNumber);
+    }
+    return selectedInvoice ? [selectedInvoice] : [];
+  }, [revisions, selectedInvoice]);
+
+  // Current displayed revision
+  const invoice = useMemo(() => {
+    if (!selectedInvoice) return null;
+    if (selectedRevisionId) {
+      return sortedRevisions.find((r) => r.revisionId === selectedRevisionId) ?? selectedInvoice;
+    }
+    return sortedRevisions[0] ?? selectedInvoice;
+  }, [selectedInvoice, selectedRevisionId, sortedRevisions]);
+
+  // PDF blob URLs for preview
+  const invoicePdf = invoice?.invoicePdf ?? null;
+  const pdfBlobUrl = useMemo(() => {
+    if (!invoicePdf) return null;
+    return base64ToBlobUrl(invoicePdf);
+  }, [invoicePdf]);
+
+  const cancellationPdf = invoice?.cancellationInvoicePdf ?? null;
+  const cancellationPdfBlobUrl = useMemo(() => {
+    if (!cancellationPdf) return null;
+    return base64ToBlobUrl(cancellationPdf);
+  }, [cancellationPdf]);
+
+  const handleDownload = useCallback(() => {
+    if (!invoice) return;
+    if (pdfTab === 'cancellation' && invoice.cancellationInvoicePdf) {
+      downloadBase64Pdf(
+        invoice.cancellationInvoicePdf,
+        `${invoice.invoiceId}_rev${invoice.revisionNumber}_cancellation.pdf`,
+      );
+    } else if (invoice.invoicePdf) {
+      downloadBase64Pdf(
+        invoice.invoicePdf,
+        `${invoice.invoiceId}_rev${invoice.revisionNumber}.pdf`,
+      );
+    }
+  }, [invoice, pdfTab]);
+
+  const handleClose = useCallback(() => {
+    setSelectedRevisionId(null);
+    setPdfTab('invoice');
+    onClose();
+  }, [onClose]);
+
   if (!invoice) return null;
 
   const monthName = new Date(invoice.invoiceYear, invoice.invoiceMonth - 1).toLocaleString(
@@ -30,8 +128,8 @@ export function InvoiceDetailsDialog({
   );
 
   return (
-    <Dialog open={!!invoice} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+    <Dialog open={!!selectedInvoice} onOpenChange={(open) => !open && handleClose()}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             Invoice Details
@@ -42,6 +140,39 @@ export function InvoiceDetailsDialog({
             )}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Revision selector */}
+        {sortedRevisions.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">Revision:</span>
+            {sortedRevisions.map((rev) => (
+              <Button
+                key={rev.revisionId}
+                size="sm"
+                variant={
+                  (selectedRevisionId ?? sortedRevisions[0]?.revisionId) === rev.revisionId
+                    ? 'default'
+                    : 'outline'
+                }
+                onClick={() => setSelectedRevisionId(rev.revisionId)}
+                className="gap-1"
+              >
+                #{rev.revisionNumber}
+                {rev.isCancelled && (
+                  <Badge variant="destructive" className="ml-1 text-[10px] px-1 py-0">
+                    Cancelled
+                  </Badge>
+                )}
+              </Button>
+            ))}
+          </div>
+        )}
+        {isLoadingRevisions && sortedRevisions.length <= 1 && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner size={14} />
+            Loading revisions...
+          </div>
+        )}
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4 text-sm">
@@ -169,12 +300,83 @@ export function InvoiceDetailsDialog({
               </div>
             </>
           )}
+
+          {/* PDF Preview */}
+          {(pdfBlobUrl || cancellationPdfBlobUrl) && (
+            <>
+              <Separator />
+              <div className="text-sm">
+                {cancellationPdfBlobUrl ? (
+                  <>
+                    <div className="flex items-center gap-1 mb-2">
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          pdfTab === 'invoice'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-muted'
+                        }`}
+                        onClick={() => setPdfTab('invoice')}
+                      >
+                        Original Invoice
+                      </button>
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                          pdfTab === 'cancellation'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-muted'
+                        }`}
+                        onClick={() => setPdfTab('cancellation')}
+                      >
+                        Cancellation Invoice
+                      </button>
+                    </div>
+                    <div className="border rounded-lg overflow-hidden bg-muted/20">
+                      <iframe
+                        src={
+                          pdfTab === 'cancellation' ? cancellationPdfBlobUrl : (pdfBlobUrl ?? '')
+                        }
+                        className="w-full"
+                        style={{ height: '500px' }}
+                        title={
+                          pdfTab === 'cancellation'
+                            ? 'Cancellation Invoice PDF'
+                            : 'Invoice PDF Preview'
+                        }
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground font-medium">Invoice PDF</span>
+                    <div className="mt-2 border rounded-lg overflow-hidden bg-muted/20">
+                      <iframe
+                        src={pdfBlobUrl!}
+                        className="w-full"
+                        style={{ height: '500px' }}
+                        title="Invoice PDF Preview"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={handleClose}>
             Close
           </Button>
+          {(invoice.invoicePdf || invoice.cancellationInvoicePdf) && (
+            <Button variant="outline" onClick={handleDownload}>
+              <Download className="h-4 w-4 mr-2" />
+              {pdfTab === 'cancellation' && invoice.cancellationInvoicePdf
+                ? 'Download Cancellation PDF'
+                : 'Download Invoice PDF'}
+            </Button>
+          )}
           <Button onClick={() => onRegenerate(invoice)}>Regenerate Invoice</Button>
         </DialogFooter>
       </DialogContent>

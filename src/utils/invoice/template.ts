@@ -1073,7 +1073,7 @@ export function generateInvoiceHTML(
 </html>
   `.trim();
 }
-function formatCryptoUnitConversion(convertedUnit: string, conversionFactor: string) {
+export function formatCryptoUnitConversion(convertedUnit: string, conversionFactor: string) {
 	let unitName = convertedUnit;
 	if (convertedUnit == '') {
 		unitName = 'ADA';

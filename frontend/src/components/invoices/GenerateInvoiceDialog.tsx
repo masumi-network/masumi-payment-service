@@ -98,6 +98,7 @@ interface GenerateInvoiceDialogProps {
   onSuccess: () => void;
   prefillBuyerWalletVkey: string;
   prefillMonth: string;
+  prefillForceRegenerate?: boolean;
   formatMonth: (month: string) => string;
 }
 
@@ -223,6 +224,7 @@ export function GenerateInvoiceDialog({
   onSuccess,
   prefillBuyerWalletVkey,
   prefillMonth,
+  prefillForceRegenerate = false,
   formatMonth,
 }: GenerateInvoiceDialogProps) {
   const { apiClient } = useAppContext();
@@ -256,7 +258,7 @@ export function GenerateInvoiceDialog({
       invoiceCurrency: 'usd',
       vatRate: 0,
       reverseCharge: false,
-      forceRegenerate: false,
+      forceRegenerate: prefillForceRegenerate,
       seller: { ...EMPTY_SELLER },
       buyer: {
         name: null,
@@ -282,7 +284,7 @@ export function GenerateInvoiceDialog({
         invoiceCurrency: 'usd',
         vatRate: 0,
         reverseCharge: false,
-        forceRegenerate: false,
+        forceRegenerate: prefillForceRegenerate,
         seller: { ...EMPTY_SELLER },
         buyer: {
           name: null,
@@ -303,7 +305,7 @@ export function GenerateInvoiceDialog({
       setIsEditing(false);
       setTemplateNameInput('');
     }
-  }, [open, prefillBuyerWalletVkey, prefillMonth, reset]);
+  }, [open, prefillBuyerWalletVkey, prefillMonth, prefillForceRegenerate, reset]);
 
   const reverseCharge = watch('reverseCharge');
   const forceRegenerate = watch('forceRegenerate');
@@ -445,7 +447,11 @@ export function GenerateInvoiceDialog({
               companyName: data.buyer.companyName || null,
               vatNumber: data.buyer.vatNumber || null,
             },
-            invoice: data.invoice,
+            invoice: data.invoice
+              ? Object.fromEntries(
+                  Object.entries(data.invoice).filter(([, v]) => v !== '' && v !== undefined),
+                )
+              : undefined,
           },
         }),
       { errorMessage: 'Failed to generate invoice' },

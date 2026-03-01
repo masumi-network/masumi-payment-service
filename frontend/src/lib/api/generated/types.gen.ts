@@ -3611,9 +3611,9 @@ export type GetInvoiceMonthlyData = {
          */
         limit?: number;
         /**
-         * When true, return all revisions including cancelled; when false, return only latest revision per base
+         * When provided, return all revisions for this specific invoice base (ignores pagination)
          */
-        includeAllRevisions?: boolean | null;
+        invoiceBaseId?: string;
     };
     url: '/invoice/monthly';
 };
@@ -3631,6 +3631,10 @@ export type GetInvoiceMonthlyResponses = {
                 createdAt: Date;
                 revisionId: string;
                 revisionNumber: number;
+                /**
+                 * Total number of revisions for this invoice base
+                 */
+                revisionCount: number;
                 invoiceMonth: number;
                 invoiceYear: number;
                 invoiceDate: Date;
@@ -3648,6 +3652,15 @@ export type GetInvoiceMonthlyResponses = {
                 vatTotal: string;
                 grossTotal: string;
                 coveredPaymentRequestIds: Array<string>;
+                buyerWalletVkey: string | null;
+                /**
+                 * Base64-encoded invoice PDF
+                 */
+                invoicePdf: string;
+                /**
+                 * Base64-encoded cancellation PDF if cancelled
+                 */
+                cancellationInvoicePdf: string | null;
             }>;
         };
     };

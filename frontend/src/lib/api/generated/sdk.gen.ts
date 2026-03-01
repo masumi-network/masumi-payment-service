@@ -316,7 +316,9 @@ export const postSignatureSignCreateInvoiceMonthly = <ThrowOnError extends boole
 /**
  * List invoices for a month. (admin access required)
  *
- * Lists invoice summaries for a given month with pagination. (admin access required)
+ * Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)
+ *
+ * **BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.
  */
 export const getInvoiceMonthly = <ThrowOnError extends boolean = false>(options: Options<GetInvoiceMonthlyData, ThrowOnError>) => (options.client ?? client).get<GetInvoiceMonthlyResponses, unknown, ThrowOnError>({
     responseTransformer: getInvoiceMonthlyResponseTransformer,
@@ -330,6 +332,8 @@ export const getInvoiceMonthly = <ThrowOnError extends boolean = false>(options:
  * Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)
  *
  * Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)
+ *
+ * **BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.
  */
 export const postInvoiceMonthly = <ThrowOnError extends boolean = false>(options?: Options<PostInvoiceMonthlyData, ThrowOnError>) => (options?.client ?? client).post<PostInvoiceMonthlyResponses, unknown, ThrowOnError>({
     responseType: 'json',
@@ -346,6 +350,8 @@ export const postInvoiceMonthly = <ThrowOnError extends boolean = false>(options
  * Admin generate a monthly invoice PDF. (admin access required)
  *
  * Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)
+ *
+ * **BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.
  */
 export const postInvoiceMonthlyAdmin = <ThrowOnError extends boolean = false>(options?: Options<PostInvoiceMonthlyAdminData, ThrowOnError>) => (options?.client ?? client).post<PostInvoiceMonthlyAdminResponses, unknown, ThrowOnError>({
     responseType: 'json',
@@ -361,7 +367,9 @@ export const postInvoiceMonthlyAdmin = <ThrowOnError extends boolean = false>(op
 /**
  * List uninvoiced payments for a month. (admin access required)
  *
- * Finds billable payment requests that do not yet have an invoice for a given month. (admin access required)
+ * Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)
+ *
+ * **BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.
  */
 export const getInvoiceMonthlyUninvoiced = <ThrowOnError extends boolean = false>(options: Options<GetInvoiceMonthlyUninvoicedData, ThrowOnError>) => (options.client ?? client).get<GetInvoiceMonthlyUninvoicedResponses, unknown, ThrowOnError>({
     responseTransformer: getInvoiceMonthlyUninvoicedResponseTransformer,

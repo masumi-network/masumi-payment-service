@@ -7419,7 +7419,7 @@
         },
         "/invoice/monthly": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
                 "summary": "Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)",
                 "tags": [
                     "invoice"
@@ -7885,7 +7885,7 @@
                 }
             },
             "get": {
-                "description": "Lists invoice summaries for a given month with pagination. (admin access required)",
+                "description": "Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.",
                 "summary": "List invoices for a month. (admin access required)",
                 "tags": [
                     "invoice"
@@ -7932,14 +7932,12 @@
                     },
                     {
                         "schema": {
-                            "type": "boolean",
-                            "nullable": true,
-                            "default": false,
-                            "description": "When true, return all revisions including cancelled; when false, return only latest revision per base"
+                            "type": "string",
+                            "description": "When provided, return all revisions for this specific invoice base (ignores pagination)"
                         },
                         "required": false,
-                        "description": "When true, return all revisions including cancelled; when false, return only latest revision per base",
-                        "name": "includeAllRevisions",
+                        "description": "When provided, return all revisions for this specific invoice base (ignores pagination)",
+                        "name": "invoiceBaseId",
                         "in": "query"
                     }
                 ],
@@ -7977,6 +7975,10 @@
                                                             },
                                                             "revisionNumber": {
                                                                 "type": "number"
+                                                            },
+                                                            "revisionCount": {
+                                                                "type": "number",
+                                                                "description": "Total number of revisions for this invoice base"
                                                             },
                                                             "invoiceMonth": {
                                                                 "type": "number"
@@ -8040,6 +8042,19 @@
                                                                 "items": {
                                                                     "type": "string"
                                                                 }
+                                                            },
+                                                            "buyerWalletVkey": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "invoicePdf": {
+                                                                "type": "string",
+                                                                "description": "Base64-encoded invoice PDF"
+                                                            },
+                                                            "cancellationInvoicePdf": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Base64-encoded cancellation PDF if cancelled"
                                                             }
                                                         },
                                                         "required": [
@@ -8048,6 +8063,7 @@
                                                             "createdAt",
                                                             "revisionId",
                                                             "revisionNumber",
+                                                            "revisionCount",
                                                             "invoiceMonth",
                                                             "invoiceYear",
                                                             "invoiceDate",
@@ -8064,7 +8080,10 @@
                                                             "netTotal",
                                                             "vatTotal",
                                                             "grossTotal",
-                                                            "coveredPaymentRequestIds"
+                                                            "coveredPaymentRequestIds",
+                                                            "buyerWalletVkey",
+                                                            "invoicePdf",
+                                                            "cancellationInvoicePdf"
                                                         ]
                                                     }
                                                 }
@@ -8088,6 +8107,7 @@
                                                     "createdAt": "2025-09-30T23:59:59.000Z",
                                                     "revisionId": "revision_id",
                                                     "revisionNumber": 0,
+                                                    "revisionCount": 1,
                                                     "invoiceMonth": 9,
                                                     "invoiceYear": 2025,
                                                     "invoiceDate": "2025-09-30T00:00:00.000Z",
@@ -8107,7 +8127,10 @@
                                                     "coveredPaymentRequestIds": [
                                                         "payment_id_1",
                                                         "payment_id_2"
-                                                    ]
+                                                    ],
+                                                    "buyerWalletVkey": "buyer_wallet_vkey",
+                                                    "invoicePdf": "BASE64_PDF_STRING",
+                                                    "cancellationInvoicePdf": null
                                                 }
                                             ]
                                         }
@@ -8121,7 +8144,7 @@
         },
         "/invoice/monthly/admin": {
             "post": {
-                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)",
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
                 "summary": "Admin generate a monthly invoice PDF. (admin access required)",
                 "tags": [
                     "invoice"
@@ -8553,7 +8576,7 @@
         },
         "/invoice/monthly/uninvoiced": {
             "get": {
-                "description": "Finds billable payment requests that do not yet have an invoice for a given month. (admin access required)",
+                "description": "Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.",
                 "summary": "List uninvoiced payments for a month. (admin access required)",
                 "tags": [
                     "invoice"

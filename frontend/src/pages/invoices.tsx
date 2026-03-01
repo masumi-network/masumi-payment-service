@@ -12,8 +12,6 @@ import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -109,13 +107,13 @@ export default function Invoices() {
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
   const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
-  const [includeAllRevisions, setIncludeAllRevisions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceSummary | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generatePrefill, setGeneratePrefill] = useState<{
     buyerWalletVkey: string;
     month: string;
+    forceRegenerate?: boolean;
   }>({ buyerWalletVkey: '', month: '' });
   const [expandedWallets, setExpandedWallets] = useState<Set<string>>(new Set());
 
@@ -126,7 +124,7 @@ export default function Invoices() {
     loadMore: loadMoreInvoices,
     isFetchingNextPage: isFetchingNextInvoices,
     refetch: refetchInvoices,
-  } = useInvoices(selectedMonth, includeAllRevisions);
+  } = useInvoices(selectedMonth);
 
   const {
     payments: uninvoicedPayments,
@@ -191,8 +189,16 @@ export default function Invoices() {
     refetchUninvoiced();
   }, [refetchInvoices, refetchUninvoiced]);
 
-  const handleRegenerate = useCallback((_invoice: InvoiceSummary) => {
+  const handleRegenerate = useCallback((invoice: InvoiceSummary) => {
+    if (!invoice.buyerWalletVkey) return;
+    const month = `${invoice.invoiceYear}-${String(invoice.invoiceMonth).padStart(2, '0')}`;
+    setGeneratePrefill({
+      buyerWalletVkey: invoice.buyerWalletVkey,
+      month,
+      forceRegenerate: true,
+    });
     setSelectedInvoice(null);
+    setShowGenerateDialog(true);
   }, []);
 
   const openGenerateFromGroup = useCallback(
@@ -229,6 +235,15 @@ export default function Invoices() {
             <RefreshButton onRefresh={handleRefresh} isRefreshing={isLoading} />
           </div>
 
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm">
+            <span className="font-medium text-yellow-600 dark:text-yellow-400">Beta</span>
+            <span className="text-muted-foreground">
+              {' '}
+              — This invoice feature is in beta. Generated invoices should be reviewed manually or
+              verified with a tax advisor before use. Use at your own discretion.
+            </span>
+          </div>
+
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
           {/* Controls */}
@@ -246,12 +261,6 @@ export default function Invoices() {
                 className="max-w-xs"
               />
             </div>
-            {activeTab === 'Generated Invoices' && (
-              <div className="flex items-center gap-2">
-                <Switch checked={includeAllRevisions} onCheckedChange={setIncludeAllRevisions} />
-                <Label className="text-sm text-muted-foreground">Show all revisions</Label>
-              </div>
-            )}
           </div>
 
           {/* Tab 1: Generated Invoices */}
@@ -292,7 +301,7 @@ export default function Invoices() {
                         Status
                       </th>
                       <th className="p-4 text-left text-sm font-medium text-muted-foreground pr-8">
-                        Rev.
+                        Revisions
                       </th>
                     </tr>
                   </thead>
@@ -348,7 +357,7 @@ export default function Invoices() {
                             )}
                           </td>
                           <td className="p-4 pr-8 text-sm text-muted-foreground">
-                            #{invoice.revisionNumber}
+                            {invoice.revisionCount}
                           </td>
                         </tr>
                       ))
@@ -372,6 +381,12 @@ export default function Invoices() {
           {/* Tab 2: Missing Invoices */}
           {activeTab === 'Missing Invoices' && (
             <>
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3 text-sm text-muted-foreground">
+                Only finalized payments are shown (Withdrawn, Result Submitted past unlock time, or
+                Disputed Withdrawn with seller funds). Payments that are still locked, pending
+                refund, or in dispute are excluded.
+              </div>
+
               <div className="border rounded-lg overflow-hidden">
                 {isLoadingUninvoiced && uninvoicedPayments.length === 0 ? (
                   <div className="p-8 flex justify-center">
@@ -546,7 +561,7 @@ export default function Invoices() {
         </div>
 
         <InvoiceDetailsDialog
-          invoice={selectedInvoice}
+          selectedInvoice={selectedInvoice}
           onClose={() => setSelectedInvoice(null)}
           onRegenerate={handleRegenerate}
         />
@@ -557,6 +572,7 @@ export default function Invoices() {
           onSuccess={handleGenerateSuccess}
           prefillBuyerWalletVkey={generatePrefill.buyerWalletVkey}
           prefillMonth={generatePrefill.month}
+          prefillForceRegenerate={generatePrefill.forceRegenerate}
           formatMonth={formatMonthLabel}
         />
       </AnimatedPage>
