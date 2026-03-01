@@ -76,7 +76,7 @@ export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.b
 				WithdrawnForSeller: true,
 				TransactionHistory: { select: { txHash: true } },
 			},
-			orderBy: { createdAt: 'desc' },
+			orderBy: { id: 'desc' },
 			take: input.limit,
 		});
 

@@ -21,6 +21,7 @@
         "prisma:generate": "pnpm exec prisma generate --config prisma/prisma.config.ts",
         "prisma:migrate": "pnpm exec prisma migrate deploy --config prisma/prisma.config.ts",
         "prisma:migrate:dev": "pnpm exec prisma migrate dev --config prisma/prisma.config.ts",
+        "prisma:migrate:reset": "pnpm exec prisma migrate reset --config prisma/prisma.config.ts",
         "prisma:seed": "pnpm exec prisma db seed --config prisma/prisma.config.ts",
         "dev": "tsx watch ./src/index.ts",
         "build": "pnpm exec prisma generate && tsc --noEmit && pkgroll",

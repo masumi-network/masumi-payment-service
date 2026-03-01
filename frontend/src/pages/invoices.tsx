@@ -94,7 +94,7 @@ const formatStatus = (status: string | null) => {
 };
 
 const formatPrice = (amount: string) => {
-  const numericAmount = parseInt(amount) / 1000000;
+  const numericAmount = Number(BigInt(amount)) / 1000000;
   return new Intl.NumberFormat(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -117,6 +117,13 @@ export default function Invoices() {
   }>({ buyerWalletVkey: '', month: '' });
   const [expandedWallets, setExpandedWallets] = useState<Set<string>>(new Set());
 
+  // Clear expanded wallets when month changes (adjust state during render)
+  const [prevMonth, setPrevMonth] = useState(selectedMonth);
+  if (prevMonth !== selectedMonth) {
+    setPrevMonth(selectedMonth);
+    setExpandedWallets(new Set());
+  }
+
   const {
     invoices,
     isLoading: isLoadingInvoices,
@@ -135,12 +142,17 @@ export default function Invoices() {
     refetch: refetchUninvoiced,
   } = useUninvoicedPayments(selectedMonth);
 
+  const allWalletGroups = useMemo(
+    () => groupBySellerBuyer(uninvoicedPayments),
+    [uninvoicedPayments],
+  );
+
   const tabs = useMemo(
     () => [
       { name: 'Generated Invoices', count: null },
-      { name: 'Missing Invoices', count: uninvoicedPayments.length || null },
+      { name: 'Missing Invoices', count: allWalletGroups.length || null },
     ],
-    [uninvoicedPayments.length],
+    [allWalletGroups.length],
   );
 
   const filteredInvoices = useMemo(() => {
@@ -157,15 +169,14 @@ export default function Invoices() {
   }, [invoices, searchQuery]);
 
   const walletGroups = useMemo(() => {
-    const groups = groupBySellerBuyer(uninvoicedPayments);
-    if (!searchQuery) return groups;
+    if (!searchQuery) return allWalletGroups;
     const query = searchQuery.toLowerCase();
-    return groups.filter(
+    return allWalletGroups.filter(
       (g) =>
         g.buyerWalletVkey.toLowerCase().includes(query) ||
         g.sellerWalletVkey.toLowerCase().includes(query),
     );
-  }, [uninvoicedPayments, searchQuery]);
+  }, [allWalletGroups, searchQuery]);
 
   const toggleWallet = useCallback((vkey: string) => {
     setExpandedWallets((prev) => {

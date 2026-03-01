@@ -108,19 +108,13 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 
 		const invoices = invoiceBases.flatMap((base) =>
 			base.InvoiceRevisions.map((rev) => {
-				let netTotal = 0;
 				let vatTotal = 0;
 				let grossTotal = 0;
 				for (const item of rev.InvoiceItems) {
-					const qty = Number(item.quantity);
-					const unitPrice = Number(item.pricePerUnitWithoutVat);
-					const net = qty * unitPrice;
-					const vat = Number(item.vatAmount);
-					const total = Number(item.totalAmount);
-					netTotal += net;
-					vatTotal += vat;
-					grossTotal += total;
+					vatTotal += Number(item.vatAmount);
+					grossTotal += Number(item.totalAmount);
 				}
+				const netTotal = grossTotal - vatTotal;
 
 				return {
 					id: base.id,

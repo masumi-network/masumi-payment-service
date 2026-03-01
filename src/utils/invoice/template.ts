@@ -43,10 +43,10 @@ export const invoiceOptionsSchema = z
 		terms: z.string().min(1).max(1000).optional().describe('The terms of the invoice'),
 		privacy: z.string().min(1).max(1000).optional().describe('The privacy of the invoice'),
 		language: z
-			.enum(['en-us', 'en-uk', 'de'])
+			.enum(['en-us', 'en-gb', 'de'])
 			.optional()
-			.describe('Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us'),
-		localizationFormat: z.enum(['en-us', 'en-uk', 'de']).optional().describe('The localization format of the invoice'),
+			.describe('Invoice language and region: English US (en-us), English GB (en-gb), or German (de). Default: en-us'),
+		localizationFormat: z.enum(['en-us', 'en-gb', 'de']).optional().describe('The localization format of the invoice'),
 	})
 	.optional();
 
@@ -150,6 +150,7 @@ const LOCALE_CONFIG = {
 			cancellationReasonSellerChanged: 'Changes to seller data',
 			cancellationReasonBuyerChanged: 'Changes to buyer data',
 			cancellationReasonMetadataChanged: 'Changes to texts and formatting',
+			servicePeriod: 'Service Period',
 			conversionText: 'Conversion Factor: ',
 			coingeckoAttribution: 'Conversions and price data by',
 		},
@@ -193,6 +194,7 @@ const LOCALE_CONFIG = {
 			cancellationReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
 			cancellationReasonBuyerChanged: 'Änderungen an den Käuferdaten',
 			cancellationReasonMetadataChanged: 'Änderungen an Texten und Formatierungen',
+			servicePeriod: 'Leistungszeitraum',
 			conversionText: 'Umrechnungsfaktor: ',
 			coingeckoAttribution: 'Konvertierung und Preisdaten von',
 		},
@@ -236,6 +238,7 @@ export type InvoiceTexts = {
 	cancellationReasonSellerChanged: string;
 	cancellationReasonBuyerChanged: string;
 	cancellationReasonMetadataChanged: string;
+	servicePeriod: string;
 	conversionText: string;
 	coingeckoAttribution: string;
 };
@@ -288,6 +291,7 @@ export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
 		cancellationReasonSellerChanged: t.cancellationReasonSellerChanged,
 		cancellationReasonBuyerChanged: t.cancellationReasonBuyerChanged,
 		cancellationReasonMetadataChanged: t.cancellationReasonMetadataChanged,
+		servicePeriod: t.servicePeriod,
 		conversionText: t.conversionText,
 		coingeckoAttribution: t.coingeckoAttribution,
 	};
@@ -317,6 +321,16 @@ export type ResolvedInvoiceConfig = {
 	texts: InvoiceTexts;
 };
 
+/** Maps internal locale keys to BCP 47 tags for Intl formatters */
+function toBcp47(locale: string): string {
+	const mapping: Record<string, string> = {
+		'en-us': 'en-US',
+		'en-gb': 'en-GB',
+		de: 'de-DE',
+	};
+	return mapping[locale] ?? locale;
+}
+
 export function resolveInvoiceConfig(
 	currency: SupportedCurrencies,
 	invoice?: InvoiceOptions,
@@ -326,15 +340,18 @@ export function resolveInvoiceConfig(
 	const locale = LOCALE_CONFIG[languageKey];
 
 	const resolvedDate = invoice?.date ? new Date(invoice?.date) : new Date();
-	const localizationFormat = invoice?.language ?? 'en-US';
-	const currencyFormatter = new Intl.NumberFormat(invoice?.localizationFormat ?? localizationFormat, {
+	// Default localization format matches the language (de → de-DE, not en-US)
+	const defaultLocale = languageKey === 'de' ? 'de' : 'en-us';
+	const resolvedLocalizationFormat = invoice?.localizationFormat ?? invoice?.language ?? defaultLocale;
+	const bcp47Locale = toBcp47(resolvedLocalizationFormat);
+	const currencyFormatter = new Intl.NumberFormat(bcp47Locale, {
 		style: 'currency',
 		currency: currency,
 	});
-	const numberFormatter = new Intl.NumberFormat(invoice?.localizationFormat ?? localizationFormat, {
+	const numberFormatter = new Intl.NumberFormat(bcp47Locale, {
 		style: 'decimal',
 	});
-	const dateFormatter = new Intl.DateTimeFormat(invoice?.localizationFormat ?? localizationFormat, {
+	const dateFormatter = new Intl.DateTimeFormat(bcp47Locale, {
 		dateStyle: 'short',
 	});
 
@@ -359,7 +376,7 @@ export function resolveInvoiceConfig(
 		currencyFormatter: currencyFormatter,
 		numberFormatter: numberFormatter,
 		dateFormatter: dateFormatter,
-		localizationFormat: invoice?.localizationFormat ?? 'en-US',
+		localizationFormat: resolvedLocalizationFormat,
 		texts: texts,
 	};
 }

@@ -111,6 +111,7 @@ export function detectInvoiceChanges(
 			items: group.items.map((item) => ({
 				name: item.name,
 				quantity: item.quantity,
+				price: Math.round(item.price * 1e4) / 1e4,
 			})),
 		}));
 
@@ -144,15 +145,12 @@ export function detectInvoiceChanges(
 	const sellerChanged = !partiesEqual(existingSeller, seller);
 	const buyerChanged = !partiesEqual(existingBuyer, buyer);
 
-	const existingDateFormatter = new Intl.DateTimeFormat(existingRevision.localizationFormat, {
-		dateStyle: 'short',
-	});
-	const formattedExistingDate = existingDateFormatter.format(existingRevision.invoiceDate);
-	const resolvedFormattedDate = resolved.dateFormatter.format(resolved.date);
+	const existingDateIso = existingRevision.invoiceDate.toISOString().slice(0, 10);
+	const resolvedDateIso = resolved.date.toISOString().slice(0, 10);
 
 	const metadataChanged =
 		(resolved.title ?? '') !== (existingRevision.invoiceTitle ?? '') ||
-		resolvedFormattedDate !== formattedExistingDate ||
+		resolvedDateIso !== existingDateIso ||
 		(resolved.greeting ?? '') !== (existingRevision.invoiceGreetings ?? '') ||
 		(resolved.closing ?? '') !== (existingRevision.invoiceClosing ?? '') ||
 		(resolved.signature ?? '') !== (existingRevision.invoiceSignature ?? '') ||

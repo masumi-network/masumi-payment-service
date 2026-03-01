@@ -503,12 +503,12 @@ model InvoiceRevision {
   currencyShortId String
 
   // Invoice metadata
-  invoiceTitle       String
-  invoiceDescription String?
-  invoiceDate        DateTime
-  invoiceMonth       Int
-  invoiceYear        Int
-  reverseCharge      Boolean
+  invoiceTitle         String
+  invoiceDescription   String?
+  invoiceDate          DateTime
+  invoiceMonth         Int
+  invoiceYear          Int
+  reverseCharge        Boolean
   invoiceGreetings   String?
   invoiceClosing     String?
   invoiceSignature   String?

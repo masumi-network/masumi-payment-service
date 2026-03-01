@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -58,6 +58,14 @@ export function InvoiceDetailsDialog({
   const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(null);
   const [pdfTab, setPdfTab] = useState<'invoice' | 'cancellation'>('invoice');
 
+  // Reset revision selection when invoice changes (adjust state during render)
+  const [prevInvoiceId, setPrevInvoiceId] = useState(selectedInvoice?.id);
+  if (prevInvoiceId !== selectedInvoice?.id) {
+    setPrevInvoiceId(selectedInvoice?.id);
+    setSelectedRevisionId(null);
+    setPdfTab('invoice');
+  }
+
   // Build the month string for the revision query
   const month = selectedInvoice
     ? `${selectedInvoice.invoiceYear}-${String(selectedInvoice.invoiceMonth).padStart(2, '0')}`
@@ -86,18 +94,30 @@ export function InvoiceDetailsDialog({
     return sortedRevisions[0] ?? selectedInvoice;
   }, [selectedInvoice, selectedRevisionId, sortedRevisions]);
 
-  // PDF blob URLs for preview
+  // PDF blob URLs for preview — useMemo for creation, useEffect for cleanup only
   const invoicePdf = invoice?.invoicePdf ?? null;
   const pdfBlobUrl = useMemo(() => {
     if (!invoicePdf) return null;
     return base64ToBlobUrl(invoicePdf);
   }, [invoicePdf]);
 
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+    };
+  }, [pdfBlobUrl]);
+
   const cancellationPdf = invoice?.cancellationInvoicePdf ?? null;
   const cancellationPdfBlobUrl = useMemo(() => {
     if (!cancellationPdf) return null;
     return base64ToBlobUrl(cancellationPdf);
   }, [cancellationPdf]);
+
+  useEffect(() => {
+    return () => {
+      if (cancellationPdfBlobUrl) URL.revokeObjectURL(cancellationPdfBlobUrl);
+    };
+  }, [cancellationPdfBlobUrl]);
 
   const handleDownload = useCallback(() => {
     if (!invoice) return;

@@ -2,7 +2,6 @@ import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthly } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
 
 export type InvoiceSummary = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthly>>['data']
@@ -14,21 +13,23 @@ export function useInvoices(month: string) {
   const query = useInfiniteQuery({
     queryKey: ['invoices', month],
     queryFn: async ({ pageParam }) => {
-      const result = await handleApiCall(
-        () =>
-          getInvoiceMonthly({
-            client: apiClient,
-            query: {
-              month,
-              cursorId: pageParam ?? undefined,
-              limit: 20,
-            },
-          }),
-        { errorMessage: 'Failed to fetch invoices' },
-      );
+      const limit = 20;
+      const result = await getInvoiceMonthly({
+        client: apiClient,
+        query: {
+          month,
+          cursorId: pageParam ?? undefined,
+          limit: limit + 1,
+        },
+      });
 
-      const invoices = result?.data?.data?.Invoices ?? [];
-      const hasMore = invoices.length === 20;
+      if (result.error) {
+        throw new Error('Failed to fetch invoices');
+      }
+
+      const allInvoices = result.data?.data?.Invoices ?? [];
+      const hasMore = allInvoices.length > limit;
+      const invoices = hasMore ? allInvoices.slice(0, limit) : allInvoices;
       const nextCursor = hasMore ? invoices[invoices.length - 1]?.id : undefined;
 
       return { invoices, nextCursor, hasMore };
@@ -59,6 +60,8 @@ export function useInvoices(month: string) {
   return {
     invoices,
     isLoading,
+    isError: query.isError,
+    error: query.error,
     hasMore,
     loadMore,
     isFetchingNextPage,
@@ -73,19 +76,19 @@ export function useInvoiceRevisions(month: string, invoiceBaseId: string | null)
   const query = useQuery({
     queryKey: ['invoice-revisions', month, invoiceBaseId],
     queryFn: async () => {
-      const result = await handleApiCall(
-        () =>
-          getInvoiceMonthly({
-            client: apiClient,
-            query: {
-              month,
-              invoiceBaseId: invoiceBaseId!,
-            },
-          }),
-        { errorMessage: 'Failed to fetch invoice revisions' },
-      );
+      const result = await getInvoiceMonthly({
+        client: apiClient,
+        query: {
+          month,
+          invoiceBaseId: invoiceBaseId!,
+        },
+      });
 
-      return result?.data?.data?.Invoices ?? [];
+      if (result.error) {
+        throw new Error('Failed to fetch invoice revisions');
+      }
+
+      return result.data?.data?.Invoices ?? [];
     },
     enabled: !!apiClient && !!month && !!invoiceBaseId,
     staleTime: 15000,

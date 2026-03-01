@@ -65,7 +65,7 @@ function buildInvoicePDF(
 	invoiceId: string,
 	cancellationNotice: { cancellationTitle: string; cancellationDescription: string } | null,
 	includeCoingeckoAttribution: boolean,
-	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean },
+	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean; servicePeriod?: string },
 ): jsPDF {
 	const {
 		title,
@@ -105,7 +105,13 @@ function buildInvoicePDF(
 	const metaLine = `${t.invoiceNumber}: ${invoiceId}    ${t.date}: ${dateFormatter.format(date)}`;
 	doc.text(metaLine, PAGE_W - MR, y + 13, { align: 'right' });
 
-	y += 18;
+	// Service period (if provided)
+	if (options?.servicePeriod) {
+		doc.text(`${t.servicePeriod}: ${options.servicePeriod}`, PAGE_W - MR, y + 17, { align: 'right' });
+		y += 22;
+	} else {
+		y += 18;
+	}
 
 	// Header separator
 	doc.setDrawColor(...C.border);
@@ -118,64 +124,70 @@ function buildInvoicePDF(
 	const cardX1 = ML;
 	const cardX2 = ML + cardW + 6;
 
-	const drawPartyCard = (x: number, startY: number, label: string, party: InvoiceSeller | InvoiceBuyer): number => {
+	const drawPartyCard = (
+		targetDoc: jsPDF,
+		x: number,
+		startY: number,
+		label: string,
+		party: InvoiceSeller | InvoiceBuyer,
+	): number => {
 		let cy = startY + 5;
 		const innerX = x + 4;
 
 		// Label
-		doc.setFontSize(8);
-		doc.setFont('helvetica', 'bold');
-		doc.setTextColor(...C.primary);
-		doc.text(label.toUpperCase(), innerX, cy);
+		targetDoc.setFontSize(8);
+		targetDoc.setFont('helvetica', 'bold');
+		targetDoc.setTextColor(...C.primary);
+		targetDoc.text(label.toUpperCase(), innerX, cy);
 		cy += 4;
 
 		// Company name
 		if (party.companyName) {
-			doc.setFontSize(10);
-			doc.setFont('helvetica', 'bold');
-			doc.setTextColor(...C.text);
-			doc.text(party.companyName, innerX, cy);
+			targetDoc.setFontSize(10);
+			targetDoc.setFont('helvetica', 'bold');
+			targetDoc.setTextColor(...C.text);
+			targetDoc.text(party.companyName, innerX, cy);
 			cy += 4;
 		}
 
 		// Name
-		doc.setFontSize(9);
-		doc.setFont('helvetica', 'normal');
-		doc.setTextColor(...C.text);
+		targetDoc.setFontSize(9);
+		targetDoc.setFont('helvetica', 'normal');
+		targetDoc.setTextColor(...C.text);
 		if (party.name) {
-			doc.text(party.name, innerX, cy);
+			targetDoc.text(party.name, innerX, cy);
 			cy += 3.5;
 		}
 
 		// Address
-		doc.setTextColor(...C.textMuted);
-		doc.text(`${party.street} ${party.streetNumber}`, innerX, cy);
+		targetDoc.setTextColor(...C.textMuted);
+		targetDoc.text(`${party.street} ${party.streetNumber}`, innerX, cy);
 		cy += 3.5;
-		doc.text(`${party.zipCode} ${party.city}`, innerX, cy);
+		targetDoc.text(`${party.zipCode} ${party.city}`, innerX, cy);
 		cy += 3.5;
-		doc.text(party.country, innerX, cy);
+		targetDoc.text(party.country, innerX, cy);
 		cy += 4;
 
-		// Meta (email, phone, VAT)
-		doc.setFontSize(8);
+		// Meta (email, phone, VAT) — handle text overflow
+		targetDoc.setFontSize(8);
 		const metaParts: string[] = [];
 		if (party.email) metaParts.push(`${t.email}: ${party.email}`);
 		if (party.phone) metaParts.push(`${t.phone}: ${party.phone}`);
 		if (party.vatNumber) metaParts.push(`${t.vat}: ${party.vatNumber}`);
 		if (metaParts.length > 0) {
-			doc.text(metaParts.join('  |  '), innerX, cy);
-			cy += 3.5;
+			const metaText = metaParts.join('  |  ');
+			const metaLines = targetDoc.splitTextToSize(metaText, cardW - 8) as string[];
+			targetDoc.text(metaLines, innerX, cy);
+			cy += metaLines.length * 3.5;
 		}
 
 		return cy + 2; // bottom of card content
 	};
 
-	// Measure both cards to get consistent height
+	// Measure both cards using a temporary doc to get consistent height
 	const tempDoc = new jsPDF({ unit: 'mm', format: 'a4' });
-	const buyerBottom = drawPartyCard(cardX1, y, t.to, buyer) - y;
-	const sellerBottom = drawPartyCard(cardX2, y, t.from, seller) - y;
-	// Keep tempDoc reference alive so types are exercised
-	void tempDoc;
+	const buyerBottom = drawPartyCard(tempDoc, cardX1, y, t.to, buyer) - y;
+	const sellerBottom = drawPartyCard(tempDoc, cardX2, y, t.from, seller) - y;
 
 	const cardH = Math.max(buyerBottom, sellerBottom) + 2;
 
@@ -185,16 +197,20 @@ function buildInvoicePDF(
 	drawRoundedRect(doc, cardX1, y, cardW, cardH, 1.5);
 	drawRoundedRect(doc, cardX2, y, cardW, cardH, 1.5);
 
-	// Draw card content
-	drawPartyCard(cardX1, y, t.to, buyer);
-	drawPartyCard(cardX2, y, t.from, seller);
+	// Draw card content on actual doc
+	drawPartyCard(doc, cardX1, y, t.to, buyer);
+	drawPartyCard(doc, cardX2, y, t.from, seller);
 
 	y += cardH + 6;
 
 	// ── 3. Cancellation notice ───────────────────────────────────────────
 	if (cancellationNotice) {
-		y = ensureSpace(doc, y, 18);
-		const noticeH = 16;
+		doc.setFontSize(8);
+		doc.setFont('helvetica', 'normal');
+		const descLines = doc.splitTextToSize(cancellationNotice.cancellationDescription, CONTENT_W - 10) as string[];
+		const noticeH = 12 + descLines.length * 3.5;
+
+		y = ensureSpace(doc, y, noticeH + 4);
 		doc.setFillColor(...C.warningBg);
 		doc.setDrawColor(...C.warningBorder);
 		doc.setLineWidth(0.4);
@@ -207,7 +223,6 @@ function buildInvoicePDF(
 
 		doc.setFontSize(8);
 		doc.setFont('helvetica', 'normal');
-		const descLines = doc.splitTextToSize(cancellationNotice.cancellationDescription, CONTENT_W - 10) as string[];
 		doc.text(descLines, ML + 5, y + 11);
 
 		y += noticeH + 4;
@@ -420,30 +435,40 @@ function buildInvoicePDF(
 
 	// ── 9. Terms & Privacy ───────────────────────────────────────────────
 	if (terms || privacy) {
-		y = ensureSpace(doc, y, 20);
+		const LINE_H = 3.5;
 		if (terms) {
+			y = ensureSpace(doc, y, 8);
 			doc.setFontSize(8);
 			doc.setFont('helvetica', 'bold');
 			doc.setTextColor(...C.primary);
 			doc.text(t.termsAndConditions.toUpperCase(), ML, y);
-			y += 3.5;
+			y += LINE_H;
 			doc.setFont('helvetica', 'normal');
 			doc.setTextColor(...C.textMuted);
 			const termsLines = doc.splitTextToSize(terms, CONTENT_W) as string[];
-			doc.text(termsLines, ML, y);
-			y += termsLines.length * 3.5 + 3;
+			for (const line of termsLines) {
+				y = ensureSpace(doc, y, LINE_H + 2);
+				doc.text(line, ML, y);
+				y += LINE_H;
+			}
+			y += 3;
 		}
 		if (privacy) {
+			y = ensureSpace(doc, y, 8);
 			doc.setFontSize(8);
 			doc.setFont('helvetica', 'bold');
 			doc.setTextColor(...C.primary);
 			doc.text(t.privacyPolicy.toUpperCase(), ML, y);
-			y += 3.5;
+			y += LINE_H;
 			doc.setFont('helvetica', 'normal');
 			doc.setTextColor(...C.textMuted);
 			const privacyLines = doc.splitTextToSize(privacy, CONTENT_W) as string[];
-			doc.text(privacyLines, ML, y);
-			y += privacyLines.length * 3.5 + 3;
+			for (const line of privacyLines) {
+				y = ensureSpace(doc, y, LINE_H + 2);
+				doc.text(line, ML, y);
+				y += LINE_H;
+			}
+			y += 3;
 		}
 	}
 
@@ -457,17 +482,20 @@ function buildInvoicePDF(
 		y += 6;
 	}
 
-	// ── 11. Footer ───────────────────────────────────────────────────────
+	// ── 11. Footer on every page ─────────────────────────────────────────
 	if (footer) {
-		// Separator line
-		doc.setDrawColor(...C.border);
-		doc.setLineWidth(0.3);
-		doc.line(ML, FOOTER_BOTTOM - 6, PAGE_W - MR, FOOTER_BOTTOM - 6);
+		const totalPages = doc.getNumberOfPages();
+		for (let i = 1; i <= totalPages; i++) {
+			doc.setPage(i);
+			doc.setDrawColor(...C.border);
+			doc.setLineWidth(0.3);
+			doc.line(ML, FOOTER_BOTTOM - 6, PAGE_W - MR, FOOTER_BOTTOM - 6);
 
-		doc.setFontSize(8);
-		doc.setFont('helvetica', 'normal');
-		doc.setTextColor(...C.textMuted);
-		doc.text(footer, PAGE_W / 2, FOOTER_BOTTOM - 2, { align: 'center' });
+			doc.setFontSize(8);
+			doc.setFont('helvetica', 'normal');
+			doc.setTextColor(...C.textMuted);
+			doc.text(footer, PAGE_W / 2, FOOTER_BOTTOM - 2, { align: 'center' });
+		}
 	}
 
 	// Suppress unused y warning
@@ -489,7 +517,7 @@ export async function generateInvoicePDF(
 		cancellationDescription: string;
 	} | null,
 	includeCoingeckoAttribution: boolean = false,
-	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean },
+	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean; servicePeriod?: string },
 ): Promise<{ pdfBase64: string }> {
 	try {
 		const doc = buildInvoicePDF(
@@ -521,7 +549,7 @@ export async function generateInvoicePDFBase64(
 		cancellationDescription: string;
 	} | null,
 	includeCoingeckoAttribution: boolean = false,
-	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean },
+	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean; servicePeriod?: string },
 ): Promise<{ pdfBase64: string }> {
 	const invoice = await generateInvoicePDF(
 		invoiceGroups,

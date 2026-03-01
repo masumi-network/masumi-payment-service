@@ -7553,16 +7553,16 @@
                                                 "type": "string",
                                                 "enum": [
                                                     "en-us",
-                                                    "en-uk",
+                                                    "en-gb",
                                                     "de"
                                                 ],
-                                                "description": "Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us"
+                                                "description": "Invoice language and region: English US (en-us), English GB (en-gb), or German (de). Default: en-us"
                                             },
                                             "localizationFormat": {
                                                 "type": "string",
                                                 "enum": [
                                                     "en-us",
-                                                    "en-uk",
+                                                    "en-gb",
                                                     "de"
                                                 ],
                                                 "description": "The localization format of the invoice"
@@ -8278,16 +8278,16 @@
                                                 "type": "string",
                                                 "enum": [
                                                     "en-us",
-                                                    "en-uk",
+                                                    "en-gb",
                                                     "de"
                                                 ],
-                                                "description": "Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us"
+                                                "description": "Invoice language and region: English US (en-us), English GB (en-gb), or German (de). Default: en-us"
                                             },
                                             "localizationFormat": {
                                                 "type": "string",
                                                 "enum": [
                                                     "en-us",
-                                                    "en-uk",
+                                                    "en-gb",
                                                     "de"
                                                 ],
                                                 "description": "The localization format of the invoice"

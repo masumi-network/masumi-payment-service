@@ -21,12 +21,29 @@ export interface SellerTemplate {
   seller: SellerTemplateData;
 }
 
+function isValidTemplate(value: unknown): value is SellerTemplate {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.label !== 'string') return false;
+  if (typeof obj.seller !== 'object' || obj.seller === null) return false;
+  const s = obj.seller as Record<string, unknown>;
+  return (
+    typeof s.country === 'string' &&
+    typeof s.city === 'string' &&
+    typeof s.zipCode === 'string' &&
+    typeof s.street === 'string' &&
+    typeof s.streetNumber === 'string'
+  );
+}
+
 function loadTemplates(): SellerTemplate[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as SellerTemplate[];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isValidTemplate);
   } catch {
     return [];
   }

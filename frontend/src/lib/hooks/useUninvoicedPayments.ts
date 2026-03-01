@@ -2,7 +2,6 @@ import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthlyUninvoiced } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
 
 export type UninvoicedPayment = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthlyUninvoiced>>['data']
@@ -14,22 +13,24 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
   const query = useInfiniteQuery({
     queryKey: ['uninvoiced-payments', month, buyerWalletVkey],
     queryFn: async ({ pageParam }) => {
-      const result = await handleApiCall(
-        () =>
-          getInvoiceMonthlyUninvoiced({
-            client: apiClient,
-            query: {
-              month,
-              buyerWalletVkey: buyerWalletVkey || undefined,
-              cursorId: pageParam ?? undefined,
-              limit: 50,
-            },
-          }),
-        { errorMessage: 'Failed to fetch uninvoiced payments' },
-      );
+      const limit = 50;
+      const result = await getInvoiceMonthlyUninvoiced({
+        client: apiClient,
+        query: {
+          month,
+          buyerWalletVkey: buyerWalletVkey || undefined,
+          cursorId: pageParam ?? undefined,
+          limit: limit + 1,
+        },
+      });
 
-      const payments = result?.data?.data?.UninvoicedPayments ?? [];
-      const hasMore = payments.length === 50;
+      if (result.error) {
+        throw new Error('Failed to fetch uninvoiced payments');
+      }
+
+      const allPayments = result.data?.data?.UninvoicedPayments ?? [];
+      const hasMore = allPayments.length > limit;
+      const payments = hasMore ? allPayments.slice(0, limit) : allPayments;
       const nextCursor = hasMore ? payments[payments.length - 1]?.id : undefined;
 
       return { payments, nextCursor, hasMore };
@@ -60,6 +61,8 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
   return {
     payments,
     isLoading,
+    isError: query.isError,
+    error: query.error,
     hasMore,
     loadMore,
     isFetchingNextPage,

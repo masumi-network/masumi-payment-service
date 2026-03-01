@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
@@ -28,11 +28,11 @@ import { ChevronDown, Save, Trash2, Pencil } from 'lucide-react';
 import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import { useSellerTemplates, type SellerTemplateData } from '@/lib/hooks/useSellerTemplates';
 
 const currencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
-const languages = ['en-us', 'en-uk', 'de'] as const;
+const languages = ['en-us', 'en-gb', 'de'] as const;
 
 const EMPTY_SELLER: SellerTemplateData = {
   name: null,
@@ -48,10 +48,13 @@ const EMPTY_SELLER: SellerTemplateData = {
 };
 
 const formSchema = z.object({
-  buyerWalletVkey: z.string().min(1, 'Required'),
+  buyerWalletVkey: z
+    .string()
+    .min(1, 'Required')
+    .regex(/^[0-9a-fA-F]+$/, 'Must be hex'),
   month: z.string().min(1, 'Required'),
   invoiceCurrency: z.enum(currencies),
-  vatRate: z.number().min(0).max(1).optional(),
+  vatRate: z.number().min(0, 'Min 0').max(1, 'Max 1').optional(),
   reverseCharge: z.boolean().optional(),
   forceRegenerate: z.boolean().optional(),
   seller: z.object({
@@ -63,7 +66,7 @@ const formSchema = z.object({
     zipCode: z.string().min(1, 'Required'),
     street: z.string().min(1, 'Required'),
     streetNumber: z.string().min(1, 'Required'),
-    email: z.string().nullable().optional(),
+    email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
     phone: z.string().nullable().optional(),
   }),
   buyer: z.object({
@@ -75,7 +78,7 @@ const formSchema = z.object({
     zipCode: z.string().min(1, 'Required'),
     street: z.string().min(1, 'Required'),
     streetNumber: z.string().min(1, 'Required'),
-    email: z.string().nullable().optional(),
+    email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
     phone: z.string().nullable().optional(),
   }),
   invoice: z
@@ -127,7 +130,7 @@ function AddressFields({
 }: {
   prefix: 'seller' | 'buyer';
   register: ReturnType<typeof useForm<FormValues>>['register'];
-  errors: Record<string, any>;
+  errors: FieldErrors<FormValues>;
 }) {
   const fieldErrors = errors[prefix] || {};
   return (
@@ -229,6 +232,7 @@ export function GenerateInvoiceDialog({
 }: GenerateInvoiceDialogProps) {
   const { apiClient } = useAppContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
   const {
@@ -412,69 +416,81 @@ export function GenerateInvoiceDialog({
 
   const onSubmit = async (data: FormValues) => {
     setIsSubmitting(true);
-    const result = await handleApiCall(
-      () =>
-        postInvoiceMonthlyAdmin({
-          client: apiClient,
-          body: {
-            buyerWalletVkey: data.buyerWalletVkey,
-            month: data.month,
-            invoiceCurrency: data.invoiceCurrency,
-            vatRate: data.vatRate,
-            reverseCharge: data.reverseCharge,
-            forceRegenerate: data.forceRegenerate,
-            seller: {
-              country: data.seller.country,
-              city: data.seller.city,
-              zipCode: data.seller.zipCode,
-              street: data.seller.street,
-              streetNumber: data.seller.streetNumber,
-              email: data.seller.email || null,
-              phone: data.seller.phone || null,
-              name: data.seller.name || null,
-              companyName: data.seller.companyName || null,
-              vatNumber: data.seller.vatNumber || null,
-            },
-            buyer: {
-              country: data.buyer.country,
-              city: data.buyer.city,
-              zipCode: data.buyer.zipCode,
-              street: data.buyer.street,
-              streetNumber: data.buyer.streetNumber,
-              email: data.buyer.email || null,
-              phone: data.buyer.phone || null,
-              name: data.buyer.name || null,
-              companyName: data.buyer.companyName || null,
-              vatNumber: data.buyer.vatNumber || null,
-            },
-            invoice: data.invoice
-              ? Object.fromEntries(
-                  Object.entries(data.invoice).filter(([, v]) => v !== '' && v !== undefined),
-                )
-              : undefined,
+    setSubmitError(null);
+    try {
+      const result = await postInvoiceMonthlyAdmin({
+        client: apiClient,
+        body: {
+          buyerWalletVkey: data.buyerWalletVkey,
+          month: data.month,
+          invoiceCurrency: data.invoiceCurrency,
+          vatRate: data.vatRate,
+          reverseCharge: data.reverseCharge,
+          forceRegenerate: data.forceRegenerate,
+          seller: {
+            country: data.seller.country,
+            city: data.seller.city,
+            zipCode: data.seller.zipCode,
+            street: data.seller.street,
+            streetNumber: data.seller.streetNumber,
+            email: data.seller.email || null,
+            phone: data.seller.phone || null,
+            name: data.seller.name || null,
+            companyName: data.seller.companyName || null,
+            vatNumber: data.seller.vatNumber || null,
           },
-        }),
-      { errorMessage: 'Failed to generate invoice' },
-    );
-    setIsSubmitting(false);
+          buyer: {
+            country: data.buyer.country,
+            city: data.buyer.city,
+            zipCode: data.buyer.zipCode,
+            street: data.buyer.street,
+            streetNumber: data.buyer.streetNumber,
+            email: data.buyer.email || null,
+            phone: data.buyer.phone || null,
+            name: data.buyer.name || null,
+            companyName: data.buyer.companyName || null,
+            vatNumber: data.buyer.vatNumber || null,
+          },
+          invoice: data.invoice
+            ? Object.fromEntries(
+                Object.entries(data.invoice).filter(([, v]) => v !== '' && v !== undefined),
+              )
+            : undefined,
+        },
+      });
 
-    if (result?.data?.data) {
-      toast.success('Invoice generated successfully');
-      if (result.data.data.invoice) {
-        downloadBase64Pdf(
-          result.data.data.invoice,
-          `invoice-${data.month}-${data.buyerWalletVkey.slice(0, 8)}.pdf`,
-        );
+      if (result.error) {
+        const errMsg =
+          typeof result.error === 'object' && result.error !== null && 'message' in result.error
+            ? String((result.error as { message: string }).message)
+            : 'Failed to generate invoice';
+        setSubmitError(errMsg);
+        setIsSubmitting(false);
+        return;
       }
-      if (result.data.data.cancellationInvoice) {
-        downloadBase64Pdf(
-          result.data.data.cancellationInvoice,
-          `cancellation-invoice-${data.month}-${data.buyerWalletVkey.slice(0, 8)}.pdf`,
-        );
+
+      if (result.data?.data) {
+        toast.success('Invoice generated successfully');
+        if (result.data.data.invoice) {
+          downloadBase64Pdf(
+            result.data.data.invoice,
+            `invoice-${data.month}-${data.buyerWalletVkey.slice(0, 8)}.pdf`,
+          );
+        }
+        if (result.data.data.cancellationInvoice) {
+          downloadBase64Pdf(
+            result.data.data.cancellationInvoice,
+            `cancellation-invoice-${data.month}-${data.buyerWalletVkey.slice(0, 8)}.pdf`,
+          );
+        }
+        reset();
+        onSuccess();
+        onClose();
       }
-      reset();
-      onSuccess();
-      onClose();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to generate invoice');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -546,6 +562,9 @@ export function GenerateInvoiceDialog({
                 {...register('vatRate', { valueAsNumber: true })}
                 placeholder="0.19"
               />
+              {errors.vatRate && (
+                <p className="text-xs text-destructive mt-1">{errors.vatRate.message}</p>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
@@ -788,6 +807,12 @@ export function GenerateInvoiceDialog({
               </div>
             </CollapsibleContent>
           </Collapsible>
+
+          {submitError && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+              {submitError}
+            </div>
+          )}
 
           <DialogFooter>
             <Button variant="outline" type="button" onClick={onClose}>
