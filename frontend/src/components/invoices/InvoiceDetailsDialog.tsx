@@ -14,23 +14,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { Download } from 'lucide-react';
 import type { InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useInvoiceRevisions } from '@/lib/hooks/useInvoices';
-import { downloadBase64Pdf } from '@/lib/pdf-utils';
+import { downloadBase64Pdf, base64ToPdfBlob } from '@/lib/pdf-utils';
 
 interface InvoiceDetailsDialogProps {
   selectedInvoice: InvoiceSummary | null;
   onClose: () => void;
   onRegenerate: (invoice: InvoiceSummary) => void;
-}
-
-function base64ToBlobUrl(base64: string): string {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: 'application/pdf' });
-  return URL.createObjectURL(blob);
 }
 
 export function InvoiceDetailsDialog({
@@ -81,7 +70,7 @@ export function InvoiceDetailsDialog({
   const invoicePdf = invoice?.invoicePdf ?? null;
   const pdfBlobUrl = useMemo(() => {
     if (!invoicePdf) return null;
-    return base64ToBlobUrl(invoicePdf);
+    return URL.createObjectURL(base64ToPdfBlob(invoicePdf));
   }, [invoicePdf]);
 
   useEffect(() => {
@@ -93,7 +82,7 @@ export function InvoiceDetailsDialog({
   const cancellationPdf = invoice?.cancellationInvoicePdf ?? null;
   const cancellationPdfBlobUrl = useMemo(() => {
     if (!cancellationPdf) return null;
-    return base64ToBlobUrl(cancellationPdf);
+    return URL.createObjectURL(base64ToPdfBlob(cancellationPdf));
   }, [cancellationPdf]);
 
   useEffect(() => {
