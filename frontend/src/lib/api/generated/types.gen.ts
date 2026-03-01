@@ -3515,291 +3515,6 @@ export type PostPurchaseErrorStateRecoveryResponses = {
 
 export type PostPurchaseErrorStateRecoveryResponse = PostPurchaseErrorStateRecoveryResponses[keyof PostPurchaseErrorStateRecoveryResponses];
 
-export type PostInvoiceData = {
-    body?: {
-        /**
-         * The signature to verify
-         */
-        signature: string;
-        /**
-         * The key to verify the signature
-         */
-        key: string;
-        /**
-         * The wallet address that signed the message
-         */
-        walletAddress: string;
-        /**
-         * The valid until timestamp
-         */
-        validUntil: number;
-        /**
-         * The blockchain identifier, for which the invoice should be created
-         */
-        blockchainIdentifier: string;
-        /**
-         * The data to verify the signature
-         */
-        signatureData: string;
-        /**
-         * The action to perform
-         */
-        action: 'retrieve_invoice';
-        /**
-         * The currency of the invoice
-         */
-        invoiceCurrency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-        /**
-         * Currency conversion settings for this item
-         */
-        currencyConversion?: {
-            [key: string]: number;
-        };
-        invoice?: {
-            /**
-             * The prefix of the item name
-             */
-            itemNamePrefix?: string;
-            /**
-             * The suffix of the item name
-             */
-            itemNameSuffix?: string;
-            /**
-             * The title of the invoice
-             */
-            title?: string;
-            /**
-             * The description of the invoice
-             */
-            description?: string;
-            /**
-             * The prefix of the invoice number
-             */
-            idPrefix?: string;
-            /**
-             * The date of the invoice
-             */
-            date?: string;
-            /**
-             * The greetings of the invoice
-             */
-            greeting?: string;
-            /**
-             * The closing of the invoice
-             */
-            closing?: string;
-            /**
-             * The signature of the invoice
-             */
-            signature?: string;
-            /**
-             * The logo of the invoice
-             */
-            logo?: string;
-            /**
-             * The footer of the invoice
-             */
-            footer?: string;
-            /**
-             * The terms of the invoice
-             */
-            terms?: string;
-            /**
-             * The privacy of the invoice
-             */
-            privacy?: string;
-            /**
-             * Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us
-             */
-            language?: 'en-us' | 'en-uk' | 'de';
-            /**
-             * The localization format of the invoice
-             */
-            localizationFormat?: 'en-us' | 'en-uk' | 'de';
-        };
-        /**
-         * The VAT rate as decimal (e.g., 0.19 for 19%)
-         */
-        vatRate?: number;
-        seller: {
-            /**
-             * The country of the invoice
-             */
-            country: string;
-            /**
-             * The city of the invoice
-             */
-            city: string;
-            /**
-             * The zip code of the invoice
-             */
-            zipCode: string;
-            /**
-             * The street of the invoice
-             */
-            street: string;
-            /**
-             * The street number of the invoice
-             */
-            streetNumber: string;
-            /**
-             * The email of the invoice
-             */
-            email: string | null;
-            /**
-             * The phone of the invoice
-             */
-            phone: string | null;
-            /**
-             * The name of the invoice
-             */
-            name: string | null;
-            /**
-             * The company name of the invoice
-             */
-            companyName: string | null;
-            /**
-             * The VAT number of the invoice
-             */
-            vatNumber: string | null;
-        };
-        buyer: {
-            /**
-             * The country of the invoice
-             */
-            country: string;
-            /**
-             * The city of the invoice
-             */
-            city: string;
-            /**
-             * The zip code of the invoice
-             */
-            zipCode: string;
-            /**
-             * The street of the invoice
-             */
-            street: string;
-            /**
-             * The street number of the invoice
-             */
-            streetNumber: string;
-            /**
-             * The email of the invoice
-             */
-            email: string | null;
-            /**
-             * The phone of the invoice
-             */
-            phone: string | null;
-            /**
-             * The name of the invoice
-             */
-            name: string | null;
-            /**
-             * The company name of the invoice
-             */
-            companyName: string | null;
-            /**
-             * The VAT number of the invoice
-             */
-            vatNumber: string | null;
-        };
-    };
-    path?: never;
-    query?: never;
-    url: '/invoice/';
-};
-
-export type PostInvoiceResponses = {
-    /**
-     * Invoice generated or existing invoice returned
-     */
-    200: {
-        status: string;
-        data: {
-            invoice: string;
-        };
-    };
-};
-
-export type PostInvoiceResponse = PostInvoiceResponses[keyof PostInvoiceResponses];
-
-export type PostSignatureSignCreateInvoiceData = {
-    body?: {
-        /**
-         * The blockchain identifier, for which the invoice should be created
-         */
-        blockchainIdentifier: string;
-        /**
-         * The action to perform
-         */
-        action: 'retrieve_invoice';
-        buyer: {
-            /**
-             * The country of the invoice
-             */
-            country: string;
-            /**
-             * The city of the invoice
-             */
-            city: string;
-            /**
-             * The zip code of the invoice
-             */
-            zipCode: string;
-            /**
-             * The street of the invoice
-             */
-            street: string;
-            /**
-             * The street number of the invoice
-             */
-            streetNumber: string;
-            /**
-             * The email of the invoice
-             */
-            email: string | null;
-            /**
-             * The phone of the invoice
-             */
-            phone: string | null;
-            /**
-             * The name of the invoice
-             */
-            name: string | null;
-            /**
-             * The company name of the invoice
-             */
-            companyName: string | null;
-            /**
-             * The VAT number of the invoice
-             */
-            vatNumber: string | null;
-        };
-    };
-    path?: never;
-    query?: never;
-    url: '/signature/sign/create-invoice';
-};
-
-export type PostSignatureSignCreateInvoiceResponses = {
-    /**
-     * Signature generated
-     */
-    200: {
-        status: string;
-        data: {
-            signature: string;
-            key: string;
-            walletAddress: string;
-            signatureData: string;
-        };
-    };
-};
-
-export type PostSignatureSignCreateInvoiceResponse = PostSignatureSignCreateInvoiceResponses[keyof PostSignatureSignCreateInvoiceResponses];
-
 export type PostSignatureSignCreateInvoiceMonthlyData = {
     body?: {
         /**
@@ -3879,28 +3594,69 @@ export type PostSignatureSignCreateInvoiceMonthlyResponses = {
 
 export type PostSignatureSignCreateInvoiceMonthlyResponse = PostSignatureSignCreateInvoiceMonthlyResponses[keyof PostSignatureSignCreateInvoiceMonthlyResponses];
 
+export type GetInvoiceMonthlyData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Target month in format YYYY-MM (UTC calendar)
+         */
+        month: string;
+        /**
+         * Cursor for pagination (InvoiceBase id)
+         */
+        cursorId?: string;
+        /**
+         * Number of results to return
+         */
+        limit?: number;
+        /**
+         * When true, return all revisions including cancelled; when false, return only latest revision per base
+         */
+        includeAllRevisions?: boolean | null;
+    };
+    url: '/invoice/monthly';
+};
+
+export type GetInvoiceMonthlyResponses = {
+    /**
+     * List of invoice summaries
+     */
+    200: {
+        status: string;
+        data: {
+            Invoices: Array<{
+                id: string;
+                invoiceId: string;
+                createdAt: Date;
+                revisionId: string;
+                revisionNumber: number;
+                invoiceMonth: number;
+                invoiceYear: number;
+                invoiceDate: Date;
+                currencyShortId: string;
+                sellerName: string | null;
+                sellerCompanyName: string | null;
+                buyerName: string | null;
+                buyerCompanyName: string | null;
+                isCancelled: boolean;
+                cancellationReason: string | null;
+                cancellationDate: Date | null;
+                cancellationId: string | null;
+                itemCount: number;
+                netTotal: string;
+                vatTotal: string;
+                grossTotal: string;
+                coveredPaymentRequestIds: Array<string>;
+            }>;
+        };
+    };
+};
+
+export type GetInvoiceMonthlyResponse = GetInvoiceMonthlyResponses[keyof GetInvoiceMonthlyResponses];
+
 export type PostInvoiceMonthlyData = {
     body?: {
-        /**
-         * The signature to verify
-         */
-        signature: string;
-        /**
-         * The key to verify the signature
-         */
-        key: string;
-        /**
-         * The wallet address that signed the message
-         */
-        walletAddress: string;
-        /**
-         * The valid until timestamp
-         */
-        validUntil: number;
-        /**
-         * The action to perform for monthly invoices
-         */
-        action: 'retrieve_monthly_invoices';
         /**
          * The buyer wallet vkey to aggregate the month for
          */
@@ -3985,6 +3741,233 @@ export type PostInvoiceMonthlyData = {
          * The VAT rate as decimal (e.g., 0.19 for 19%)
          */
         vatRate?: number;
+        /**
+         * Enable reverse charge (VAT = 0, notice on invoice)
+         */
+        reverseCharge?: boolean;
+        /**
+         * Force cancel existing invoice and generate a new revision, even if no data changes detected
+         */
+        forceRegenerate?: boolean;
+        seller: {
+            /**
+             * The country of the invoice
+             */
+            country: string;
+            /**
+             * The city of the invoice
+             */
+            city: string;
+            /**
+             * The zip code of the invoice
+             */
+            zipCode: string;
+            /**
+             * The street of the invoice
+             */
+            street: string;
+            /**
+             * The street number of the invoice
+             */
+            streetNumber: string;
+            /**
+             * The email of the invoice
+             */
+            email: string | null;
+            /**
+             * The phone of the invoice
+             */
+            phone: string | null;
+            /**
+             * The name of the invoice
+             */
+            name: string | null;
+            /**
+             * The company name of the invoice
+             */
+            companyName: string | null;
+            /**
+             * The VAT number of the invoice
+             */
+            vatNumber: string | null;
+        };
+        buyer: {
+            /**
+             * The country of the invoice
+             */
+            country: string;
+            /**
+             * The city of the invoice
+             */
+            city: string;
+            /**
+             * The zip code of the invoice
+             */
+            zipCode: string;
+            /**
+             * The street of the invoice
+             */
+            street: string;
+            /**
+             * The street number of the invoice
+             */
+            streetNumber: string;
+            /**
+             * The email of the invoice
+             */
+            email: string | null;
+            /**
+             * The phone of the invoice
+             */
+            phone: string | null;
+            /**
+             * The name of the invoice
+             */
+            name: string | null;
+            /**
+             * The company name of the invoice
+             */
+            companyName: string | null;
+            /**
+             * The VAT number of the invoice
+             */
+            vatNumber: string | null;
+        };
+        /**
+         * The signature to verify
+         */
+        signature: string;
+        /**
+         * The key to verify the signature
+         */
+        key: string;
+        /**
+         * The wallet address that signed the message
+         */
+        walletAddress: string;
+        /**
+         * The valid until timestamp
+         */
+        validUntil: number;
+        /**
+         * The action to perform for monthly invoices
+         */
+        action: 'retrieve_monthly_invoices';
+    };
+    path?: never;
+    query?: never;
+    url: '/invoice/monthly';
+};
+
+export type PostInvoiceMonthlyResponses = {
+    /**
+     * Monthly invoice generated
+     */
+    200: {
+        status: string;
+        data: {
+            invoice: string;
+            cancellationInvoice?: string;
+        };
+    };
+};
+
+export type PostInvoiceMonthlyResponse = PostInvoiceMonthlyResponses[keyof PostInvoiceMonthlyResponses];
+
+export type PostInvoiceMonthlyAdminData = {
+    body?: {
+        /**
+         * The buyer wallet vkey to aggregate the month for
+         */
+        buyerWalletVkey: string;
+        /**
+         * Target month in format YYYY-MM (UTC calendar)
+         */
+        month: string;
+        /**
+         * The currency of the invoice
+         */
+        invoiceCurrency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+        /**
+         * Currency conversion settings by unit for this invoice
+         */
+        currencyConversion?: {
+            [key: string]: number;
+        };
+        invoice?: {
+            /**
+             * The prefix of the item name
+             */
+            itemNamePrefix?: string;
+            /**
+             * The suffix of the item name
+             */
+            itemNameSuffix?: string;
+            /**
+             * The title of the invoice
+             */
+            title?: string;
+            /**
+             * The description of the invoice
+             */
+            description?: string;
+            /**
+             * The prefix of the invoice number
+             */
+            idPrefix?: string;
+            /**
+             * The date of the invoice
+             */
+            date?: string;
+            /**
+             * The greetings of the invoice
+             */
+            greeting?: string;
+            /**
+             * The closing of the invoice
+             */
+            closing?: string;
+            /**
+             * The signature of the invoice
+             */
+            signature?: string;
+            /**
+             * The logo of the invoice
+             */
+            logo?: string;
+            /**
+             * The footer of the invoice
+             */
+            footer?: string;
+            /**
+             * The terms of the invoice
+             */
+            terms?: string;
+            /**
+             * The privacy of the invoice
+             */
+            privacy?: string;
+            /**
+             * Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us
+             */
+            language?: 'en-us' | 'en-uk' | 'de';
+            /**
+             * The localization format of the invoice
+             */
+            localizationFormat?: 'en-us' | 'en-uk' | 'de';
+        };
+        /**
+         * The VAT rate as decimal (e.g., 0.19 for 19%)
+         */
+        vatRate?: number;
+        /**
+         * Enable reverse charge (VAT = 0, notice on invoice)
+         */
+        reverseCharge?: boolean;
+        /**
+         * Force cancel existing invoice and generate a new revision, even if no data changes detected
+         */
+        forceRegenerate?: boolean;
         seller: {
             /**
              * The country of the invoice
@@ -4072,10 +4055,10 @@ export type PostInvoiceMonthlyData = {
     };
     path?: never;
     query?: never;
-    url: '/invoice/monthly';
+    url: '/invoice/monthly/admin';
 };
 
-export type PostInvoiceMonthlyResponses = {
+export type PostInvoiceMonthlyAdminResponses = {
     /**
      * Monthly invoice generated
      */
@@ -4083,11 +4066,61 @@ export type PostInvoiceMonthlyResponses = {
         status: string;
         data: {
             invoice: string;
+            cancellationInvoice?: string;
         };
     };
 };
 
-export type PostInvoiceMonthlyResponse = PostInvoiceMonthlyResponses[keyof PostInvoiceMonthlyResponses];
+export type PostInvoiceMonthlyAdminResponse = PostInvoiceMonthlyAdminResponses[keyof PostInvoiceMonthlyAdminResponses];
+
+export type GetInvoiceMonthlyUninvoicedData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Target month in format YYYY-MM (UTC calendar)
+         */
+        month: string;
+        /**
+         * Optional buyer wallet vkey filter
+         */
+        buyerWalletVkey?: string;
+        /**
+         * Cursor for pagination (PaymentRequest id)
+         */
+        cursorId?: string;
+        /**
+         * Number of results to return
+         */
+        limit?: number;
+    };
+    url: '/invoice/monthly/uninvoiced';
+};
+
+export type GetInvoiceMonthlyUninvoicedResponses = {
+    /**
+     * List of uninvoiced billable payments
+     */
+    200: {
+        status: string;
+        data: {
+            UninvoicedPayments: Array<{
+                id: string;
+                blockchainIdentifier: string;
+                onChainState: string | null;
+                createdAt: Date;
+                buyerWalletVkey: string | null;
+                buyerWalletAddress: string | null;
+                RequestedFunds: Array<{
+                    unit: string;
+                    amount: string;
+                }>;
+            }>;
+        };
+    };
+};
+
+export type GetInvoiceMonthlyUninvoicedResponse = GetInvoiceMonthlyUninvoicedResponses[keyof GetInvoiceMonthlyUninvoicedResponses];
 
 export type GetPurchaseData = {
     body?: never;

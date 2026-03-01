@@ -7214,645 +7214,6 @@
                 }
             }
         },
-        "/invoice/": {
-            "post": {
-                "description": "Generates an invoice PDF for a payment by blockchain identifier, validating a signed request from the buyer wallet. (admin access required)",
-                "summary": "Generate or retrieve an invoice PDF for a payment. (admin access required)",
-                "tags": [
-                    "invoice"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "description": "",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "signature": {
-                                        "type": "string",
-                                        "maxLength": 2000,
-                                        "description": "The signature to verify"
-                                    },
-                                    "key": {
-                                        "type": "string",
-                                        "maxLength": 2000,
-                                        "description": "The key to verify the signature"
-                                    },
-                                    "walletAddress": {
-                                        "type": "string",
-                                        "maxLength": 500,
-                                        "description": "The wallet address that signed the message"
-                                    },
-                                    "validUntil": {
-                                        "type": "number",
-                                        "description": "The valid until timestamp"
-                                    },
-                                    "blockchainIdentifier": {
-                                        "type": "string",
-                                        "description": "The blockchain identifier, for which the invoice should be created"
-                                    },
-                                    "signatureData": {
-                                        "type": "string",
-                                        "description": "The data to verify the signature"
-                                    },
-                                    "action": {
-                                        "type": "string",
-                                        "enum": [
-                                            "retrieve_invoice"
-                                        ],
-                                        "description": "The action to perform"
-                                    },
-                                    "invoiceCurrency": {
-                                        "type": "string",
-                                        "enum": [
-                                            "usd",
-                                            "eur",
-                                            "gbp",
-                                            "jpy",
-                                            "chf",
-                                            "aed"
-                                        ],
-                                        "description": "The currency of the invoice"
-                                    },
-                                    "currencyConversion": {
-                                        "type": "object",
-                                        "additionalProperties": {
-                                            "type": "number",
-                                            "minimum": 0,
-                                            "exclusiveMinimum": true
-                                        },
-                                        "description": "Currency conversion settings for this item"
-                                    },
-                                    "invoice": {
-                                        "type": "object",
-                                        "properties": {
-                                            "itemNamePrefix": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The prefix of the item name"
-                                            },
-                                            "itemNameSuffix": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The suffix of the item name"
-                                            },
-                                            "title": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The title of the invoice"
-                                            },
-                                            "description": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The description of the invoice"
-                                            },
-                                            "idPrefix": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The prefix of the invoice number"
-                                            },
-                                            "date": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The date of the invoice"
-                                            },
-                                            "greeting": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The greetings of the invoice"
-                                            },
-                                            "closing": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The closing of the invoice"
-                                            },
-                                            "signature": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The signature of the invoice"
-                                            },
-                                            "logo": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The logo of the invoice"
-                                            },
-                                            "footer": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The footer of the invoice"
-                                            },
-                                            "terms": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The terms of the invoice"
-                                            },
-                                            "privacy": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 1000,
-                                                "description": "The privacy of the invoice"
-                                            },
-                                            "language": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "en-us",
-                                                    "en-uk",
-                                                    "de"
-                                                ],
-                                                "description": "Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us"
-                                            },
-                                            "localizationFormat": {
-                                                "type": "string",
-                                                "enum": [
-                                                    "en-us",
-                                                    "en-uk",
-                                                    "de"
-                                                ],
-                                                "description": "The localization format of the invoice"
-                                            }
-                                        }
-                                    },
-                                    "vatRate": {
-                                        "type": "number",
-                                        "minimum": 0,
-                                        "maximum": 1,
-                                        "description": "The VAT rate as decimal (e.g., 0.19 for 19%)"
-                                    },
-                                    "seller": {
-                                        "type": "object",
-                                        "properties": {
-                                            "country": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The country of the invoice"
-                                            },
-                                            "city": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The city of the invoice"
-                                            },
-                                            "zipCode": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The zip code of the invoice"
-                                            },
-                                            "street": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The street of the invoice"
-                                            },
-                                            "streetNumber": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The street number of the invoice"
-                                            },
-                                            "email": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "format": "email",
-                                                "description": "The email of the invoice"
-                                            },
-                                            "phone": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The phone of the invoice"
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The name of the invoice"
-                                            },
-                                            "companyName": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The company name of the invoice"
-                                            },
-                                            "vatNumber": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The VAT number of the invoice"
-                                            }
-                                        },
-                                        "required": [
-                                            "country",
-                                            "city",
-                                            "zipCode",
-                                            "street",
-                                            "streetNumber",
-                                            "email",
-                                            "phone",
-                                            "name",
-                                            "companyName",
-                                            "vatNumber"
-                                        ]
-                                    },
-                                    "buyer": {
-                                        "type": "object",
-                                        "properties": {
-                                            "country": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The country of the invoice"
-                                            },
-                                            "city": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The city of the invoice"
-                                            },
-                                            "zipCode": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The zip code of the invoice"
-                                            },
-                                            "street": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The street of the invoice"
-                                            },
-                                            "streetNumber": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The street number of the invoice"
-                                            },
-                                            "email": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "format": "email",
-                                                "description": "The email of the invoice"
-                                            },
-                                            "phone": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The phone of the invoice"
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The name of the invoice"
-                                            },
-                                            "companyName": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The company name of the invoice"
-                                            },
-                                            "vatNumber": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The VAT number of the invoice"
-                                            }
-                                        },
-                                        "required": [
-                                            "country",
-                                            "city",
-                                            "zipCode",
-                                            "street",
-                                            "streetNumber",
-                                            "email",
-                                            "phone",
-                                            "name",
-                                            "companyName",
-                                            "vatNumber"
-                                        ]
-                                    }
-                                },
-                                "required": [
-                                    "signature",
-                                    "key",
-                                    "walletAddress",
-                                    "validUntil",
-                                    "blockchainIdentifier",
-                                    "signatureData",
-                                    "action",
-                                    "invoiceCurrency",
-                                    "seller",
-                                    "buyer"
-                                ],
-                                "example": {
-                                    "signature": "ed25519_signature",
-                                    "key": "ed25519_key",
-                                    "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
-                                    "validUntil": 1736352000000,
-                                    "blockchainIdentifier": "blockchain_identifier",
-                                    "signatureData": "{\"action\":\"retrieve_invoice\",\"validUntil\":1736352000000,\"hash\":\"...\"}",
-                                    "action": "retrieve_invoice",
-                                    "invoiceCurrency": "usd",
-                                    "invoice": {
-                                        "itemNamePrefix": "Agent: ",
-                                        "title": "Invoice",
-                                        "language": "en-us",
-                                        "localizationFormat": "en-us"
-                                    },
-                                    "vatRate": 0.19,
-                                    "seller": {
-                                        "country": "DE",
-                                        "city": "Berlin",
-                                        "zipCode": "10115",
-                                        "street": "Example Str.",
-                                        "streetNumber": "1",
-                                        "email": "seller@example.com",
-                                        "phone": "+49 30 123456",
-                                        "name": "Alice",
-                                        "companyName": "Alice GmbH",
-                                        "vatNumber": "DE123456789"
-                                    },
-                                    "buyer": {
-                                        "country": "DE",
-                                        "city": "Berlin",
-                                        "zipCode": "10115",
-                                        "street": "Buyer Str.",
-                                        "streetNumber": "2",
-                                        "email": "buyer@example.com",
-                                        "phone": "+49 30 987654",
-                                        "name": "Bob",
-                                        "companyName": null,
-                                        "vatNumber": null
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Invoice generated or existing invoice returned",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string"
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "invoice": {
-                                                    "type": "string"
-                                                }
-                                            },
-                                            "required": [
-                                                "invoice"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "invoice": "BASE64_PDF_STRING"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/signature/sign/create-invoice": {
-            "post": {
-                "description": "Provides a signed message from the smart contract wallet to authorize invoice retrieval for a purchase. (+PAY access required)",
-                "summary": "Get a signed message to request an invoice. (+PAY access required)",
-                "tags": [
-                    "signature"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "description": "",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "blockchainIdentifier": {
-                                        "type": "string",
-                                        "description": "The blockchain identifier, for which the invoice should be created"
-                                    },
-                                    "action": {
-                                        "type": "string",
-                                        "enum": [
-                                            "retrieve_invoice"
-                                        ],
-                                        "description": "The action to perform"
-                                    },
-                                    "buyer": {
-                                        "type": "object",
-                                        "properties": {
-                                            "country": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The country of the invoice"
-                                            },
-                                            "city": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The city of the invoice"
-                                            },
-                                            "zipCode": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The zip code of the invoice"
-                                            },
-                                            "street": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The street of the invoice"
-                                            },
-                                            "streetNumber": {
-                                                "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 20,
-                                                "description": "The street number of the invoice"
-                                            },
-                                            "email": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "format": "email",
-                                                "description": "The email of the invoice"
-                                            },
-                                            "phone": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The phone of the invoice"
-                                            },
-                                            "name": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The name of the invoice"
-                                            },
-                                            "companyName": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The company name of the invoice"
-                                            },
-                                            "vatNumber": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The VAT number of the invoice"
-                                            }
-                                        },
-                                        "required": [
-                                            "country",
-                                            "city",
-                                            "zipCode",
-                                            "street",
-                                            "streetNumber",
-                                            "email",
-                                            "phone",
-                                            "name",
-                                            "companyName",
-                                            "vatNumber"
-                                        ]
-                                    }
-                                },
-                                "required": [
-                                    "blockchainIdentifier",
-                                    "action",
-                                    "buyer"
-                                ],
-                                "example": {
-                                    "blockchainIdentifier": "blockchain_identifier",
-                                    "action": "retrieve_invoice",
-                                    "buyer": {
-                                        "country": "DE",
-                                        "city": "Berlin",
-                                        "zipCode": "10115",
-                                        "street": "Buyer Str.",
-                                        "streetNumber": "2",
-                                        "email": "buyer@example.com",
-                                        "phone": "+49 30 987654",
-                                        "name": "Bob",
-                                        "companyName": null,
-                                        "vatNumber": null
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Signature generated",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string"
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "signature": {
-                                                    "type": "string"
-                                                },
-                                                "key": {
-                                                    "type": "string"
-                                                },
-                                                "walletAddress": {
-                                                    "type": "string"
-                                                },
-                                                "signatureData": {
-                                                    "type": "string"
-                                                }
-                                            },
-                                            "required": [
-                                                "signature",
-                                                "key",
-                                                "walletAddress",
-                                                "signatureData"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "signature": "ed25519_signature",
-                                            "key": "ed25519_key",
-                                            "walletAddress": "addr1...",
-                                            "signatureData": "{\"action\":\"retrieve_invoice\",\"validUntil\":1736352000000,\"hash\":\"...\"}"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "/signature/sign/create-invoice/monthly": {
             "post": {
                 "description": "Provides a signed message from the smart contract wallet to authorize monthly invoice retrieval for a buyer wallet. (+PAY access required)",
@@ -8075,32 +7436,6 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "signature": {
-                                        "type": "string",
-                                        "maxLength": 2000,
-                                        "description": "The signature to verify"
-                                    },
-                                    "key": {
-                                        "type": "string",
-                                        "maxLength": 2000,
-                                        "description": "The key to verify the signature"
-                                    },
-                                    "walletAddress": {
-                                        "type": "string",
-                                        "maxLength": 500,
-                                        "description": "The wallet address that signed the message"
-                                    },
-                                    "validUntil": {
-                                        "type": "number",
-                                        "description": "The valid until timestamp"
-                                    },
-                                    "action": {
-                                        "type": "string",
-                                        "enum": [
-                                            "retrieve_monthly_invoices"
-                                        ],
-                                        "description": "The action to perform for monthly invoices"
-                                    },
                                     "buyerWalletVkey": {
                                         "type": "string",
                                         "minLength": 1,
@@ -8239,6 +7574,718 @@
                                         "minimum": 0,
                                         "maximum": 1,
                                         "description": "The VAT rate as decimal (e.g., 0.19 for 19%)"
+                                    },
+                                    "reverseCharge": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Enable reverse charge (VAT = 0, notice on invoice)"
+                                    },
+                                    "forceRegenerate": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
+                                    },
+                                    "seller": {
+                                        "type": "object",
+                                        "properties": {
+                                            "country": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The country of the invoice"
+                                            },
+                                            "city": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The city of the invoice"
+                                            },
+                                            "zipCode": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 20,
+                                                "description": "The zip code of the invoice"
+                                            },
+                                            "street": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The street of the invoice"
+                                            },
+                                            "streetNumber": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 20,
+                                                "description": "The street number of the invoice"
+                                            },
+                                            "email": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "format": "email",
+                                                "description": "The email of the invoice"
+                                            },
+                                            "phone": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The phone of the invoice"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The name of the invoice"
+                                            },
+                                            "companyName": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The company name of the invoice"
+                                            },
+                                            "vatNumber": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The VAT number of the invoice"
+                                            }
+                                        },
+                                        "required": [
+                                            "country",
+                                            "city",
+                                            "zipCode",
+                                            "street",
+                                            "streetNumber",
+                                            "email",
+                                            "phone",
+                                            "name",
+                                            "companyName",
+                                            "vatNumber"
+                                        ]
+                                    },
+                                    "buyer": {
+                                        "type": "object",
+                                        "properties": {
+                                            "country": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The country of the invoice"
+                                            },
+                                            "city": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The city of the invoice"
+                                            },
+                                            "zipCode": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 20,
+                                                "description": "The zip code of the invoice"
+                                            },
+                                            "street": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The street of the invoice"
+                                            },
+                                            "streetNumber": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 20,
+                                                "description": "The street number of the invoice"
+                                            },
+                                            "email": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "format": "email",
+                                                "description": "The email of the invoice"
+                                            },
+                                            "phone": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The phone of the invoice"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The name of the invoice"
+                                            },
+                                            "companyName": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The company name of the invoice"
+                                            },
+                                            "vatNumber": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The VAT number of the invoice"
+                                            }
+                                        },
+                                        "required": [
+                                            "country",
+                                            "city",
+                                            "zipCode",
+                                            "street",
+                                            "streetNumber",
+                                            "email",
+                                            "phone",
+                                            "name",
+                                            "companyName",
+                                            "vatNumber"
+                                        ]
+                                    },
+                                    "signature": {
+                                        "type": "string",
+                                        "maxLength": 2000,
+                                        "description": "The signature to verify"
+                                    },
+                                    "key": {
+                                        "type": "string",
+                                        "maxLength": 2000,
+                                        "description": "The key to verify the signature"
+                                    },
+                                    "walletAddress": {
+                                        "type": "string",
+                                        "maxLength": 500,
+                                        "description": "The wallet address that signed the message"
+                                    },
+                                    "validUntil": {
+                                        "type": "number",
+                                        "description": "The valid until timestamp"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "retrieve_monthly_invoices"
+                                        ],
+                                        "description": "The action to perform for monthly invoices"
+                                    }
+                                },
+                                "required": [
+                                    "buyerWalletVkey",
+                                    "month",
+                                    "invoiceCurrency",
+                                    "seller",
+                                    "buyer",
+                                    "signature",
+                                    "key",
+                                    "walletAddress",
+                                    "validUntil",
+                                    "action"
+                                ],
+                                "example": {
+                                    "signature": "ed25519_signature",
+                                    "key": "ed25519_key",
+                                    "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
+                                    "validUntil": 1736352000000,
+                                    "action": "retrieve_monthly_invoices",
+                                    "buyerWalletVkey": "buyer_wallet_vkey",
+                                    "month": "2025-09",
+                                    "invoiceCurrency": "usd",
+                                    "currencyConversion": {
+                                        "": 0.45,
+                                        "policyIdAssetHex": 1.23
+                                    },
+                                    "invoice": {
+                                        "itemNamePrefix": "Agent: ",
+                                        "title": "Monthly Invoice",
+                                        "language": "en-us",
+                                        "localizationFormat": "en-us"
+                                    },
+                                    "vatRate": 0.19,
+                                    "reverseCharge": false,
+                                    "forceRegenerate": false,
+                                    "seller": {
+                                        "country": "DE",
+                                        "city": "Berlin",
+                                        "zipCode": "10115",
+                                        "street": "Example Str.",
+                                        "streetNumber": "1",
+                                        "email": "seller@example.com",
+                                        "phone": "+49 30 123456",
+                                        "name": "Alice",
+                                        "companyName": "Alice GmbH",
+                                        "vatNumber": "DE123456789"
+                                    },
+                                    "buyer": {
+                                        "country": "DE",
+                                        "city": "Berlin",
+                                        "zipCode": "10115",
+                                        "street": "Buyer Str.",
+                                        "streetNumber": "2",
+                                        "email": "buyer@example.com",
+                                        "phone": "+49 30 987654",
+                                        "name": "Bob",
+                                        "companyName": null,
+                                        "vatNumber": null
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Monthly invoice generated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "invoice": {
+                                                    "type": "string"
+                                                },
+                                                "cancellationInvoice": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "invoice"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "invoice": "BASE64_PDF_STRING",
+                                            "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "description": "Lists invoice summaries for a given month with pagination. (admin access required)",
+                "summary": "List invoices for a month. (admin access required)",
+                "tags": [
+                    "invoice"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}$",
+                            "description": "Target month in format YYYY-MM (UTC calendar)"
+                        },
+                        "required": true,
+                        "description": "Target month in format YYYY-MM (UTC calendar)",
+                        "name": "month",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor for pagination (InvoiceBase id)"
+                        },
+                        "required": false,
+                        "description": "Cursor for pagination (InvoiceBase id)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Number of results to return"
+                        },
+                        "required": false,
+                        "description": "Number of results to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "boolean",
+                            "nullable": true,
+                            "default": false,
+                            "description": "When true, return all revisions including cancelled; when false, return only latest revision per base"
+                        },
+                        "required": false,
+                        "description": "When true, return all revisions including cancelled; when false, return only latest revision per base",
+                        "name": "includeAllRevisions",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of invoice summaries",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Invoices": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "invoiceId": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            },
+                                                            "revisionId": {
+                                                                "type": "string"
+                                                            },
+                                                            "revisionNumber": {
+                                                                "type": "number"
+                                                            },
+                                                            "invoiceMonth": {
+                                                                "type": "number"
+                                                            },
+                                                            "invoiceYear": {
+                                                                "type": "number"
+                                                            },
+                                                            "invoiceDate": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            },
+                                                            "currencyShortId": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerName": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "sellerCompanyName": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerName": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerCompanyName": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "isCancelled": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "cancellationReason": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "cancellationDate": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time"
+                                                            },
+                                                            "cancellationId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "itemCount": {
+                                                                "type": "number"
+                                                            },
+                                                            "netTotal": {
+                                                                "type": "string"
+                                                            },
+                                                            "vatTotal": {
+                                                                "type": "string"
+                                                            },
+                                                            "grossTotal": {
+                                                                "type": "string"
+                                                            },
+                                                            "coveredPaymentRequestIds": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "string"
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "invoiceId",
+                                                            "createdAt",
+                                                            "revisionId",
+                                                            "revisionNumber",
+                                                            "invoiceMonth",
+                                                            "invoiceYear",
+                                                            "invoiceDate",
+                                                            "currencyShortId",
+                                                            "sellerName",
+                                                            "sellerCompanyName",
+                                                            "buyerName",
+                                                            "buyerCompanyName",
+                                                            "isCancelled",
+                                                            "cancellationReason",
+                                                            "cancellationDate",
+                                                            "cancellationId",
+                                                            "itemCount",
+                                                            "netTotal",
+                                                            "vatTotal",
+                                                            "grossTotal",
+                                                            "coveredPaymentRequestIds"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Invoices"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Invoices": [
+                                                {
+                                                    "id": "invoice_base_id",
+                                                    "invoiceId": "INV-0001",
+                                                    "createdAt": "2025-09-30T23:59:59.000Z",
+                                                    "revisionId": "revision_id",
+                                                    "revisionNumber": 0,
+                                                    "invoiceMonth": 9,
+                                                    "invoiceYear": 2025,
+                                                    "invoiceDate": "2025-09-30T00:00:00.000Z",
+                                                    "currencyShortId": "usd",
+                                                    "sellerName": "Alice",
+                                                    "sellerCompanyName": "Alice GmbH",
+                                                    "buyerName": "Bob",
+                                                    "buyerCompanyName": null,
+                                                    "isCancelled": false,
+                                                    "cancellationReason": null,
+                                                    "cancellationDate": null,
+                                                    "cancellationId": null,
+                                                    "itemCount": 3,
+                                                    "netTotal": "150.00",
+                                                    "vatTotal": "28.50",
+                                                    "grossTotal": "178.50",
+                                                    "coveredPaymentRequestIds": [
+                                                        "payment_id_1",
+                                                        "payment_id_2"
+                                                    ]
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/invoice/monthly/admin": {
+            "post": {
+                "description": "Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)",
+                "summary": "Admin generate a monthly invoice PDF. (admin access required)",
+                "tags": [
+                    "invoice"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "buyerWalletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1000,
+                                        "description": "The buyer wallet vkey to aggregate the month for"
+                                    },
+                                    "month": {
+                                        "type": "string",
+                                        "pattern": "^\\d{4}-\\d{2}$",
+                                        "description": "Target month in format YYYY-MM (UTC calendar)"
+                                    },
+                                    "invoiceCurrency": {
+                                        "type": "string",
+                                        "enum": [
+                                            "usd",
+                                            "eur",
+                                            "gbp",
+                                            "jpy",
+                                            "chf",
+                                            "aed"
+                                        ],
+                                        "description": "The currency of the invoice"
+                                    },
+                                    "currencyConversion": {
+                                        "type": "object",
+                                        "additionalProperties": {
+                                            "type": "number",
+                                            "minimum": 0,
+                                            "exclusiveMinimum": true
+                                        },
+                                        "description": "Currency conversion settings by unit for this invoice"
+                                    },
+                                    "invoice": {
+                                        "type": "object",
+                                        "properties": {
+                                            "itemNamePrefix": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The prefix of the item name"
+                                            },
+                                            "itemNameSuffix": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The suffix of the item name"
+                                            },
+                                            "title": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The title of the invoice"
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The description of the invoice"
+                                            },
+                                            "idPrefix": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The prefix of the invoice number"
+                                            },
+                                            "date": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 100,
+                                                "description": "The date of the invoice"
+                                            },
+                                            "greeting": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The greetings of the invoice"
+                                            },
+                                            "closing": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The closing of the invoice"
+                                            },
+                                            "signature": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The signature of the invoice"
+                                            },
+                                            "logo": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The logo of the invoice"
+                                            },
+                                            "footer": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The footer of the invoice"
+                                            },
+                                            "terms": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The terms of the invoice"
+                                            },
+                                            "privacy": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 1000,
+                                                "description": "The privacy of the invoice"
+                                            },
+                                            "language": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "en-us",
+                                                    "en-uk",
+                                                    "de"
+                                                ],
+                                                "description": "Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us"
+                                            },
+                                            "localizationFormat": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "en-us",
+                                                    "en-uk",
+                                                    "de"
+                                                ],
+                                                "description": "The localization format of the invoice"
+                                            }
+                                        }
+                                    },
+                                    "vatRate": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                        "description": "The VAT rate as decimal (e.g., 0.19 for 19%)"
+                                    },
+                                    "reverseCharge": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Enable reverse charge (VAT = 0, notice on invoice)"
+                                    },
+                                    "forceRegenerate": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Force cancel existing invoice and generate a new revision, even if no data changes detected"
                                     },
                                     "seller": {
                                         "type": "object",
@@ -8408,11 +8455,6 @@
                                     }
                                 },
                                 "required": [
-                                    "signature",
-                                    "key",
-                                    "walletAddress",
-                                    "validUntil",
-                                    "action",
                                     "buyerWalletVkey",
                                     "month",
                                     "invoiceCurrency",
@@ -8420,11 +8462,6 @@
                                     "buyer"
                                 ],
                                 "example": {
-                                    "signature": "ed25519_signature",
-                                    "key": "ed25519_key",
-                                    "walletAddress": "addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x",
-                                    "validUntil": 1736352000000,
-                                    "action": "retrieve_monthly_invoices",
                                     "buyerWalletVkey": "buyer_wallet_vkey",
                                     "month": "2025-09",
                                     "invoiceCurrency": "usd",
@@ -8439,6 +8476,8 @@
                                         "localizationFormat": "en-us"
                                     },
                                     "vatRate": 0.19,
+                                    "reverseCharge": false,
+                                    "forceRegenerate": false,
                                     "seller": {
                                         "country": "DE",
                                         "city": "Berlin",
@@ -8484,6 +8523,9 @@
                                             "properties": {
                                                 "invoice": {
                                                     "type": "string"
+                                                },
+                                                "cancellationInvoice": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "required": [
@@ -8498,7 +8540,176 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "invoice": "BASE64_PDF_STRING"
+                                            "invoice": "BASE64_PDF_STRING",
+                                            "cancellationInvoice": "BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/invoice/monthly/uninvoiced": {
+            "get": {
+                "description": "Finds billable payment requests that do not yet have an invoice for a given month. (admin access required)",
+                "summary": "List uninvoiced payments for a month. (admin access required)",
+                "tags": [
+                    "invoice"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}$",
+                            "description": "Target month in format YYYY-MM (UTC calendar)"
+                        },
+                        "required": true,
+                        "description": "Target month in format YYYY-MM (UTC calendar)",
+                        "name": "month",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 1000,
+                            "description": "Optional buyer wallet vkey filter"
+                        },
+                        "required": false,
+                        "description": "Optional buyer wallet vkey filter",
+                        "name": "buyerWalletVkey",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor for pagination (PaymentRequest id)"
+                        },
+                        "required": false,
+                        "description": "Cursor for pagination (PaymentRequest id)",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Number of results to return"
+                        },
+                        "required": false,
+                        "description": "Number of results to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of uninvoiced billable payments",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "UninvoicedPayments": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "blockchainIdentifier": {
+                                                                "type": "string"
+                                                            },
+                                                            "onChainState": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            },
+                                                            "buyerWalletVkey": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerWalletAddress": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "RequestedFunds": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "object",
+                                                                    "properties": {
+                                                                        "unit": {
+                                                                            "type": "string"
+                                                                        },
+                                                                        "amount": {
+                                                                            "type": "string"
+                                                                        }
+                                                                    },
+                                                                    "required": [
+                                                                        "unit",
+                                                                        "amount"
+                                                                    ]
+                                                                }
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "blockchainIdentifier",
+                                                            "onChainState",
+                                                            "createdAt",
+                                                            "buyerWalletVkey",
+                                                            "buyerWalletAddress",
+                                                            "RequestedFunds"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "UninvoicedPayments"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "UninvoicedPayments": [
+                                                {
+                                                    "id": "payment_request_id",
+                                                    "blockchainIdentifier": "blockchain_identifier",
+                                                    "onChainState": "Withdrawn",
+                                                    "createdAt": "2025-09-15T10:00:00.000Z",
+                                                    "buyerWalletVkey": "buyer_wallet_vkey",
+                                                    "buyerWalletAddress": "addr1...",
+                                                    "RequestedFunds": [
+                                                        {
+                                                            "unit": "",
+                                                            "amount": "5000000"
+                                                        }
+                                                    ]
+                                                }
+                                            ]
                                         }
                                     }
                                 }

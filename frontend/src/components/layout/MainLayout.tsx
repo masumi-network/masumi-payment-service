@@ -7,6 +7,7 @@ import {
   Bot,
   Wallet,
   FileText,
+  Receipt,
   Key,
   Settings,
   Sun,
@@ -183,6 +184,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         name: 'Transactions',
         icon: <FileText className="h-4 w-4" />,
         badge: formatCount(newTransactionsCount),
+        group: 0,
+      },
+      {
+        href: '/invoices',
+        name: 'Invoices',
+        icon: <Receipt className="h-4 w-4" />,
+        badge: null,
         group: 0,
       },
       {
