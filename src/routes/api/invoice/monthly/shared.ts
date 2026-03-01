@@ -25,6 +25,11 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { CONFIG } from '@/utils/config';
 import Coingecko from '@coingecko/coingecko-typescript';
 import { logger } from '@/utils/logger';
+
+// Token unit constants (policyId + assetName hex)
+const MAINNET_USDM_UNIT = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
+const PREPROD_USDM_UNIT = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
+const isUsdmUnit = (unit: string) => unit === MAINNET_USDM_UNIT || unit === PREPROD_USDM_UNIT;
 import { getServicePeriodLabel, mergePaymentsById, validateInvoiceCompliance } from '@/utils/invoice/compliance';
 
 type PaymentWithInvoiceContext = {
@@ -360,15 +365,18 @@ export async function generateMonthlyInvoice(
 		});
 		const missingConversionList = Array.from(missingConversions);
 		for (const missingConversion of missingConversionList) {
+			// For preprod tUSDM, look up the mainnet USDM on CoinGecko instead
+			const lookupUnit = missingConversion === PREPROD_USDM_UNIT ? MAINNET_USDM_UNIT : missingConversion;
+
 			for (const idData of idMapping) {
 				const coinId = idData.id;
 				if (!coinId) continue;
-				if (missingConversion !== '') {
+				if (lookupUnit !== '') {
 					const platform = idData.platforms;
 					if (!platform) continue;
 					const cardanoPlatform = platform['cardano'];
 					if (!cardanoPlatform) continue;
-					if (missingConversion !== cardanoPlatform) continue;
+					if (lookupUnit !== cardanoPlatform) continue;
 				} else if (idData.id !== 'cardano') {
 					continue;
 				}
@@ -381,12 +389,9 @@ export async function generateMonthlyInvoice(
 					localization: false,
 				});
 				let decimals: number | null = null;
-				if (missingConversion === '') {
+				if (lookupUnit === '') {
 					decimals = 6;
-				} else if (
-					missingConversion === '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d' ||
-					missingConversion === 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d'
-				) {
+				} else if (isUsdmUnit(lookupUnit)) {
 					decimals = 6;
 				} else {
 					const coinData = await coingeckoClient.coins.getID(coinId, {});
@@ -407,6 +412,7 @@ export async function generateMonthlyInvoice(
 					if (conversionFactor === undefined || Number.isNaN(conversionFactor) || conversionFactor === 0) {
 						continue;
 					}
+					// Store under the original unit (not the lookup unit)
 					conversion.set(missingConversion, {
 						factor: conversionFactor / 10 ** decimals,
 						decimals: decimals,
