@@ -349,6 +349,15 @@ import {
 	postGenerateMonthlyInvoiceSchemaOutput,
 } from '@/routes/api/invoice/monthly';
 import {
+	postAdminGenerateMonthlyInvoiceSchemaInput,
+	postAdminGenerateMonthlyInvoiceSchemaOutput,
+} from '@/routes/api/invoice/monthly/admin';
+import { getMonthlyInvoiceListSchemaInput, getMonthlyInvoiceListSchemaOutput } from '@/routes/api/invoice/monthly/list';
+import {
+	getUninvoicedPaymentsSchemaInput,
+	getUninvoicedPaymentsSchemaOutput,
+} from '@/routes/api/invoice/monthly/uninvoiced';
+import {
 	postMonthlySignatureSchemaInput,
 	postMonthlySignatureSchemaOutput,
 } from '@/routes/api/signature/sign/create-invoice/monthly';
@@ -1439,6 +1448,207 @@ export function generateOpenAPI() {
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/invoice/monthly',
+		description: 'Lists invoice summaries for a given month with pagination. (admin access required)',
+		summary: 'List invoices for a month. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getMonthlyInvoiceListSchemaInput.openapi({
+				example: {
+					month: '2025-09',
+					limit: 10,
+					includeAllRevisions: false,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of invoice summaries',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: getMonthlyInvoiceListSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										Invoices: [
+											{
+												id: 'invoice_base_id',
+												invoiceId: 'INV-0001',
+												createdAt: '2025-09-30T23:59:59.000Z',
+												revisionId: 'revision_id',
+												revisionNumber: 0,
+												invoiceMonth: 9,
+												invoiceYear: 2025,
+												invoiceDate: '2025-09-30T00:00:00.000Z',
+												currencyShortId: 'usd',
+												sellerName: 'Alice',
+												sellerCompanyName: 'Alice GmbH',
+												buyerName: 'Bob',
+												buyerCompanyName: null,
+												isCancelled: false,
+												cancellationReason: null,
+												cancellationDate: null,
+												cancellationId: null,
+												itemCount: 3,
+												netTotal: '150.00',
+												vatTotal: '28.50',
+												grossTotal: '178.50',
+												coveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
+											},
+										],
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/invoice/monthly/admin',
+		description:
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)',
+		summary: 'Admin generate a monthly invoice PDF. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: postAdminGenerateMonthlyInvoiceSchemaInput.openapi({
+							example: {
+								buyerWalletVkey: 'buyer_wallet_vkey',
+								month: '2025-09',
+								invoiceCurrency: 'usd',
+								currencyConversion: {
+									'': 0.45,
+									policyIdAssetHex: 1.23,
+								},
+								invoice: {
+									itemNamePrefix: 'Agent: ',
+									title: 'Monthly Invoice',
+									language: 'en-us',
+									localizationFormat: 'en-us',
+								},
+								vatRate: 0.19,
+								reverseCharge: false,
+								forceRegenerate: false,
+								seller: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Example Str.',
+									streetNumber: '1',
+									email: 'seller@example.com',
+									phone: '+49 30 123456',
+									name: 'Alice',
+									companyName: 'Alice GmbH',
+									vatNumber: 'DE123456789',
+								},
+								buyer: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Buyer Str.',
+									streetNumber: '2',
+									email: 'buyer@example.com',
+									phone: '+49 30 987654',
+									name: 'Bob',
+									companyName: null,
+									vatNumber: null,
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Monthly invoice generated',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: postAdminGenerateMonthlyInvoiceSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										invoice: 'BASE64_PDF_STRING',
+										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/invoice/monthly/uninvoiced',
+		description:
+			'Finds billable payment requests that do not yet have an invoice for a given month. (admin access required)',
+		summary: 'List uninvoiced payments for a month. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getUninvoicedPaymentsSchemaInput.openapi({
+				example: {
+					month: '2025-09',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of uninvoiced billable payments',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: getUninvoicedPaymentsSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										UninvoicedPayments: [
+											{
+												id: 'payment_request_id',
+												blockchainIdentifier: 'blockchain_identifier',
+												onChainState: 'Withdrawn',
+												createdAt: '2025-09-15T10:00:00.000Z',
+												buyerWalletVkey: 'buyer_wallet_vkey',
+												buyerWalletAddress: 'addr1...',
+												RequestedFunds: [{ unit: '', amount: '5000000' }],
+											},
+										],
 									},
 								},
 							}),
