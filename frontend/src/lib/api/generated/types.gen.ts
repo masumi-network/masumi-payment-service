@@ -3742,13 +3742,13 @@ export type PostInvoiceMonthlyData = {
              */
             privacy?: string;
             /**
-             * Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us
+             * Invoice language and region: English US (en-us), English GB (en-gb), or German (de). Default: en-us
              */
-            language?: 'en-us' | 'en-uk' | 'de';
+            language?: 'en-us' | 'en-gb' | 'de';
             /**
              * The localization format of the invoice
              */
-            localizationFormat?: 'en-us' | 'en-uk' | 'de';
+            localizationFormat?: 'en-us' | 'en-gb' | 'de';
         };
         /**
          * The VAT rate as decimal (e.g., 0.19 for 19%)
@@ -3961,13 +3961,13 @@ export type PostInvoiceMonthlyAdminData = {
              */
             privacy?: string;
             /**
-             * Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us
+             * Invoice language and region: English US (en-us), English GB (en-gb), or German (de). Default: en-us
              */
-            language?: 'en-us' | 'en-uk' | 'de';
+            language?: 'en-us' | 'en-gb' | 'de';
             /**
              * The localization format of the invoice
              */
-            localizationFormat?: 'en-us' | 'en-uk' | 'de';
+            localizationFormat?: 'en-us' | 'en-gb' | 'de';
         };
         /**
          * The VAT rate as decimal (e.g., 0.19 for 19%)
