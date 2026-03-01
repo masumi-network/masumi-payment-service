@@ -419,7 +419,7 @@ export async function generateMonthlyInvoice(
 		buyerVatNumber: input.buyer.vatNumber ?? null,
 		buyerWalletAddress,
 		generatedPDFInvoice: Buffer.alloc(0),
-		generatedInvoiceUpdatedAt: new Date(),
+		generatedInvoiceUpdatedAt: new Date(), // overwritten by DB trigger when PDF is set
 		InvoiceItems: {
 			create: dbItems.map((item) => {
 				const appliedVatRate = item.vatRateOverride ?? effectiveVatRate;
@@ -707,7 +707,6 @@ export async function generateMonthlyInvoice(
 						cancellationDate: new Date(),
 						cancellationId,
 						generatedCancelledInvoice: Buffer.alloc(0),
-						generatedCancelledInvoiceUpdatedAt: new Date(),
 					},
 				});
 
@@ -837,14 +836,12 @@ export async function generateMonthlyInvoice(
 				where: { id: txResult.oldRevisionId },
 				data: {
 					generatedCancelledInvoice: Buffer.from(cancellationPdfBase64, 'base64'),
-					generatedCancelledInvoiceUpdatedAt: new Date(),
 				},
 			}),
 			prisma.invoiceRevision.update({
 				where: { id: txResult.newRevisionId },
 				data: {
 					generatedPDFInvoice: Buffer.from(pdfBase64, 'base64'),
-					generatedInvoiceUpdatedAt: new Date(),
 				},
 			}),
 		]);
@@ -868,7 +865,6 @@ export async function generateMonthlyInvoice(
 		where: { id: txResult.newRevisionId },
 		data: {
 			generatedPDFInvoice: Buffer.from(pdfBase64, 'base64'),
-			generatedInvoiceUpdatedAt: new Date(),
 		},
 	});
 
