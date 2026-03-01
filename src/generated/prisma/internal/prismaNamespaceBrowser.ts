@@ -445,7 +445,6 @@ export const InvoiceRevisionScalarFieldEnum = {
   invoiceFooter: 'invoiceFooter',
   invoiceTerms: 'invoiceTerms',
   invoicePrivacy: 'invoicePrivacy',
-  invoiceDisclaimer: 'invoiceDisclaimer',
   language: 'language',
   localizationFormat: 'localizationFormat',
   sellerCountry: 'sellerCountry',

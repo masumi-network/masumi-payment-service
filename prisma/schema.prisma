@@ -516,7 +516,6 @@ model InvoiceRevision {
   invoiceFooter      String?
   invoiceTerms       String?
   invoicePrivacy     String?
-  invoiceDisclaimer  String?
 
   // Global formatting options
   language           String?
@@ -559,11 +558,6 @@ model InvoiceRevision {
   generatedCancelledInvoiceUpdatedAt DateTime?
 
   @@unique([invoiceBaseId, revisionNumber])
-}
-
-enum SymbolPosition {
-  Before
-  After
 }
 
 model InvoicePrefix {

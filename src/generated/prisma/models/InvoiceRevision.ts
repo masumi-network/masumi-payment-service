@@ -58,7 +58,6 @@ export type InvoiceRevisionMinAggregateOutputType = {
   invoiceFooter: string | null
   invoiceTerms: string | null
   invoicePrivacy: string | null
-  invoiceDisclaimer: string | null
   language: string | null
   localizationFormat: string | null
   sellerCountry: string | null
@@ -113,7 +112,6 @@ export type InvoiceRevisionMaxAggregateOutputType = {
   invoiceFooter: string | null
   invoiceTerms: string | null
   invoicePrivacy: string | null
-  invoiceDisclaimer: string | null
   language: string | null
   localizationFormat: string | null
   sellerCountry: string | null
@@ -168,7 +166,6 @@ export type InvoiceRevisionCountAggregateOutputType = {
   invoiceFooter: number
   invoiceTerms: number
   invoicePrivacy: number
-  invoiceDisclaimer: number
   language: number
   localizationFormat: number
   sellerCountry: number
@@ -237,7 +234,6 @@ export type InvoiceRevisionMinAggregateInputType = {
   invoiceFooter?: true
   invoiceTerms?: true
   invoicePrivacy?: true
-  invoiceDisclaimer?: true
   language?: true
   localizationFormat?: true
   sellerCountry?: true
@@ -292,7 +288,6 @@ export type InvoiceRevisionMaxAggregateInputType = {
   invoiceFooter?: true
   invoiceTerms?: true
   invoicePrivacy?: true
-  invoiceDisclaimer?: true
   language?: true
   localizationFormat?: true
   sellerCountry?: true
@@ -347,7 +342,6 @@ export type InvoiceRevisionCountAggregateInputType = {
   invoiceFooter?: true
   invoiceTerms?: true
   invoicePrivacy?: true
-  invoiceDisclaimer?: true
   language?: true
   localizationFormat?: true
   sellerCountry?: true
@@ -489,7 +483,6 @@ export type InvoiceRevisionGroupByOutputType = {
   invoiceFooter: string | null
   invoiceTerms: string | null
   invoicePrivacy: string | null
-  invoiceDisclaimer: string | null
   language: string | null
   localizationFormat: string
   sellerCountry: string
@@ -567,7 +560,6 @@ export type InvoiceRevisionWhereInput = {
   invoiceFooter?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceTerms?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoicePrivacy?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
-  invoiceDisclaimer?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   language?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   localizationFormat?: Prisma.StringFilter<"InvoiceRevision"> | string
   sellerCountry?: Prisma.StringFilter<"InvoiceRevision"> | string
@@ -624,7 +616,6 @@ export type InvoiceRevisionOrderByWithRelationInput = {
   invoiceFooter?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceTerms?: Prisma.SortOrderInput | Prisma.SortOrder
   invoicePrivacy?: Prisma.SortOrderInput | Prisma.SortOrder
-  invoiceDisclaimer?: Prisma.SortOrderInput | Prisma.SortOrder
   language?: Prisma.SortOrderInput | Prisma.SortOrder
   localizationFormat?: Prisma.SortOrder
   sellerCountry?: Prisma.SortOrder
@@ -686,7 +677,6 @@ export type InvoiceRevisionWhereUniqueInput = Prisma.AtLeast<{
   invoiceFooter?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceTerms?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoicePrivacy?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
-  invoiceDisclaimer?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   language?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   localizationFormat?: Prisma.StringFilter<"InvoiceRevision"> | string
   sellerCountry?: Prisma.StringFilter<"InvoiceRevision"> | string
@@ -742,7 +732,6 @@ export type InvoiceRevisionOrderByWithAggregationInput = {
   invoiceFooter?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceTerms?: Prisma.SortOrderInput | Prisma.SortOrder
   invoicePrivacy?: Prisma.SortOrderInput | Prisma.SortOrder
-  invoiceDisclaimer?: Prisma.SortOrderInput | Prisma.SortOrder
   language?: Prisma.SortOrderInput | Prisma.SortOrder
   localizationFormat?: Prisma.SortOrder
   sellerCountry?: Prisma.SortOrder
@@ -805,7 +794,6 @@ export type InvoiceRevisionScalarWhereWithAggregatesInput = {
   invoiceFooter?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   invoiceTerms?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   invoicePrivacy?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
-  invoiceDisclaimer?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   language?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   localizationFormat?: Prisma.StringWithAggregatesFilter<"InvoiceRevision"> | string
   sellerCountry?: Prisma.StringWithAggregatesFilter<"InvoiceRevision"> | string
@@ -859,7 +847,6 @@ export type InvoiceRevisionCreateInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -916,7 +903,6 @@ export type InvoiceRevisionUncheckedCreateInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -971,7 +957,6 @@ export type InvoiceRevisionUpdateInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1028,7 +1013,6 @@ export type InvoiceRevisionUncheckedUpdateInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1084,7 +1068,6 @@ export type InvoiceRevisionCreateManyInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1138,7 +1121,6 @@ export type InvoiceRevisionUpdateManyMutationInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1193,7 +1175,6 @@ export type InvoiceRevisionUncheckedUpdateManyInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1263,7 +1244,6 @@ export type InvoiceRevisionCountOrderByAggregateInput = {
   invoiceFooter?: Prisma.SortOrder
   invoiceTerms?: Prisma.SortOrder
   invoicePrivacy?: Prisma.SortOrder
-  invoiceDisclaimer?: Prisma.SortOrder
   language?: Prisma.SortOrder
   localizationFormat?: Prisma.SortOrder
   sellerCountry?: Prisma.SortOrder
@@ -1324,7 +1304,6 @@ export type InvoiceRevisionMaxOrderByAggregateInput = {
   invoiceFooter?: Prisma.SortOrder
   invoiceTerms?: Prisma.SortOrder
   invoicePrivacy?: Prisma.SortOrder
-  invoiceDisclaimer?: Prisma.SortOrder
   language?: Prisma.SortOrder
   localizationFormat?: Prisma.SortOrder
   sellerCountry?: Prisma.SortOrder
@@ -1379,7 +1358,6 @@ export type InvoiceRevisionMinOrderByAggregateInput = {
   invoiceFooter?: Prisma.SortOrder
   invoiceTerms?: Prisma.SortOrder
   invoicePrivacy?: Prisma.SortOrder
-  invoiceDisclaimer?: Prisma.SortOrder
   language?: Prisma.SortOrder
   localizationFormat?: Prisma.SortOrder
   sellerCountry?: Prisma.SortOrder
@@ -1508,7 +1486,6 @@ export type InvoiceRevisionCreateWithoutInvoiceBaseInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1563,7 +1540,6 @@ export type InvoiceRevisionUncheckedCreateWithoutInvoiceBaseInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1648,7 +1624,6 @@ export type InvoiceRevisionScalarWhereInput = {
   invoiceFooter?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceTerms?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoicePrivacy?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
-  invoiceDisclaimer?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   language?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   localizationFormat?: Prisma.StringFilter<"InvoiceRevision"> | string
   sellerCountry?: Prisma.StringFilter<"InvoiceRevision"> | string
@@ -1702,7 +1677,6 @@ export type InvoiceRevisionCreateWithoutInvoiceItemsInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1758,7 +1732,6 @@ export type InvoiceRevisionUncheckedCreateWithoutInvoiceItemsInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1828,7 +1801,6 @@ export type InvoiceRevisionUpdateWithoutInvoiceItemsInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1884,7 +1856,6 @@ export type InvoiceRevisionUncheckedUpdateWithoutInvoiceItemsInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -1938,7 +1909,6 @@ export type InvoiceRevisionCreateManyInvoiceBaseInput = {
   invoiceFooter?: string | null
   invoiceTerms?: string | null
   invoicePrivacy?: string | null
-  invoiceDisclaimer?: string | null
   language?: string | null
   localizationFormat: string
   sellerCountry: string
@@ -1992,7 +1962,6 @@ export type InvoiceRevisionUpdateWithoutInvoiceBaseInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -2047,7 +2016,6 @@ export type InvoiceRevisionUncheckedUpdateWithoutInvoiceBaseInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -2102,7 +2070,6 @@ export type InvoiceRevisionUncheckedUpdateManyWithoutInvoiceBaseInput = {
   invoiceFooter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceTerms?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoicePrivacy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  invoiceDisclaimer?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   language?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   localizationFormat?: Prisma.StringFieldUpdateOperationsInput | string
   sellerCountry?: Prisma.StringFieldUpdateOperationsInput | string
@@ -2188,7 +2155,6 @@ export type InvoiceRevisionSelect<ExtArgs extends runtime.Types.Extensions.Inter
   invoiceFooter?: boolean
   invoiceTerms?: boolean
   invoicePrivacy?: boolean
-  invoiceDisclaimer?: boolean
   language?: boolean
   localizationFormat?: boolean
   sellerCountry?: boolean
@@ -2246,7 +2212,6 @@ export type InvoiceRevisionSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   invoiceFooter?: boolean
   invoiceTerms?: boolean
   invoicePrivacy?: boolean
-  invoiceDisclaimer?: boolean
   language?: boolean
   localizationFormat?: boolean
   sellerCountry?: boolean
@@ -2302,7 +2267,6 @@ export type InvoiceRevisionSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   invoiceFooter?: boolean
   invoiceTerms?: boolean
   invoicePrivacy?: boolean
-  invoiceDisclaimer?: boolean
   language?: boolean
   localizationFormat?: boolean
   sellerCountry?: boolean
@@ -2358,7 +2322,6 @@ export type InvoiceRevisionSelectScalar = {
   invoiceFooter?: boolean
   invoiceTerms?: boolean
   invoicePrivacy?: boolean
-  invoiceDisclaimer?: boolean
   language?: boolean
   localizationFormat?: boolean
   sellerCountry?: boolean
@@ -2393,7 +2356,7 @@ export type InvoiceRevisionSelectScalar = {
   generatedCancelledInvoiceUpdatedAt?: boolean
 }
 
-export type InvoiceRevisionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "invoiceBaseId" | "revisionNumber" | "currencyShortId" | "invoiceTitle" | "invoiceDescription" | "invoiceDate" | "invoiceMonth" | "invoiceYear" | "reverseCharge" | "invoiceGreetings" | "invoiceClosing" | "invoiceSignature" | "invoiceLogo" | "invoiceFooter" | "invoiceTerms" | "invoicePrivacy" | "invoiceDisclaimer" | "language" | "localizationFormat" | "sellerCountry" | "sellerCity" | "sellerZipCode" | "sellerStreet" | "sellerStreetNumber" | "sellerEmail" | "sellerPhone" | "sellerName" | "sellerCompanyName" | "sellerVatNumber" | "sellerWalletAddress" | "buyerCountry" | "buyerCity" | "buyerZipCode" | "buyerStreet" | "buyerStreetNumber" | "buyerEmail" | "buyerPhone" | "buyerName" | "buyerCompanyName" | "buyerVatNumber" | "buyerWalletAddress" | "generatedPDFInvoice" | "generatedInvoiceUpdatedAt" | "isCancelled" | "cancellationReason" | "cancellationDate" | "cancellationId" | "generatedCancelledInvoice" | "generatedCancelledInvoiceUpdatedAt", ExtArgs["result"]["invoiceRevision"]>
+export type InvoiceRevisionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "invoiceBaseId" | "revisionNumber" | "currencyShortId" | "invoiceTitle" | "invoiceDescription" | "invoiceDate" | "invoiceMonth" | "invoiceYear" | "reverseCharge" | "invoiceGreetings" | "invoiceClosing" | "invoiceSignature" | "invoiceLogo" | "invoiceFooter" | "invoiceTerms" | "invoicePrivacy" | "language" | "localizationFormat" | "sellerCountry" | "sellerCity" | "sellerZipCode" | "sellerStreet" | "sellerStreetNumber" | "sellerEmail" | "sellerPhone" | "sellerName" | "sellerCompanyName" | "sellerVatNumber" | "sellerWalletAddress" | "buyerCountry" | "buyerCity" | "buyerZipCode" | "buyerStreet" | "buyerStreetNumber" | "buyerEmail" | "buyerPhone" | "buyerName" | "buyerCompanyName" | "buyerVatNumber" | "buyerWalletAddress" | "generatedPDFInvoice" | "generatedInvoiceUpdatedAt" | "isCancelled" | "cancellationReason" | "cancellationDate" | "cancellationId" | "generatedCancelledInvoice" | "generatedCancelledInvoiceUpdatedAt", ExtArgs["result"]["invoiceRevision"]>
 export type InvoiceRevisionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   InvoiceBase?: boolean | Prisma.InvoiceBaseDefaultArgs<ExtArgs>
   InvoiceItems?: boolean | Prisma.InvoiceRevision$InvoiceItemsArgs<ExtArgs>
@@ -2432,7 +2395,6 @@ export type $InvoiceRevisionPayload<ExtArgs extends runtime.Types.Extensions.Int
     invoiceFooter: string | null
     invoiceTerms: string | null
     invoicePrivacy: string | null
-    invoiceDisclaimer: string | null
     language: string | null
     localizationFormat: string
     sellerCountry: string
@@ -2909,7 +2871,6 @@ export interface InvoiceRevisionFieldRefs {
   readonly invoiceFooter: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly invoiceTerms: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly invoicePrivacy: Prisma.FieldRef<"InvoiceRevision", 'String'>
-  readonly invoiceDisclaimer: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly language: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly localizationFormat: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly sellerCountry: Prisma.FieldRef<"InvoiceRevision", 'String'>
