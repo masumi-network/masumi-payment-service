@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthlyUninvoiced } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 export type UninvoicedPayment = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthlyUninvoiced>>['data']
@@ -25,7 +26,9 @@ export function useUninvoicedPayments(month: string, buyerWalletVkey?: string) {
       });
 
       if (result.error) {
-        throw new Error('Failed to fetch uninvoiced payments');
+        throw new Error(
+          extractApiErrorMessage(result.error, 'Failed to fetch uninvoiced payments'),
+        );
       }
 
       const allPayments = result.data?.data?.UninvoicedPayments ?? [];

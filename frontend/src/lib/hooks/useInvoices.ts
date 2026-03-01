@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getInvoiceMonthly } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 export type InvoiceSummary = NonNullable<
   Awaited<ReturnType<typeof getInvoiceMonthly>>['data']
@@ -24,7 +25,7 @@ export function useInvoices(month: string) {
       });
 
       if (result.error) {
-        throw new Error('Failed to fetch invoices');
+        throw new Error(extractApiErrorMessage(result.error, 'Failed to fetch invoices'));
       }
 
       const allInvoices = result.data?.data?.Invoices ?? [];
@@ -85,7 +86,7 @@ export function useInvoiceRevisions(month: string, invoiceBaseId: string | null)
       });
 
       if (result.error) {
-        throw new Error('Failed to fetch invoice revisions');
+        throw new Error(extractApiErrorMessage(result.error, 'Failed to fetch invoice revisions'));
       }
 
       return result.data?.data?.Invoices ?? [];

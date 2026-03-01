@@ -1,6 +1,14 @@
 import { z } from '@/utils/zod-openapi';
 import { generateSHA256Hash } from '../crypto';
 
+const invoiceDateSchema = z
+	.string()
+	.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must use YYYY-MM-DD format')
+	.refine((value) => {
+		const parsed = new Date(`${value}T00:00:00.000Z`);
+		return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+	}, 'Date is invalid');
+
 export const invoiceSellerSchema = z.object({
 	country: z.string().min(1).max(100).describe('The country of the invoice'),
 	city: z.string().min(1).max(100).describe('The city of the invoice'),
@@ -34,7 +42,7 @@ export const invoiceOptionsSchema = z
 		title: z.string().min(1).max(100).optional().describe('The title of the invoice'),
 		description: z.string().min(1).max(1000).optional().describe('The description of the invoice'),
 		idPrefix: z.string().min(1).max(100).optional().describe('The prefix of the invoice number'),
-		date: z.string().min(1).max(100).optional().describe('The date of the invoice'),
+		date: invoiceDateSchema.optional().describe('The date of the invoice (YYYY-MM-DD)'),
 		greeting: z.string().min(1).max(1000).optional().describe('The greetings of the invoice'),
 		closing: z.string().min(1).max(1000).optional().describe('The closing of the invoice'),
 		signature: z.string().min(1).max(1000).optional().describe('The signature of the invoice'),

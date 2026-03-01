@@ -30,6 +30,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
 import { shortenAddress } from '@/lib/utils';
 import { useSellerTemplates, type SellerTemplateData } from '@/lib/hooks/useSellerTemplates';
+import { extractApiErrorMessage, mapInvoiceApiErrorMessage } from '@/lib/api-error';
 
 const currencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
 const languages = ['en-us', 'en-gb', 'de'] as const;
@@ -47,51 +48,78 @@ const EMPTY_SELLER: SellerTemplateData = {
   phone: null,
 };
 
-const formSchema = z.object({
-  buyerWalletVkey: z
-    .string()
-    .min(1, 'Required')
-    .regex(/^[0-9a-fA-F]+$/, 'Must be hex'),
-  month: z.string().min(1, 'Required'),
-  invoiceCurrency: z.enum(currencies),
-  vatRate: z.number().min(0, 'Min 0').max(1, 'Max 1').optional(),
-  reverseCharge: z.boolean().optional(),
-  forceRegenerate: z.boolean().optional(),
-  seller: z.object({
-    name: z.string().nullable().optional(),
-    companyName: z.string().nullable().optional(),
-    vatNumber: z.string().nullable().optional(),
-    country: z.string().min(1, 'Required'),
-    city: z.string().min(1, 'Required'),
-    zipCode: z.string().min(1, 'Required'),
-    street: z.string().min(1, 'Required'),
-    streetNumber: z.string().min(1, 'Required'),
-    email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
-    phone: z.string().nullable().optional(),
-  }),
-  buyer: z.object({
-    name: z.string().nullable().optional(),
-    companyName: z.string().nullable().optional(),
-    vatNumber: z.string().nullable().optional(),
-    country: z.string().min(1, 'Required'),
-    city: z.string().min(1, 'Required'),
-    zipCode: z.string().min(1, 'Required'),
-    street: z.string().min(1, 'Required'),
-    streetNumber: z.string().min(1, 'Required'),
-    email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
-    phone: z.string().nullable().optional(),
-  }),
-  invoice: z
-    .object({
-      title: z.string().optional(),
-      description: z.string().optional(),
-      idPrefix: z.string().optional(),
-      date: z.string().optional(),
-      language: z.enum(languages).optional(),
-      localizationFormat: z.enum(languages).optional(),
-    })
-    .optional(),
-});
+const formSchema = z
+  .object({
+    buyerWalletVkey: z
+      .string()
+      .min(1, 'Required')
+      .regex(/^[0-9a-fA-F]+$/, 'Must be hex'),
+    month: z.string().min(1, 'Required'),
+    invoiceCurrency: z.enum(currencies),
+    vatRate: z.number().min(0, 'Min 0').max(1, 'Max 1').optional(),
+    reverseCharge: z.boolean().optional(),
+    forceRegenerate: z.boolean().optional(),
+    seller: z.object({
+      name: z.string().nullable().optional(),
+      companyName: z.string().nullable().optional(),
+      vatNumber: z.string().nullable().optional(),
+      country: z.string().min(1, 'Required'),
+      city: z.string().min(1, 'Required'),
+      zipCode: z.string().min(1, 'Required'),
+      street: z.string().min(1, 'Required'),
+      streetNumber: z.string().min(1, 'Required'),
+      email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+      phone: z.string().nullable().optional(),
+    }),
+    buyer: z.object({
+      name: z.string().nullable().optional(),
+      companyName: z.string().nullable().optional(),
+      vatNumber: z.string().nullable().optional(),
+      country: z.string().min(1, 'Required'),
+      city: z.string().min(1, 'Required'),
+      zipCode: z.string().min(1, 'Required'),
+      street: z.string().min(1, 'Required'),
+      streetNumber: z.string().min(1, 'Required'),
+      email: z.string().email('Invalid email').nullable().optional().or(z.literal('')),
+      phone: z.string().nullable().optional(),
+    }),
+    invoice: z
+      .object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        idPrefix: z.string().optional(),
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must use YYYY-MM-DD format')
+          .or(z.literal(''))
+          .optional(),
+        language: z.enum(languages).optional(),
+        localizationFormat: z.enum(languages).optional(),
+      })
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    const reverseCharge = value.reverseCharge ?? false;
+    const vatRate = value.vatRate ?? 0;
+    const sellerVat = value.seller.vatNumber?.trim() ?? '';
+    const buyerVat = value.buyer.vatNumber?.trim() ?? '';
+
+    if ((vatRate > 0 || reverseCharge) && sellerVat.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['seller', 'vatNumber'],
+        message: 'Seller VAT number is required when VAT is applied or reverse charge is enabled.',
+      });
+    }
+
+    if (reverseCharge && buyerVat.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['buyer', 'vatNumber'],
+        message: 'Buyer VAT number is required when reverse charge is enabled.',
+      });
+    }
+  });
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -154,6 +182,9 @@ function AddressFields({
           {...register(`${prefix}.vatNumber`)}
           placeholder="VAT ID"
         />
+        {fieldErrors.vatNumber && (
+          <p className="text-xs text-destructive mt-1">{fieldErrors.vatNumber.message}</p>
+        )}
       </div>
       <div>
         <Label htmlFor={`${prefix}.country`}>
@@ -314,6 +345,7 @@ export function GenerateInvoiceDialog({
   const reverseCharge = watch('reverseCharge');
   const forceRegenerate = watch('forceRegenerate');
   const invoiceCurrency = watch('invoiceCurrency');
+  const vatRate = watch('vatRate');
 
   const applyTemplate = useCallback(
     (templateId: string) => {
@@ -460,11 +492,8 @@ export function GenerateInvoiceDialog({
       });
 
       if (result.error) {
-        const errMsg =
-          typeof result.error === 'object' && result.error !== null && 'message' in result.error
-            ? String((result.error as { message: string }).message)
-            : 'Failed to generate invoice';
-        setSubmitError(errMsg);
+        const rawMessage = extractApiErrorMessage(result.error, 'Failed to generate invoice');
+        setSubmitError(mapInvoiceApiErrorMessage(rawMessage));
         setIsSubmitting(false);
         return;
       }
@@ -488,7 +517,8 @@ export function GenerateInvoiceDialog({
         onClose();
       }
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to generate invoice');
+      const rawMessage = extractApiErrorMessage(err, 'Failed to generate invoice');
+      setSubmitError(mapInvoiceApiErrorMessage(rawMessage));
     } finally {
       setIsSubmitting(false);
     }
@@ -582,6 +612,12 @@ export function GenerateInvoiceDialog({
                 <Label>Force Regenerate</Label>
               </div>
             </div>
+            {(vatRate ?? 0) > 0 && !reverseCharge && (
+              <div className="col-span-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300">
+                EU VAT notice: ensure VAT is stated in the seller&apos;s local currency (Article 230
+                VAT Directive). This is a warning only and does not block generation.
+              </div>
+            )}
           </div>
 
           <Separator />
@@ -763,6 +799,9 @@ export function GenerateInvoiceDialog({
                     placeholder="YYYY-MM-DD"
                     type="date"
                   />
+                  {errors.invoice?.date && (
+                    <p className="text-xs text-destructive mt-1">{errors.invoice.date.message}</p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="invoice.language">Language</Label>

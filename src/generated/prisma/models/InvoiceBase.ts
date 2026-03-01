@@ -20,14 +20,30 @@ export type InvoiceBaseModel = runtime.Types.Result.DefaultSelection<Prisma.$Inv
 
 export type AggregateInvoiceBase = {
   _count: InvoiceBaseCountAggregateOutputType | null
+  _avg: InvoiceBaseAvgAggregateOutputType | null
+  _sum: InvoiceBaseSumAggregateOutputType | null
   _min: InvoiceBaseMinAggregateOutputType | null
   _max: InvoiceBaseMaxAggregateOutputType | null
+}
+
+export type InvoiceBaseAvgAggregateOutputType = {
+  invoiceMonth: number | null
+  invoiceYear: number | null
+}
+
+export type InvoiceBaseSumAggregateOutputType = {
+  invoiceMonth: number | null
+  invoiceYear: number | null
 }
 
 export type InvoiceBaseMinAggregateOutputType = {
   id: string | null
   createdAt: Date | null
   updatedAt: Date | null
+  buyerWalletVkey: string | null
+  sellerWalletVkey: string | null
+  invoiceMonth: number | null
+  invoiceYear: number | null
   invoiceId: string | null
 }
 
@@ -35,6 +51,10 @@ export type InvoiceBaseMaxAggregateOutputType = {
   id: string | null
   createdAt: Date | null
   updatedAt: Date | null
+  buyerWalletVkey: string | null
+  sellerWalletVkey: string | null
+  invoiceMonth: number | null
+  invoiceYear: number | null
   invoiceId: string | null
 }
 
@@ -42,15 +62,33 @@ export type InvoiceBaseCountAggregateOutputType = {
   id: number
   createdAt: number
   updatedAt: number
+  buyerWalletVkey: number
+  sellerWalletVkey: number
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: number
   _all: number
 }
 
 
+export type InvoiceBaseAvgAggregateInputType = {
+  invoiceMonth?: true
+  invoiceYear?: true
+}
+
+export type InvoiceBaseSumAggregateInputType = {
+  invoiceMonth?: true
+  invoiceYear?: true
+}
+
 export type InvoiceBaseMinAggregateInputType = {
   id?: true
   createdAt?: true
   updatedAt?: true
+  buyerWalletVkey?: true
+  sellerWalletVkey?: true
+  invoiceMonth?: true
+  invoiceYear?: true
   invoiceId?: true
 }
 
@@ -58,6 +96,10 @@ export type InvoiceBaseMaxAggregateInputType = {
   id?: true
   createdAt?: true
   updatedAt?: true
+  buyerWalletVkey?: true
+  sellerWalletVkey?: true
+  invoiceMonth?: true
+  invoiceYear?: true
   invoiceId?: true
 }
 
@@ -65,6 +107,10 @@ export type InvoiceBaseCountAggregateInputType = {
   id?: true
   createdAt?: true
   updatedAt?: true
+  buyerWalletVkey?: true
+  sellerWalletVkey?: true
+  invoiceMonth?: true
+  invoiceYear?: true
   invoiceId?: true
   _all?: true
 }
@@ -107,6 +153,18 @@ export type InvoiceBaseAggregateArgs<ExtArgs extends runtime.Types.Extensions.In
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
+   * Select which fields to average
+  **/
+  _avg?: InvoiceBaseAvgAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
+   * Select which fields to sum
+  **/
+  _sum?: InvoiceBaseSumAggregateInputType
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+   * 
    * Select which fields to find the minimum value
   **/
   _min?: InvoiceBaseMinAggregateInputType
@@ -137,6 +195,8 @@ export type InvoiceBaseGroupByArgs<ExtArgs extends runtime.Types.Extensions.Inte
   take?: number
   skip?: number
   _count?: InvoiceBaseCountAggregateInputType | true
+  _avg?: InvoiceBaseAvgAggregateInputType
+  _sum?: InvoiceBaseSumAggregateInputType
   _min?: InvoiceBaseMinAggregateInputType
   _max?: InvoiceBaseMaxAggregateInputType
 }
@@ -145,8 +205,14 @@ export type InvoiceBaseGroupByOutputType = {
   id: string
   createdAt: Date
   updatedAt: Date
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   _count: InvoiceBaseCountAggregateOutputType | null
+  _avg: InvoiceBaseAvgAggregateOutputType | null
+  _sum: InvoiceBaseSumAggregateOutputType | null
   _min: InvoiceBaseMinAggregateOutputType | null
   _max: InvoiceBaseMaxAggregateOutputType | null
 }
@@ -173,6 +239,10 @@ export type InvoiceBaseWhereInput = {
   id?: Prisma.StringFilter<"InvoiceBase"> | string
   createdAt?: Prisma.DateTimeFilter<"InvoiceBase"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"InvoiceBase"> | Date | string
+  buyerWalletVkey?: Prisma.StringFilter<"InvoiceBase"> | string
+  sellerWalletVkey?: Prisma.StringFilter<"InvoiceBase"> | string
+  invoiceMonth?: Prisma.IntFilter<"InvoiceBase"> | number
+  invoiceYear?: Prisma.IntFilter<"InvoiceBase"> | number
   invoiceId?: Prisma.StringFilter<"InvoiceBase"> | string
   InvoiceRevisions?: Prisma.InvoiceRevisionListRelationFilter
   coveredPaymentRequests?: Prisma.PaymentRequestListRelationFilter
@@ -182,6 +252,10 @@ export type InvoiceBaseOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  buyerWalletVkey?: Prisma.SortOrder
+  sellerWalletVkey?: Prisma.SortOrder
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
   invoiceId?: Prisma.SortOrder
   InvoiceRevisions?: Prisma.InvoiceRevisionOrderByRelationAggregateInput
   coveredPaymentRequests?: Prisma.PaymentRequestOrderByRelationAggregateInput
@@ -190,23 +264,34 @@ export type InvoiceBaseOrderByWithRelationInput = {
 export type InvoiceBaseWhereUniqueInput = Prisma.AtLeast<{
   id?: string
   invoiceId?: string
+  buyerWalletVkey_sellerWalletVkey_invoiceYear_invoiceMonth?: Prisma.InvoiceBaseBuyerWalletVkeySellerWalletVkeyInvoiceYearInvoiceMonthCompoundUniqueInput
   AND?: Prisma.InvoiceBaseWhereInput | Prisma.InvoiceBaseWhereInput[]
   OR?: Prisma.InvoiceBaseWhereInput[]
   NOT?: Prisma.InvoiceBaseWhereInput | Prisma.InvoiceBaseWhereInput[]
   createdAt?: Prisma.DateTimeFilter<"InvoiceBase"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"InvoiceBase"> | Date | string
+  buyerWalletVkey?: Prisma.StringFilter<"InvoiceBase"> | string
+  sellerWalletVkey?: Prisma.StringFilter<"InvoiceBase"> | string
+  invoiceMonth?: Prisma.IntFilter<"InvoiceBase"> | number
+  invoiceYear?: Prisma.IntFilter<"InvoiceBase"> | number
   InvoiceRevisions?: Prisma.InvoiceRevisionListRelationFilter
   coveredPaymentRequests?: Prisma.PaymentRequestListRelationFilter
-}, "id" | "invoiceId">
+}, "id" | "invoiceId" | "buyerWalletVkey_sellerWalletVkey_invoiceYear_invoiceMonth">
 
 export type InvoiceBaseOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  buyerWalletVkey?: Prisma.SortOrder
+  sellerWalletVkey?: Prisma.SortOrder
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
   invoiceId?: Prisma.SortOrder
   _count?: Prisma.InvoiceBaseCountOrderByAggregateInput
+  _avg?: Prisma.InvoiceBaseAvgOrderByAggregateInput
   _max?: Prisma.InvoiceBaseMaxOrderByAggregateInput
   _min?: Prisma.InvoiceBaseMinOrderByAggregateInput
+  _sum?: Prisma.InvoiceBaseSumOrderByAggregateInput
 }
 
 export type InvoiceBaseScalarWhereWithAggregatesInput = {
@@ -216,6 +301,10 @@ export type InvoiceBaseScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"InvoiceBase"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"InvoiceBase"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"InvoiceBase"> | Date | string
+  buyerWalletVkey?: Prisma.StringWithAggregatesFilter<"InvoiceBase"> | string
+  sellerWalletVkey?: Prisma.StringWithAggregatesFilter<"InvoiceBase"> | string
+  invoiceMonth?: Prisma.IntWithAggregatesFilter<"InvoiceBase"> | number
+  invoiceYear?: Prisma.IntWithAggregatesFilter<"InvoiceBase"> | number
   invoiceId?: Prisma.StringWithAggregatesFilter<"InvoiceBase"> | string
 }
 
@@ -223,6 +312,10 @@ export type InvoiceBaseCreateInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   InvoiceRevisions?: Prisma.InvoiceRevisionCreateNestedManyWithoutInvoiceBaseInput
   coveredPaymentRequests?: Prisma.PaymentRequestCreateNestedManyWithoutInvoiceBaseInput
@@ -232,6 +325,10 @@ export type InvoiceBaseUncheckedCreateInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   InvoiceRevisions?: Prisma.InvoiceRevisionUncheckedCreateNestedManyWithoutInvoiceBaseInput
   coveredPaymentRequests?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutInvoiceBaseInput
@@ -241,6 +338,10 @@ export type InvoiceBaseUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   InvoiceRevisions?: Prisma.InvoiceRevisionUpdateManyWithoutInvoiceBaseNestedInput
   coveredPaymentRequests?: Prisma.PaymentRequestUpdateManyWithoutInvoiceBaseNestedInput
@@ -250,6 +351,10 @@ export type InvoiceBaseUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   InvoiceRevisions?: Prisma.InvoiceRevisionUncheckedUpdateManyWithoutInvoiceBaseNestedInput
   coveredPaymentRequests?: Prisma.PaymentRequestUncheckedUpdateManyWithoutInvoiceBaseNestedInput
@@ -259,6 +364,10 @@ export type InvoiceBaseCreateManyInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
 }
 
@@ -266,6 +375,10 @@ export type InvoiceBaseUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
 }
 
@@ -273,6 +386,10 @@ export type InvoiceBaseUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
 }
 
@@ -281,17 +398,37 @@ export type InvoiceBaseNullableScalarRelationFilter = {
   isNot?: Prisma.InvoiceBaseWhereInput | null
 }
 
+export type InvoiceBaseBuyerWalletVkeySellerWalletVkeyInvoiceYearInvoiceMonthCompoundUniqueInput = {
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceYear: number
+  invoiceMonth: number
+}
+
 export type InvoiceBaseCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  buyerWalletVkey?: Prisma.SortOrder
+  sellerWalletVkey?: Prisma.SortOrder
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
   invoiceId?: Prisma.SortOrder
+}
+
+export type InvoiceBaseAvgOrderByAggregateInput = {
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
 }
 
 export type InvoiceBaseMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  buyerWalletVkey?: Prisma.SortOrder
+  sellerWalletVkey?: Prisma.SortOrder
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
   invoiceId?: Prisma.SortOrder
 }
 
@@ -299,7 +436,16 @@ export type InvoiceBaseMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  buyerWalletVkey?: Prisma.SortOrder
+  sellerWalletVkey?: Prisma.SortOrder
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
   invoiceId?: Prisma.SortOrder
+}
+
+export type InvoiceBaseSumOrderByAggregateInput = {
+  invoiceMonth?: Prisma.SortOrder
+  invoiceYear?: Prisma.SortOrder
 }
 
 export type InvoiceBaseScalarRelationFilter = {
@@ -341,6 +487,10 @@ export type InvoiceBaseCreateWithoutCoveredPaymentRequestsInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   InvoiceRevisions?: Prisma.InvoiceRevisionCreateNestedManyWithoutInvoiceBaseInput
 }
@@ -349,6 +499,10 @@ export type InvoiceBaseUncheckedCreateWithoutCoveredPaymentRequestsInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   InvoiceRevisions?: Prisma.InvoiceRevisionUncheckedCreateNestedManyWithoutInvoiceBaseInput
 }
@@ -373,6 +527,10 @@ export type InvoiceBaseUpdateWithoutCoveredPaymentRequestsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   InvoiceRevisions?: Prisma.InvoiceRevisionUpdateManyWithoutInvoiceBaseNestedInput
 }
@@ -381,6 +539,10 @@ export type InvoiceBaseUncheckedUpdateWithoutCoveredPaymentRequestsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   InvoiceRevisions?: Prisma.InvoiceRevisionUncheckedUpdateManyWithoutInvoiceBaseNestedInput
 }
@@ -389,6 +551,10 @@ export type InvoiceBaseCreateWithoutInvoiceRevisionsInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   coveredPaymentRequests?: Prisma.PaymentRequestCreateNestedManyWithoutInvoiceBaseInput
 }
@@ -397,6 +563,10 @@ export type InvoiceBaseUncheckedCreateWithoutInvoiceRevisionsInput = {
   id?: string
   createdAt?: Date | string
   updatedAt?: Date | string
+  buyerWalletVkey: string
+  sellerWalletVkey: string
+  invoiceMonth: number
+  invoiceYear: number
   invoiceId: string
   coveredPaymentRequests?: Prisma.PaymentRequestUncheckedCreateNestedManyWithoutInvoiceBaseInput
 }
@@ -421,6 +591,10 @@ export type InvoiceBaseUpdateWithoutInvoiceRevisionsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   coveredPaymentRequests?: Prisma.PaymentRequestUpdateManyWithoutInvoiceBaseNestedInput
 }
@@ -429,6 +603,10 @@ export type InvoiceBaseUncheckedUpdateWithoutInvoiceRevisionsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  buyerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  sellerWalletVkey?: Prisma.StringFieldUpdateOperationsInput | string
+  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
+  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   invoiceId?: Prisma.StringFieldUpdateOperationsInput | string
   coveredPaymentRequests?: Prisma.PaymentRequestUncheckedUpdateManyWithoutInvoiceBaseNestedInput
 }
@@ -477,6 +655,10 @@ export type InvoiceBaseSelect<ExtArgs extends runtime.Types.Extensions.InternalA
   id?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  buyerWalletVkey?: boolean
+  sellerWalletVkey?: boolean
+  invoiceMonth?: boolean
+  invoiceYear?: boolean
   invoiceId?: boolean
   InvoiceRevisions?: boolean | Prisma.InvoiceBase$InvoiceRevisionsArgs<ExtArgs>
   coveredPaymentRequests?: boolean | Prisma.InvoiceBase$coveredPaymentRequestsArgs<ExtArgs>
@@ -487,6 +669,10 @@ export type InvoiceBaseSelectCreateManyAndReturn<ExtArgs extends runtime.Types.E
   id?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  buyerWalletVkey?: boolean
+  sellerWalletVkey?: boolean
+  invoiceMonth?: boolean
+  invoiceYear?: boolean
   invoiceId?: boolean
 }, ExtArgs["result"]["invoiceBase"]>
 
@@ -494,6 +680,10 @@ export type InvoiceBaseSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.E
   id?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  buyerWalletVkey?: boolean
+  sellerWalletVkey?: boolean
+  invoiceMonth?: boolean
+  invoiceYear?: boolean
   invoiceId?: boolean
 }, ExtArgs["result"]["invoiceBase"]>
 
@@ -501,10 +691,14 @@ export type InvoiceBaseSelectScalar = {
   id?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  buyerWalletVkey?: boolean
+  sellerWalletVkey?: boolean
+  invoiceMonth?: boolean
+  invoiceYear?: boolean
   invoiceId?: boolean
 }
 
-export type InvoiceBaseOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "invoiceId", ExtArgs["result"]["invoiceBase"]>
+export type InvoiceBaseOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "buyerWalletVkey" | "sellerWalletVkey" | "invoiceMonth" | "invoiceYear" | "invoiceId", ExtArgs["result"]["invoiceBase"]>
 export type InvoiceBaseInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   InvoiceRevisions?: boolean | Prisma.InvoiceBase$InvoiceRevisionsArgs<ExtArgs>
   coveredPaymentRequests?: boolean | Prisma.InvoiceBase$coveredPaymentRequestsArgs<ExtArgs>
@@ -523,6 +717,10 @@ export type $InvoiceBasePayload<ExtArgs extends runtime.Types.Extensions.Interna
     id: string
     createdAt: Date
     updatedAt: Date
+    buyerWalletVkey: string
+    sellerWalletVkey: string
+    invoiceMonth: number
+    invoiceYear: number
     invoiceId: string
   }, ExtArgs["result"]["invoiceBase"]>
   composites: {}
@@ -952,6 +1150,10 @@ export interface InvoiceBaseFieldRefs {
   readonly id: Prisma.FieldRef<"InvoiceBase", 'String'>
   readonly createdAt: Prisma.FieldRef<"InvoiceBase", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"InvoiceBase", 'DateTime'>
+  readonly buyerWalletVkey: Prisma.FieldRef<"InvoiceBase", 'String'>
+  readonly sellerWalletVkey: Prisma.FieldRef<"InvoiceBase", 'String'>
+  readonly invoiceMonth: Prisma.FieldRef<"InvoiceBase", 'Int'>
+  readonly invoiceYear: Prisma.FieldRef<"InvoiceBase", 'Int'>
   readonly invoiceId: Prisma.FieldRef<"InvoiceBase", 'String'>
 }
     

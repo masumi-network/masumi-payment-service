@@ -2568,6 +2568,10 @@ export const InvoiceBaseScalarFieldEnum = {
   id: 'id',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
+  buyerWalletVkey: 'buyerWalletVkey',
+  sellerWalletVkey: 'sellerWalletVkey',
+  invoiceMonth: 'invoiceMonth',
+  invoiceYear: 'invoiceYear',
   invoiceId: 'invoiceId'
 } as const
 
@@ -2584,8 +2588,6 @@ export const InvoiceRevisionScalarFieldEnum = {
   invoiceTitle: 'invoiceTitle',
   invoiceDescription: 'invoiceDescription',
   invoiceDate: 'invoiceDate',
-  invoiceMonth: 'invoiceMonth',
-  invoiceYear: 'invoiceYear',
   reverseCharge: 'reverseCharge',
   invoiceGreetings: 'invoiceGreetings',
   invoiceClosing: 'invoiceClosing',

@@ -485,10 +485,18 @@ model InvoiceBase {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  buyerWalletVkey  String
+  sellerWalletVkey String
+  invoiceMonth     Int
+  invoiceYear      Int
+
   InvoiceRevisions InvoiceRevision[]
   invoiceId        String            @unique
 
   coveredPaymentRequests PaymentRequest[]
+
+  @@unique([buyerWalletVkey, sellerWalletVkey, invoiceYear, invoiceMonth])
+  @@index([invoiceYear, invoiceMonth, createdAt])
 }
 
 model InvoiceRevision {
@@ -506,8 +514,6 @@ model InvoiceRevision {
   invoiceTitle         String
   invoiceDescription   String?
   invoiceDate          DateTime
-  invoiceMonth         Int
-  invoiceYear          Int
   reverseCharge        Boolean
   invoiceGreetings   String?
   invoiceClosing     String?

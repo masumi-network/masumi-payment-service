@@ -28,14 +28,10 @@ export type AggregateInvoiceRevision = {
 
 export type InvoiceRevisionAvgAggregateOutputType = {
   revisionNumber: number | null
-  invoiceMonth: number | null
-  invoiceYear: number | null
 }
 
 export type InvoiceRevisionSumAggregateOutputType = {
   revisionNumber: number | null
-  invoiceMonth: number | null
-  invoiceYear: number | null
 }
 
 export type InvoiceRevisionMinAggregateOutputType = {
@@ -48,8 +44,6 @@ export type InvoiceRevisionMinAggregateOutputType = {
   invoiceTitle: string | null
   invoiceDescription: string | null
   invoiceDate: Date | null
-  invoiceMonth: number | null
-  invoiceYear: number | null
   reverseCharge: boolean | null
   invoiceGreetings: string | null
   invoiceClosing: string | null
@@ -102,8 +96,6 @@ export type InvoiceRevisionMaxAggregateOutputType = {
   invoiceTitle: string | null
   invoiceDescription: string | null
   invoiceDate: Date | null
-  invoiceMonth: number | null
-  invoiceYear: number | null
   reverseCharge: boolean | null
   invoiceGreetings: string | null
   invoiceClosing: string | null
@@ -156,8 +148,6 @@ export type InvoiceRevisionCountAggregateOutputType = {
   invoiceTitle: number
   invoiceDescription: number
   invoiceDate: number
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: number
   invoiceGreetings: number
   invoiceClosing: number
@@ -204,14 +194,10 @@ export type InvoiceRevisionCountAggregateOutputType = {
 
 export type InvoiceRevisionAvgAggregateInputType = {
   revisionNumber?: true
-  invoiceMonth?: true
-  invoiceYear?: true
 }
 
 export type InvoiceRevisionSumAggregateInputType = {
   revisionNumber?: true
-  invoiceMonth?: true
-  invoiceYear?: true
 }
 
 export type InvoiceRevisionMinAggregateInputType = {
@@ -224,8 +210,6 @@ export type InvoiceRevisionMinAggregateInputType = {
   invoiceTitle?: true
   invoiceDescription?: true
   invoiceDate?: true
-  invoiceMonth?: true
-  invoiceYear?: true
   reverseCharge?: true
   invoiceGreetings?: true
   invoiceClosing?: true
@@ -278,8 +262,6 @@ export type InvoiceRevisionMaxAggregateInputType = {
   invoiceTitle?: true
   invoiceDescription?: true
   invoiceDate?: true
-  invoiceMonth?: true
-  invoiceYear?: true
   reverseCharge?: true
   invoiceGreetings?: true
   invoiceClosing?: true
@@ -332,8 +314,6 @@ export type InvoiceRevisionCountAggregateInputType = {
   invoiceTitle?: true
   invoiceDescription?: true
   invoiceDate?: true
-  invoiceMonth?: true
-  invoiceYear?: true
   reverseCharge?: true
   invoiceGreetings?: true
   invoiceClosing?: true
@@ -473,8 +453,6 @@ export type InvoiceRevisionGroupByOutputType = {
   invoiceTitle: string
   invoiceDescription: string | null
   invoiceDate: Date
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings: string | null
   invoiceClosing: string | null
@@ -550,8 +528,6 @@ export type InvoiceRevisionWhereInput = {
   invoiceTitle?: Prisma.StringFilter<"InvoiceRevision"> | string
   invoiceDescription?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceDate?: Prisma.DateTimeFilter<"InvoiceRevision"> | Date | string
-  invoiceMonth?: Prisma.IntFilter<"InvoiceRevision"> | number
-  invoiceYear?: Prisma.IntFilter<"InvoiceRevision"> | number
   reverseCharge?: Prisma.BoolFilter<"InvoiceRevision"> | boolean
   invoiceGreetings?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceClosing?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
@@ -606,8 +582,6 @@ export type InvoiceRevisionOrderByWithRelationInput = {
   invoiceTitle?: Prisma.SortOrder
   invoiceDescription?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceDate?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
   reverseCharge?: Prisma.SortOrder
   invoiceGreetings?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceClosing?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -667,8 +641,6 @@ export type InvoiceRevisionWhereUniqueInput = Prisma.AtLeast<{
   invoiceTitle?: Prisma.StringFilter<"InvoiceRevision"> | string
   invoiceDescription?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceDate?: Prisma.DateTimeFilter<"InvoiceRevision"> | Date | string
-  invoiceMonth?: Prisma.IntFilter<"InvoiceRevision"> | number
-  invoiceYear?: Prisma.IntFilter<"InvoiceRevision"> | number
   reverseCharge?: Prisma.BoolFilter<"InvoiceRevision"> | boolean
   invoiceGreetings?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceClosing?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
@@ -722,8 +694,6 @@ export type InvoiceRevisionOrderByWithAggregationInput = {
   invoiceTitle?: Prisma.SortOrder
   invoiceDescription?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceDate?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
   reverseCharge?: Prisma.SortOrder
   invoiceGreetings?: Prisma.SortOrderInput | Prisma.SortOrder
   invoiceClosing?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -784,8 +754,6 @@ export type InvoiceRevisionScalarWhereWithAggregatesInput = {
   invoiceTitle?: Prisma.StringWithAggregatesFilter<"InvoiceRevision"> | string
   invoiceDescription?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   invoiceDate?: Prisma.DateTimeWithAggregatesFilter<"InvoiceRevision"> | Date | string
-  invoiceMonth?: Prisma.IntWithAggregatesFilter<"InvoiceRevision"> | number
-  invoiceYear?: Prisma.IntWithAggregatesFilter<"InvoiceRevision"> | number
   reverseCharge?: Prisma.BoolWithAggregatesFilter<"InvoiceRevision"> | boolean
   invoiceGreetings?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
   invoiceClosing?: Prisma.StringNullableWithAggregatesFilter<"InvoiceRevision"> | string | null
@@ -837,8 +805,6 @@ export type InvoiceRevisionCreateInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -893,8 +859,6 @@ export type InvoiceRevisionUncheckedCreateInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -947,8 +911,6 @@ export type InvoiceRevisionUpdateInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1003,8 +965,6 @@ export type InvoiceRevisionUncheckedUpdateInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1058,8 +1018,6 @@ export type InvoiceRevisionCreateManyInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1111,8 +1069,6 @@ export type InvoiceRevisionUpdateManyMutationInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1165,8 +1121,6 @@ export type InvoiceRevisionUncheckedUpdateManyInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1234,8 +1188,6 @@ export type InvoiceRevisionCountOrderByAggregateInput = {
   invoiceTitle?: Prisma.SortOrder
   invoiceDescription?: Prisma.SortOrder
   invoiceDate?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
   reverseCharge?: Prisma.SortOrder
   invoiceGreetings?: Prisma.SortOrder
   invoiceClosing?: Prisma.SortOrder
@@ -1280,8 +1232,6 @@ export type InvoiceRevisionCountOrderByAggregateInput = {
 
 export type InvoiceRevisionAvgOrderByAggregateInput = {
   revisionNumber?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
 }
 
 export type InvoiceRevisionMaxOrderByAggregateInput = {
@@ -1294,8 +1244,6 @@ export type InvoiceRevisionMaxOrderByAggregateInput = {
   invoiceTitle?: Prisma.SortOrder
   invoiceDescription?: Prisma.SortOrder
   invoiceDate?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
   reverseCharge?: Prisma.SortOrder
   invoiceGreetings?: Prisma.SortOrder
   invoiceClosing?: Prisma.SortOrder
@@ -1348,8 +1296,6 @@ export type InvoiceRevisionMinOrderByAggregateInput = {
   invoiceTitle?: Prisma.SortOrder
   invoiceDescription?: Prisma.SortOrder
   invoiceDate?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
   reverseCharge?: Prisma.SortOrder
   invoiceGreetings?: Prisma.SortOrder
   invoiceClosing?: Prisma.SortOrder
@@ -1394,8 +1340,6 @@ export type InvoiceRevisionMinOrderByAggregateInput = {
 
 export type InvoiceRevisionSumOrderByAggregateInput = {
   revisionNumber?: Prisma.SortOrder
-  invoiceMonth?: Prisma.SortOrder
-  invoiceYear?: Prisma.SortOrder
 }
 
 export type InvoiceRevisionScalarRelationFilter = {
@@ -1476,8 +1420,6 @@ export type InvoiceRevisionCreateWithoutInvoiceBaseInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1530,8 +1472,6 @@ export type InvoiceRevisionUncheckedCreateWithoutInvoiceBaseInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1614,8 +1554,6 @@ export type InvoiceRevisionScalarWhereInput = {
   invoiceTitle?: Prisma.StringFilter<"InvoiceRevision"> | string
   invoiceDescription?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceDate?: Prisma.DateTimeFilter<"InvoiceRevision"> | Date | string
-  invoiceMonth?: Prisma.IntFilter<"InvoiceRevision"> | number
-  invoiceYear?: Prisma.IntFilter<"InvoiceRevision"> | number
   reverseCharge?: Prisma.BoolFilter<"InvoiceRevision"> | boolean
   invoiceGreetings?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
   invoiceClosing?: Prisma.StringNullableFilter<"InvoiceRevision"> | string | null
@@ -1667,8 +1605,6 @@ export type InvoiceRevisionCreateWithoutInvoiceItemsInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1722,8 +1658,6 @@ export type InvoiceRevisionUncheckedCreateWithoutInvoiceItemsInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1791,8 +1725,6 @@ export type InvoiceRevisionUpdateWithoutInvoiceItemsInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1846,8 +1778,6 @@ export type InvoiceRevisionUncheckedUpdateWithoutInvoiceItemsInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -1899,8 +1829,6 @@ export type InvoiceRevisionCreateManyInvoiceBaseInput = {
   invoiceTitle: string
   invoiceDescription?: string | null
   invoiceDate: Date | string
-  invoiceMonth: number
-  invoiceYear: number
   reverseCharge: boolean
   invoiceGreetings?: string | null
   invoiceClosing?: string | null
@@ -1952,8 +1880,6 @@ export type InvoiceRevisionUpdateWithoutInvoiceBaseInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2006,8 +1932,6 @@ export type InvoiceRevisionUncheckedUpdateWithoutInvoiceBaseInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2060,8 +1984,6 @@ export type InvoiceRevisionUncheckedUpdateManyWithoutInvoiceBaseInput = {
   invoiceTitle?: Prisma.StringFieldUpdateOperationsInput | string
   invoiceDescription?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceDate?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  invoiceMonth?: Prisma.IntFieldUpdateOperationsInput | number
-  invoiceYear?: Prisma.IntFieldUpdateOperationsInput | number
   reverseCharge?: Prisma.BoolFieldUpdateOperationsInput | boolean
   invoiceGreetings?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   invoiceClosing?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -2145,8 +2067,6 @@ export type InvoiceRevisionSelect<ExtArgs extends runtime.Types.Extensions.Inter
   invoiceTitle?: boolean
   invoiceDescription?: boolean
   invoiceDate?: boolean
-  invoiceMonth?: boolean
-  invoiceYear?: boolean
   reverseCharge?: boolean
   invoiceGreetings?: boolean
   invoiceClosing?: boolean
@@ -2202,8 +2122,6 @@ export type InvoiceRevisionSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   invoiceTitle?: boolean
   invoiceDescription?: boolean
   invoiceDate?: boolean
-  invoiceMonth?: boolean
-  invoiceYear?: boolean
   reverseCharge?: boolean
   invoiceGreetings?: boolean
   invoiceClosing?: boolean
@@ -2257,8 +2175,6 @@ export type InvoiceRevisionSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   invoiceTitle?: boolean
   invoiceDescription?: boolean
   invoiceDate?: boolean
-  invoiceMonth?: boolean
-  invoiceYear?: boolean
   reverseCharge?: boolean
   invoiceGreetings?: boolean
   invoiceClosing?: boolean
@@ -2312,8 +2228,6 @@ export type InvoiceRevisionSelectScalar = {
   invoiceTitle?: boolean
   invoiceDescription?: boolean
   invoiceDate?: boolean
-  invoiceMonth?: boolean
-  invoiceYear?: boolean
   reverseCharge?: boolean
   invoiceGreetings?: boolean
   invoiceClosing?: boolean
@@ -2356,7 +2270,7 @@ export type InvoiceRevisionSelectScalar = {
   generatedCancelledInvoiceUpdatedAt?: boolean
 }
 
-export type InvoiceRevisionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "invoiceBaseId" | "revisionNumber" | "currencyShortId" | "invoiceTitle" | "invoiceDescription" | "invoiceDate" | "invoiceMonth" | "invoiceYear" | "reverseCharge" | "invoiceGreetings" | "invoiceClosing" | "invoiceSignature" | "invoiceLogo" | "invoiceFooter" | "invoiceTerms" | "invoicePrivacy" | "language" | "localizationFormat" | "sellerCountry" | "sellerCity" | "sellerZipCode" | "sellerStreet" | "sellerStreetNumber" | "sellerEmail" | "sellerPhone" | "sellerName" | "sellerCompanyName" | "sellerVatNumber" | "sellerWalletAddress" | "buyerCountry" | "buyerCity" | "buyerZipCode" | "buyerStreet" | "buyerStreetNumber" | "buyerEmail" | "buyerPhone" | "buyerName" | "buyerCompanyName" | "buyerVatNumber" | "buyerWalletAddress" | "generatedPDFInvoice" | "generatedInvoiceUpdatedAt" | "isCancelled" | "cancellationReason" | "cancellationDate" | "cancellationId" | "generatedCancelledInvoice" | "generatedCancelledInvoiceUpdatedAt", ExtArgs["result"]["invoiceRevision"]>
+export type InvoiceRevisionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "createdAt" | "updatedAt" | "invoiceBaseId" | "revisionNumber" | "currencyShortId" | "invoiceTitle" | "invoiceDescription" | "invoiceDate" | "reverseCharge" | "invoiceGreetings" | "invoiceClosing" | "invoiceSignature" | "invoiceLogo" | "invoiceFooter" | "invoiceTerms" | "invoicePrivacy" | "language" | "localizationFormat" | "sellerCountry" | "sellerCity" | "sellerZipCode" | "sellerStreet" | "sellerStreetNumber" | "sellerEmail" | "sellerPhone" | "sellerName" | "sellerCompanyName" | "sellerVatNumber" | "sellerWalletAddress" | "buyerCountry" | "buyerCity" | "buyerZipCode" | "buyerStreet" | "buyerStreetNumber" | "buyerEmail" | "buyerPhone" | "buyerName" | "buyerCompanyName" | "buyerVatNumber" | "buyerWalletAddress" | "generatedPDFInvoice" | "generatedInvoiceUpdatedAt" | "isCancelled" | "cancellationReason" | "cancellationDate" | "cancellationId" | "generatedCancelledInvoice" | "generatedCancelledInvoiceUpdatedAt", ExtArgs["result"]["invoiceRevision"]>
 export type InvoiceRevisionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   InvoiceBase?: boolean | Prisma.InvoiceBaseDefaultArgs<ExtArgs>
   InvoiceItems?: boolean | Prisma.InvoiceRevision$InvoiceItemsArgs<ExtArgs>
@@ -2385,8 +2299,6 @@ export type $InvoiceRevisionPayload<ExtArgs extends runtime.Types.Extensions.Int
     invoiceTitle: string
     invoiceDescription: string | null
     invoiceDate: Date
-    invoiceMonth: number
-    invoiceYear: number
     reverseCharge: boolean
     invoiceGreetings: string | null
     invoiceClosing: string | null
@@ -2861,8 +2773,6 @@ export interface InvoiceRevisionFieldRefs {
   readonly invoiceTitle: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly invoiceDescription: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly invoiceDate: Prisma.FieldRef<"InvoiceRevision", 'DateTime'>
-  readonly invoiceMonth: Prisma.FieldRef<"InvoiceRevision", 'Int'>
-  readonly invoiceYear: Prisma.FieldRef<"InvoiceRevision", 'Int'>
   readonly reverseCharge: Prisma.FieldRef<"InvoiceRevision", 'Boolean'>
   readonly invoiceGreetings: Prisma.FieldRef<"InvoiceRevision", 'String'>
   readonly invoiceClosing: Prisma.FieldRef<"InvoiceRevision", 'String'>

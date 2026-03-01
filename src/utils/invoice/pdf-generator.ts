@@ -573,7 +573,7 @@ export async function generateCancellationInvoicePDFBase64(
 	originalInvoiceNumber: string,
 	originalInvoiceDate: string,
 	includeCoingeckoAttribution: boolean = false,
-	options?: { reverseCharge?: boolean },
+	options?: { reverseCharge?: boolean; cancellationReason?: string },
 ): Promise<{ pdfBase64: string }> {
 	// Deep copy and negate all amounts
 	const negatedGroups: InvoiceGroup[] = originalGroups.map((group) => ({
@@ -591,9 +591,13 @@ export async function generateCancellationInvoicePDFBase64(
 	}));
 
 	const texts = extractInvoiceTexts(invoiceConfig.language);
+	const baseDescription = texts.cancellationDefault(originalInvoiceNumber, originalInvoiceDate);
+	const cancellationDescription = options?.cancellationReason
+		? `${baseDescription}\n${texts.reason}: ${options.cancellationReason}`
+		: baseDescription;
 	const cancellationNotice = {
 		cancellationTitle: texts.cancellationInvoice,
-		cancellationDescription: texts.cancellationDefault(originalInvoiceNumber, originalInvoiceDate),
+		cancellationDescription,
 	};
 
 	const doc = buildInvoicePDF(

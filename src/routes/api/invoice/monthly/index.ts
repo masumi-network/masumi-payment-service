@@ -74,12 +74,8 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 				...(isDetailQuery
 					? { id: input.invoiceBaseId }
 					: {
-							InvoiceRevisions: {
-								some: {
-									invoiceMonth: monthNum,
-									invoiceYear: year,
-								},
-							},
+							invoiceMonth: monthNum,
+							invoiceYear: year,
 							...(input.cursorId ? { id: { lt: input.cursorId } } : {}),
 						}),
 			},
@@ -88,10 +84,6 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					select: { InvoiceRevisions: true },
 				},
 				InvoiceRevisions: {
-					where: {
-						invoiceMonth: monthNum,
-						invoiceYear: year,
-					},
 					orderBy: { revisionNumber: 'desc' },
 					...(isDetailQuery ? {} : { take: 1 }),
 					include: {
@@ -123,8 +115,8 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					revisionId: rev.id,
 					revisionNumber: rev.revisionNumber,
 					revisionCount: base._count.InvoiceRevisions,
-					invoiceMonth: rev.invoiceMonth,
-					invoiceYear: rev.invoiceYear,
+					invoiceMonth: base.invoiceMonth,
+					invoiceYear: base.invoiceYear,
 					invoiceDate: rev.invoiceDate,
 					currencyShortId: rev.currencyShortId,
 					sellerName: rev.sellerName,
@@ -140,7 +132,7 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					vatTotal: vatTotal.toFixed(2),
 					grossTotal: grossTotal.toFixed(2),
 					coveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
-					buyerWalletVkey: base.coveredPaymentRequests[0]?.BuyerWallet?.walletVkey ?? null,
+					buyerWalletVkey: base.buyerWalletVkey,
 					invoicePdf: Buffer.from(rev.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
 					cancellationInvoicePdf: rev.generatedCancelledInvoice
 						? Buffer.from(rev.generatedCancelledInvoice as unknown as Uint8Array).toString('base64')

@@ -20,6 +20,7 @@ import { useInvoices, type InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUninvoicedPayments';
 import { InvoiceDetailsDialog } from '@/components/invoices/InvoiceDetailsDialog';
 import { GenerateInvoiceDialog } from '@/components/invoices/GenerateInvoiceDialog';
+import { extractApiErrorMessage } from '@/lib/api-error';
 
 function getPreviousMonth(): string {
   const now = new Date();
@@ -127,6 +128,8 @@ export default function Invoices() {
   const {
     invoices,
     isLoading: isLoadingInvoices,
+    isError: isInvoicesError,
+    error: invoicesError,
     hasMore: hasMoreInvoices,
     loadMore: loadMoreInvoices,
     isFetchingNextPage: isFetchingNextInvoices,
@@ -136,11 +139,20 @@ export default function Invoices() {
   const {
     payments: uninvoicedPayments,
     isLoading: isLoadingUninvoiced,
+    isError: isUninvoicedError,
+    error: uninvoicedError,
     hasMore: hasMoreUninvoiced,
     loadMore: loadMoreUninvoiced,
     isFetchingNextPage: isFetchingNextUninvoiced,
     refetch: refetchUninvoiced,
   } = useUninvoicedPayments(selectedMonth);
+
+  const invoicesErrorMessage = isInvoicesError
+    ? extractApiErrorMessage(invoicesError, 'Failed to fetch invoices')
+    : null;
+  const uninvoicedErrorMessage = isUninvoicedError
+    ? extractApiErrorMessage(uninvoicedError, 'Failed to fetch uninvoiced payments')
+    : null;
 
   const allWalletGroups = useMemo(
     () => groupBySellerBuyer(uninvoicedPayments),
@@ -277,6 +289,11 @@ export default function Invoices() {
           {/* Tab 1: Generated Invoices */}
           {activeTab === 'Generated Invoices' && (
             <>
+              {invoicesErrorMessage && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {invoicesErrorMessage}
+                </div>
+              )}
               <div className="border rounded-lg overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-muted/30 dark:bg-muted/15">
@@ -319,6 +336,14 @@ export default function Invoices() {
                   <tbody>
                     {isLoadingInvoices && invoices.length === 0 ? (
                       <InvoiceTableSkeleton rows={5} />
+                    ) : isInvoicesError && invoices.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="p-6">
+                          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                            {invoicesErrorMessage}
+                          </div>
+                        </td>
+                      </tr>
                     ) : filteredInvoices.length === 0 ? (
                       <tr>
                         <td colSpan={11}>
@@ -392,6 +417,11 @@ export default function Invoices() {
           {/* Tab 2: Missing Invoices */}
           {activeTab === 'Missing Invoices' && (
             <>
+              {uninvoicedErrorMessage && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {uninvoicedErrorMessage}
+                </div>
+              )}
               <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3 text-sm text-muted-foreground">
                 Only finalized payments are shown (Withdrawn, Result Submitted past unlock time, or
                 Disputed Withdrawn with seller funds). Payments that are still locked, pending
@@ -402,6 +432,12 @@ export default function Invoices() {
                 {isLoadingUninvoiced && uninvoicedPayments.length === 0 ? (
                   <div className="p-8 flex justify-center">
                     <Spinner size={20} addContainer />
+                  </div>
+                ) : isUninvoicedError && uninvoicedPayments.length === 0 ? (
+                  <div className="p-6">
+                    <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                      {uninvoicedErrorMessage}
+                    </div>
                   </div>
                 ) : walletGroups.length === 0 ? (
                   <EmptyState
