@@ -21,7 +21,8 @@ const eslintConfig = defineConfig([
         'error',
         {
           selector: 'TSImportType',
-          message: 'Inline import() types are not allowed. Use a top-level import statement instead.',
+          message:
+            'Inline import() types are not allowed. Use a top-level import statement instead.',
         },
       ],
     },
