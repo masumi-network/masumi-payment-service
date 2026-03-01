@@ -14,29 +14,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { Download } from 'lucide-react';
 import type { InvoiceSummary } from '@/lib/hooks/useInvoices';
 import { useInvoiceRevisions } from '@/lib/hooks/useInvoices';
+import { downloadBase64Pdf } from '@/lib/pdf-utils';
 
 interface InvoiceDetailsDialogProps {
   selectedInvoice: InvoiceSummary | null;
   onClose: () => void;
   onRegenerate: (invoice: InvoiceSummary) => void;
-}
-
-function downloadBase64Pdf(base64: string, filename: string) {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
 
 function base64ToBlobUrl(base64: string): string {
