@@ -3653,6 +3653,7 @@ export type GetInvoiceMonthlyResponses = {
                 grossTotal: string;
                 coveredPaymentRequestIds: Array<string>;
                 buyerWalletVkey: string | null;
+                sellerWalletVkey: string | null;
                 /**
                  * Base64-encoded invoice PDF
                  */
@@ -3674,6 +3675,10 @@ export type PostInvoiceMonthlyData = {
          * The buyer wallet vkey to aggregate the month for
          */
         buyerWalletVkey: string;
+        /**
+         * Optional seller wallet vkey to scope the invoice to a specific seller
+         */
+        sellerWalletVkey?: string;
         /**
          * Target month in format YYYY-MM (UTC calendar)
          */
@@ -3893,6 +3898,10 @@ export type PostInvoiceMonthlyAdminData = {
          * The buyer wallet vkey to aggregate the month for
          */
         buyerWalletVkey: string;
+        /**
+         * Optional seller wallet vkey to scope the invoice to a specific seller
+         */
+        sellerWalletVkey?: string;
         /**
          * Target month in format YYYY-MM (UTC calendar)
          */

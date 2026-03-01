@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useForm, type FieldErrors } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,21 +22,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from '@/components/ui/command';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
-import { ChevronDown, Save, Trash2, Pencil } from 'lucide-react';
+import { ChevronDown, Save, Trash2, Pencil, Check, ChevronsUpDown, X, Plus } from 'lucide-react';
 import { CopyButton } from '@/components/ui/copy-button';
+import { cn } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postInvoiceMonthlyAdmin } from '@/lib/api/generated';
 import { shortenAddress } from '@/lib/utils';
-import { useSellerTemplates, type SellerTemplateData } from '@/lib/hooks/useSellerTemplates';
+import {
+  useSellerTemplates,
+  useBuyerTemplates,
+  type SellerTemplateData,
+  type AddressTemplateData,
+} from '@/lib/hooks/useSellerTemplates';
 import { extractApiErrorMessage, mapInvoiceApiErrorMessage } from '@/lib/api-error';
 import { downloadBase64Pdf } from '@/lib/pdf-utils';
 
 const currencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
 const languages = ['en-us', 'en-gb', 'de'] as const;
 
-const EMPTY_SELLER: SellerTemplateData = {
+const EMPTY_ADDRESS: SellerTemplateData = {
   name: null,
   companyName: null,
   vatNumber: null,
@@ -129,6 +145,7 @@ interface GenerateInvoiceDialogProps {
   onClose: () => void;
   onSuccess: () => void;
   prefillBuyerWalletVkey: string;
+  prefillSellerWalletVkey?: string;
   prefillMonth: string;
   prefillForceRegenerate?: boolean;
   formatMonth: (month: string) => string;
@@ -235,11 +252,250 @@ function AddressFields({
   );
 }
 
+// Searchable template combobox with inline save/edit/delete
+function TemplateCombobox({
+  templates,
+  selectedId,
+  onSelect,
+  onClear,
+  onSave,
+  onUpdate,
+  onDelete,
+  label,
+}: {
+  templates: { id: string; label: string }[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onClear: () => void;
+  onSave: (name: string) => void;
+  onUpdate: (id: string, name: string) => void;
+  onDelete: (id: string) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'browse' | 'save' | 'rename'>('browse');
+  const [nameInput, setNameInput] = useState('');
+  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedTemplate = templates.find((t) => t.id === selectedId);
+
+  const handleSave = () => {
+    const name = nameInput.trim();
+    if (!name) return;
+    onSave(name);
+    setMode('browse');
+    setNameInput('');
+    setOpen(false);
+  };
+
+  const handleRename = () => {
+    const name = nameInput.trim();
+    if (!name || !renameTargetId) return;
+    onUpdate(renameTargetId, name);
+    setMode('browse');
+    setNameInput('');
+    setRenameTargetId(null);
+  };
+
+  const startRename = (id: string, currentLabel: string) => {
+    setRenameTargetId(id);
+    setNameInput(currentLabel);
+    setMode('rename');
+    setTimeout(() => nameInputRef.current?.focus(), 0);
+  };
+
+  if (mode === 'save' || mode === 'rename') {
+    return (
+      <div className="flex items-center gap-2">
+        <Input
+          ref={nameInputRef}
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          placeholder={mode === 'save' ? 'Template name...' : 'New name...'}
+          className="h-8 text-xs flex-1"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (mode === 'rename') handleRename();
+              else handleSave();
+            }
+            if (e.key === 'Escape') {
+              setMode('browse');
+              setNameInput('');
+              setRenameTargetId(null);
+            }
+          }}
+          autoFocus
+        />
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 text-xs"
+          disabled={!nameInput.trim()}
+          onClick={mode === 'rename' ? handleRename : handleSave}
+        >
+          {mode === 'rename' ? 'Rename' : 'Save'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2"
+          onClick={() => {
+            setMode('browse');
+            setNameInput('');
+            setRenameTargetId(null);
+          }}
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Popover open={open} onOpenChange={setOpen} modal>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="h-8 justify-between text-xs flex-1 min-w-0"
+          >
+            <span className="truncate">
+              {selectedTemplate ? selectedTemplate.label : `Load ${label} template...`}
+            </span>
+            <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-0" align="start">
+          <Command
+            filter={(value, search) => {
+              if (value === '__clear__' || value === '__save_new__') return 1;
+              if (value.toLowerCase().includes(search.toLowerCase())) return 1;
+              return 0;
+            }}
+          >
+            {templates.length > 0 && (
+              <CommandInput placeholder={`Search ${label} templates...`} className="h-9 border-0" />
+            )}
+            <CommandList>
+              <CommandGroup>
+                {selectedId && (
+                  <CommandItem
+                    value="__clear__"
+                    onSelect={() => {
+                      onClear();
+                      setOpen(false);
+                    }}
+                  >
+                    <X className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Clear selection</span>
+                  </CommandItem>
+                )}
+                {templates.map((tpl) => (
+                  <CommandItem
+                    key={tpl.id}
+                    value={tpl.label}
+                    onSelect={() => {
+                      onSelect(tpl.id);
+                      setOpen(false);
+                    }}
+                    className="group"
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-3.5 w-3.5',
+                        selectedId === tpl.id ? 'opacity-100' : 'opacity-0',
+                      )}
+                    />
+                    <span className="flex-1 truncate">{tpl.label}</span>
+                    <span className="hidden group-aria-selected:flex items-center gap-0.5 ml-1">
+                      <button
+                        type="button"
+                        className="p-0.5 rounded hover:bg-accent"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          startRename(tpl.id, tpl.label);
+                          setOpen(false);
+                        }}
+                        title="Rename"
+                      >
+                        <Pencil className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                      <button
+                        type="button"
+                        className="p-0.5 rounded hover:bg-destructive/20"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onDelete(tpl.id);
+                          setOpen(false);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </span>
+                  </CommandItem>
+                ))}
+                <CommandItem
+                  value="__save_new__"
+                  onSelect={() => {
+                    setMode('save');
+                    setNameInput('');
+                    setOpen(false);
+                  }}
+                >
+                  <Plus className="mr-2 h-3.5 w-3.5" />
+                  Save current as template
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {selectedId && (
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            title="Overwrite template with current values"
+            onClick={() => {
+              const tpl = templates.find((t) => t.id === selectedId);
+              if (tpl) onUpdate(tpl.id, tpl.label);
+            }}
+          >
+            <Save className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+            title="Delete template"
+            onClick={() => onDelete(selectedId)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function GenerateInvoiceDialog({
   open,
   onClose,
   onSuccess,
   prefillBuyerWalletVkey,
+  prefillSellerWalletVkey,
   prefillMonth,
   prefillForceRegenerate = false,
   formatMonth,
@@ -249,16 +505,23 @@ export function GenerateInvoiceDialog({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
 
+  // Seller templates
   const {
-    templates,
-    save: saveTemplate,
-    update: updateTemplate,
-    remove: removeTemplate,
+    templates: sellerTemplates,
+    save: saveSeller,
+    update: updateSeller,
+    remove: removeSeller,
   } = useSellerTemplates();
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
-  const [templateNameInput, setTemplateNameInput] = useState('');
-  const [isNaming, setIsNaming] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [selectedSellerTplId, setSelectedSellerTplId] = useState<string | null>(null);
+
+  // Buyer templates
+  const {
+    templates: buyerTemplates,
+    save: saveBuyer,
+    update: updateBuyer,
+    remove: removeBuyer,
+  } = useBuyerTemplates();
+  const [selectedBuyerTplId, setSelectedBuyerTplId] = useState<string | null>(null);
 
   const {
     register,
@@ -277,19 +540,8 @@ export function GenerateInvoiceDialog({
       vatRate: 0,
       reverseCharge: false,
       forceRegenerate: prefillForceRegenerate,
-      seller: { ...EMPTY_SELLER },
-      buyer: {
-        name: null,
-        companyName: null,
-        vatNumber: null,
-        country: '',
-        city: '',
-        zipCode: '',
-        street: '',
-        streetNumber: '',
-        email: null,
-        phone: null,
-      },
+      seller: { ...EMPTY_ADDRESS },
+      buyer: { ...EMPTY_ADDRESS },
       invoice: {},
     },
   });
@@ -303,25 +555,12 @@ export function GenerateInvoiceDialog({
         vatRate: 0,
         reverseCharge: false,
         forceRegenerate: prefillForceRegenerate,
-        seller: { ...EMPTY_SELLER },
-        buyer: {
-          name: null,
-          companyName: null,
-          vatNumber: null,
-          country: '',
-          city: '',
-          zipCode: '',
-          street: '',
-          streetNumber: '',
-          email: null,
-          phone: null,
-        },
+        seller: { ...EMPTY_ADDRESS },
+        buyer: { ...EMPTY_ADDRESS },
         invoice: {},
       });
-      setSelectedTemplateId(null);
-      setIsNaming(false);
-      setIsEditing(false);
-      setTemplateNameInput('');
+      setSelectedSellerTplId(null);
+      setSelectedBuyerTplId(null);
       setSubmitError(null);
     }
   }, [open, prefillBuyerWalletVkey, prefillMonth, prefillForceRegenerate, reset]);
@@ -331,104 +570,138 @@ export function GenerateInvoiceDialog({
   const invoiceCurrency = watch('invoiceCurrency');
   const vatRate = watch('vatRate');
 
-  const applyTemplate = useCallback(
-    (templateId: string) => {
-      const tpl = templates.find((t) => t.id === templateId);
-      if (!tpl) return;
-      setSelectedTemplateId(templateId);
-      setIsNaming(false);
-      setIsEditing(false);
-      const s = tpl.seller;
-      setValue('seller.name', s.name);
-      setValue('seller.companyName', s.companyName);
-      setValue('seller.vatNumber', s.vatNumber);
-      setValue('seller.country', s.country);
-      setValue('seller.city', s.city);
-      setValue('seller.zipCode', s.zipCode);
-      setValue('seller.street', s.street);
-      setValue('seller.streetNumber', s.streetNumber);
-      setValue('seller.email', s.email);
-      setValue('seller.phone', s.phone);
+  // Apply address data to form fields
+  const applyAddress = useCallback(
+    (prefix: 'seller' | 'buyer', data: SellerTemplateData) => {
+      const opts = { shouldDirty: true } as const;
+      setValue(`${prefix}.name`, data.name, opts);
+      setValue(`${prefix}.companyName`, data.companyName, opts);
+      setValue(`${prefix}.vatNumber`, data.vatNumber, opts);
+      setValue(`${prefix}.country`, data.country, opts);
+      setValue(`${prefix}.city`, data.city, opts);
+      setValue(`${prefix}.zipCode`, data.zipCode, opts);
+      setValue(`${prefix}.street`, data.street, opts);
+      setValue(`${prefix}.streetNumber`, data.streetNumber, opts);
+      setValue(`${prefix}.email`, data.email, opts);
+      setValue(`${prefix}.phone`, data.phone, opts);
     },
-    [templates, setValue],
+    [setValue],
   );
 
-  const clearTemplate = useCallback(() => {
-    setSelectedTemplateId(null);
-    setIsNaming(false);
-    setIsEditing(false);
-    const s = EMPTY_SELLER;
-    setValue('seller.name', s.name);
-    setValue('seller.companyName', s.companyName);
-    setValue('seller.vatNumber', s.vatNumber);
-    setValue('seller.country', s.country);
-    setValue('seller.city', s.city);
-    setValue('seller.zipCode', s.zipCode);
-    setValue('seller.street', s.street);
-    setValue('seller.streetNumber', s.streetNumber);
-    setValue('seller.email', s.email);
-    setValue('seller.phone', s.phone);
-  }, [setValue]);
+  const getAddressData = useCallback(
+    (prefix: 'seller' | 'buyer'): SellerTemplateData => {
+      const v = getValues(prefix);
+      return {
+        name: v.name ?? null,
+        companyName: v.companyName ?? null,
+        vatNumber: v.vatNumber ?? null,
+        country: v.country,
+        city: v.city,
+        zipCode: v.zipCode,
+        street: v.street,
+        streetNumber: v.streetNumber,
+        email: v.email ?? null,
+        phone: v.phone ?? null,
+      };
+    },
+    [getValues],
+  );
 
-  const getCurrentSellerData = useCallback((): SellerTemplateData => {
-    const v = getValues('seller');
-    return {
-      name: v.name ?? null,
-      companyName: v.companyName ?? null,
-      vatNumber: v.vatNumber ?? null,
-      country: v.country,
-      city: v.city,
-      zipCode: v.zipCode,
-      street: v.street,
-      streetNumber: v.streetNumber,
-      email: v.email ?? null,
-      phone: v.phone ?? null,
-    };
-  }, [getValues]);
+  // Seller template handlers
+  const handleSelectSellerTpl = useCallback(
+    (id: string) => {
+      const tpl = sellerTemplates.find((t) => t.id === id);
+      if (!tpl) return;
+      setSelectedSellerTplId(id);
+      applyAddress('seller', tpl.seller);
+    },
+    [sellerTemplates, applyAddress],
+  );
 
-  const handleSaveTemplate = useCallback(() => {
-    const name = templateNameInput.trim();
-    if (!name) return;
-    const data = getCurrentSellerData();
-    const tpl = saveTemplate(name, data);
-    setSelectedTemplateId(tpl.id);
-    setIsNaming(false);
-    setTemplateNameInput('');
-    toast.success(`Template "${name}" saved`);
-  }, [templateNameInput, getCurrentSellerData, saveTemplate]);
+  const handleClearSellerTpl = useCallback(() => {
+    setSelectedSellerTplId(null);
+    applyAddress('seller', EMPTY_ADDRESS);
+  }, [applyAddress]);
 
-  const handleUpdateTemplate = useCallback(() => {
-    if (!selectedTemplateId) return;
-    const tpl = templates.find((t) => t.id === selectedTemplateId);
-    if (!tpl) return;
-    const label = templateNameInput.trim() || tpl.label;
-    const data = getCurrentSellerData();
-    updateTemplate(selectedTemplateId, label, data);
-    setIsEditing(false);
-    setTemplateNameInput('');
-    toast.success(`Template "${label}" updated`);
-  }, [selectedTemplateId, templateNameInput, templates, getCurrentSellerData, updateTemplate]);
+  const handleSaveSellerTpl = useCallback(
+    (name: string) => {
+      const data = getAddressData('seller');
+      const tpl = saveSeller(name, data);
+      setSelectedSellerTplId(tpl.id);
+      toast.success(`Seller template "${name}" saved`);
+    },
+    [getAddressData, saveSeller],
+  );
 
-  const handleDeleteTemplate = useCallback(() => {
-    if (!selectedTemplateId) return;
-    const tpl = templates.find((t) => t.id === selectedTemplateId);
-    removeTemplate(selectedTemplateId);
-    setSelectedTemplateId(null);
-    setIsNaming(false);
-    setIsEditing(false);
-    const s = EMPTY_SELLER;
-    setValue('seller.name', s.name);
-    setValue('seller.companyName', s.companyName);
-    setValue('seller.vatNumber', s.vatNumber);
-    setValue('seller.country', s.country);
-    setValue('seller.city', s.city);
-    setValue('seller.zipCode', s.zipCode);
-    setValue('seller.street', s.street);
-    setValue('seller.streetNumber', s.streetNumber);
-    setValue('seller.email', s.email);
-    setValue('seller.phone', s.phone);
-    toast.success(`Template "${tpl?.label}" deleted`);
-  }, [selectedTemplateId, templates, removeTemplate, setValue]);
+  const handleUpdateSellerTpl = useCallback(
+    (id: string, label: string) => {
+      const data = getAddressData('seller');
+      updateSeller(id, label, data);
+      toast.success(`Seller template "${label}" updated`);
+    },
+    [getAddressData, updateSeller],
+  );
+
+  const handleDeleteSellerTpl = useCallback(
+    (id: string) => {
+      const tpl = sellerTemplates.find((t) => t.id === id);
+      removeSeller(id);
+      if (selectedSellerTplId === id) {
+        setSelectedSellerTplId(null);
+        applyAddress('seller', EMPTY_ADDRESS);
+      }
+      toast.success(`Template "${tpl?.label}" deleted`);
+    },
+    [sellerTemplates, removeSeller, selectedSellerTplId, applyAddress],
+  );
+
+  // Buyer template handlers
+  const handleSelectBuyerTpl = useCallback(
+    (id: string) => {
+      const tpl = buyerTemplates.find((t) => t.id === id);
+      if (!tpl) return;
+      setSelectedBuyerTplId(id);
+      applyAddress('buyer', tpl.data);
+    },
+    [buyerTemplates, applyAddress],
+  );
+
+  const handleClearBuyerTpl = useCallback(() => {
+    setSelectedBuyerTplId(null);
+    applyAddress('buyer', EMPTY_ADDRESS);
+  }, [applyAddress]);
+
+  const handleSaveBuyerTpl = useCallback(
+    (name: string) => {
+      const data = getAddressData('buyer');
+      const tpl = saveBuyer(name, data);
+      setSelectedBuyerTplId(tpl.id);
+      toast.success(`Buyer template "${name}" saved`);
+    },
+    [getAddressData, saveBuyer],
+  );
+
+  const handleUpdateBuyerTpl = useCallback(
+    (id: string, label: string) => {
+      const data = getAddressData('buyer');
+      updateBuyer(id, label, data);
+      toast.success(`Buyer template "${label}" updated`);
+    },
+    [getAddressData, updateBuyer],
+  );
+
+  const handleDeleteBuyerTpl = useCallback(
+    (id: string) => {
+      const tpl = buyerTemplates.find((t) => t.id === id);
+      removeBuyer(id);
+      if (selectedBuyerTplId === id) {
+        setSelectedBuyerTplId(null);
+        applyAddress('buyer', EMPTY_ADDRESS);
+      }
+      toast.success(`Template "${tpl?.label}" deleted`);
+    },
+    [buyerTemplates, removeBuyer, selectedBuyerTplId, applyAddress],
+  );
 
   const onSubmit = async (data: FormValues) => {
     setIsSubmitting(true);
@@ -438,6 +711,7 @@ export function GenerateInvoiceDialog({
         client: apiClient,
         body: {
           buyerWalletVkey: data.buyerWalletVkey,
+          sellerWalletVkey: prefillSellerWalletVkey || undefined,
           month: data.month,
           invoiceCurrency: data.invoiceCurrency,
           vatRate: data.vatRate,
@@ -526,15 +800,26 @@ export function GenerateInvoiceDialog({
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Core Fields */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+            <div>
               <Label>Buyer Wallet VKey</Label>
               <div className="flex items-center gap-2 h-10 rounded-md border border-input bg-muted/50 px-3 py-2">
-                <span className="font-mono text-sm text-muted-foreground">
+                <span className="font-mono text-sm text-muted-foreground truncate">
                   {shortenAddress(prefillBuyerWalletVkey, 12)}
                 </span>
                 <CopyButton value={prefillBuyerWalletVkey} />
               </div>
               <input type="hidden" {...register('buyerWalletVkey')} />
+            </div>
+            <div>
+              <Label>Seller Wallet VKey</Label>
+              <div className="flex items-center gap-2 h-10 rounded-md border border-input bg-muted/50 px-3 py-2">
+                <span className="font-mono text-sm text-muted-foreground truncate">
+                  {prefillSellerWalletVkey
+                    ? shortenAddress(prefillSellerWalletVkey, 12)
+                    : 'Auto-detect'}
+                </span>
+                {prefillSellerWalletVkey && <CopyButton value={prefillSellerWalletVkey} />}
+              </div>
             </div>
             <div>
               <Label>Month</Label>
@@ -610,122 +895,19 @@ export function GenerateInvoiceDialog({
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-medium">Seller Details</h4>
-              <div className="flex items-center gap-2">
-                {templates.length > 0 && (
-                  <Select
-                    value={selectedTemplateId ?? '__none__'}
-                    onValueChange={(val) => {
-                      if (val === '__none__') {
-                        clearTemplate();
-                      } else {
-                        applyTemplate(val);
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-[180px] h-8 text-xs">
-                      <SelectValue placeholder="Load template..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No template</SelectItem>
-                      {templates.map((tpl) => (
-                        <SelectItem key={tpl.id} value={tpl.id}>
-                          {tpl.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {selectedTemplateId && !isNaming && !isEditing && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2"
-                      title="Update template with current values"
-                      onClick={() => {
-                        const tpl = templates.find((t) => t.id === selectedTemplateId);
-                        setTemplateNameInput(tpl?.label ?? '');
-                        setIsEditing(true);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2 text-destructive hover:text-destructive"
-                      title="Delete template"
-                      onClick={handleDeleteTemplate}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </>
-                )}
-                {!isNaming && !isEditing && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => {
-                      setIsNaming(true);
-                      setTemplateNameInput('');
-                    }}
-                  >
-                    <Save className="h-3.5 w-3.5 mr-1" />
-                    Save as Template
-                  </Button>
-                )}
-              </div>
             </div>
-
-            {/* Save / Edit template name input */}
-            {(isNaming || isEditing) && (
-              <div className="flex items-center gap-2 mb-3">
-                <Input
-                  value={templateNameInput}
-                  onChange={(e) => setTemplateNameInput(e.target.value)}
-                  placeholder="Template name"
-                  className="h-8 text-sm flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (isEditing) handleUpdateTemplate();
-                      else handleSaveTemplate();
-                    }
-                    if (e.key === 'Escape') {
-                      setIsNaming(false);
-                      setIsEditing(false);
-                    }
-                  }}
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={!templateNameInput.trim()}
-                  onClick={isEditing ? handleUpdateTemplate : handleSaveTemplate}
-                >
-                  {isEditing ? 'Update' : 'Save'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => {
-                    setIsNaming(false);
-                    setIsEditing(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-
+            <div className="mb-3">
+              <TemplateCombobox
+                templates={sellerTemplates}
+                selectedId={selectedSellerTplId}
+                onSelect={handleSelectSellerTpl}
+                onClear={handleClearSellerTpl}
+                onSave={handleSaveSellerTpl}
+                onUpdate={handleUpdateSellerTpl}
+                onDelete={handleDeleteSellerTpl}
+                label="seller"
+              />
+            </div>
             <AddressFields prefix="seller" register={register} errors={errors} />
           </div>
 
@@ -733,7 +915,21 @@ export function GenerateInvoiceDialog({
 
           {/* Buyer Details */}
           <div>
-            <h4 className="text-sm font-medium mb-3">Buyer Details</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium">Buyer Details</h4>
+            </div>
+            <div className="mb-3">
+              <TemplateCombobox
+                templates={buyerTemplates}
+                selectedId={selectedBuyerTplId}
+                onSelect={handleSelectBuyerTpl}
+                onClear={handleClearBuyerTpl}
+                onSave={handleSaveBuyerTpl}
+                onUpdate={handleUpdateBuyerTpl}
+                onDelete={handleDeleteBuyerTpl}
+                label="buyer"
+              />
+            </div>
             <AddressFields prefix="buyer" register={register} errors={errors} />
           </div>
 
