@@ -31,9 +31,7 @@ import { resolvePaymentRequestPost } from './payments/resolve-blockchain-identif
 import { resolvePurchaseRequestPost } from './purchases/resolve-blockchain-identifier';
 import { unregisterAgentPost } from './registry/deregister';
 import { revealDataEndpointPost } from './signature/verify/reveal-data';
-import { postSignatureEndpoint } from './signature/sign/create-invoice';
 import { postMonthlySignatureEndpoint } from './signature/sign/create-invoice/monthly';
-import { postGenerateInvoiceEndpoint } from './invoice';
 import { postGenerateMonthlyInvoiceEndpoint } from './invoice/monthly';
 import { paymentErrorStateRecoveryPost } from './payments/error-state-recovery';
 import { purchaseErrorStateRecoveryPost } from './purchases/error-state-recovery';
@@ -158,7 +156,6 @@ export const apiRouter: Routing = {
 			get: paymentSourceEndpointGet,
 		},
 		invoice: {
-			post: postGenerateInvoiceEndpoint,
 			monthly: {
 				post: postGenerateMonthlyInvoiceEndpoint,
 			},
@@ -171,7 +168,6 @@ export const apiRouter: Routing = {
 			},
 			sign: {
 				'create-invoice': {
-					post: postSignatureEndpoint,
 					monthly: {
 						post: postMonthlySignatureEndpoint,
 					},

@@ -148,14 +148,6 @@ export const PurchasingAction = {
 export type PurchasingAction = (typeof PurchasingAction)[keyof typeof PurchasingAction]
 
 
-export const InvoiceType = {
-  Monthly: 'Monthly',
-  OneTime: 'OneTime'
-} as const
-
-export type InvoiceType = (typeof InvoiceType)[keyof typeof InvoiceType]
-
-
 export const SymbolPosition = {
   Before: 'Before',
   After: 'After'

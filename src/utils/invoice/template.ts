@@ -1,8 +1,58 @@
-import { z } from 'zod';
-import { postGenerateInvoiceSchemaInput } from '@/routes/api/invoice/index';
+import { z } from '@/utils/zod-openapi';
 import { generateSHA256Hash } from '../crypto';
 
-type InvoiceData = z.infer<typeof postGenerateInvoiceSchemaInput>;
+export const invoiceSellerSchema = z.object({
+	country: z.string().min(1).max(100).describe('The country of the invoice'),
+	city: z.string().min(1).max(100).describe('The city of the invoice'),
+	zipCode: z.string().min(1).max(20).describe('The zip code of the invoice'),
+	street: z.string().min(1).max(100).describe('The street of the invoice'),
+	streetNumber: z.string().min(1).max(20).describe('The street number of the invoice'),
+	email: z.string().email().min(1).max(100).nullable().describe('The email of the invoice'),
+	phone: z.string().min(1).max(100).nullable().describe('The phone of the invoice'),
+	name: z.string().min(1).max(100).nullable().describe('The name of the invoice'),
+	companyName: z.string().min(1).max(100).nullable().describe('The company name of the invoice'),
+	vatNumber: z.string().min(1).max(100).nullable().describe('The VAT number of the invoice'),
+});
+
+export const invoiceBuyerSchema = z.object({
+	country: z.string().min(1).max(100).describe('The country of the invoice'),
+	city: z.string().min(1).max(100).describe('The city of the invoice'),
+	zipCode: z.string().min(1).max(20).describe('The zip code of the invoice'),
+	street: z.string().min(1).max(100).describe('The street of the invoice'),
+	streetNumber: z.string().min(1).max(20).describe('The street number of the invoice'),
+	email: z.string().email().min(1).max(100).nullable().describe('The email of the invoice'),
+	phone: z.string().min(1).max(100).nullable().describe('The phone of the invoice'),
+	name: z.string().min(1).max(100).nullable().describe('The name of the invoice'),
+	companyName: z.string().min(1).max(100).nullable().describe('The company name of the invoice'),
+	vatNumber: z.string().min(1).max(100).nullable().describe('The VAT number of the invoice'),
+});
+
+export const invoiceOptionsSchema = z
+	.object({
+		itemNamePrefix: z.string().min(1).max(100).optional().describe('The prefix of the item name'),
+		itemNameSuffix: z.string().min(1).max(100).optional().describe('The suffix of the item name'),
+		title: z.string().min(1).max(100).optional().describe('The title of the invoice'),
+		description: z.string().min(1).max(1000).optional().describe('The description of the invoice'),
+		idPrefix: z.string().min(1).max(100).optional().describe('The prefix of the invoice number'),
+		date: z.string().min(1).max(100).optional().describe('The date of the invoice'),
+		greeting: z.string().min(1).max(1000).optional().describe('The greetings of the invoice'),
+		closing: z.string().min(1).max(1000).optional().describe('The closing of the invoice'),
+		signature: z.string().min(1).max(1000).optional().describe('The signature of the invoice'),
+		logo: z.string().min(1).max(1000).optional().describe('The logo of the invoice'),
+		footer: z.string().min(1).max(1000).optional().describe('The footer of the invoice'),
+		terms: z.string().min(1).max(1000).optional().describe('The terms of the invoice'),
+		privacy: z.string().min(1).max(1000).optional().describe('The privacy of the invoice'),
+		language: z
+			.enum(['en-us', 'en-uk', 'de'])
+			.optional()
+			.describe('Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us'),
+		localizationFormat: z.enum(['en-us', 'en-uk', 'de']).optional().describe('The localization format of the invoice'),
+	})
+	.optional();
+
+export type InvoiceSeller = z.infer<typeof invoiceSellerSchema>;
+export type InvoiceBuyer = z.infer<typeof invoiceBuyerSchema>;
+export type InvoiceOptions = z.infer<typeof invoiceOptionsSchema>;
 export function generateNewInvoiceBaseId(baseIdPrefix?: string): string {
 	const randomData = crypto.randomUUID();
 	const randomHash = generateSHA256Hash(randomData);
@@ -66,10 +116,11 @@ const LOCALE_CONFIG = {
 			itemNameSuffix: '',
 			invoice: 'Invoice',
 			monthlyInvoice: 'Monthly Invoice',
-			correction: 'Correction',
-			correctionInvoice: 'CORRECTION INVOICE',
-			correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
-				`This invoice corrects the original invoice #${invoiceNumber} dated ${invoiceDate}.`,
+			cancellationInvoice: 'CANCELLATION INVOICE',
+			cancellationDefault: (invoiceNumber: string, invoiceDate: string) =>
+				`This cancellation invoice reverses the original invoice #${invoiceNumber} dated ${invoiceDate}.`,
+			reverseChargeNotice:
+				'Reverse charge: VAT to be accounted for by the recipient pursuant to Article 196 of the EU VAT Directive.',
 			defaultGreeting: 'Thank you for your business.',
 			defaultClosing: 'Best regards,',
 			defaultSignature: 'Accounts Receivable',
@@ -95,10 +146,10 @@ const LOCALE_CONFIG = {
 			phone: 'Phone',
 			termsAndConditions: 'Terms and Conditions',
 			privacyPolicy: 'Privacy Policy',
-			correctionReasonItemsChanged: 'Changes to items and/or their prices',
-			correctionReasonSellerChanged: 'Changes to seller data',
-			correctionReasonBuyerChanged: 'Changes to buyer data',
-			correctionReasonMetadataChanged: 'Changes to texts and formatting',
+			cancellationReasonItemsChanged: 'Changes to items and/or their prices',
+			cancellationReasonSellerChanged: 'Changes to seller data',
+			cancellationReasonBuyerChanged: 'Changes to buyer data',
+			cancellationReasonMetadataChanged: 'Changes to texts and formatting',
 			conversionText: 'Conversion Factor: ',
 			coingeckoAttribution: 'Conversions and price data by',
 		},
@@ -109,10 +160,10 @@ const LOCALE_CONFIG = {
 			itemNameSuffix: '',
 			invoice: 'Rechnung',
 			monthlyInvoice: 'Monatsrechnung',
-			correction: 'Korrektur',
-			correctionInvoice: 'KORREKTURRECHNUNG',
-			correctionDefault: (invoiceNumber: string, invoiceDate: string) =>
-				`Diese Rechnung korrigiert die ursprüngliche Rechnung #${invoiceNumber} vom ${invoiceDate}.`,
+			cancellationInvoice: 'STORNORECHNUNG',
+			cancellationDefault: (invoiceNumber: string, invoiceDate: string) =>
+				`Diese Stornorechnung storniert die ursprüngliche Rechnung #${invoiceNumber} vom ${invoiceDate}.`,
+			reverseChargeNotice: 'Steuerschuldnerschaft des Leistungsempfängers gem. §13b UStG.',
 			defaultGreeting: 'Vielen Dank für Ihr Vertrauen.',
 			defaultClosing: 'Mit freundlichen Grüßen,',
 			defaultSignature: 'Buchhaltung',
@@ -138,10 +189,10 @@ const LOCALE_CONFIG = {
 			phone: 'Telefon',
 			termsAndConditions: 'Allgemeine Geschäftsbedingungen',
 			privacyPolicy: 'Datenschutzerklärung',
-			correctionReasonItemsChanged: 'Änderungen an den Artikeln und/oder ihren Preisen',
-			correctionReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
-			correctionReasonBuyerChanged: 'Änderungen an den Käuferdaten',
-			correctionReasonMetadataChanged: 'Änderungen an Texten und Formatierungen',
+			cancellationReasonItemsChanged: 'Änderungen an den Artikeln und/oder ihren Preisen',
+			cancellationReasonSellerChanged: 'Änderungen an den Verkäuferdaten',
+			cancellationReasonBuyerChanged: 'Änderungen an den Käuferdaten',
+			cancellationReasonMetadataChanged: 'Änderungen an Texten und Formatierungen',
 			conversionText: 'Umrechnungsfaktor: ',
 			coingeckoAttribution: 'Konvertierung und Preisdaten von',
 		},
@@ -153,9 +204,9 @@ export type LanguageKey = keyof typeof LOCALE_CONFIG;
 export type InvoiceTexts = {
 	invoice: string;
 	monthlyInvoice?: string;
-	correction: string;
-	correctionInvoice: string;
-	correctionDefault: (invoiceNumber: string, invoiceDate: string) => string;
+	cancellationInvoice: string;
+	cancellationDefault: (invoiceNumber: string, invoiceDate: string) => string;
+	reverseChargeNotice: string;
 	defaultGreeting: string;
 	defaultClosing: string;
 	defaultSignature: string;
@@ -181,10 +232,10 @@ export type InvoiceTexts = {
 	phone: string;
 	termsAndConditions: string;
 	privacyPolicy: string;
-	correctionReasonItemsChanged: string;
-	correctionReasonSellerChanged: string;
-	correctionReasonBuyerChanged: string;
-	correctionReasonMetadataChanged: string;
+	cancellationReasonItemsChanged: string;
+	cancellationReasonSellerChanged: string;
+	cancellationReasonBuyerChanged: string;
+	cancellationReasonMetadataChanged: string;
 	conversionText: string;
 	coingeckoAttribution: string;
 };
@@ -205,9 +256,9 @@ export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
 	return {
 		invoice: t.invoice,
 		monthlyInvoice: t.monthlyInvoice,
-		correction: t.correction,
-		correctionInvoice: t.correctionInvoice,
-		correctionDefault: t.correctionDefault,
+		cancellationInvoice: t.cancellationInvoice,
+		cancellationDefault: t.cancellationDefault,
+		reverseChargeNotice: t.reverseChargeNotice,
 		defaultGreeting: t.defaultGreeting,
 		defaultClosing: t.defaultClosing,
 		defaultSignature: t.defaultSignature,
@@ -233,10 +284,10 @@ export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
 		phone: t.phone,
 		termsAndConditions: t.termsAndConditions,
 		privacyPolicy: t.privacyPolicy,
-		correctionReasonItemsChanged: t.correctionReasonItemsChanged,
-		correctionReasonSellerChanged: t.correctionReasonSellerChanged,
-		correctionReasonBuyerChanged: t.correctionReasonBuyerChanged,
-		correctionReasonMetadataChanged: t.correctionReasonMetadataChanged,
+		cancellationReasonItemsChanged: t.cancellationReasonItemsChanged,
+		cancellationReasonSellerChanged: t.cancellationReasonSellerChanged,
+		cancellationReasonBuyerChanged: t.cancellationReasonBuyerChanged,
+		cancellationReasonMetadataChanged: t.cancellationReasonMetadataChanged,
 		conversionText: t.conversionText,
 		coingeckoAttribution: t.coingeckoAttribution,
 	};
@@ -267,9 +318,9 @@ export type ResolvedInvoiceConfig = {
 };
 
 export function resolveInvoiceConfig(
-	currency: InvoiceData['invoiceCurrency'],
-	invoice?: InvoiceData['invoice'],
-	options?: { invoiceType?: 'monthly' | 'single' },
+	currency: SupportedCurrencies,
+	invoice?: InvoiceOptions,
+	options?: { invoiceType?: 'monthly' },
 ): ResolvedInvoiceConfig {
 	const languageKey = resolveLanguageKey(invoice?.language);
 	const locale = LOCALE_CONFIG[languageKey];
@@ -370,16 +421,16 @@ export function generateInvoiceGroups(
 
 export function generateInvoiceHTML(
 	config: ResolvedInvoiceConfig,
-	seller: InvoiceData['seller'],
-	buyer: InvoiceData['buyer'],
+	seller: InvoiceSeller,
+	buyer: InvoiceBuyer,
 	invoiceGroups: InvoiceGroup[],
 	newInvoiceId: string,
-	correctionInvoiceReference: {
-		correctionTitle: string;
-		correctionDescription: string;
+	cancellationNotice: {
+		cancellationTitle: string;
+		cancellationDescription: string;
 	} | null,
 	includeCoingeckoAttribution: boolean = false,
-	options?: { invoiceType?: 'monthly' | 'single' },
+	options?: { invoiceType?: 'monthly'; isCancellation?: boolean; reverseCharge?: boolean },
 ): string {
 	const {
 		title,
@@ -398,7 +449,9 @@ export function generateInvoiceHTML(
 	} = config;
 
 	const t = texts;
-	const defaultInvoiceTitle = title || (options?.invoiceType === 'monthly' ? t.monthlyInvoice || t.invoice : t.invoice);
+	const defaultInvoiceTitle = options?.isCancellation
+		? t.cancellationInvoice
+		: title || (options?.invoiceType === 'monthly' ? t.monthlyInvoice || t.invoice : t.invoice);
 
 	// Group items by VAT rate and inclusion setting
 
@@ -838,7 +891,7 @@ export function generateInvoiceHTML(
         <div class="invoice-meta">
           <span>${t.invoiceNumber}: <strong>${newInvoiceId}</strong></span>
           <span>${t.date}: <strong>${dateFormatter.format(date)}</strong></span>
-          ${correctionInvoiceReference ? `<span class="badge">${t.correction}</span>` : ''}
+          ${cancellationNotice ? `<span class="badge">${t.cancellationInvoice}</span>` : ''}
         </div>
       </div>
     </div>
@@ -880,14 +933,14 @@ export function generateInvoiceHTML(
       </div>
     </div>
 
-    <!-- Correction Invoice Notice -->
+    <!-- Cancellation Invoice Notice -->
     ${
-			correctionInvoiceReference
+			cancellationNotice
 				? `
     <div class="correction-notice">
-      <div class="correction-title">${correctionInvoiceReference.correctionTitle}</div>
+      <div class="correction-title">${cancellationNotice.cancellationTitle}</div>
       <div class="correction-details">
-        ${correctionInvoiceReference.correctionDescription}
+        ${cancellationNotice.cancellationDescription}
       </div>
     </div>
     `
@@ -993,6 +1046,7 @@ export function generateInvoiceHTML(
 				: ''
 		}
     
+    ${options?.reverseCharge ? `<div class="correction-notice" style="margin-bottom: 12px;"><div class="correction-title">${t.reverseChargeNotice}</div></div>` : ''}
     ${closing ? `<div class="closing">${closing}</div>` : ''}
     ${signature ? `<div class="signature">${signature}</div>` : ''}
 

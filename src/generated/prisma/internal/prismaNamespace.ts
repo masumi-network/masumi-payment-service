@@ -2439,7 +2439,8 @@ export const PaymentRequestScalarFieldEnum = {
   collateralReturnLovelace: 'collateralReturnLovelace',
   payByTime: 'payByTime',
   totalBuyerCardanoFees: 'totalBuyerCardanoFees',
-  totalSellerCardanoFees: 'totalSellerCardanoFees'
+  totalSellerCardanoFees: 'totalSellerCardanoFees',
+  invoiceBaseId: 'invoiceBaseId'
 } as const
 
 export type PaymentRequestScalarFieldEnum = (typeof PaymentRequestScalarFieldEnum)[keyof typeof PaymentRequestScalarFieldEnum]
@@ -2567,7 +2568,6 @@ export const InvoiceBaseScalarFieldEnum = {
   id: 'id',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
-  invoiceType: 'invoiceType',
   invoiceId: 'invoiceId'
 } as const
 
@@ -2584,6 +2584,9 @@ export const InvoiceRevisionScalarFieldEnum = {
   invoiceTitle: 'invoiceTitle',
   invoiceDescription: 'invoiceDescription',
   invoiceDate: 'invoiceDate',
+  invoiceMonth: 'invoiceMonth',
+  invoiceYear: 'invoiceYear',
+  reverseCharge: 'reverseCharge',
   invoiceGreetings: 'invoiceGreetings',
   invoiceClosing: 'invoiceClosing',
   invoiceSignature: 'invoiceSignature',
@@ -2592,11 +2595,6 @@ export const InvoiceRevisionScalarFieldEnum = {
   invoiceTerms: 'invoiceTerms',
   invoicePrivacy: 'invoicePrivacy',
   invoiceDisclaimer: 'invoiceDisclaimer',
-  correctionInvoiceOriginalNumber: 'correctionInvoiceOriginalNumber',
-  correctionInvoiceOriginalDate: 'correctionInvoiceOriginalDate',
-  correctionInvoiceReason: 'correctionInvoiceReason',
-  correctionInvoiceTitle: 'correctionInvoiceTitle',
-  correctionInvoiceDescription: 'correctionInvoiceDescription',
   language: 'language',
   localizationFormat: 'localizationFormat',
   sellerCountry: 'sellerCountry',
@@ -2609,6 +2607,7 @@ export const InvoiceRevisionScalarFieldEnum = {
   sellerName: 'sellerName',
   sellerCompanyName: 'sellerCompanyName',
   sellerVatNumber: 'sellerVatNumber',
+  sellerWalletAddress: 'sellerWalletAddress',
   buyerCountry: 'buyerCountry',
   buyerCity: 'buyerCity',
   buyerZipCode: 'buyerZipCode',
@@ -2619,7 +2618,15 @@ export const InvoiceRevisionScalarFieldEnum = {
   buyerName: 'buyerName',
   buyerCompanyName: 'buyerCompanyName',
   buyerVatNumber: 'buyerVatNumber',
-  generatedPDFInvoice: 'generatedPDFInvoice'
+  buyerWalletAddress: 'buyerWalletAddress',
+  generatedPDFInvoice: 'generatedPDFInvoice',
+  generatedInvoiceUpdatedAt: 'generatedInvoiceUpdatedAt',
+  isCancelled: 'isCancelled',
+  cancellationReason: 'cancellationReason',
+  cancellationDate: 'cancellationDate',
+  cancellationId: 'cancellationId',
+  generatedCancelledInvoice: 'generatedCancelledInvoice',
+  generatedCancelledInvoiceUpdatedAt: 'generatedCancelledInvoiceUpdatedAt'
 } as const
 
 export type InvoiceRevisionScalarFieldEnum = (typeof InvoiceRevisionScalarFieldEnum)[keyof typeof InvoiceRevisionScalarFieldEnum]
@@ -3011,20 +3018,6 @@ export type EnumRPCProviderFieldRefInput<$PrismaModel> = FieldRefInputType<$Pris
  * Reference to a field of type 'RPCProvider[]'
  */
 export type ListEnumRPCProviderFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'RPCProvider[]'>
-    
-
-
-/**
- * Reference to a field of type 'InvoiceType'
- */
-export type EnumInvoiceTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'InvoiceType'>
-    
-
-
-/**
- * Reference to a field of type 'InvoiceType[]'
- */
-export type ListEnumInvoiceTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'InvoiceType[]'>
     
 
 

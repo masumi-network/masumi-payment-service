@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { $Enums, HotWalletType } from '@prisma/client';
+import { HotWalletType } from '@prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import stringify from 'canonical-json';
 import { generateHash } from '@/utils/crypto';
@@ -47,18 +48,7 @@ export const postMonthlySignatureEndpoint = payAuthenticatedEndpointFactory.buil
 	method: 'post',
 	input: postMonthlySignatureSchemaInput,
 	output: postMonthlySignatureSchemaOutput,
-	handler: async ({
-		input,
-		options,
-	}: {
-		input: z.infer<typeof postMonthlySignatureSchemaInput>;
-		options: {
-			id: string;
-			permission: $Enums.Permission;
-			networkLimit: $Enums.Network[];
-			usageLimited: boolean;
-		};
-	}) => {
+	handler: async ({ input, ctx }: { input: z.infer<typeof postMonthlySignatureSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
 			const [yearStr, monthStr] = input.month.split('-');
@@ -118,7 +108,7 @@ export const postMonthlySignatureEndpoint = payAuthenticatedEndpointFactory.buil
 				(errorInstance as { statusCode?: number; status?: number }).status ||
 				500;
 			recordBusinessEndpointError('/api/v1/signature/monthly', 'POST', statusCode, errorInstance, {
-				user_id: options.id,
+				user_id: ctx.id,
 				buyer_wallet_vkey: input.buyerWalletVkey,
 				operation: 'get_signature_monthly',
 				duration: Date.now() - startTime,

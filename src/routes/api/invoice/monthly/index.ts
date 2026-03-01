@@ -1,12 +1,12 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
-import { z } from 'zod';
+import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
-import { $Enums } from '@prisma/client';
+
 import stringify from 'canonical-json';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { checkSignature } from '@meshsdk/core';
-import { generateInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
+import { generateInvoicePDFBase64, generateCancellationInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
 import {
 	generateInvoiceGroups,
 	resolveInvoiceConfig,
@@ -14,7 +14,12 @@ import {
 	generateInvoiceId,
 	generateNewInvoiceBaseId,
 	supportedCurrencies,
+	invoiceSellerSchema,
+	invoiceBuyerSchema,
+	invoiceOptionsSchema,
+	SupportedCurrencies,
 } from '@/utils/invoice/template';
+import { detectInvoiceChanges, getOriginalInvoiceInfo } from '@/utils/invoice/comparison';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
@@ -22,6 +27,7 @@ import { generateHash } from '@/utils/crypto';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { CONFIG } from '@/utils/config';
+import { AuthContext } from '@/utils/middleware/auth-middleware';
 import Coingecko from '@coingecko/coingecko-typescript';
 import { logger } from '@/utils/logger';
 
@@ -42,58 +48,16 @@ export const postGenerateMonthlyInvoiceSchemaInput = z
 			.record(z.string(), z.number().gt(0))
 			.optional()
 			.describe('Currency conversion settings by unit for this invoice'),
-		invoice: z
-			.object({
-				itemNamePrefix: z.string().min(1).max(100).optional().describe('The prefix of the item name'),
-				itemNameSuffix: z.string().min(1).max(100).optional().describe('The suffix of the item name'),
-				title: z.string().min(1).max(100).optional().describe('The title of the invoice'),
-				description: z.string().min(1).max(1000).optional().describe('The description of the invoice'),
-				idPrefix: z.string().min(1).max(100).optional().describe('The prefix of the invoice number'),
-				date: z.string().min(1).max(100).optional().describe('The date of the invoice'),
-				greeting: z.string().min(1).max(1000).optional().describe('The greetings of the invoice'),
-				closing: z.string().min(1).max(1000).optional().describe('The closing of the invoice'),
-				signature: z.string().min(1).max(1000).optional().describe('The signature of the invoice'),
-				logo: z.string().min(1).max(1000).optional().describe('The logo of the invoice'),
-				footer: z.string().min(1).max(1000).optional().describe('The footer of the invoice'),
-				terms: z.string().min(1).max(1000).optional().describe('The terms of the invoice'),
-				privacy: z.string().min(1).max(1000).optional().describe('The privacy of the invoice'),
-				language: z
-					.enum(['en-us', 'en-uk', 'de'])
-					.optional()
-					.describe(
-						'Invoice language and region: English US (en-us), English UK (en-uk), or German (de). Default: en-us',
-					),
-				localizationFormat: z
-					.enum(['en-us', 'en-uk', 'de'])
-					.optional()
-					.describe('The localization format of the invoice'),
-			})
-			.optional(),
+		invoice: invoiceOptionsSchema,
 		vatRate: z.number().min(0).max(1).optional().describe('The VAT rate as decimal (e.g., 0.19 for 19%)'),
-		seller: z.object({
-			country: z.string().min(1).max(100).describe('The country of the invoice'),
-			city: z.string().min(1).max(100).describe('The city of the invoice'),
-			zipCode: z.string().min(1).max(20).describe('The zip code of the invoice'),
-			street: z.string().min(1).max(100).describe('The street of the invoice'),
-			streetNumber: z.string().min(1).max(20).describe('The street number of the invoice'),
-			email: z.string().email().min(1).max(100).nullable().describe('The email of the invoice'),
-			phone: z.string().min(1).max(100).nullable().describe('The phone of the invoice'),
-			name: z.string().min(1).max(100).nullable().describe('The name of the invoice'),
-			companyName: z.string().min(1).max(100).nullable().describe('The company name of the invoice'),
-			vatNumber: z.string().min(1).max(100).nullable().describe('The VAT number of the invoice'),
-		}),
-		buyer: z.object({
-			country: z.string().min(1).max(100).describe('The country of the invoice'),
-			city: z.string().min(1).max(100).describe('The city of the invoice'),
-			zipCode: z.string().min(1).max(20).describe('The zip code of the invoice'),
-			street: z.string().min(1).max(100).describe('The street of the invoice'),
-			streetNumber: z.string().min(1).max(20).describe('The street number of the invoice'),
-			email: z.string().email().min(1).max(100).nullable().describe('The email of the invoice'),
-			phone: z.string().min(1).max(100).nullable().describe('The phone of the invoice'),
-			name: z.string().min(1).max(100).nullable().describe('The name of the invoice'),
-			companyName: z.string().min(1).max(100).nullable().describe('The company name of the invoice'),
-			vatNumber: z.string().min(1).max(100).nullable().describe('The VAT number of the invoice'),
-		}),
+		reverseCharge: z.boolean().optional().default(false).describe('Enable reverse charge (VAT = 0, notice on invoice)'),
+		forceRegenerate: z
+			.boolean()
+			.optional()
+			.default(false)
+			.describe('Force cancel existing invoice and generate a new revision, even if no data changes detected'),
+		seller: invoiceSellerSchema,
+		buyer: invoiceBuyerSchema,
 	})
 	.refine(
 		(data) => {
@@ -116,7 +80,38 @@ export const postGenerateMonthlyInvoiceSchemaInput = z
 
 export const postGenerateMonthlyInvoiceSchemaOutput = z.object({
 	invoice: z.string(),
+	cancellationInvoice: z.string().optional(),
 });
+
+/**
+ * Filter payments to only include final (billable) states:
+ * - Withdrawn: seller completed work and withdrew funds → use RequestedFunds
+ * - ResultSubmitted where unlockTime <= now: seller can claim imminently → use RequestedFunds
+ * - DisputedWithdrawn: partial resolution → use WithdrawnForSeller (skip if empty)
+ * Everything else is excluded (RefundWithdrawn, FundsLocked, RefundRequested, Disputed, FundsOrDatumInvalid, null)
+ */
+function isPaymentBillable(payment: {
+	onChainState: string | null;
+	unlockTime: bigint;
+	WithdrawnForSeller: Array<{ amount: bigint }>;
+}): boolean {
+	const state = payment.onChainState;
+	if (state === 'Withdrawn') return true;
+	if (state === 'ResultSubmitted' && Number(payment.unlockTime) <= Date.now()) return true;
+	if (state === 'DisputedWithdrawn' && payment.WithdrawnForSeller.length > 0) return true;
+	return false;
+}
+
+function getBillableFunds(payment: {
+	onChainState: string | null;
+	RequestedFunds: Array<{ unit: string; amount: bigint }>;
+	WithdrawnForSeller: Array<{ unit: string; amount: bigint }>;
+}): Array<{ unit: string; amount: bigint }> {
+	if (payment.onChainState === 'DisputedWithdrawn') {
+		return payment.WithdrawnForSeller;
+	}
+	return payment.RequestedFunds;
+}
 
 export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -124,15 +119,10 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 	output: postGenerateMonthlyInvoiceSchemaOutput,
 	handler: async ({
 		input,
-		options,
+		ctx,
 	}: {
 		input: z.infer<typeof postGenerateMonthlyInvoiceSchemaInput>;
-		options: {
-			id: string;
-			permission: $Enums.Permission;
-			networkLimit: $Enums.Network[];
-			usageLimited: boolean;
-		};
+		ctx: AuthContext;
 	}) => {
 		const startTime = Date.now();
 		try {
@@ -176,8 +166,12 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 			const monthStart = new Date(Date.UTC(year, monthIdx, 1, 0, 0, 0, 0));
 			const nextMonthStart = new Date(Date.UTC(year, monthIdx + 1, 1, 0, 0, 0, 0));
 			const endOfMonth = new Date(Date.UTC(year, monthIdx + 1, 0, 0, 0, 0));
+			const invoiceMonth = monthIdx + 1; // 1-based for storage
 
-			const payments = await prisma.paymentRequest.findMany({
+			// ── Pre-resolve external data (outside txn – idempotent lookups) ──
+			// Initial payment query to discover units + agent identifiers for
+			// external API resolution (coingecko conversions, blockfrost names).
+			const prePayments = await prisma.paymentRequest.findMany({
 				where: {
 					BuyerWallet: { walletVkey: input.buyerWalletVkey },
 					createdAt: {
@@ -188,19 +182,29 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 				include: {
 					BuyerWallet: true,
 					RequestedFunds: true,
+					WithdrawnForSeller: true,
+					SmartContractWallet: true,
 					PaymentSource: { include: { PaymentSourceConfig: true } },
 				},
 			});
 
-			if (payments.length === 0) {
-				recordBusinessEndpointError('/api/v1/invoice/monthly', 'POST', 404, 'No payments found for month and wallet', {
-					wallet_address: input.walletAddress,
-					operation: 'verify_signature',
-				});
-				throw createHttpError(404, 'No payments found for month and wallet');
+			const preBillable = prePayments.filter(isPaymentBillable);
+
+			if (preBillable.length === 0) {
+				recordBusinessEndpointError(
+					'/api/v1/invoice/monthly',
+					'POST',
+					404,
+					'No billable payments found for month and wallet',
+					{
+						wallet_address: input.walletAddress,
+						operation: 'verify_signature',
+					},
+				);
+				throw createHttpError(404, 'No billable payments found for month and wallet');
 			}
 
-			const anyWalletAddress = payments[0].BuyerWallet?.walletAddress;
+			const anyWalletAddress = preBillable[0].BuyerWallet?.walletAddress;
 			if (!anyWalletAddress) {
 				throw createHttpError(404, 'Buyer wallet address not found');
 			}
@@ -208,7 +212,7 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 				throw createHttpError(400, 'Wallet is not the buyer wallet');
 			}
 
-			// Collect units across all payments
+			// Collect units across all payments for conversion resolution
 			const conversion = new Map<string, { factor: number; decimals: number }>(
 				Object.entries(input.currencyConversion ?? {}).map(([key, value]) => [key, { factor: value, decimals: 0 }]),
 			);
@@ -217,8 +221,9 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 			}
 
 			const missingConversions = new Set<string>();
-			for (const p of payments) {
-				for (const fund of p.RequestedFunds) {
+			for (const p of preBillable) {
+				const funds = getBillableFunds(p);
+				for (const fund of funds) {
 					if (!conversion.has(fund.unit)) {
 						missingConversions.add(fund.unit);
 					}
@@ -251,7 +256,7 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 						} else {
 							if (idData.id != 'cardano') continue;
 						}
-						const splittedDate = new Date().toISOString().split('T');
+						const splittedDate = dateOfConversionDate.toISOString().split('T');
 						if (splittedDate.length !== 2) continue;
 
 						const price = await coingeckoClient.coins.history.get(coinId, {
@@ -304,81 +309,353 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 				throw createHttpError(400, `Missing conversion for units: ${Array.from(missingConversions).join(', ')}`);
 			}
 
+			// Pre-resolve agent display names (blockfrost – stable metadata)
+			const agentDisplayNames = new Map<string, string>();
+			for (const payment of preBillable) {
+				const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
+				const agentIdentifier = decidedIdentifier?.agentIdentifier;
+				if (!agentIdentifier || agentDisplayNames.has(agentIdentifier)) continue;
+
+				const blockfrost = new BlockFrostAPI({
+					projectId: payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				});
+				const agentName = await fetchAssetInWalletAndMetadata(blockfrost, agentIdentifier);
+				if ('error' in agentName) {
+					throw createHttpError(404, 'Agent not found');
+				}
+				const display = metadataToString(agentName.data.parsedMetadata.name);
+				agentDisplayNames.set(agentIdentifier, display ?? '-');
+			}
+
+			// Determine effective VAT rate (reverse charge forces 0)
+			const effectiveVatRate = input.reverseCharge ? 0 : (input.vatRate ?? 0);
+
 			const resolved = resolveInvoiceConfig(
 				input.invoiceCurrency,
 				{
 					...input.invoice,
-					// Default the invoice date to end-of-month if not specified
 					date: input.invoice?.date ?? dateOfConversionDate.toISOString(),
 				},
 				{ invoiceType: 'monthly' },
 			);
 
-			const items: InvoiceGroupItemInput[] = [];
-			const dbItems: Array<InvoiceGroupItemInput & { referencedPaymentId: string }> = [];
-
-			const groupedPayments = new Map<string, Array<(typeof payments)[number]>>();
-			for (const payment of payments) {
-				const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
-				const agentIdentifier = decidedIdentifier?.agentIdentifier;
-				if (!agentIdentifier) {
-					throw createHttpError(404, 'Agent identifier not found');
-				}
-				if (!groupedPayments.has(agentIdentifier)) {
-					groupedPayments.set(agentIdentifier, [payment]);
-				}
-				groupedPayments.get(agentIdentifier)!.push(payment);
-			}
-
-			for (const [agentIdentifier, payments] of groupedPayments) {
-				const payment = payments[0];
-				const quantity = payments.length;
-
-				const blockfrost = new BlockFrostAPI({
-					projectId: payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-				});
-
-				const agentName = await fetchAssetInWalletAndMetadata(blockfrost, agentIdentifier);
-				if ('error' in agentName) {
-					throw createHttpError(404, 'Agent not found');
-				}
-				const { parsedMetadata } = agentName.data;
-				const display = metadataToString(parsedMetadata.name);
-				const agentDisplayName = display ?? '-';
-
-				const namePrefix = resolved.itemNamePrefix;
-				const nameSuffix = resolved.itemNameSuffix;
-				const itemName = `${namePrefix}${agentDisplayName}${nameSuffix}`;
-
-				let paymentCount = 0;
-
-				for (const fund of payment.RequestedFunds) {
-					paymentCount++;
-					const unit = fund.unit;
-					const factor = conversion.get(unit)!;
-					const price = (Number(fund.amount) * factor.factor) / (1 + (input.vatRate ?? 0));
-					const conversionFactor = 1 / factor.factor;
-					let newItemName = itemName;
-					if (paymentCount > 1) {
-						newItemName = `${newItemName} (${paymentCount}/${payments.length})`;
-					}
-					const item: InvoiceGroupItemInput = {
-						name: newItemName,
-						quantity,
-						price,
-						conversionFactor,
-						decimals: factor.decimals,
-						convertedUnit: unit,
-						conversionDate: dateOfConversionDate,
-					};
-					items.push(item);
-					dbItems.push({ ...item, referencedPaymentId: payment.id });
-				}
-			}
-
+			// ── Serializable transaction: payment read + invoice check + write ──
 			const createdInvoice = await prisma.$transaction(
 				async (tx) => {
-					// Always create a new monthly invoice base
+					// Re-query payments inside transaction for serializable consistency
+					const allPayments = await tx.paymentRequest.findMany({
+						where: {
+							BuyerWallet: { walletVkey: input.buyerWalletVkey },
+							createdAt: {
+								gte: monthStart,
+								lt: nextMonthStart,
+							},
+						},
+						include: {
+							BuyerWallet: true,
+							RequestedFunds: true,
+							WithdrawnForSeller: true,
+							SmartContractWallet: true,
+							PaymentSource: { include: { PaymentSourceConfig: true } },
+						},
+					});
+
+					const payments = allPayments.filter(isPaymentBillable);
+					if (payments.length === 0) {
+						throw createHttpError(404, 'No billable payments found for month and wallet');
+					}
+
+					// Resolve wallet addresses from transactional snapshot
+					const sellerWalletAddress = payments[0].SmartContractWallet?.walletAddress ?? null;
+					const buyerWalletAddress = payments[0].BuyerWallet?.walletAddress ?? null;
+
+					// Build invoice items from transactional payment data
+					const items: InvoiceGroupItemInput[] = [];
+					const dbItems: Array<InvoiceGroupItemInput & { referencedPaymentId: string }> = [];
+
+					const groupedPayments = new Map<string, Array<(typeof payments)[number]>>();
+					for (const payment of payments) {
+						const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
+						const agentIdentifier = decidedIdentifier?.agentIdentifier;
+						if (!agentIdentifier) {
+							throw createHttpError(404, 'Agent identifier not found');
+						}
+						if (!groupedPayments.has(agentIdentifier)) {
+							groupedPayments.set(agentIdentifier, []);
+						}
+						groupedPayments.get(agentIdentifier)!.push(payment);
+					}
+
+					for (const [agentIdentifier, agentPayments] of groupedPayments) {
+						const payment = agentPayments[0];
+						const quantity = agentPayments.length;
+
+						const agentDisplayName = agentDisplayNames.get(agentIdentifier) ?? '-';
+						const itemName = `${resolved.itemNamePrefix}${agentDisplayName}${resolved.itemNameSuffix}`;
+
+						const funds = getBillableFunds(payment);
+						let paymentCount = 0;
+
+						for (const fund of funds) {
+							paymentCount++;
+							const unit = fund.unit;
+							const factor = conversion.get(unit);
+							if (!factor) {
+								throw createHttpError(400, `Missing conversion for unit: ${unit}`);
+							}
+							const price = (Number(fund.amount) * factor.factor) / (1 + effectiveVatRate);
+							const conversionFactor = 1 / factor.factor;
+							let newItemName = itemName;
+							if (paymentCount > 1) {
+								newItemName = `${newItemName} (${paymentCount}/${funds.length})`;
+							}
+							const item: InvoiceGroupItemInput = {
+								name: newItemName,
+								quantity,
+								price,
+								conversionFactor,
+								decimals: factor.decimals,
+								convertedUnit: unit,
+								conversionDate: dateOfConversionDate,
+							};
+							items.push(item);
+							dbItems.push({ ...item, referencedPaymentId: payment.id });
+						}
+					}
+
+					const groups = generateInvoiceGroups(items, effectiveVatRate);
+
+					// Look for existing InvoiceBase for this month/year/wallet
+					const existingBase = await tx.invoiceBase.findFirst({
+						where: {
+							coveredPaymentRequests: {
+								some: {
+									BuyerWallet: { walletVkey: input.buyerWalletVkey },
+								},
+							},
+							InvoiceRevisions: {
+								some: {
+									invoiceMonth: invoiceMonth,
+									invoiceYear: year,
+									isCancelled: false,
+								},
+							},
+						},
+						include: {
+							InvoiceRevisions: {
+								where: { isCancelled: false },
+								orderBy: { revisionNumber: 'desc' },
+								take: 1,
+								include: { InvoiceItems: true },
+							},
+						},
+					});
+
+					const existingRevision =
+						existingBase && existingBase.InvoiceRevisions.length > 0
+							? { ...existingBase.InvoiceRevisions[0], InvoiceBase: existingBase }
+							: null;
+
+					// If existing revision found, check if data changed
+					if (existingRevision) {
+						const changeResult = detectInvoiceChanges(existingRevision, groups, input.seller, input.buyer, resolved);
+
+						if (!changeResult.hasChanges && !input.forceRegenerate) {
+							// Return cached PDF
+							return {
+								invoice: Buffer.from(existingRevision.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
+							};
+						}
+
+						// Data changed → generate Stornorechnung for old revision, then create new revision
+						const originalInfo = getOriginalInvoiceInfo(existingRevision);
+
+						// Reconstruct original groups from stored items
+						const originalItems = existingRevision.InvoiceItems.map((it) => ({
+							name: it.name,
+							quantity: Number(it.quantity.toString()),
+							price: Number(it.pricePerUnitWithoutVat.toString()),
+							vatRateOverride: Number(it.vatRate.toString()),
+							decimals: Number(it.decimals.toString()),
+							conversionFactor: Number(it.conversionFactor.toString()),
+							convertedUnit: it.convertedUnit,
+							conversionDate: it.conversionDate,
+						}));
+						const originalGroups = generateInvoiceGroups(originalItems, 0);
+
+						// Build original seller/buyer from stored revision data
+						const originalSeller = {
+							name: existingRevision.sellerName ?? null,
+							companyName: existingRevision.sellerCompanyName ?? null,
+							vatNumber: existingRevision.sellerVatNumber ?? null,
+							country: existingRevision.sellerCountry,
+							city: existingRevision.sellerCity,
+							zipCode: existingRevision.sellerZipCode,
+							street: existingRevision.sellerStreet,
+							streetNumber: existingRevision.sellerStreetNumber,
+							email: existingRevision.sellerEmail ?? null,
+							phone: existingRevision.sellerPhone ?? null,
+						};
+						const originalBuyer = {
+							name: existingRevision.buyerName ?? null,
+							companyName: existingRevision.buyerCompanyName ?? null,
+							vatNumber: existingRevision.buyerVatNumber ?? null,
+							country: existingRevision.buyerCountry,
+							city: existingRevision.buyerCity,
+							zipCode: existingRevision.buyerZipCode,
+							street: existingRevision.buyerStreet,
+							streetNumber: existingRevision.buyerStreetNumber,
+							email: existingRevision.buyerEmail ?? null,
+							phone: existingRevision.buyerPhone ?? null,
+						};
+
+						// Build config for original revision
+						const originalResolved = resolveInvoiceConfig(
+							existingRevision.currencyShortId as SupportedCurrencies,
+							{
+								title: existingRevision.invoiceTitle ?? undefined,
+								date: existingRevision.invoiceDate.toISOString(),
+								greeting: existingRevision.invoiceGreetings ?? undefined,
+								closing: existingRevision.invoiceClosing ?? undefined,
+								signature: existingRevision.invoiceSignature ?? undefined,
+								logo: existingRevision.invoiceLogo ?? undefined,
+								footer: existingRevision.invoiceFooter ?? undefined,
+								terms: existingRevision.invoiceTerms ?? undefined,
+								privacy: existingRevision.invoicePrivacy ?? undefined,
+								language: (existingRevision.language as 'en-us' | 'en-uk' | 'de') ?? undefined,
+								localizationFormat: (existingRevision.localizationFormat as 'en-us' | 'en-uk' | 'de') ?? undefined,
+							},
+							{ invoiceType: 'monthly' },
+						);
+
+						// Generate cancellation ID
+						const cancellationId = `CANCEL-${originalInfo.originalInvoiceNumber}`;
+
+						// Generate Stornorechnung PDF
+						const { pdfBase64: cancellationPdfBase64 } = await generateCancellationInvoicePDFBase64(
+							originalGroups,
+							originalSeller,
+							originalBuyer,
+							originalResolved,
+							cancellationId,
+							originalInfo.originalInvoiceNumber,
+							originalInfo.originalInvoiceDate,
+							usedCoingeckoForConversion,
+							{ reverseCharge: existingRevision.reverseCharge },
+						);
+
+						// Mark old revision as cancelled
+						await tx.invoiceRevision.update({
+							where: { id: existingRevision.id },
+							data: {
+								isCancelled: true,
+								cancellationReason:
+									input.forceRegenerate && changeResult.reasons.length === 0
+										? 'Manual regeneration requested'
+										: changeResult.reasons.join('; '),
+								cancellationDate: new Date(),
+								cancellationId: cancellationId,
+								generatedCancelledInvoice: Buffer.from(cancellationPdfBase64, 'base64'),
+								generatedCancelledInvoiceUpdatedAt: new Date(),
+							},
+						});
+
+						// Create new revision
+						const newRevisionNumber = existingRevision.revisionNumber + 1;
+						const newInvoiceId = generateInvoiceId(newRevisionNumber, existingBase!.invoiceId);
+
+						const { pdfBase64 } = await generateInvoicePDFBase64(
+							groups,
+							input.seller,
+							input.buyer,
+							resolved,
+							newInvoiceId,
+							null,
+							usedCoingeckoForConversion,
+							{
+								invoiceType: 'monthly',
+								reverseCharge: input.reverseCharge,
+							},
+						);
+
+						await tx.invoiceRevision.create({
+							data: {
+								invoiceBaseId: existingBase!.id,
+								revisionNumber: newRevisionNumber,
+								currencyShortId: resolved.currency,
+								invoiceTitle: resolved.title,
+								invoiceDescription: input.invoice?.description ?? null,
+								invoiceDate: resolved.date,
+								invoiceMonth: invoiceMonth,
+								invoiceYear: year,
+								reverseCharge: input.reverseCharge,
+								invoiceGreetings: resolved.greeting ?? null,
+								invoiceClosing: resolved.closing ?? null,
+								invoiceSignature: resolved.signature ?? null,
+								invoiceLogo: resolved.logo ?? null,
+								invoiceFooter: resolved.footer ?? null,
+								invoiceTerms: resolved.terms ?? null,
+								invoicePrivacy: resolved.privacy ?? null,
+								invoiceDisclaimer: null,
+								language: resolved.language,
+								localizationFormat: resolved.localizationFormat,
+								sellerCountry: input.seller.country,
+								sellerCity: input.seller.city,
+								sellerZipCode: input.seller.zipCode,
+								sellerStreet: input.seller.street,
+								sellerStreetNumber: input.seller.streetNumber,
+								sellerEmail: input.seller.email ?? null,
+								sellerPhone: input.seller.phone ?? null,
+								sellerName: input.seller.name ?? null,
+								sellerCompanyName: input.seller.companyName ?? null,
+								sellerVatNumber: input.seller.vatNumber ?? null,
+								sellerWalletAddress: sellerWalletAddress,
+								buyerCountry: input.buyer.country,
+								buyerCity: input.buyer.city,
+								buyerZipCode: input.buyer.zipCode,
+								buyerStreet: input.buyer.street,
+								buyerStreetNumber: input.buyer.streetNumber,
+								buyerEmail: input.buyer.email ?? null,
+								buyerPhone: input.buyer.phone ?? null,
+								buyerName: input.buyer.name ?? null,
+								buyerCompanyName: input.buyer.companyName ?? null,
+								buyerVatNumber: input.buyer.vatNumber ?? null,
+								buyerWalletAddress: buyerWalletAddress,
+								generatedPDFInvoice: Buffer.from(pdfBase64, 'base64'),
+								generatedInvoiceUpdatedAt: new Date(),
+								InvoiceItems: {
+									create: dbItems.map((item) => {
+										const appliedVatRate = item.vatRateOverride ?? effectiveVatRate;
+										const qty = item.quantity;
+										const unitPrice = item.price;
+										const netAmount = qty * unitPrice;
+										const vatAmount = netAmount * appliedVatRate;
+										const totalAmount = netAmount + vatAmount;
+										return {
+											name: item.name,
+											quantity: qty,
+											pricePerUnitWithoutVat: unitPrice,
+											vatRate: appliedVatRate,
+											vatAmount: vatAmount,
+											totalAmount: totalAmount,
+											referencedPaymentId: item.referencedPaymentId,
+											decimals: item.decimals,
+											conversionFactor: item.conversionFactor,
+											convertedUnit: item.convertedUnit,
+											conversionDate: item.conversionDate,
+										};
+									}),
+								},
+							},
+						});
+
+						return {
+							invoice: pdfBase64,
+							cancellationInvoice: cancellationPdfBase64,
+						};
+					}
+
+					// No existing invoice → create new InvoiceBase + first revision
 					const incrementedInvoiceNumber = await tx.invoicePrefix.upsert({
 						create: { id: input.invoice?.idPrefix ?? 'default', count: 0 },
 						update: { count: { increment: 1 } },
@@ -391,12 +668,13 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 					const base = await tx.invoiceBase.create({
 						data: {
 							invoiceId: baseIdString,
+							coveredPaymentRequests: {
+								connect: payments.map((p) => ({ id: p.id })),
+							},
 						},
 					});
 
 					const newInvoiceId = generateInvoiceId(0, baseIdString);
-
-					const groups = generateInvoiceGroups(items, input.vatRate ?? 0);
 
 					const { pdfBase64 } = await generateInvoicePDFBase64(
 						groups,
@@ -406,10 +684,8 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 						newInvoiceId,
 						null,
 						usedCoingeckoForConversion,
-						{ invoiceType: 'monthly' },
+						{ invoiceType: 'monthly', reverseCharge: input.reverseCharge },
 					);
-
-					const vatRateDefault = input.vatRate ?? 0;
 
 					await tx.invoiceRevision.create({
 						data: {
@@ -419,6 +695,9 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 							invoiceTitle: resolved.title,
 							invoiceDescription: input.invoice?.description ?? null,
 							invoiceDate: resolved.date,
+							invoiceMonth: invoiceMonth,
+							invoiceYear: year,
+							reverseCharge: input.reverseCharge,
 							invoiceGreetings: resolved.greeting ?? null,
 							invoiceClosing: resolved.closing ?? null,
 							invoiceSignature: resolved.signature ?? null,
@@ -427,12 +706,8 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 							invoiceTerms: resolved.terms ?? null,
 							invoicePrivacy: resolved.privacy ?? null,
 							invoiceDisclaimer: null,
-
-							// Formatting
 							language: resolved.language,
 							localizationFormat: resolved.localizationFormat,
-
-							// Seller
 							sellerCountry: input.seller.country,
 							sellerCity: input.seller.city,
 							sellerZipCode: input.seller.zipCode,
@@ -443,8 +718,7 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 							sellerName: input.seller.name ?? null,
 							sellerCompanyName: input.seller.companyName ?? null,
 							sellerVatNumber: input.seller.vatNumber ?? null,
-
-							// Buyer
+							sellerWalletAddress: sellerWalletAddress,
 							buyerCountry: input.buyer.country,
 							buyerCity: input.buyer.city,
 							buyerZipCode: input.buyer.zipCode,
@@ -455,22 +729,20 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 							buyerName: input.buyer.name ?? null,
 							buyerCompanyName: input.buyer.companyName ?? null,
 							buyerVatNumber: input.buyer.vatNumber ?? null,
-
-							// PDF bytes
+							buyerWalletAddress: buyerWalletAddress,
 							generatedPDFInvoice: Buffer.from(pdfBase64, 'base64'),
-
-							// Items
+							generatedInvoiceUpdatedAt: new Date(),
 							InvoiceItems: {
 								create: dbItems.map((item) => {
-									const appliedVatRate = item.vatRateOverride ?? vatRateDefault;
-									const quantity = item.quantity;
+									const appliedVatRate = item.vatRateOverride ?? effectiveVatRate;
+									const qty = item.quantity;
 									const unitPrice = item.price;
-									const netAmount = quantity * unitPrice;
+									const netAmount = qty * unitPrice;
 									const vatAmount = netAmount * appliedVatRate;
 									const totalAmount = netAmount + vatAmount;
 									return {
 										name: item.name,
-										quantity: quantity,
+										quantity: qty,
 										pricePerUnitWithoutVat: unitPrice,
 										vatRate: appliedVatRate,
 										vatAmount: vatAmount,
@@ -495,7 +767,10 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 				},
 			);
 
-			return { invoice: createdInvoice.invoice };
+			return {
+				invoice: createdInvoice.invoice,
+				cancellationInvoice: createdInvoice.cancellationInvoice,
+			};
 		} catch (error) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
 			const statusCode =
@@ -503,7 +778,7 @@ export const postGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFact
 				(errorInstance as { statusCode?: number; status?: number }).status ||
 				500;
 			recordBusinessEndpointError('/api/v1/invoice/monthly', 'POST', statusCode, errorInstance, {
-				user_id: options.id,
+				user_id: ctx.id,
 				wallet_address: input.walletAddress,
 				operation: 'verify_signature',
 				duration: Date.now() - startTime,
