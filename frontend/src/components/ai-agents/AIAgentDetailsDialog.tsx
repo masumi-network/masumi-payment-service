@@ -181,10 +181,10 @@ export function AIAgentDetailsDialog({
   return (
     <>
       <Dialog open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-[600px] px-0">
+        <DialogContent className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col">
           {agent && (
             <>
-              <DialogHeader className="px-6">
+              <DialogHeader className="px-6 shrink-0">
                 <DialogTitle>{agent.name}</DialogTitle>
               </DialogHeader>
 
@@ -192,10 +192,10 @@ export function AIAgentDetailsDialog({
                 tabs={[{ name: 'Details' }, { name: 'Earnings' }]}
                 activeTab={activeTab || 'Details'}
                 onTabChange={(tabName) => setActiveTab(tabName as 'Details' | 'Earnings')}
-                className="px-6"
+                className="px-6 shrink-0"
               />
 
-              <div className="space-y-6 py-4 px-6 max-h-[600px] overflow-y-auto pb-20">
+              <div className="space-y-6 py-4 px-6 overflow-y-auto min-h-0 flex-1">
                 {activeTab === 'Details' && (
                   <>
                     {/* Status and Description */}
@@ -521,7 +521,7 @@ export function AIAgentDetailsDialog({
                 )}
               </div>
 
-              <div className="pt-4 border-t flex justify-end gap-2 bg-background absolute bottom-0 left-0 w-full p-4 z-10">
+              <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
                 <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
