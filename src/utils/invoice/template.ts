@@ -161,6 +161,9 @@ const LOCALE_CONFIG = {
 			servicePeriod: 'Service Period',
 			conversionText: 'Conversion Factor: ',
 			coingeckoAttribution: 'Conversions and price data by',
+			conversionRates: 'Conversion Rates',
+			conversionAsset: 'Asset',
+			conversionRate: 'Rate',
 		},
 	},
 	de: {
@@ -205,6 +208,9 @@ const LOCALE_CONFIG = {
 			servicePeriod: 'Leistungszeitraum',
 			conversionText: 'Umrechnungsfaktor: ',
 			coingeckoAttribution: 'Konvertierung und Preisdaten von',
+			conversionRates: 'Umrechnungskurse',
+			conversionAsset: 'Währung',
+			conversionRate: 'Kurs',
 		},
 	},
 } as const;
@@ -249,6 +255,9 @@ export type InvoiceTexts = {
 	servicePeriod: string;
 	conversionText: string;
 	coingeckoAttribution: string;
+	conversionRates: string;
+	conversionAsset: string;
+	conversionRate: string;
 };
 
 function isLanguageKey(value: unknown): value is keyof typeof LOCALE_CONFIG {
@@ -302,6 +311,9 @@ export function extractInvoiceTexts(language: LanguageKey): InvoiceTexts {
 		servicePeriod: t.servicePeriod,
 		conversionText: t.conversionText,
 		coingeckoAttribution: t.coingeckoAttribution,
+		conversionRates: t.conversionRates,
+		conversionAsset: t.conversionAsset,
+		conversionRate: t.conversionRate,
 	};
 }
 
@@ -1002,9 +1014,7 @@ export function generateInvoiceHTML(
 							const netAmount = item.priceWithoutVat || 0;
 							return `
           <tr>
-            <td>${item.name}
-            <br><small>${t.conversionText} ${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(item.convertedUnit, numberFormatter.format(item.conversionFactor / 10 ** item.decimals))}<br>(${dateFormatter.format(item.conversionDate)})</small>
-            </td>
+            <td>${item.name}</td>
             <td class="text-center">${item.quantity}</td>
             <td class="text-right num col-unit-price">${currencyFormatter.format(netUnitPrice)}</td>
             <td class="text-right num col-total-net">${currencyFormatter.format(netAmount)}</td>
@@ -1067,10 +1077,52 @@ export function generateInvoiceHTML(
       `;
 			})()}
     </div>
+    ${(() => {
+				const conversionMap = new Map<string, { convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }>();
+				for (const group of invoiceGroups) {
+					for (const item of group.items) {
+						if (!conversionMap.has(item.convertedUnit)) {
+							conversionMap.set(item.convertedUnit, {
+								convertedUnit: item.convertedUnit,
+								conversionFactor: item.conversionFactor,
+								decimals: item.decimals,
+								conversionDate: item.conversionDate,
+							});
+						}
+					}
+				}
+				if (conversionMap.size === 0) return '';
+				return `
+    <div class="table-wrapper" style="margin-top: 8px;">
+      <table class="items-table" style="font-size: 11px;">
+        <thead>
+          <tr>
+            <th>${t.conversionAsset}</th>
+            <th>${t.conversionRate}</th>
+            <th>${t.date}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${Array.from(conversionMap.values())
+						.map((conv) => {
+							const assetName = formatCryptoUnitConversion(conv.convertedUnit, '').trim();
+							const rateStr = `${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(conv.convertedUnit, numberFormatter.format(conv.conversionFactor / 10 ** conv.decimals))}`;
+							return `
+          <tr>
+            <td>${assetName}</td>
+            <td>${rateStr}</td>
+            <td>${dateFormatter.format(conv.conversionDate)}</td>
+          </tr>`;
+						})
+						.join('')}
+        </tbody>
+      </table>
+    </div>`;
+			})()}
     `
 				: ''
 		}
-    
+
     ${options?.reverseCharge ? `<div class="correction-notice" style="margin-bottom: 12px;"><div class="correction-title">${t.reverseChargeNotice}</div></div>` : ''}
     ${closing ? `<div class="closing">${closing}</div>` : ''}
     ${signature ? `<div class="signature">${signature}</div>` : ''}

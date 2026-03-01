@@ -247,10 +247,8 @@ function buildInvoicePDF(
 
 			// Item rows
 			for (const item of group.items) {
-				const conversionLine = `${t.conversionText}${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(item.convertedUnit, numberFormatter.format(item.conversionFactor / 10 ** item.decimals))} (${dateFormatter.format(item.conversionDate)})`;
-
 				tableRows.push([
-					{ content: `${item.name}\n${conversionLine}`, styles: { fontSize: 9 } },
+					{ content: item.name, styles: { fontSize: 9 } },
 					{ content: String(item.quantity), styles: { halign: 'center', fontSize: 9 } },
 					{
 						content: currencyFormatter.format(item.price),
@@ -397,6 +395,69 @@ function buildInvoicePDF(
 		doc.text(currencyFormatter.format(totals.gross), valX, ty + 2, { align: 'right' });
 
 		y += cardTotalH + 6;
+
+		// ── 6b. Conversion rates table ──────────────────────────────────────
+		const conversionMap = new Map<string, { convertedUnit: string; conversionFactor: number; decimals: number; conversionDate: Date }>();
+		for (const group of invoiceGroups) {
+			for (const item of group.items) {
+				if (!conversionMap.has(item.convertedUnit)) {
+					conversionMap.set(item.convertedUnit, {
+						convertedUnit: item.convertedUnit,
+						conversionFactor: item.conversionFactor,
+						decimals: item.decimals,
+						conversionDate: item.conversionDate,
+					});
+				}
+			}
+		}
+
+		if (conversionMap.size > 0) {
+			const conversionRows: RowInput[] = [];
+			for (const conv of conversionMap.values()) {
+				const assetName = formatCryptoUnitConversion(conv.convertedUnit, '').trim();
+				const rateStr = `${currencyFormatter.format(1)} = ${formatCryptoUnitConversion(conv.convertedUnit, numberFormatter.format(conv.conversionFactor / 10 ** conv.decimals))}`;
+				conversionRows.push([
+					{ content: assetName, styles: { fontSize: 8 } },
+					{ content: rateStr, styles: { fontSize: 8 } },
+					{ content: dateFormatter.format(conv.conversionDate), styles: { fontSize: 8 } },
+				]);
+			}
+
+			autoTable(doc, {
+				startY: y,
+				margin: { left: ML, right: MR },
+				head: [
+					[
+						{ content: t.conversionAsset, styles: {} },
+						{ content: t.conversionRate, styles: {} },
+						{ content: t.date, styles: {} },
+					],
+				],
+				body: conversionRows,
+				headStyles: {
+					fillColor: C.textMuted,
+					textColor: C.white,
+					fontStyle: 'bold',
+					fontSize: 7,
+					cellPadding: 2,
+				},
+				bodyStyles: {
+					fontSize: 8,
+					cellPadding: 2,
+					textColor: C.textMuted,
+				},
+				theme: 'grid',
+				styles: {
+					lineColor: C.border,
+					lineWidth: 0.2,
+					font: 'helvetica',
+				},
+				tableLineColor: C.border,
+				tableLineWidth: 0.2,
+			});
+
+			y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+		}
 	}
 
 	// ── 7. Reverse charge notice ─────────────────────────────────────────
