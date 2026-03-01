@@ -50,6 +50,7 @@ const invoiceSummarySchema = z.object({
 	grossTotal: z.string(),
 	coveredPaymentRequestIds: z.array(z.string()),
 	buyerWalletVkey: z.string().nullable(),
+	sellerWalletVkey: z.string().nullable(),
 	invoicePdf: z.string().describe('Base64-encoded invoice PDF'),
 	cancellationInvoicePdf: z.string().nullable().describe('Base64-encoded cancellation PDF if cancelled'),
 });
@@ -133,6 +134,7 @@ export const getMonthlyInvoiceListEndpoint = adminAuthenticatedEndpointFactory.b
 					grossTotal: grossTotal.toFixed(2),
 					coveredPaymentRequestIds: base.coveredPaymentRequests.map((p) => p.id),
 					buyerWalletVkey: base.buyerWalletVkey,
+					sellerWalletVkey: base.sellerWalletVkey,
 					invoicePdf: Buffer.from(rev.generatedPDFInvoice as unknown as Uint8Array).toString('base64'),
 					cancellationInvoicePdf: rev.generatedCancelledInvoice
 						? Buffer.from(rev.generatedCancelledInvoice as unknown as Uint8Array).toString('base64')

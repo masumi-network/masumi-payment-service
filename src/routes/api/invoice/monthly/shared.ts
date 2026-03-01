@@ -18,10 +18,7 @@ import {
 } from '@/utils/invoice/template';
 import { detectInvoiceChanges, getOriginalInvoiceInfo } from '@/utils/invoice/comparison';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
-import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
-import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
-import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { CONFIG } from '@/utils/config';
 import Coingecko from '@coingecko/coingecko-typescript';
 import { logger } from '@/utils/logger';
@@ -43,11 +40,6 @@ type PaymentWithInvoiceContext = {
 	TransactionHistory: Array<{ txHash: string | null }>;
 	BuyerWallet: { walletVkey: string; walletAddress: string } | null;
 	SmartContractWallet: { walletVkey: string; walletAddress: string } | null;
-	PaymentSource: {
-		PaymentSourceConfig: {
-			rpcProviderApiKey: string;
-		};
-	};
 };
 
 /**
@@ -118,6 +110,12 @@ function collectDistinctSellerWalletVkeys(
 
 export const invoiceGenerationBaseSchema = z.object({
 	buyerWalletVkey: z.string().min(1).max(1000).describe('The buyer wallet vkey to aggregate the month for'),
+	sellerWalletVkey: z
+		.string()
+		.min(1)
+		.max(1000)
+		.optional()
+		.describe('Optional seller wallet vkey to scope the invoice to a specific seller'),
 	month: z
 		.string()
 		.regex(/^\d{4}-\d{2}$/)
@@ -166,6 +164,7 @@ export const invoiceGenerationSchemaOutput = z.object({
 
 interface GenerateMonthlyInvoiceInput {
 	buyerWalletVkey: string;
+	sellerWalletVkey?: string;
 	month: string;
 	invoiceCurrency: (typeof supportedCurrencies)[number];
 	currencyConversion?: Record<string, number>;
@@ -223,12 +222,12 @@ export async function generateMonthlyInvoice(
 		WithdrawnForSeller: true as const,
 		SmartContractWallet: true as const,
 		TransactionHistory: { select: { txHash: true as const } },
-		PaymentSource: { include: { PaymentSourceConfig: true as const } },
 	};
 
 	const preUninvoicedPayments = await prisma.paymentRequest.findMany({
 		where: {
 			BuyerWallet: { walletVkey: input.buyerWalletVkey },
+			...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
 			invoiceBaseId: null,
 			OR: billableStateFilter,
 		},
@@ -240,13 +239,14 @@ export async function generateMonthlyInvoice(
 	if (preUninvoicedSellerWalletVkeys.length > 1) {
 		throw createHttpError(
 			409,
-			`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${preUninvoicedSellerWalletVkeys.join(', ')}`,
+			`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${preUninvoicedSellerWalletVkeys.join(', ')}. Provide sellerWalletVkey to scope the invoice to a specific seller.`,
 		);
 	}
 
 	const preExistingBases = await prisma.invoiceBase.findMany({
 		where: {
 			buyerWalletVkey: input.buyerWalletVkey,
+			...(input.sellerWalletVkey ? { sellerWalletVkey: input.sellerWalletVkey } : {}),
 			invoiceMonth: invoiceMonth,
 			invoiceYear: year,
 		},
@@ -266,14 +266,14 @@ export async function generateMonthlyInvoice(
 		throw createHttpError(409, 'Multiple invoice bases exist for the same buyer/seller/month/year scope');
 	}
 
-	let targetSellerWalletVkey: string | null = preUninvoicedSellerWalletVkeys[0] ?? null;
+	let targetSellerWalletVkey: string | null = input.sellerWalletVkey ?? preUninvoicedSellerWalletVkeys[0] ?? null;
 	if (!targetSellerWalletVkey && preExistingBases.length === 1) {
 		targetSellerWalletVkey = preExistingBases[0].sellerWalletVkey;
 	}
 	if (!targetSellerWalletVkey && preExistingBases.length > 1) {
 		throw createHttpError(
 			409,
-			`Multiple seller-scoped invoice bases found for buyer ${input.buyerWalletVkey} in ${input.month}.`,
+			`Multiple seller-scoped invoice bases found for buyer ${input.buyerWalletVkey} in ${input.month}. Provide sellerWalletVkey to scope the invoice.`,
 		);
 	}
 
@@ -434,7 +434,7 @@ export async function generateMonthlyInvoice(
 		);
 	}
 
-	// Pre-resolve agent display names and verify on-chain existence (blockfrost)
+	// Pre-resolve agent identifiers from blockchain identifiers (decode only, no on-chain lookup)
 	const agentDisplayNames = new Map<string, string>();
 	for (const payment of preBillable) {
 		const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
@@ -451,20 +451,9 @@ export async function generateMonthlyInvoice(
 				`Payment ${payment.id} has no agent identifier in blockchain identifier — cannot generate invoice`,
 			);
 		}
-		if (agentDisplayNames.has(agentIdentifier)) continue;
-
-		const blockfrost = new BlockFrostAPI({
-			projectId: payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-		});
-		const agentName = await fetchAssetInWalletAndMetadata(blockfrost, agentIdentifier);
-		if ('error' in agentName) {
-			throw createHttpError(
-				404,
-				`Agent ${agentIdentifier} not found on-chain — payment ${payment.id} cannot be invoiced`,
-			);
+		if (!agentDisplayNames.has(agentIdentifier)) {
+			agentDisplayNames.set(agentIdentifier, agentIdentifier.slice(0, 16));
 		}
-		const display = metadataToString(agentName.data.parsedMetadata.name);
-		agentDisplayNames.set(agentIdentifier, display ?? '-');
 	}
 
 	// Determine effective VAT rate (reverse charge forces 0)
@@ -574,6 +563,7 @@ export async function generateMonthlyInvoice(
 			const txUninvoicedPayments = await tx.paymentRequest.findMany({
 				where: {
 					BuyerWallet: { walletVkey: input.buyerWalletVkey },
+					...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
 					invoiceBaseId: null,
 					OR: txBillableStateFilter,
 				},
@@ -584,7 +574,7 @@ export async function generateMonthlyInvoice(
 			if (txUninvoicedSellerWalletVkeys.length > 1) {
 				throw createHttpError(
 					409,
-					`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${txUninvoicedSellerWalletVkeys.join(', ')}`,
+					`Multiple seller wallets found for buyer ${input.buyerWalletVkey} in ${input.month}: ${txUninvoicedSellerWalletVkeys.join(', ')}. Provide sellerWalletVkey to scope the invoice.`,
 				);
 			}
 

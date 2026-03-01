@@ -113,6 +113,7 @@ export default function Invoices() {
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generatePrefill, setGeneratePrefill] = useState<{
     buyerWalletVkey: string;
+    sellerWalletVkey?: string;
     month: string;
     forceRegenerate?: boolean;
   }>({ buyerWalletVkey: '', month: '' });
@@ -217,6 +218,7 @@ export default function Invoices() {
     const month = `${invoice.invoiceYear}-${String(invoice.invoiceMonth).padStart(2, '0')}`;
     setGeneratePrefill({
       buyerWalletVkey: invoice.buyerWalletVkey,
+      sellerWalletVkey: invoice.sellerWalletVkey ?? undefined,
       month,
       forceRegenerate: true,
     });
@@ -226,7 +228,11 @@ export default function Invoices() {
 
   const openGenerateFromGroup = useCallback(
     (group: WalletGroup) => {
-      setGeneratePrefill({ buyerWalletVkey: group.buyerWalletVkey, month: selectedMonth });
+      setGeneratePrefill({
+        buyerWalletVkey: group.buyerWalletVkey,
+        sellerWalletVkey: group.sellerWalletVkey,
+        month: selectedMonth,
+      });
       setShowGenerateDialog(true);
     },
     [selectedMonth],
@@ -618,6 +624,7 @@ export default function Invoices() {
           onClose={() => setShowGenerateDialog(false)}
           onSuccess={handleGenerateSuccess}
           prefillBuyerWalletVkey={generatePrefill.buyerWalletVkey}
+          prefillSellerWalletVkey={generatePrefill.sellerWalletVkey}
           prefillMonth={generatePrefill.month}
           prefillForceRegenerate={generatePrefill.forceRegenerate}
           formatMonth={formatMonthLabel}
