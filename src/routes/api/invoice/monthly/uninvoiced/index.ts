@@ -74,6 +74,7 @@ export const getUninvoicedPaymentsEndpoint = adminAuthenticatedEndpointFactory.b
 				SmartContractWallet: true,
 				RequestedFunds: true,
 				WithdrawnForSeller: true,
+				TransactionHistory: { select: { txHash: true } },
 			},
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,

@@ -37,8 +37,13 @@ export function isPaymentBillable(payment: {
 	onChainState: string | null;
 	unlockTime: bigint;
 	WithdrawnForSeller: Array<{ amount: bigint }>;
+	TransactionHistory: Array<{ txHash: string | null }>;
 }): boolean {
 	const state = payment.onChainState;
+	// Require at least one confirmed on-chain transaction to prevent mock data from being invoiced
+	const hasOnChainTx = payment.TransactionHistory.some((tx) => tx.txHash != null);
+	if (!hasOnChainTx) return false;
+
 	if (state === 'Withdrawn') return true;
 	if (state === 'ResultSubmitted' && Number(payment.unlockTime) <= Date.now()) return true;
 	if (state === 'DisputedWithdrawn' && payment.WithdrawnForSeller.length > 0) return true;
@@ -166,6 +171,7 @@ export async function generateMonthlyInvoice(
 		RequestedFunds: true as const,
 		WithdrawnForSeller: true as const,
 		SmartContractWallet: true as const,
+		TransactionHistory: { select: { txHash: true as const } },
 		PaymentSource: { include: { PaymentSourceConfig: true as const } },
 	};
 
@@ -317,19 +323,34 @@ export async function generateMonthlyInvoice(
 		throw createHttpError(400, `Missing conversion for units: ${Array.from(missingConversions).join(', ')}`);
 	}
 
-	// Pre-resolve agent display names (blockfrost – stable metadata)
+	// Pre-resolve agent display names and verify on-chain existence (blockfrost)
 	const agentDisplayNames = new Map<string, string>();
 	for (const payment of preBillable) {
 		const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
-		const agentIdentifier = decidedIdentifier?.agentIdentifier;
-		if (!agentIdentifier || agentDisplayNames.has(agentIdentifier)) continue;
+		if (!decidedIdentifier) {
+			throw createHttpError(
+				400,
+				`Payment ${payment.id} has an invalid blockchain identifier — cannot generate invoice`,
+			);
+		}
+		const agentIdentifier = decidedIdentifier.agentIdentifier;
+		if (!agentIdentifier) {
+			throw createHttpError(
+				400,
+				`Payment ${payment.id} has no agent identifier in blockchain identifier — cannot generate invoice`,
+			);
+		}
+		if (agentDisplayNames.has(agentIdentifier)) continue;
 
 		const blockfrost = new BlockFrostAPI({
 			projectId: payment.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 		});
 		const agentName = await fetchAssetInWalletAndMetadata(blockfrost, agentIdentifier);
 		if ('error' in agentName) {
-			throw createHttpError(404, 'Agent not found');
+			throw createHttpError(
+				404,
+				`Agent ${agentIdentifier} not found on-chain — payment ${payment.id} cannot be invoiced`,
+			);
 		}
 		const display = metadataToString(agentName.data.parsedMetadata.name);
 		agentDisplayNames.set(agentIdentifier, display ?? '-');
