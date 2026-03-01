@@ -452,7 +452,7 @@ export async function generateMonthlyInvoice(
 			);
 		}
 		if (!agentDisplayNames.has(agentIdentifier)) {
-			agentDisplayNames.set(agentIdentifier, agentIdentifier.slice(0, 16));
+			agentDisplayNames.set(agentIdentifier, agentIdentifier);
 		}
 	}
 
