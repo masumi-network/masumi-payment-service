@@ -7503,9 +7503,8 @@
                                             },
                                             "date": {
                                                 "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The date of the invoice"
+                                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                                "description": "The date of the invoice (YYYY-MM-DD)"
                                             },
                                             "greeting": {
                                                 "type": "string",
@@ -8228,9 +8227,8 @@
                                             },
                                             "date": {
                                                 "type": "string",
-                                                "minLength": 1,
-                                                "maxLength": 100,
-                                                "description": "The date of the invoice"
+                                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                                "description": "The date of the invoice (YYYY-MM-DD)"
                                             },
                                             "greeting": {
                                                 "type": "string",

@@ -3710,7 +3710,7 @@ export type PostInvoiceMonthlyData = {
              */
             idPrefix?: string;
             /**
-             * The date of the invoice
+             * The date of the invoice (YYYY-MM-DD)
              */
             date?: string;
             /**
@@ -3929,7 +3929,7 @@ export type PostInvoiceMonthlyAdminData = {
              */
             idPrefix?: string;
             /**
-             * The date of the invoice
+             * The date of the invoice (YYYY-MM-DD)
              */
             date?: string;
             /**
