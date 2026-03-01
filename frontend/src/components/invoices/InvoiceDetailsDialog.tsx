@@ -380,7 +380,7 @@ export function InvoiceDetailsDialog({
                 : 'Download Invoice PDF'}
             </Button>
           )}
-          <Button onClick={() => onRegenerate(invoice)}>Regenerate Invoice</Button>
+          <Button onClick={() => onRegenerate(invoice)}>Update Invoice</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
