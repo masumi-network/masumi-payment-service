@@ -127,13 +127,16 @@ function buildInvoicePDF(
 	const fromX = ML + partyCardW + partyGap;
 
 	const drawPartyCard = (
-		targetDoc: jsPDF, x: number, startY: number,
-		label: string, party: InvoiceSeller | InvoiceBuyer,
+		targetDoc: jsPDF,
+		x: number,
+		startY: number,
+		label: string,
+		party: InvoiceSeller | InvoiceBuyer,
 		align: 'left' | 'right' = 'left',
 	): number => {
 		let cy = startY + 2;
 		const innerX = align === 'right' ? x + partyCardW - 3 : x + 3;
-		const textAlign = align === 'right' ? 'right' as const : 'left' as const;
+		const textAlign = align === 'right' ? ('right' as const) : ('left' as const);
 
 		// Label
 		targetDoc.setFontSize(8);
