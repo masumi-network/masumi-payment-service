@@ -21,7 +21,15 @@ import {
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2, AlertTriangle } from 'lucide-react';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import {
+  useForm,
+  Controller,
+  useFieldArray,
+  type Control,
+  type FieldError,
+  type FieldErrors,
+  type Path,
+} from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
@@ -147,17 +155,22 @@ const a2aAgentSchema = z.object({
   agentCardUrl: z
     .string()
     .url('Agent Card URL must be a valid URL')
-    .min(1, 'Agent Card URL is required'),
+    .min(1, 'Agent Card URL is required')
+    .refine((u) => u.startsWith('https://'), { message: 'Agent Card URL must use HTTPS' }),
   a2aProtocolVersions: z
-    .array(z.string().min(1))
-    .min(1, 'At least one A2A protocol version is required'),
+    .array(z.string().min(1).max(20, 'Protocol version must be 20 characters or less'))
+    .min(1, 'At least one A2A protocol version is required')
+    .max(10, 'Maximum 10 protocol versions allowed'),
   selectedWallet: z.string().min(1, 'Wallet is required'),
   description: z
     .string()
     .max(250, 'Description must be less than 250 characters')
     .optional()
     .or(z.literal('')),
-  tags: z.array(z.string().min(1)).optional(),
+  tags: z
+    .array(z.string().min(1).max(63, 'Tag must be 63 characters or less'))
+    .max(15, 'Maximum 15 tags allowed')
+    .optional(),
   skipAgentCardValidation: z.boolean().optional(),
 });
 
@@ -464,23 +477,23 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
   };
 
   // ── Shared wallet selector ─────────────────────────────────────────────────
-  const renderWalletSelect = (
+  const renderWalletSelect = <T extends { selectedWallet: string }>(
     fieldName: 'selectedWallet',
-    ctrl: typeof control | typeof controlA2A,
-    errs: typeof errors | typeof errorsA2A,
+    ctrl: Control<T>,
+    errs: FieldErrors<T>,
   ) => (
     <div className="space-y-2">
       <label className="text-sm font-medium">
         Linked wallet <span className="text-red-500">*</span>
       </label>
       <Controller
-        control={ctrl as typeof control}
-        name={fieldName}
+        control={ctrl}
+        name={fieldName as Path<T>}
         render={({ field }) => (
           <Select value={field.value} onValueChange={field.onChange}>
             <SelectTrigger
               disabled={isLoadingWallets}
-              className={`${(errs as typeof errors).selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`${errs.selectedWallet ? 'border-red-500' : ''} ${isLoadingWallets ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <SelectValue
                 placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
@@ -503,8 +516,8 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           </Select>
         )}
       />
-      {(errs as typeof errors).selectedWallet && (
-        <p className="text-sm text-red-500">{(errs as typeof errors).selectedWallet?.message}</p>
+      {errs.selectedWallet && (
+        <p className="text-sm text-red-500">{(errs.selectedWallet as FieldError).message}</p>
       )}
     </div>
   );

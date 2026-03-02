@@ -19,6 +19,7 @@ export const registerA2AAgentSchemaInput = z.object({
 		.string()
 		.url()
 		.max(500)
+		.refine((u) => u.startsWith('https://'), { message: 'Agent card URL must use HTTPS' })
 		.describe('URL to the Agent Card JSON (typically /.well-known/agent-card.json)'),
 	a2aProtocolVersions: z.array(z.string().max(20)).min(1).max(10).describe('A2A protocol versions this agent supports'),
 	description: z.string().max(250).optional().describe('Description of the agent'),
