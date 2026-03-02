@@ -1077,6 +1077,25 @@ export function generateInvoiceHTML(
       `;
 			})()}
     </div>
+    `
+				: ''
+		}
+
+    ${options?.reverseCharge ? `<div class="correction-notice" style="margin-bottom: 12px;"><div class="correction-title">${t.reverseChargeNotice}</div></div>` : ''}
+    ${closing ? `<div class="closing">${closing}</div>` : ''}
+    ${signature ? `<div class="signature">${signature}</div>` : ''}
+
+    ${
+			terms || privacy
+				? `
+    <div class="terms-section">
+      ${terms ? `<div class="terms-title">${t.termsAndConditions}</div><div class="terms-text">${terms}</div>` : ''}
+      ${privacy ? `<div class="privacy-title">${t.privacyPolicy}</div><div class="privacy-text">${privacy}</div>` : ''}
+    </div>
+    `
+				: ''
+		}
+    ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer" class="coingecko-link">CoinGecko<svg class="coingecko-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5h6v6M11 5 5 11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a></span></div>` : ''}
     ${(() => {
 			const conversionMap = new Map<
 				string,
@@ -1096,7 +1115,7 @@ export function generateInvoiceHTML(
 			}
 			if (conversionMap.size === 0) return '';
 			return `
-    <div class="table-wrapper" style="margin-top: 8px;">
+    <div class="table-wrapper" style="margin-top: 8px; margin-bottom: 0;">
       <table class="items-table" style="font-size: 11px;">
         <thead>
           <tr>
@@ -1122,27 +1141,6 @@ export function generateInvoiceHTML(
       </table>
     </div>`;
 		})()}
-    `
-				: ''
-		}
-
-    ${options?.reverseCharge ? `<div class="correction-notice" style="margin-bottom: 12px;"><div class="correction-title">${t.reverseChargeNotice}</div></div>` : ''}
-    ${closing ? `<div class="closing">${closing}</div>` : ''}
-    ${signature ? `<div class="signature">${signature}</div>` : ''}
-
-    ${
-			terms || privacy
-				? `
-    <div class="terms-section">
-      ${terms ? `<div class="terms-title">${t.termsAndConditions}</div><div class="terms-text">${terms}</div>` : ''}
-      ${privacy ? `<div class="privacy-title">${t.privacyPolicy}</div><div class="privacy-text">${privacy}</div>` : ''}
-
-    </div>
-    `
-				: ''
-		}
-    ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer" class="coingecko-link">CoinGecko<svg class="coingecko-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5h6v6M11 5 5 11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a></span></div>` : ''}
-    <div style="margin-top: 20px;"></div>
     ${footer ? `<div class="v-line" style="margin-top:auto;"></div>` : ''}
 
     <!-- Footer -->

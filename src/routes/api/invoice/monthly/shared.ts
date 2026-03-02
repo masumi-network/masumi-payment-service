@@ -436,6 +436,7 @@ export async function generateMonthlyInvoice(
 
 	// Pre-resolve agent identifiers from blockchain identifiers (decode only, no on-chain lookup)
 	const agentDisplayNames = new Map<string, string>();
+	const uniqueAgentIdentifiers = new Set<string>();
 	for (const payment of preBillable) {
 		const decidedIdentifier = decodeBlockchainIdentifier(payment.blockchainIdentifier);
 		if (!decidedIdentifier) {
@@ -451,8 +452,26 @@ export async function generateMonthlyInvoice(
 				`Payment ${payment.id} has no agent identifier in blockchain identifier — cannot generate invoice`,
 			);
 		}
-		if (!agentDisplayNames.has(agentIdentifier)) {
-			agentDisplayNames.set(agentIdentifier, agentIdentifier);
+		uniqueAgentIdentifiers.add(agentIdentifier);
+	}
+
+	// Look up agent display names from registry
+	if (uniqueAgentIdentifiers.size > 0) {
+		const registryEntries = await prisma.registryRequest.findMany({
+			where: { agentIdentifier: { in: Array.from(uniqueAgentIdentifiers) } },
+			select: { agentIdentifier: true, name: true },
+		});
+		const registryMap = new Map(
+			registryEntries.filter((r) => r.agentIdentifier != null).map((r) => [r.agentIdentifier!, r.name]),
+		);
+		for (const agentId of uniqueAgentIdentifiers) {
+			const registryName = registryMap.get(agentId);
+			if (registryName) {
+				const abbreviated = agentId.length > 14 ? `${agentId.slice(0, 2)}****${agentId.slice(-12)}` : agentId;
+				agentDisplayNames.set(agentId, `${registryName} (${abbreviated})`);
+			} else {
+				agentDisplayNames.set(agentId, agentId);
+			}
 		}
 	}
 
