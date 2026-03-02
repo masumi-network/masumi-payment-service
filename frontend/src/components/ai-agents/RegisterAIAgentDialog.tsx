@@ -151,7 +151,13 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
 // ─── A2A (v2) schema ──────────────────────────────────────────────────────────
 const a2aAgentSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  apiUrl: z.string().url('API URL must be a valid URL').min(1, 'API URL is required'),
+  apiUrl: z
+    .string()
+    .url('API URL must be a valid URL')
+    .min(1, 'API URL is required')
+    .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
+      message: 'API URL must start with http:// or https://',
+    }),
   agentCardUrl: z
     .string()
     .url('Agent Card URL must be a valid URL')
