@@ -7998,6 +7998,21 @@
                                                             "currencyShortId": {
                                                                 "type": "string"
                                                             },
+                                                            "reverseCharge": {
+                                                                "type": "boolean"
+                                                            },
+                                                            "language": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "localizationFormat": {
+                                                                "type": "string"
+                                                            },
+                                                            "vatRate": {
+                                                                "type": "number",
+                                                                "nullable": true,
+                                                                "description": "VAT rate from the first item, null if no items"
+                                                            },
                                                             "sellerName": {
                                                                 "type": "string",
                                                                 "nullable": true
@@ -8006,11 +8021,73 @@
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
+                                                            "sellerVatNumber": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "sellerCountry": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerCity": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerZipCode": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerStreet": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerStreetNumber": {
+                                                                "type": "string"
+                                                            },
+                                                            "sellerEmail": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "sellerPhone": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
                                                             "buyerName": {
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
                                                             "buyerCompanyName": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerVatNumber": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerCountry": {
+                                                                "type": "string"
+                                                            },
+                                                            "buyerCity": {
+                                                                "type": "string"
+                                                            },
+                                                            "buyerZipCode": {
+                                                                "type": "string"
+                                                            },
+                                                            "buyerStreet": {
+                                                                "type": "string"
+                                                            },
+                                                            "buyerStreetNumber": {
+                                                                "type": "string"
+                                                            },
+                                                            "buyerEmail": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "buyerPhone": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "invoiceTitle": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "invoiceDescription": {
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
@@ -8077,10 +8154,32 @@
                                                             "invoiceYear",
                                                             "invoiceDate",
                                                             "currencyShortId",
+                                                            "reverseCharge",
+                                                            "language",
+                                                            "localizationFormat",
+                                                            "vatRate",
                                                             "sellerName",
                                                             "sellerCompanyName",
+                                                            "sellerVatNumber",
+                                                            "sellerCountry",
+                                                            "sellerCity",
+                                                            "sellerZipCode",
+                                                            "sellerStreet",
+                                                            "sellerStreetNumber",
+                                                            "sellerEmail",
+                                                            "sellerPhone",
                                                             "buyerName",
                                                             "buyerCompanyName",
+                                                            "buyerVatNumber",
+                                                            "buyerCountry",
+                                                            "buyerCity",
+                                                            "buyerZipCode",
+                                                            "buyerStreet",
+                                                            "buyerStreetNumber",
+                                                            "buyerEmail",
+                                                            "buyerPhone",
+                                                            "invoiceTitle",
+                                                            "invoiceDescription",
                                                             "isCancelled",
                                                             "cancellationReason",
                                                             "cancellationDate",

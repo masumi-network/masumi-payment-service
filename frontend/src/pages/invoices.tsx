@@ -116,6 +116,7 @@ export default function Invoices() {
     sellerWalletVkey?: string;
     month: string;
     forceRegenerate?: boolean;
+    sourceInvoice?: InvoiceSummary;
   }>({ buyerWalletVkey: '', month: '' });
   const [expandedWallets, setExpandedWallets] = useState<Set<string>>(new Set());
 
@@ -220,6 +221,7 @@ export default function Invoices() {
       buyerWalletVkey: invoice.buyerWalletVkey,
       sellerWalletVkey: invoice.sellerWalletVkey ?? undefined,
       month,
+      sourceInvoice: invoice,
     });
     setSelectedInvoice(null);
     setShowGenerateDialog(true);
@@ -626,6 +628,7 @@ export default function Invoices() {
           prefillSellerWalletVkey={generatePrefill.sellerWalletVkey}
           prefillMonth={generatePrefill.month}
           prefillForceRegenerate={generatePrefill.forceRegenerate}
+          sourceInvoice={generatePrefill.sourceInvoice}
           formatMonth={formatMonthLabel}
         />
       </AnimatedPage>
