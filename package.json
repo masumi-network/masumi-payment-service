@@ -8,7 +8,8 @@
 	"type": "module",
 	"packageManager": "pnpm@10.30.2",
 	"scripts": {
-		"prepare": "husky && pnpm run build",
+		"postinstall": "pnpm run prisma:generate",
+		"prepare": "husky",
 		"lint": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
 		"lint:fix": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint:fix",
 		"lint-ci": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
