@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useForm, type FieldErrors } from 'react-hook-form';
+import { useForm, useFieldArray, type FieldErrors } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'react-toastify';
@@ -25,12 +25,10 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
 } from '@/components/ui/command';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
@@ -44,10 +42,10 @@ import {
   useSellerTemplates,
   useBuyerTemplates,
   type SellerTemplateData,
-  type AddressTemplateData,
 } from '@/lib/hooks/useSellerTemplates';
 import { extractApiErrorMessage, mapInvoiceApiErrorMessage } from '@/lib/api-error';
 import { downloadBase64Pdf } from '@/lib/pdf-utils';
+import type { InvoiceSummary } from '@/lib/hooks/useInvoices';
 
 const currencies = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
 const languages = ['en-us', 'en-gb', 'de'] as const;
@@ -65,6 +63,11 @@ const EMPTY_ADDRESS: SellerTemplateData = {
   phone: null,
 };
 
+const conversionEntrySchema = z.object({
+  unit: z.string(),
+  rate: z.string(),
+});
+
 const formSchema = z
   .object({
     buyerWalletVkey: z
@@ -76,6 +79,7 @@ const formSchema = z
     vatRate: z.number().min(0, 'Min 0').max(1, 'Max 1').optional(),
     reverseCharge: z.boolean().optional(),
     forceRegenerate: z.boolean().optional(),
+    currencyConversions: z.array(conversionEntrySchema).optional(),
     seller: z.object({
       name: z.string().nullable().optional(),
       companyName: z.string().nullable().optional(),
@@ -148,6 +152,7 @@ interface GenerateInvoiceDialogProps {
   prefillSellerWalletVkey?: string;
   prefillMonth: string;
   prefillForceRegenerate?: boolean;
+  sourceInvoice?: InvoiceSummary;
   formatMonth: (month: string) => string;
 }
 
@@ -498,6 +503,7 @@ export function GenerateInvoiceDialog({
   prefillSellerWalletVkey,
   prefillMonth,
   prefillForceRegenerate = false,
+  sourceInvoice,
   formatMonth,
 }: GenerateInvoiceDialogProps) {
   const { apiClient } = useAppContext();
@@ -523,47 +529,91 @@ export function GenerateInvoiceDialog({
   } = useBuyerTemplates();
   const [selectedBuyerTplId, setSelectedBuyerTplId] = useState<string | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    getValues,
-    formState: { errors },
-    reset,
-  } = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
+  const buildDefaults = useCallback((): FormValues => {
+    const inv = sourceInvoice;
+    if (inv) {
+      return {
+        buyerWalletVkey: prefillBuyerWalletVkey || '',
+        month: prefillMonth || '',
+        invoiceCurrency: (inv.currencyShortId as (typeof currencies)[number]) || 'usd',
+        vatRate: inv.vatRate ?? 0,
+        reverseCharge: inv.reverseCharge ?? false,
+        forceRegenerate: prefillForceRegenerate,
+        currencyConversions: [],
+        seller: {
+          name: inv.sellerName ?? null,
+          companyName: inv.sellerCompanyName ?? null,
+          vatNumber: inv.sellerVatNumber ?? null,
+          country: inv.sellerCountry,
+          city: inv.sellerCity,
+          zipCode: inv.sellerZipCode,
+          street: inv.sellerStreet,
+          streetNumber: inv.sellerStreetNumber,
+          email: inv.sellerEmail ?? null,
+          phone: inv.sellerPhone ?? null,
+        },
+        buyer: {
+          name: inv.buyerName ?? null,
+          companyName: inv.buyerCompanyName ?? null,
+          vatNumber: inv.buyerVatNumber ?? null,
+          country: inv.buyerCountry,
+          city: inv.buyerCity,
+          zipCode: inv.buyerZipCode,
+          street: inv.buyerStreet,
+          streetNumber: inv.buyerStreetNumber,
+          email: inv.buyerEmail ?? null,
+          phone: inv.buyerPhone ?? null,
+        },
+        invoice: {
+          title: inv.invoiceTitle || undefined,
+          description: inv.invoiceDescription || undefined,
+          language: (inv.language as (typeof languages)[number]) || undefined,
+          localizationFormat: (inv.localizationFormat as (typeof languages)[number]) || undefined,
+        },
+      };
+    }
+    return {
       buyerWalletVkey: prefillBuyerWalletVkey || '',
       month: prefillMonth || '',
       invoiceCurrency: 'usd',
       vatRate: 0,
       reverseCharge: false,
       forceRegenerate: prefillForceRegenerate,
+      currencyConversions: [],
       seller: { ...EMPTY_ADDRESS },
       buyer: { ...EMPTY_ADDRESS },
       invoice: {},
-    },
+    };
+  }, [sourceInvoice, prefillBuyerWalletVkey, prefillMonth, prefillForceRegenerate]);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    getValues,
+    control,
+    formState: { errors },
+    reset,
+  } = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: buildDefaults(),
   });
 
   useEffect(() => {
     if (open) {
-      reset({
-        buyerWalletVkey: prefillBuyerWalletVkey,
-        month: prefillMonth,
-        invoiceCurrency: 'usd',
-        vatRate: 0,
-        reverseCharge: false,
-        forceRegenerate: prefillForceRegenerate,
-        seller: { ...EMPTY_ADDRESS },
-        buyer: { ...EMPTY_ADDRESS },
-        invoice: {},
-      });
+      reset(buildDefaults());
       setSelectedSellerTplId(null);
       setSelectedBuyerTplId(null);
       setSubmitError(null);
     }
-  }, [open, prefillBuyerWalletVkey, prefillMonth, prefillForceRegenerate, reset]);
+  }, [open, buildDefaults, reset]);
+
+  const {
+    fields: conversionFields,
+    append: appendConversion,
+    remove: removeConversion,
+  } = useFieldArray({ control, name: 'currencyConversions' });
 
   const reverseCharge = watch('reverseCharge');
   const forceRegenerate = watch('forceRegenerate');
@@ -707,6 +757,15 @@ export function GenerateInvoiceDialog({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
+      // Build currencyConversion map from entries, filtering empty/invalid rows
+      const validConversions = (data.currencyConversions ?? []).filter(
+        (e) => e.unit.trim() !== '' && e.rate.trim() !== '',
+      );
+      const currencyConversion: Record<string, number> | undefined =
+        validConversions.length > 0
+          ? Object.fromEntries(validConversions.map((e) => [e.unit.trim(), parseFloat(e.rate)]))
+          : undefined;
+
       const result = await postInvoiceMonthlyAdmin({
         client: apiClient,
         body: {
@@ -717,6 +776,7 @@ export function GenerateInvoiceDialog({
           vatRate: data.vatRate,
           reverseCharge: data.reverseCharge,
           forceRegenerate: data.forceRegenerate,
+          currencyConversion,
           seller: {
             country: data.seller.country,
             city: data.seller.city,
@@ -952,7 +1012,7 @@ export function GenerateInvoiceDialog({
                   <Input
                     id="invoice.title"
                     {...register('invoice.title')}
-                    placeholder="Invoice title"
+                    placeholder="Invoice (default)"
                   />
                 </div>
                 <div>
@@ -1023,6 +1083,54 @@ export function GenerateInvoiceDialog({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* Custom Currency Conversions */}
+              <div className="pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-xs text-muted-foreground">
+                    Custom Conversions (overrides CoinGecko)
+                  </Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => appendConversion({ unit: '', rate: '' })}
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add
+                  </Button>
+                </div>
+                {conversionFields.length > 0 && (
+                  <div className="space-y-2">
+                    {conversionFields.map((field, index) => (
+                      <div key={field.id} className="flex items-center gap-2">
+                        <Input
+                          {...register(`currencyConversions.${index}.unit`)}
+                          placeholder="Unit (e.g. lovelace or policy hex)"
+                          className="h-8 text-xs flex-1"
+                        />
+                        <Input
+                          {...register(`currencyConversions.${index}.rate`)}
+                          placeholder="Rate per unit"
+                          className="h-8 text-xs w-32"
+                          type="number"
+                          step="any"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={() => removeConversion(index)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CollapsibleContent>
           </Collapsible>

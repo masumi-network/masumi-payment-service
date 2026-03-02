@@ -149,6 +149,7 @@ export function detectInvoiceChanges(
 	const resolvedDateIso = resolved.date.toISOString().slice(0, 10);
 
 	const metadataChanged =
+		resolved.currency !== existingRevision.currencyShortId ||
 		(resolved.title ?? '') !== (existingRevision.invoiceTitle ?? '') ||
 		resolvedDateIso !== existingDateIso ||
 		(resolved.greeting ?? '') !== (existingRevision.invoiceGreetings ?? '') ||

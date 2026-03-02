@@ -19,6 +19,6 @@
 			"@prisma/client": ["src/generated/prisma/client"]
 		}
 	},
-	"include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts"],
+	"include": ["src/**/*.ts", "smart-contracts/**/plutus.json", "tests/**/*.ts", "jest.e2e.config.ts", "scripts/**/*.ts"],
 	"exclude": ["node_modules"]
 }
