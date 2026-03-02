@@ -764,7 +764,7 @@ model HydraHead {
   status               HydraHeadStatus    @default(Idle)
 
   /// Contestation period in seconds (configured on the Hydra node)
-  contestationPeriod   Int                @default(60)
+  contestationPeriod   Int                @default(86400)
 
   /// Lifecycle timestamps
   openedAt             DateTime?
