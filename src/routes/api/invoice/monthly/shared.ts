@@ -467,8 +467,7 @@ export async function generateMonthlyInvoice(
 		for (const agentId of uniqueAgentIdentifiers) {
 			const registryName = registryMap.get(agentId);
 			if (registryName) {
-				const abbreviated =
-					agentId.length > 14 ? `${agentId.slice(0, 2)}****${agentId.slice(-12)}` : agentId;
+				const abbreviated = agentId.length > 14 ? `${agentId.slice(0, 2)}****${agentId.slice(-12)}` : agentId;
 				agentDisplayNames.set(agentId, `${registryName} (${abbreviated})`);
 			} else {
 				agentDisplayNames.set(agentId, agentId);
