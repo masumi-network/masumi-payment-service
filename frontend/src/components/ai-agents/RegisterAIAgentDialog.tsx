@@ -283,26 +283,35 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
     }
   }, [open, reset, resetA2A]);
 
+  // ── Shared wallet validation ────────────────────────────────────────────────
+  const validateWallet = useCallback(
+    (selectedWalletVkey: string): boolean => {
+      const selectedWalletBalance = sellingWallets.find(
+        (w) => w.wallet.walletVkey == selectedWalletVkey,
+      )?.balance;
+      if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
+        toast.error('Insufficient balance in selected wallet');
+        return false;
+      }
+      const paymentSource = currentNetworkPaymentSources.find((ps) =>
+        ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
+      );
+      if (!paymentSource) {
+        toast.error('Smart contract wallet not found in payment sources');
+        return false;
+      }
+      return true;
+    },
+    [sellingWallets, currentNetworkPaymentSources],
+  );
+
   // ── Standard submit ────────────────────────────────────────────────────────
   const onSubmit = useCallback(
     async (data: AgentFormValues) => {
       try {
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
-        const selectedWalletBalance = sellingWallets.find(
-          (w) => w.wallet.walletVkey == selectedWalletVkey,
-        )?.balance;
-        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
-          toast.error('Insufficient balance in selected wallet');
-          return;
-        }
-        const paymentSource = currentNetworkPaymentSources.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-        );
-        if (!paymentSource) {
-          toast.error('Smart contract wallet not found in payment sources');
-          return;
-        }
+        if (!validateWallet(selectedWalletVkey)) return;
 
         const legal: { privacyPolicy?: string; terms?: string; other?: string } = {};
         if (data.privacyPolicyUrl) legal.privacyPolicy = data.privacyPolicyUrl;
@@ -373,16 +382,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [
-      sellingWallets,
-      currentNetworkPaymentSources,
-      apiClient,
-      network,
-      stablecoinUnit,
-      onSuccess,
-      onClose,
-      reset,
-    ],
+    [validateWallet, apiClient, network, onSuccess, onClose, reset],
   );
 
   // ── A2A submit ─────────────────────────────────────────────────────────────
@@ -391,20 +391,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
       try {
         setIsLoading(true);
         const selectedWalletVkey = data.selectedWallet;
-        const selectedWalletBalance = sellingWallets.find(
-          (w) => w.wallet.walletVkey == selectedWalletVkey,
-        )?.balance;
-        if (selectedWalletBalance == undefined || selectedWalletBalance <= 3000000) {
-          toast.error('Insufficient balance in selected wallet');
-          return;
-        }
-        const paymentSource = currentNetworkPaymentSources.find((ps) =>
-          ps.SellingWallets?.some((s) => s.walletVkey == selectedWalletVkey),
-        );
-        if (!paymentSource) {
-          toast.error('Smart contract wallet not found in payment sources');
-          return;
-        }
+        if (!validateWallet(selectedWalletVkey)) return;
 
         const response = await postRegistryA2A({
           client: apiClient,
@@ -435,15 +422,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
         setIsLoading(false);
       }
     },
-    [
-      sellingWallets,
-      currentNetworkPaymentSources,
-      apiClient,
-      network,
-      onSuccess,
-      onClose,
-      resetA2A,
-    ],
+    [validateWallet, apiClient, network, onSuccess, onClose, resetA2A],
   );
 
   // ── Tag helpers (Standard) ─────────────────────────────────────────────────
@@ -545,6 +524,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           <button
             type="button"
             onClick={() => setAgentType('Standard')}
+            disabled={isLoading}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               agentType === 'Standard'
                 ? 'bg-background shadow-sm'
@@ -556,6 +536,7 @@ export function RegisterAIAgentDialog({ open, onClose, onSuccess }: RegisterAIAg
           <button
             type="button"
             onClick={() => setAgentType('A2A')}
+            disabled={isLoading}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               agentType === 'A2A'
                 ? 'bg-background shadow-sm'
