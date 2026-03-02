@@ -163,7 +163,7 @@ export function detectInvoiceChanges(
 		(resolved.terms ?? '') !== (existingRevision.invoiceTerms ?? '') ||
 		(resolved.privacy ?? '') !== (existingRevision.invoicePrivacy ?? '') ||
 		resolved.localizationFormat !== existingRevision.localizationFormat ||
-		resolved.language !== (existingRevision.language ?? '');
+		resolved.language !== (existingRevision.language ?? 'en');
 
 	const reasons: string[] = [];
 	if (itemsChanged) reasons.push('Invoice items were updated (name, quantity, or VAT rate changed)');
