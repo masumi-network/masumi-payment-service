@@ -112,7 +112,7 @@ export const registerA2AAgentPost = payAuthenticatedEndpointFactory.build({
 					terms: null,
 					privacyPolicy: null,
 					authorName: '',
-					paymentType: PaymentType.None,
+					paymentType: PaymentType.Web3CardanoV1,
 					authorContactEmail: null,
 					authorContactOther: null,
 					authorOrganization: null,
