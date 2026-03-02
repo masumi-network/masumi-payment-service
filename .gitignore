@@ -36,3 +36,5 @@ otelcol-contrib
 test-output/example-invoice.pdf
 test-output/minimal-invoice.pdf
 tests/e2e/.e2e-global-state.json
+scripts/example-invoice.pdf
+scripts/example-invoice.html

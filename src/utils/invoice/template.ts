@@ -321,6 +321,7 @@ export type SupportedCurrencies = (typeof supportedCurrencies)[number];
 export type ResolvedInvoiceConfig = {
 	// Display fields (fully resolved)
 	title: string;
+	description: string;
 	date: Date;
 	greeting: string;
 	closing: string;
@@ -361,7 +362,7 @@ export function resolveInvoiceConfig(
 
 	const resolvedDate = invoice?.date ? new Date(invoice?.date) : new Date();
 	// Default localization format matches the language (de → de-DE, not en-US)
-	const defaultLocale = languageKey === 'de' ? 'de' : 'en-us';
+	const defaultLocale = languageKey === 'de' ? 'de' : 'en-gb';
 	const resolvedLocalizationFormat = invoice?.localizationFormat ?? invoice?.language ?? defaultLocale;
 	const bcp47Locale = toBcp47(resolvedLocalizationFormat);
 	const currencyFormatter = new Intl.NumberFormat(bcp47Locale, {
@@ -372,7 +373,9 @@ export function resolveInvoiceConfig(
 		style: 'decimal',
 	});
 	const dateFormatter = new Intl.DateTimeFormat(bcp47Locale, {
-		dateStyle: 'short',
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric',
 	});
 
 	const texts = extractInvoiceTexts(languageKey);
@@ -384,6 +387,7 @@ export function resolveInvoiceConfig(
 		itemNameSuffix: invoice?.itemNameSuffix ?? locale.texts.itemNameSuffix,
 		currency: currency,
 		title: invoice?.title?.trim() || defaultTitle,
+		description: invoice?.description?.trim() || '',
 		date: resolvedDate,
 		greeting: invoice?.greeting ?? locale.texts.defaultGreeting,
 		closing: invoice?.closing ?? locale.texts.defaultClosing,
@@ -471,6 +475,7 @@ export function generateInvoiceHTML(
 ): string {
 	const {
 		title,
+		description,
 		date,
 		greeting,
 		closing,
@@ -508,18 +513,19 @@ export function generateInvoiceHTML(
 
     :root {
       --surface: #ffffff;
-      --surface-muted: #f4f6fb;
-      --border: #d8deeb;
-      --border-strong: #bcc5d6;
-      --primary: #1f3b73;
-      --primary-accent: #0f5ad9;
-      --text: #1f2430;
-      --text-muted: #5b6577;
-      --accent: #e9efff;
-      --warning-bg: #fff6e0;
-      --warning-border: #f7ca63;
-      --warning-text: #8a6212;
-      --shadow: 0 12px 24px rgba(31, 59, 115, 0.08);
+      --surface-muted: #f8fafc;
+      --border: #e2e8f0;
+      --border-strong: #e2e8f0;
+      --primary: #1e293b;
+      --primary-accent: #334155;
+      --text: #334155;
+      --text-muted: #64748b;
+      --accent: #f1f5f9;
+      --warning-bg: #fffbeb;
+      --warning-border: #fcd34d;
+      --warning-text: #92400e;
+      --table-header-bg: #f1f5f9;
+      --striped-row-bg: #f8fafc;
     }
 
     body {
@@ -533,13 +539,12 @@ export function generateInvoiceHTML(
     .container {
       max-width: 960px;
       margin: 0 auto;
-      padding: 24px 28px;
+      padding: 36px 32px;
       min-height: 10in; /* fill A4 printable height (11in - 0.5in*2 margins) */
       display: flex;
       flex-direction: column;
       background: var(--surface);
       border-radius: 8px;
-      box-shadow: var(--shadow);
       border: 1px solid var(--border);
     }
 
@@ -549,8 +554,8 @@ export function generateInvoiceHTML(
       gap: 18px;
       align-items: flex-start;
       padding-bottom: 20px;
-      border-bottom: 1px solid var(--border-strong);
-      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
     }
 
     .logo {
@@ -607,25 +612,32 @@ export function generateInvoiceHTML(
       text-transform: uppercase;
       letter-spacing: 1px;
       border-radius: 6px;
-      background: rgba(15, 90, 217, 0.16);
-      color: var(--primary-accent);
+      background: var(--accent);
+      color: var(--primary);
     }
 
     .parties {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
-      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 20px;
     }
 
     .party-card {
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
+      padding: 12px 14px;
+      border: none;
+      border-left: 3px solid var(--border);
       background: var(--surface);
       display: grid;
       gap: 5px;
       font-size: 11px;
+    }
+
+    .party-card.party-from {
+      border-left: none;
+      border-right: 3px solid var(--border);
+      text-align: right;
+      margin-top: 8px;
     }
 
     .party-title {
@@ -665,11 +677,15 @@ export function generateInvoiceHTML(
       align-items: center;
     }
 
+    .description-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 4px;
+    }
+
     .greeting {
-      margin-top: 12px;
       margin-bottom: 12px;
-      margin-left: 8px;
-      font-style: italic;
       color: var(--text-muted);
       font-size: 12px;
     }
@@ -700,7 +716,7 @@ export function generateInvoiceHTML(
     .table-wrapper {
       overflow: hidden;
       border-radius: 6px;
-      border: 1px solid var(--border-strong);
+      border: 1px solid var(--border);
 
       margin-bottom: 20px;
       background: var(--surface);
@@ -724,16 +740,15 @@ export function generateInvoiceHTML(
     }
 
     .items-table thead tr {
-      background: var(--primary);
-      color: #fff;
+      background: var(--table-header-bg);
+      color: var(--text);
     }
 
     .items-table th {
       padding: 10px 12px;
       text-align: left;
       font-weight: 600;
-      letter-spacing: 1px;
-      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .items-table td {
@@ -743,7 +758,7 @@ export function generateInvoiceHTML(
     }
 
     .items-table tbody tr:nth-child(even) {
-      background: transparent;
+      background: var(--striped-row-bg);
     }
 
     .vat-category-header td {
@@ -783,12 +798,11 @@ export function generateInvoiceHTML(
     }
 
     .totals-card {
-      padding: 12px 14px;
-      border: 1px solid var(--border-strong);
-      border-radius: 4px;
-      background: rgba(15, 90, 217, 0.04);
+      padding: 12px 0;
+      border: none;
+      background: transparent;
       display: grid;
-      gap: 6px;
+      gap: 8px;
     }
 
     .total-row {
@@ -804,8 +818,8 @@ export function generateInvoiceHTML(
       font-weight: 700;
       font-size: 13px;
       color: var(--primary);
-      padding-top: 6px;
-      border-top: 1px solid rgba(31, 59, 115, 0.2);
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
     }
 
     .total-label {
@@ -821,7 +835,7 @@ export function generateInvoiceHTML(
     }
 
     .closing {
-      margin-top: 16px;
+      margin-top: 24px;
       font-style: italic;
       color: var(--text);
     }
@@ -832,12 +846,25 @@ export function generateInvoiceHTML(
       color: var(--text);
     }
 
+    .coingecko-green {
+      color: rgb(75, 204, 0);
+      font-weight: 600;
+    }
+
     .terms-section {
-      margin-top: 18px;
       display: grid;
-      gap: 8px;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
       color: var(--text);
-      font-size: 11px;
+      font-size: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .terms-col {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
     }
 
     .terms-title, .privacy-title {
@@ -845,20 +872,22 @@ export function generateInvoiceHTML(
       color: var(--primary);
       font-weight: 700;
       letter-spacing: 1px;
+      font-size: 9px;
     }
 
     .terms-text, .privacy-text {
       color: var(--text-muted);
+      font-size: 10px;
+      line-height: 1.4;
     }
     
     .v-line {
-      border-top: 1px solid var(--border-strong);
+      border-top: 1px solid var(--border);
     }
 
     .footer {
       margin-top: auto; /* push footer to bottom when content is short */
-      padding-top: 16px;
-      padding-top: 12px;
+      padding-top: 14px;
       font-size: 10px;
       color: var(--text-muted);
       text-align: center;
@@ -896,7 +925,6 @@ export function generateInvoiceHTML(
       }
 
       .container {
-        box-shadow: none;
         border-radius: 0;
         border: none;
         padding: 18px 20px;
@@ -904,14 +932,6 @@ export function generateInvoiceHTML(
 
       .table-wrapper {
         box-shadow: none;
-      }
-
-      .totals-card {
-        background: rgba(15, 90, 217, 0.08);
-      }
-
-      .badge {
-        background: rgba(15, 90, 217, 0.2) !important;
       }
     }
   </style>
@@ -933,7 +953,7 @@ export function generateInvoiceHTML(
       </div>
     </div>
 
-    <!-- Parties Information -->
+    <!-- Parties (To then From, stacked) -->
     <div class="parties">
       <!-- To (Buyer) -->
       <div class="party-card">
@@ -953,7 +973,7 @@ export function generateInvoiceHTML(
       </div>
 
       <!-- From (Seller) -->
-      <div class="party-card">
+      <div class="party-card party-from">
         <div class="party-title">${t.from}</div>
         <div class="party-info">
           ${seller.companyName ? `<strong>${seller.companyName}</strong>` : ''}
@@ -984,7 +1004,8 @@ export function generateInvoiceHTML(
 				: ''
 		}
 
-    <!-- Greeting -->
+    <!-- Description + Greeting -->
+    ${description ? `<div class="description-title">${description}</div>` : ''}
     ${greeting ? `<div class="greeting">${greeting}</div>` : ''}
 
     <!-- Items Table -->
@@ -1085,17 +1106,7 @@ export function generateInvoiceHTML(
     ${closing ? `<div class="closing">${closing}</div>` : ''}
     ${signature ? `<div class="signature">${signature}</div>` : ''}
 
-    ${
-			terms || privacy
-				? `
-    <div class="terms-section">
-      ${terms ? `<div class="terms-title">${t.termsAndConditions}</div><div class="terms-text">${terms}</div>` : ''}
-      ${privacy ? `<div class="privacy-title">${t.privacyPolicy}</div><div class="privacy-text">${privacy}</div>` : ''}
-    </div>
-    `
-				: ''
-		}
-    ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <a href="https://www.coingecko.com" target="_blank" rel="noopener noreferrer" class="coingecko-link">CoinGecko<svg class="coingecko-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5h6v6M11 5 5 11" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></a></span></div>` : ''}
+    ${includeCoingeckoAttribution ? `<div class="attribution"><span>${t.coingeckoAttribution} <span class="coingecko-green">CoinGecko</span> (coingecko.com)</span></div>` : ''}
     ${(() => {
 			const conversionMap = new Map<
 				string,
@@ -1141,9 +1152,19 @@ export function generateInvoiceHTML(
       </table>
     </div>`;
 		})()}
-    ${footer ? `<div class="v-line" style="margin-top:auto;"></div>` : ''}
 
-    <!-- Footer -->
+    <!-- Footer area: terms & privacy side by side, then footer text -->
+    ${
+			terms || privacy
+				? `
+    <div class="terms-section" style="margin-top: auto;">
+      ${terms ? `<div class="terms-col"><div class="terms-title">${t.termsAndConditions}</div><div class="terms-text">${terms}</div></div>` : ''}
+      ${privacy ? `<div class="terms-col"><div class="privacy-title">${t.privacyPolicy}</div><div class="privacy-text">${privacy}</div></div>` : ''}
+    </div>
+    `
+				: ''
+		}
+    ${footer ? `${!terms && !privacy ? '<div class="v-line" style="margin-top:auto;"></div>' : ''}` : ''}
     ${footer ? `<div class="footer">${footer}</div>` : ''}
 
   </div>

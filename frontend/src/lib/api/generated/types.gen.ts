@@ -3639,10 +3639,35 @@ export type GetInvoiceMonthlyResponses = {
                 invoiceYear: number;
                 invoiceDate: Date;
                 currencyShortId: string;
+                reverseCharge: boolean;
+                language: string | null;
+                localizationFormat: string;
+                /**
+                 * VAT rate from the first item, null if no items
+                 */
+                vatRate: number | null;
                 sellerName: string | null;
                 sellerCompanyName: string | null;
+                sellerVatNumber: string | null;
+                sellerCountry: string;
+                sellerCity: string;
+                sellerZipCode: string;
+                sellerStreet: string;
+                sellerStreetNumber: string;
+                sellerEmail: string | null;
+                sellerPhone: string | null;
                 buyerName: string | null;
                 buyerCompanyName: string | null;
+                buyerVatNumber: string | null;
+                buyerCountry: string;
+                buyerCity: string;
+                buyerZipCode: string;
+                buyerStreet: string;
+                buyerStreetNumber: string;
+                buyerEmail: string | null;
+                buyerPhone: string | null;
+                invoiceTitle: string | null;
+                invoiceDescription: string | null;
                 isCancelled: boolean;
                 cancellationReason: string | null;
                 cancellationDate: Date | null;
