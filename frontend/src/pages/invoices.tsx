@@ -220,7 +220,6 @@ export default function Invoices() {
       buyerWalletVkey: invoice.buyerWalletVkey,
       sellerWalletVkey: invoice.sellerWalletVkey ?? undefined,
       month,
-      forceRegenerate: true,
     });
     setSelectedInvoice(null);
     setShowGenerateDialog(true);
