@@ -74,6 +74,7 @@ export function detectInvoiceChanges(
 		buyerEmail?: string | null;
 		buyerPhone?: string | null;
 		invoiceTitle?: string | null;
+		invoiceDescription?: string | null;
 		invoiceDate: Date;
 		invoiceGreetings?: string | null;
 		invoiceClosing?: string | null;
@@ -83,6 +84,7 @@ export function detectInvoiceChanges(
 		invoiceTerms?: string | null;
 		invoicePrivacy?: string | null;
 		localizationFormat: string;
+		language?: string | null;
 	},
 	newGroups: InvoiceGroup[],
 	seller: InvoiceSeller,
@@ -151,6 +153,7 @@ export function detectInvoiceChanges(
 	const metadataChanged =
 		resolved.currency !== existingRevision.currencyShortId ||
 		(resolved.title ?? '') !== (existingRevision.invoiceTitle ?? '') ||
+		(resolved.description ?? '') !== (existingRevision.invoiceDescription ?? '') ||
 		resolvedDateIso !== existingDateIso ||
 		(resolved.greeting ?? '') !== (existingRevision.invoiceGreetings ?? '') ||
 		(resolved.closing ?? '') !== (existingRevision.invoiceClosing ?? '') ||
@@ -159,7 +162,8 @@ export function detectInvoiceChanges(
 		(resolved.footer ?? '') !== (existingRevision.invoiceFooter ?? '') ||
 		(resolved.terms ?? '') !== (existingRevision.invoiceTerms ?? '') ||
 		(resolved.privacy ?? '') !== (existingRevision.invoicePrivacy ?? '') ||
-		resolved.localizationFormat !== existingRevision.localizationFormat;
+		resolved.localizationFormat !== existingRevision.localizationFormat ||
+		resolved.language !== (existingRevision.language ?? '');
 
 	const reasons: string[] = [];
 	if (itemsChanged) reasons.push('Invoice items were updated (name, quantity, or VAT rate changed)');
