@@ -1,5 +1,5 @@
 import { z } from '@/utils/zod-openapi';
-import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
+import { OpenAPIRegistry, OpenApiGeneratorV3, extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { healthResponseSchema } from '@/routes/api/health';
 import {
 	addAPIKeySchemaInput,
@@ -320,7 +320,7 @@ import {
 	postPurchaseRequestSchemaInput,
 	postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
-import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/reveal-data';
+import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
@@ -344,6 +344,25 @@ import {
 	startMonitoringResponseSchema,
 	stopMonitoringResponseSchema,
 } from '@/routes/api/monitoring';
+import {
+	postGenerateMonthlyInvoiceSchemaInput,
+	postGenerateMonthlyInvoiceSchemaOutput,
+} from '@/routes/api/invoice/monthly';
+import {
+	postAdminGenerateMonthlyInvoiceSchemaInput,
+	postAdminGenerateMonthlyInvoiceSchemaOutput,
+} from '@/routes/api/invoice/monthly/admin';
+import { getMonthlyInvoiceListSchemaInput, getMonthlyInvoiceListSchemaOutput } from '@/routes/api/invoice/monthly';
+import {
+	getUninvoicedPaymentsSchemaInput,
+	getUninvoicedPaymentsSchemaOutput,
+} from '@/routes/api/invoice/monthly/uninvoiced';
+import {
+	postMonthlySignatureSchemaInput,
+	postMonthlySignatureSchemaOutput,
+} from '@/routes/api/signature/sign/create-invoice/monthly';
+
+extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 export function generateOpenAPI() {
@@ -510,10 +529,10 @@ export function generateOpenAPI() {
 	/********************* REVEAL DATA *****************************/
 	registry.registerPath({
 		method: 'post',
-		path: '/reveal-data/',
+		path: '/signature/verify/reveal-data/',
 		description: 'Verifies the reveal data signature is valid.',
 		summary: 'Verifies the reveal data signature is valid. (read access required)',
-		tags: ['reveal-data'],
+		tags: ['signature'],
 		request: {
 			body: {
 				description: '',
@@ -1282,6 +1301,368 @@ export function generateOpenAPI() {
 		},
 	});
 
+	/********************* INVOICE *****************************/
+	registry.registerPath({
+		method: 'post',
+		path: '/signature/sign/create-invoice/monthly',
+		description:
+			'Provides a signed message from the smart contract wallet to authorize monthly invoice retrieval for a buyer wallet. (+PAY access required)',
+		summary: 'Get a signed message to request a monthly invoice. (+PAY access required)',
+		tags: ['signature'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: postMonthlySignatureSchemaInput.openapi({
+							example: {
+								action: 'retrieve_monthly_invoices',
+								buyerWalletVkey: 'buyer_wallet_vkey',
+								month: '2025-09',
+								buyer: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Buyer Str.',
+									streetNumber: '2',
+									email: 'buyer@example.com',
+									phone: '+49 30 987654',
+									name: 'Bob',
+									companyName: null,
+									vatNumber: null,
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Monthly signature generated',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: postMonthlySignatureSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										signature: 'ed25519_signature',
+										key: 'ed25519_key',
+										walletAddress: 'addr1...',
+										signatureData: '{"action":"retrieve_monthly_invoices","validUntil":1736352000000,"hash":"..."}',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/invoice/monthly',
+		description:
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, using the end-of-month conversion rate. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'Generate a monthly invoice PDF by buyer wallet vkey and month. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: postGenerateMonthlyInvoiceSchemaInput.openapi({
+							example: {
+								signature: 'ed25519_signature',
+								key: 'ed25519_key',
+								walletAddress:
+									'addr1xk2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x',
+								validUntil: 1736352000000,
+								action: 'retrieve_monthly_invoices',
+								buyerWalletVkey: 'buyer_wallet_vkey',
+								month: '2025-09',
+								invoiceCurrency: 'usd',
+								currencyConversion: {
+									'': 0.45,
+									policyIdAssetHex: 1.23,
+								},
+								invoice: {
+									itemNamePrefix: 'Agent: ',
+									title: 'Monthly Invoice',
+									language: 'en-us',
+									localizationFormat: 'en-us',
+								},
+								vatRate: 0.19,
+								reverseCharge: false,
+								forceRegenerate: false,
+								seller: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Example Str.',
+									streetNumber: '1',
+									email: 'seller@example.com',
+									phone: '+49 30 123456',
+									name: 'Alice',
+									companyName: 'Alice GmbH',
+									vatNumber: 'DE123456789',
+								},
+								buyer: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Buyer Str.',
+									streetNumber: '2',
+									email: 'buyer@example.com',
+									phone: '+49 30 987654',
+									name: 'Bob',
+									companyName: null,
+									vatNumber: null,
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Monthly invoice generated',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: postGenerateMonthlyInvoiceSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										invoice: 'BASE64_PDF_STRING',
+										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/invoice/monthly',
+		description:
+			'Lists invoice summaries for a given month with pagination. Returns only the latest revision per invoice base. Pass invoiceBaseId to get all revisions for a specific invoice. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own risk.',
+		summary: 'List invoices for a month. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getMonthlyInvoiceListSchemaInput.openapi({
+				example: {
+					month: '2025-09',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of invoice summaries',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: getMonthlyInvoiceListSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										Invoices: [
+											{
+												id: 'invoice_base_id',
+												invoiceId: 'INV-0001',
+												createdAt: '2025-09-30T23:59:59.000Z',
+												revisionId: 'revision_id',
+												revisionNumber: 0,
+												revisionCount: 1,
+												invoiceMonth: 9,
+												invoiceYear: 2025,
+												invoiceDate: '2025-09-30T00:00:00.000Z',
+												currencyShortId: 'usd',
+												sellerName: 'Alice',
+												sellerCompanyName: 'Alice GmbH',
+												buyerName: 'Bob',
+												buyerCompanyName: null,
+												isCancelled: false,
+												cancellationReason: null,
+												cancellationDate: null,
+												cancellationId: null,
+												itemCount: 3,
+												netTotal: '150.00',
+												vatTotal: '28.50',
+												grossTotal: '178.50',
+												coveredPaymentRequestIds: ['payment_id_1', 'payment_id_2'],
+												buyerWalletVkey: 'buyer_wallet_vkey',
+												invoicePdf: 'BASE64_PDF_STRING',
+												cancellationInvoicePdf: null,
+											},
+										],
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/invoice/monthly/admin',
+		description:
+			'Generates an invoice PDF aggregating all payment requests for a buyer wallet within a month, without requiring buyer wallet signature verification. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'Admin generate a monthly invoice PDF. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: '',
+				content: {
+					'application/json': {
+						schema: postAdminGenerateMonthlyInvoiceSchemaInput.openapi({
+							example: {
+								buyerWalletVkey: 'buyer_wallet_vkey',
+								month: '2025-09',
+								invoiceCurrency: 'usd',
+								currencyConversion: {
+									'': 0.45,
+									policyIdAssetHex: 1.23,
+								},
+								invoice: {
+									itemNamePrefix: 'Agent: ',
+									title: 'Monthly Invoice',
+									language: 'en-us',
+									localizationFormat: 'en-us',
+								},
+								vatRate: 0.19,
+								reverseCharge: false,
+								forceRegenerate: false,
+								seller: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Example Str.',
+									streetNumber: '1',
+									email: 'seller@example.com',
+									phone: '+49 30 123456',
+									name: 'Alice',
+									companyName: 'Alice GmbH',
+									vatNumber: 'DE123456789',
+								},
+								buyer: {
+									country: 'DE',
+									city: 'Berlin',
+									zipCode: '10115',
+									street: 'Buyer Str.',
+									streetNumber: '2',
+									email: 'buyer@example.com',
+									phone: '+49 30 987654',
+									name: 'Bob',
+									companyName: null,
+									vatNumber: null,
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Monthly invoice generated',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: postAdminGenerateMonthlyInvoiceSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										invoice: 'BASE64_PDF_STRING',
+										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/invoice/monthly/uninvoiced',
+		description:
+			'Finds billable payment requests that do not yet have an invoice for a given month. Only finalized payments are included: Withdrawn (seller completed work), ResultSubmitted past unlock time, or DisputedWithdrawn with seller funds. Payments still locked, pending refund, or in dispute are excluded. (admin access required)\n\n**BETA:** This invoice feature is in beta. Generated invoices should be reviewed manually or verified with a tax advisor before use. Use at your own discretion.',
+		summary: 'List uninvoiced payments for a month. (admin access required)',
+		tags: ['invoice'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getUninvoicedPaymentsSchemaInput.openapi({
+				example: {
+					month: '2025-09',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of uninvoiced billable payments',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: getUninvoicedPaymentsSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										UninvoicedPayments: [
+											{
+												id: 'payment_request_id',
+												blockchainIdentifier: 'blockchain_identifier',
+												onChainState: 'Withdrawn',
+												createdAt: '2025-09-15T10:00:00.000Z',
+												buyerWalletVkey: 'buyer_wallet_vkey',
+												buyerWalletAddress: 'addr1...',
+												RequestedFunds: [{ unit: '', amount: '5000000' }],
+											},
+										],
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	/********************* REGISTRY *****************************/
 	/********************* PURCHASE *****************************/
 	const queryPurchaseDiffSchemaInputForDocs = z.object({
 		limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),

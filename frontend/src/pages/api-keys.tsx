@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
@@ -14,9 +13,12 @@ import { AddApiKeyDialog } from '@/components/api-keys/AddApiKeyDialog';
 import { UpdateApiKeyDialog } from '@/components/api-keys/UpdateApiKeyDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ApiKeyTableSkeleton } from '@/components/skeletons/ApiKeyTableSkeleton';
-import { Search, Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Plus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Table,
   TableBody,
@@ -129,11 +131,11 @@ export default function ApiKeys() {
       <Head>
         <title>API Keys | Admin Interface</title>
       </Head>
-      <div>
-        <div className="mb-6">
+      <AnimatedPage>
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold mb-1">API keys</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">API keys</h1>
               <p className="text-sm text-muted-foreground">
                 Manage your API keys for accessing the payment service.{' '}
                 <a
@@ -152,15 +154,12 @@ export default function ApiKeys() {
                 }}
                 isRefreshing={isLoading}
               />
-              <Button onClick={() => setIsAddDialogOpen(true)}>
+              <Button className="btn-hover-lift" onClick={() => setIsAddDialogOpen(true)}>
                 <Plus className="h-4 w-4" />
                 Add API key
               </Button>
             </div>
           </div>
-        </div>
-
-        <div className="space-y-6">
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
@@ -171,14 +170,12 @@ export default function ApiKeys() {
           />
 
           <div className="flex justify-between items-center">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search by name, key ID, permission, status, network, or usage"
+            <div className="flex-1">
+              <SearchInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="max-w-xs pl-10"
+                onChange={setSearchQuery}
+                placeholder="Search by name, key ID, permission, status, network, or usage"
+                className="max-w-xs"
               />
             </div>
           </div>
@@ -187,13 +184,13 @@ export default function ApiKeys() {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-4">ID</TableHead>
-                  <TableHead>Key</TableHead>
-                  <TableHead>Permission</TableHead>
-                  <TableHead>Network Limits</TableHead>
-                  <TableHead>Usage Limits</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="p-4 pl-6">ID</TableHead>
+                  <TableHead className="p-4">Key</TableHead>
+                  <TableHead className="p-4">Permission</TableHead>
+                  <TableHead className="p-4">Network Limits</TableHead>
+                  <TableHead className="p-4">Usage Limits</TableHead>
+                  <TableHead className="p-4">Status</TableHead>
+                  <TableHead className="w-10 p-4"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -201,17 +198,33 @@ export default function ApiKeys() {
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
+                    <TableCell colSpan={7}>
+                      <EmptyState
+                        icon={searchQuery ? 'search' : 'inbox'}
+                        title={
+                          searchQuery
+                            ? 'No API keys found matching your search'
+                            : 'No API keys found'
+                        }
+                        description={
+                          searchQuery
+                            ? 'Try adjusting your search terms'
+                            : 'Add an API key to get started'
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredApiKeys.map((key, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
+                    <TableRow
+                      key={index}
+                      className="animate-fade-in opacity-0"
+                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                    >
+                      <TableCell className="p-4 pl-6 font-mono text-xs text-muted-foreground">
                         {shortenAddress(key.id)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="p-4">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm text-muted-foreground">
                             {shortenAddress(key.token)}
@@ -219,7 +232,7 @@ export default function ApiKeys() {
                           <CopyButton value={key.token} />
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="p-4">
                         <Badge
                           variant={
                             key.permission === 'Admin'
@@ -228,11 +241,16 @@ export default function ApiKeys() {
                                 ? 'secondary'
                                 : 'outline'
                           }
+                          className={
+                            key.permission === 'Admin'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80 dark:hover:bg-amber-900/40'
+                              : ''
+                          }
                         >
                           {key.permission}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="p-4">
                         {key.networkLimit.length > 0 ? (
                           <div className="flex gap-1">
                             {key.networkLimit.map((net) => (
@@ -245,7 +263,7 @@ export default function ApiKeys() {
                           <span className="text-muted-foreground">Unlimited</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="p-4 text-sm">
                         {key.usageLimited ? (
                           <div className="space-y-0.5">
                             {key.RemainingUsageCredits.map((credit, i) => (
@@ -260,7 +278,7 @@ export default function ApiKeys() {
                           <span className="text-muted-foreground">Unlimited</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="p-4">
                         <Badge
                           variant={key.status === 'Active' ? 'default' : 'destructive'}
                           className={
@@ -272,7 +290,7 @@ export default function ApiKeys() {
                           {key.status}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="p-4">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -313,35 +331,35 @@ export default function ApiKeys() {
             )}
           </div>
         </div>
-      </div>
 
-      <AddApiKeyDialog
-        open={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onSuccess={() => {
-          refetch();
-        }}
-      />
-
-      {keyToUpdate && (
-        <UpdateApiKeyDialog
-          open={true}
-          onClose={() => setKeyToUpdate(null)}
+        <AddApiKeyDialog
+          open={isAddDialogOpen}
+          onClose={() => setIsAddDialogOpen(false)}
           onSuccess={() => {
             refetch();
           }}
-          apiKey={keyToUpdate}
         />
-      )}
 
-      <ConfirmDialog
-        open={!!keyToDelete}
-        onClose={() => setKeyToDelete(null)}
-        title="Delete API Key"
-        description="Are you sure you want to delete this API key? This action cannot be undone."
-        onConfirm={handleDeleteApiKey}
-        isLoading={isDeleting}
-      />
+        {keyToUpdate && (
+          <UpdateApiKeyDialog
+            open={true}
+            onClose={() => setKeyToUpdate(null)}
+            onSuccess={() => {
+              refetch();
+            }}
+            apiKey={keyToUpdate}
+          />
+        )}
+
+        <ConfirmDialog
+          open={!!keyToDelete}
+          onClose={() => setKeyToDelete(null)}
+          title="Delete API Key"
+          description="Are you sure you want to delete this API key? This action cannot be undone."
+          onConfirm={handleDeleteApiKey}
+          isLoading={isDeleting}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

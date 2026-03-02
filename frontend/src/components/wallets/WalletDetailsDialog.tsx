@@ -33,7 +33,6 @@ export interface TokenBalance {
   policyId: string;
   assetName: string;
   quantity: number;
-  displayName: string;
 }
 
 export interface WalletWithBalance {
@@ -110,7 +109,6 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   policyId: '',
                   assetName: 'ADA',
                   quantity,
-                  displayName: 'ADA',
                 });
               } else {
                 // For other tokens, split into policy ID and asset name
@@ -123,7 +121,6 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   policyId,
                   assetName,
                   quantity,
-                  displayName: assetName || unit,
                 });
               }
             });
@@ -155,35 +152,32 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
     }
   }, [isOpen, wallet?.walletAddress]);
 
+  const usdmConfig = getUsdmConfig(network);
+
+  const isUSDM = (token: TokenBalance) =>
+    token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
+
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
-      const ada = token.quantity / 1000000;
-      const formattedAmount = ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
+      const ada = token.quantity / 1_000_000;
       return {
-        amount: formattedAmount,
+        amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
       };
     }
 
-    // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(network);
-    const isUSDM =
-      token.policyId === usdmConfig.policyId &&
-      token.assetName === hexToAscii(usdmConfig.assetName);
-    if (isUSDM) {
-      const usdm = token.quantity / 1000000;
-      const formattedAmount = usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
+    if (isUSDM(token)) {
+      const usdm = token.quantity / 1_000_000;
       return {
-        amount: formattedAmount,
+        amount: usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6)),
         usdValue: `≈ $${usdm.toFixed(2)}`,
       };
     }
 
-    // For other tokens, divide by 10^6 as a default
-    const amount = token.quantity / 1000000;
-    const formattedAmount = amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
+    // Unknown tokens: display raw quantity (no decimal conversion)
+    const qty = token.quantity;
     return {
-      amount: formattedAmount,
+      amount: qty === 0 ? 'zero' : formatBalance(qty.toString()),
       usdValue: undefined,
     };
   };
@@ -381,41 +375,43 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   {/* Sort tokens: ADA first, then USDM, then others */}
                   {(() => {
                     const adaToken = tokenBalances.find((t) => t.unit === 'lovelace');
-                    const usdmConfig = getUsdmConfig(network);
-                    const usdmToken = tokenBalances.find(
-                      (t) =>
-                        t.policyId === usdmConfig.policyId &&
-                        t.assetName === hexToAscii(usdmConfig.assetName),
-                    );
+                    const usdmToken = tokenBalances.find((t) => isUSDM(t));
                     const otherTokens = tokenBalances.filter(
-                      (t) =>
-                        t.unit !== 'lovelace' &&
-                        !(
-                          t.policyId === usdmConfig.policyId &&
-                          t.assetName === hexToAscii(usdmConfig.assetName)
-                        ),
+                      (t) => t.unit !== 'lovelace' && !isUSDM(t),
                     );
-                    // Filter out undefined tokens before mapping
                     const sortedTokens = [adaToken, usdmToken, ...otherTokens].filter(
                       (t): t is TokenBalance => Boolean(t),
                     );
+
                     return sortedTokens.map((token) => {
                       const { amount, usdValue } = formatTokenBalance(token);
-                      const isUSDM =
-                        token.policyId === usdmConfig.policyId &&
-                        token.assetName === hexToAscii(usdmConfig.assetName);
-                      const displayName =
-                        isUSDM && token.policyId
-                          ? `USDM (${shortenAddress(token.policyId)})`
-                          : token.displayName;
-                      return (
-                        <div
-                          key={token.unit}
-                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
-                        >
+                      const isADA = token.unit === 'lovelace';
+                      const isUsdm = isUSDM(token);
+                      const assetHex = !isADA ? token.unit.slice(56) : '';
+
+                      let displayName: string;
+                      if (isADA) {
+                        displayName = 'ADA';
+                      } else if (isUsdm) {
+                        displayName = `USDM (${shortenAddress(token.policyId)})`;
+                      } else if (assetHex.length > 12) {
+                        displayName = shortenAddress(assetHex);
+                      } else if (assetHex) {
+                        displayName = assetHex;
+                      } else {
+                        displayName = shortenAddress(token.policyId);
+                      }
+
+                      const tokenUrl =
+                        !isADA && !isUsdm
+                          ? getExplorerUrl(token.unit, network, 'token')
+                          : undefined;
+
+                      const inner = (
+                        <>
                           <div>
-                            <div className="font-medium">{displayName}</div>
-                            {!isUSDM && token.policyId && (
+                            <div className="font-medium font-mono">{displayName}</div>
+                            {!isUsdm && token.policyId && (
                               <div className="text-xs text-muted-foreground">
                                 Policy ID: {shortenAddress(token.policyId)}
                               </div>
@@ -423,11 +419,35 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                           </div>
                           <div className="text-right">
                             <div>{amount}</div>
-                            {/* Only show USD value for non-USDM tokens */}
-                            {usdValue && !isUSDM && (
+                            {usdValue && (
                               <div className="text-xs text-muted-foreground">{usdValue}</div>
                             )}
                           </div>
+                        </>
+                      );
+
+                      if (tokenUrl) {
+                        return (
+                          <a
+                            key={token.unit}
+                            href={tokenUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded-md border dark:border-muted-foreground/20 hover:bg-accent transition-colors"
+                          >
+                            <div className="flex items-center justify-between p-3 cursor-pointer">
+                              {inner}
+                            </div>
+                          </a>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
+                        >
+                          {inner}
                         </div>
                       );
                     });

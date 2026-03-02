@@ -17,10 +17,10 @@ import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
-import { metadataSchema } from '../registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
+import { fetchAssetInWalletAndMetadata } from '@/services/blockchain/asset-metadata';
 import {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
@@ -522,32 +522,13 @@ export const paymentInitPost = readAuthenticatedEndpointFactory.build({
 		if (input.agentIdentifier.startsWith(policyId) == false) {
 			throw createHttpError(404, 'The agentIdentifier is not of the specified payment source');
 		}
-		let assetInWallet = [];
-		try {
-			assetInWallet = await provider.assetsAddresses(input.agentIdentifier, {
-				order: 'desc',
-				count: 1,
-			});
-		} catch (error) {
-			if (error instanceof Error && error.message.includes('404')) {
-				throw createHttpError(404, 'Agent identifier not found');
-			}
-			throw createHttpError(500, 'Error fetching asset in wallet');
+		const fetchResult = await fetchAssetInWalletAndMetadata(provider, input.agentIdentifier);
+		if ('error' in fetchResult) {
+			throw createHttpError(fetchResult.error.code, fetchResult.error.description);
 		}
 
-		if (assetInWallet.length == 0) {
-			throw createHttpError(404, 'Agent identifier not found');
-		}
-
-		const assetMetadata = await provider.assetsById(input.agentIdentifier);
-		if (!assetMetadata || !assetMetadata.onchain_metadata) {
-			throw createHttpError(404, 'Agent registry metadata not found');
-		}
-		const parsedMetadata = metadataSchema.safeParse(assetMetadata.onchain_metadata);
-		if (!parsedMetadata.success) {
-			throw createHttpError(404, 'Agent registry metadata not valid');
-		}
-		const pricing = parsedMetadata.data.agentPricing;
+		const { assetInWallet, parsedMetadata } = fetchResult.data;
+		const pricing = parsedMetadata.agentPricing;
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
 		} else if (pricing.pricingType != PricingType.Fixed) {

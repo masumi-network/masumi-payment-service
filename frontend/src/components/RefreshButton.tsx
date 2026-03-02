@@ -51,7 +51,11 @@ export function RefreshButton({
       >
         <RefreshCw
           className={cn(iconSizes[size], isRefreshing && 'animate-spin')}
-          style={isRefreshing ? { animationDuration: '1s' } : undefined}
+          style={
+            isRefreshing
+              ? { animationDuration: '0.8s', animationTimingFunction: 'ease-in-out' }
+              : undefined
+          }
         />
       </Button>
     );
@@ -67,7 +71,11 @@ export function RefreshButton({
     >
       <RefreshCw
         className={cn(iconSizes[size], isRefreshing && 'animate-spin')}
-        style={isRefreshing ? { animationDuration: '1s' } : undefined}
+        style={
+          isRefreshing
+            ? { animationDuration: '0.8s', animationTimingFunction: 'ease-in-out' }
+            : undefined
+        }
       />
       <span className={textSizes[size]}>Refresh</span>
     </Button>

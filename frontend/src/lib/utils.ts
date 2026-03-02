@@ -94,7 +94,7 @@ export async function handleApiCall<T>(
 export function getExplorerUrl(
   address: string,
   network: string,
-  type: 'address' | 'transaction' = 'address',
+  type: 'address' | 'transaction' | 'token' = 'address',
 ): string {
   const baseUrl =
     network === 'Mainnet' ? 'https://cardanoscan.io' : 'https://preprod.cardanoscan.io';

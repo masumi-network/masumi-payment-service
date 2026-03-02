@@ -91,13 +91,13 @@ function WelcomeScreen({ onStart, networkType }: { onStart: () => void; networkT
     <Card className="w-full max-w-lg border shadow-xl bg-gradient-to-b from-card to-card/80 animate-scale-in-bounce">
       <CardHeader className="text-center pb-4 pt-8">
         <div className="mx-auto mb-6 relative">
-          <div className="absolute inset-0 animate-glow-pulse rounded-full bg-primary/20 blur-xl" />
+          <div className="absolute inset-0 rounded-full bg-primary/20 blur-xl opacity-30" />
           <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/20">
             <Sparkles className="h-8 w-8 text-primary" />
           </div>
         </div>
         <CardTitle className="text-3xl font-bold animate-fade-in-up">Welcome!</CardTitle>
-        <CardDescription className="text-base mt-2 animate-fade-in-up animate-delay-100">
+        <CardDescription className="text-base mt-2 animate-fade-in-up animate-delay-75">
           Let&apos;s set up your{' '}
           <Badge variant="outline" className="font-medium text-foreground mx-1">
             {networkDisplay}
@@ -114,9 +114,9 @@ function WelcomeScreen({ onStart, networkType }: { onStart: () => void; networkT
                 'flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3',
                 'transition-colors duration-150 hover:bg-muted/50',
                 'opacity-0 animate-slide-in-left',
-                index === 0 && 'animate-delay-150',
-                index === 1 && 'animate-delay-200',
-                index === 2 && 'animate-delay-250',
+                index === 0 && 'animate-delay-100',
+                index === 1 && 'animate-delay-125',
+                index === 2 && 'animate-delay-150',
               )}
               style={{ animationFillMode: 'forwards' }}
             >
@@ -128,7 +128,7 @@ function WelcomeScreen({ onStart, networkType }: { onStart: () => void; networkT
           ))}
         </div>
         <div
-          className="pt-2 opacity-0 animate-fade-in-up animate-delay-400"
+          className="pt-2 opacity-0 animate-fade-in-up animate-delay-225"
           style={{ animationFillMode: 'forwards' }}
         >
           <Button
@@ -269,7 +269,7 @@ function SeedPhrasesScreen({
       )}
 
       <div
-        className="rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-amber-500/10 px-4 py-4 flex gap-3 opacity-0 animate-slide-in-bottom animate-delay-100"
+        className="rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-amber-500/10 px-4 py-4 flex gap-3 opacity-0 animate-slide-in-bottom animate-delay-75"
         style={{ animationFillMode: 'forwards' }}
       >
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20 shrink-0">
@@ -288,7 +288,7 @@ function SeedPhrasesScreen({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card
-          className="overflow-hidden border-2 border-primary/10 bg-gradient-to-b from-primary/[0.02] to-transparent opacity-0 animate-slide-in-bottom animate-delay-150"
+          className="overflow-hidden border-2 border-primary/10 bg-gradient-to-b from-primary/[0.02] to-transparent opacity-0 animate-slide-in-bottom animate-delay-100"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-3 space-y-3">
@@ -377,7 +377,7 @@ function SeedPhrasesScreen({
         </Card>
 
         <Card
-          className="overflow-hidden border-2 border-orange-500/20 bg-gradient-to-b from-orange-500/[0.03] to-transparent opacity-0 animate-slide-in-bottom animate-delay-200"
+          className="overflow-hidden border-2 border-orange-500/20 bg-gradient-to-b from-orange-500/[0.03] to-transparent opacity-0 animate-slide-in-bottom animate-delay-125"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-3 space-y-3">
@@ -467,7 +467,7 @@ function SeedPhrasesScreen({
       </div>
 
       <Card
-        className="border-2 opacity-0 animate-slide-in-bottom animate-delay-300"
+        className="border-2 opacity-0 animate-slide-in-bottom animate-delay-175"
         style={{ animationFillMode: 'forwards' }}
       >
         <CardContent className="pt-6 pb-6">
@@ -782,7 +782,7 @@ function PaymentSourceSetupScreen({
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card
-          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-100"
+          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-75"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-4">
@@ -858,7 +858,7 @@ function PaymentSourceSetupScreen({
 
         <Collapsible open={customConfigOpen} onOpenChange={setCustomConfigOpen}>
           <Card
-            className="border-2 border-dashed opacity-0 animate-slide-in-bottom animate-delay-200"
+            className="border-2 border-dashed opacity-0 animate-slide-in-bottom animate-delay-125"
             style={{ animationFillMode: 'forwards' }}
           >
             <CollapsibleTrigger asChild>
@@ -1006,7 +1006,7 @@ function PaymentSourceSetupScreen({
         </Collapsible>
 
         <Card
-          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-300"
+          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-175"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardContent className="py-6">
@@ -1314,7 +1314,7 @@ function AddAiAgentScreen({
         )}
 
         <Card
-          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-100"
+          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-75"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-4">
@@ -1377,7 +1377,7 @@ function AddAiAgentScreen({
         </Card>
 
         <Card
-          className="border-2 border-orange-500/20 bg-gradient-to-b from-orange-500/[0.02] to-transparent opacity-0 animate-slide-in-bottom animate-delay-150"
+          className="border-2 border-orange-500/20 bg-gradient-to-b from-orange-500/[0.02] to-transparent opacity-0 animate-slide-in-bottom animate-delay-100"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-4">
@@ -1432,7 +1432,7 @@ function AddAiAgentScreen({
         </Card>
 
         <Card
-          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-200"
+          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-125"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardHeader className="pb-4">
@@ -1559,7 +1559,7 @@ function AddAiAgentScreen({
 
         <Collapsible open={additionalFieldsOpen} onOpenChange={setAdditionalFieldsOpen}>
           <Card
-            className="border-2 border-dashed opacity-0 animate-slide-in-bottom animate-delay-250"
+            className="border-2 border-dashed opacity-0 animate-slide-in-bottom animate-delay-150"
             style={{ animationFillMode: 'forwards' }}
           >
             <CollapsibleTrigger asChild>
@@ -1726,7 +1726,7 @@ function AddAiAgentScreen({
         </Collapsible>
 
         <Card
-          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-300"
+          className="border-2 opacity-0 animate-slide-in-bottom animate-delay-175"
           style={{ animationFillMode: 'forwards' }}
         >
           <CardContent className="py-6">
@@ -1791,13 +1791,13 @@ function SuccessScreen({
           </div>
         </div>
         <CardTitle
-          className="text-3xl font-bold animate-fade-in-up animate-delay-100"
+          className="text-3xl font-bold animate-fade-in-up animate-delay-75"
           style={{ animationFillMode: 'forwards' }}
         >
           You&apos;re all set!
         </CardTitle>
         <CardDescription
-          className="text-base mt-2 opacity-0 animate-fade-in-up animate-delay-150"
+          className="text-base mt-2 opacity-0 animate-fade-in-up animate-delay-100"
           style={{ animationFillMode: 'forwards' }}
         >
           Your{' '}
@@ -1815,9 +1815,9 @@ function SuccessScreen({
               className={cn(
                 'flex items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3',
                 'opacity-0 animate-slide-in-bottom',
-                index === 0 && 'animate-delay-200',
-                index === 1 && 'animate-delay-250',
-                index === 2 && 'animate-delay-300',
+                index === 0 && 'animate-delay-125',
+                index === 1 && 'animate-delay-150',
+                index === 2 && 'animate-delay-175',
               )}
               style={{ animationFillMode: 'forwards' }}
             >
@@ -1830,7 +1830,7 @@ function SuccessScreen({
         </div>
 
         <div
-          className="rounded-lg border bg-muted/30 px-4 py-3 opacity-0 animate-fade-in animate-delay-400"
+          className="rounded-lg border bg-muted/30 px-4 py-3 opacity-0 animate-fade-in animate-delay-225"
           style={{ animationFillMode: 'forwards' }}
         >
           <p className="text-sm text-muted-foreground text-center">
@@ -1839,7 +1839,7 @@ function SuccessScreen({
         </div>
 
         <div
-          className="pt-2 opacity-0 animate-fade-in-up animate-delay-500"
+          className="pt-2 opacity-0 animate-fade-in-up animate-delay-275"
           style={{ animationFillMode: 'forwards' }}
         >
           <Button
@@ -1993,7 +1993,9 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
         </div>
       )}
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-260px)] py-8">
-        {steps[currentStep]}
+        <div key={currentStep} className="animate-slide-in-right w-full">
+          {steps[currentStep]}
+        </div>
       </div>
     </div>
   );
