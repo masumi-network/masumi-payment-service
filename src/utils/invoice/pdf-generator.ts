@@ -9,26 +9,26 @@ import {
 	type InvoiceBuyer,
 } from './template';
 
-// ── Colors (matching HTML template) ────────────────────────────────────────
+// ── Colors (slate gray palette) ───────────────────────────────────────────
 const C = {
-	primary: [31, 59, 115] as [number, number, number], // #1f3b73
-	accent: [15, 90, 217] as [number, number, number], // #0f5ad9
-	text: [31, 36, 48] as [number, number, number], // #1f2430
-	textMuted: [91, 101, 119] as [number, number, number], // #5b6577
-	border: [188, 197, 214] as [number, number, number], // #bcc5d6
+	primary: [30, 41, 59] as [number, number, number], // #1e293b – Slate 800
+	text: [51, 65, 85] as [number, number, number], // #334155 – Slate 700
+	textMuted: [100, 116, 139] as [number, number, number], // #64748b – Slate 500
+	border: [226, 232, 240] as [number, number, number], // #e2e8f0 – Slate 200
 	white: [255, 255, 255] as [number, number, number],
-	warningBg: [255, 246, 224] as [number, number, number], // #fff6e0
-	warningBorder: [247, 202, 99] as [number, number, number], // #f7ca63
-	warningText: [138, 98, 18] as [number, number, number], // #8a6212
-	totalsCardBg: [240, 244, 253] as [number, number, number], // rgba(15,90,217,0.04) approx
+	warningBg: [255, 251, 235] as [number, number, number], // #fffbeb – Amber 50
+	warningBorder: [252, 211, 77] as [number, number, number], // #fcd34d – Amber 300
+	warningText: [146, 64, 14] as [number, number, number], // #92400e – Amber 800
+	tableHeaderBg: [241, 245, 249] as [number, number, number], // #f1f5f9 – Slate 100
+	stripedRowBg: [248, 250, 252] as [number, number, number], // #f8fafc – Slate 50
 };
 
 // ── Layout constants (mm) ──────────────────────────────────────────────────
 const PAGE_W = 210;
 const PAGE_H = 297;
-const ML = 14; // margin left
-const MR = 14; // margin right
-const MT = 10; // margin top
+const ML = 18; // margin left
+const MR = 18; // margin right
+const MT = 18; // margin top
 const CONTENT_W = PAGE_W - ML - MR;
 const FOOTER_BOTTOM = PAGE_H - 10; // footer baseline
 
@@ -69,6 +69,7 @@ function buildInvoicePDF(
 ): jsPDF {
 	const {
 		title,
+		description,
 		date,
 		greeting,
 		closing,
@@ -115,39 +116,39 @@ function buildInvoicePDF(
 
 	// Header separator
 	doc.setDrawColor(...C.border);
-	doc.setLineWidth(0.3);
+	doc.setLineWidth(0.2);
 	doc.line(ML, y, PAGE_W - MR, y);
-	y += 6;
+	y += 10;
 
-	// ── 2. Party cards ───────────────────────────────────────────────────
-	const cardW = (CONTENT_W - 6) / 2;
-	const cardX1 = ML;
-	const cardX2 = ML + cardW + 6;
+	// ── 2. Party cards (To left with bar, From right-aligned below) ─────
+	const partyGap = 10;
+	const partyCardW = (CONTENT_W - partyGap) / 2;
+	const toX = ML;
+	const fromX = ML + partyCardW + partyGap;
 
 	const drawPartyCard = (
-		targetDoc: jsPDF,
-		x: number,
-		startY: number,
-		label: string,
-		party: InvoiceSeller | InvoiceBuyer,
+		targetDoc: jsPDF, x: number, startY: number,
+		label: string, party: InvoiceSeller | InvoiceBuyer,
+		align: 'left' | 'right' = 'left',
 	): number => {
-		let cy = startY + 5;
-		const innerX = x + 4;
+		let cy = startY + 2;
+		const innerX = align === 'right' ? x + partyCardW - 3 : x + 3;
+		const textAlign = align === 'right' ? 'right' as const : 'left' as const;
 
 		// Label
 		targetDoc.setFontSize(8);
 		targetDoc.setFont('helvetica', 'bold');
 		targetDoc.setTextColor(...C.primary);
-		targetDoc.text(label.toUpperCase(), innerX, cy);
-		cy += 4;
+		targetDoc.text(label.toUpperCase(), innerX, cy, { align: textAlign });
+		cy += 5;
 
 		// Company name
 		if (party.companyName) {
 			targetDoc.setFontSize(10);
 			targetDoc.setFont('helvetica', 'bold');
 			targetDoc.setTextColor(...C.text);
-			targetDoc.text(party.companyName, innerX, cy);
-			cy += 4;
+			targetDoc.text(party.companyName, innerX, cy, { align: textAlign });
+			cy += 5;
 		}
 
 		// Name
@@ -155,18 +156,18 @@ function buildInvoicePDF(
 		targetDoc.setFont('helvetica', 'normal');
 		targetDoc.setTextColor(...C.text);
 		if (party.name) {
-			targetDoc.text(party.name, innerX, cy);
-			cy += 3.5;
+			targetDoc.text(party.name, innerX, cy, { align: textAlign });
+			cy += 4;
 		}
 
 		// Address
 		targetDoc.setTextColor(...C.textMuted);
-		targetDoc.text(`${party.street} ${party.streetNumber}`, innerX, cy);
-		cy += 3.5;
-		targetDoc.text(`${party.zipCode} ${party.city}`, innerX, cy);
-		cy += 3.5;
-		targetDoc.text(party.country, innerX, cy);
+		targetDoc.text(`${party.street} ${party.streetNumber}`, innerX, cy, { align: textAlign });
 		cy += 4;
+		targetDoc.text(`${party.zipCode} ${party.city}`, innerX, cy, { align: textAlign });
+		cy += 4;
+		targetDoc.text(party.country, innerX, cy, { align: textAlign });
+		cy += 5;
 
 		// Meta (email, phone, VAT) — handle text overflow
 		targetDoc.setFontSize(8);
@@ -176,32 +177,40 @@ function buildInvoicePDF(
 		if (party.vatNumber) metaParts.push(`${t.vat}: ${party.vatNumber}`);
 		if (metaParts.length > 0) {
 			const metaText = metaParts.join('  |  ');
-			const metaLines = targetDoc.splitTextToSize(metaText, cardW - 8) as string[];
-			targetDoc.text(metaLines, innerX, cy);
-			cy += metaLines.length * 3.5;
+			const metaLines = targetDoc.splitTextToSize(metaText, partyCardW - 8) as string[];
+			for (const line of metaLines) {
+				targetDoc.text(line, innerX, cy, { align: textAlign });
+				cy += 3.5;
+			}
 		}
 
-		return cy + 2; // bottom of card content
+		return cy + 2;
 	};
 
-	// Measure both cards using a temporary doc to get consistent height
+	// Draw "To" (buyer) — left-aligned with left border accent
 	const tempDoc = new jsPDF({ unit: 'mm', format: 'a4' });
-	const buyerBottom = drawPartyCard(tempDoc, cardX1, y, t.to, buyer) - y;
-	const sellerBottom = drawPartyCard(tempDoc, cardX2, y, t.from, seller) - y;
+	const barOvershoot = 2; // extend bar above/below content for centering
+	const toStartY = y;
+	const toBottom = drawPartyCard(tempDoc, toX, toStartY, t.to, buyer) - toStartY;
 
-	const cardH = Math.max(buyerBottom, sellerBottom) + 2;
-
-	// Draw card borders
 	doc.setDrawColor(...C.border);
-	doc.setLineWidth(0.3);
-	drawRoundedRect(doc, cardX1, y, cardW, cardH, 1.5);
-	drawRoundedRect(doc, cardX2, y, cardW, cardH, 1.5);
+	doc.setLineWidth(0.7);
+	doc.line(toX, toStartY - barOvershoot, toX, toStartY + toBottom + 2 + barOvershoot);
 
-	// Draw card content on actual doc
-	drawPartyCard(doc, cardX1, y, t.to, buyer);
-	drawPartyCard(doc, cardX2, y, t.from, seller);
+	drawPartyCard(doc, toX, toStartY, t.to, buyer);
 
-	y += cardH + 6;
+	// Draw "From" (seller) — starts at 70% down the To block, right-aligned
+	const fromStartY = toStartY + Math.round(toBottom * 0.7);
+	const fromBottom = drawPartyCard(tempDoc, fromX, fromStartY, t.from, seller, 'right') - fromStartY;
+
+	doc.setDrawColor(...C.border);
+	doc.setLineWidth(0.7);
+	doc.line(PAGE_W - MR, fromStartY - barOvershoot, PAGE_W - MR, fromStartY + fromBottom + 2 + barOvershoot);
+
+	drawPartyCard(doc, fromX, fromStartY, t.from, seller, 'right');
+
+	// Advance y past whichever block ends lower
+	y = Math.max(toStartY + toBottom, fromStartY + fromBottom) + 8;
 
 	// ── 3. Cancellation notice ───────────────────────────────────────────
 	if (cancellationNotice) {
@@ -225,16 +234,24 @@ function buildInvoicePDF(
 		doc.setFont('helvetica', 'normal');
 		doc.text(descLines, ML + 5, y + 11);
 
-		y += noticeH + 4;
+		y += noticeH + 6;
 	}
 
-	// ── 4. Greeting ──────────────────────────────────────────────────────
+	// ── 4. Description + Greeting ───────────────────────────────────────
+	if (description) {
+		y = ensureSpace(doc, y, 12);
+		doc.setFontSize(11);
+		doc.setFont('helvetica', 'bold');
+		doc.setTextColor(...C.primary);
+		doc.text(description, ML, y);
+		y += 6;
+	}
 	if (greeting) {
-		y = ensureSpace(doc, y, 8);
+		y = ensureSpace(doc, y, 10);
 		doc.setFontSize(10);
-		doc.setFont('helvetica', 'italic');
+		doc.setFont('helvetica', 'normal');
 		doc.setTextColor(...C.textMuted);
-		doc.text(greeting, ML + 2, y);
+		doc.text(greeting, ML, y);
 		y += 6;
 	}
 
@@ -306,16 +323,19 @@ function buildInvoicePDF(
 			],
 			body: tableRows,
 			headStyles: {
-				fillColor: C.primary,
-				textColor: C.white,
+				fillColor: C.tableHeaderBg,
+				textColor: C.text,
 				fontStyle: 'bold',
 				fontSize: 8,
-				cellPadding: 3,
+				cellPadding: 4,
 			},
 			bodyStyles: {
 				fontSize: 9,
-				cellPadding: 3,
+				cellPadding: 4,
 				textColor: C.text,
+			},
+			alternateRowStyles: {
+				fillColor: C.stripedRowBg,
 			},
 			columnStyles: {
 				0: { cellWidth: 'auto' },
@@ -323,19 +343,19 @@ function buildInvoicePDF(
 				2: { cellWidth: 34 },
 				3: { cellWidth: 34 },
 			},
-			theme: 'grid',
+			theme: 'striped',
 			styles: {
 				lineColor: C.border,
-				lineWidth: 0.3,
+				lineWidth: 0.2,
 				font: 'helvetica',
 			},
 			tableLineColor: C.border,
-			tableLineWidth: 0.3,
+			tableLineWidth: 0.2,
 		});
 
-		y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+		y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
 
-		// ── 6. Totals card ─────────────────────────────────────────────────
+		// ── 6. Totals section ──────────────────────────────────────────────
 		const totals = invoiceGroups.reduce(
 			(acc, group) => {
 				acc.net += group.netTotal;
@@ -346,21 +366,15 @@ function buildInvoicePDF(
 			{ net: 0, vat: 0, gross: 0 },
 		);
 
-		const cardTotalW = 80;
-		const cardTotalX = PAGE_W - MR - cardTotalW;
-		let cardTotalH = 22;
-		if (totals.vat > 0) cardTotalH += 6;
+		const totalW = 80;
+		const labelX = PAGE_W - MR - totalW;
+		const valX = PAGE_W - MR;
+		let totalH = 24;
+		if (totals.vat > 0) totalH += 7;
 
-		y = ensureSpace(doc, y, cardTotalH + 4);
+		y = ensureSpace(doc, y, totalH + 4);
 
-		doc.setFillColor(...C.totalsCardBg);
-		doc.setDrawColor(...C.border);
-		doc.setLineWidth(0.3);
-		drawRoundedRect(doc, cardTotalX, y, cardTotalW, cardTotalH, 1.5, 'FD');
-
-		let ty = y + 5;
-		const labelX = cardTotalX + 4;
-		const valX = cardTotalX + cardTotalW - 4;
+		let ty = y;
 
 		// Net total
 		doc.setFontSize(8);
@@ -370,7 +384,7 @@ function buildInvoicePDF(
 		doc.setFont('helvetica', 'bold');
 		doc.setTextColor(...C.text);
 		doc.text(currencyFormatter.format(totals.net), valX, ty, { align: 'right' });
-		ty += 5;
+		ty += 6;
 
 		// VAT (if > 0)
 		if (totals.vat > 0) {
@@ -379,12 +393,12 @@ function buildInvoicePDF(
 			doc.text(t.totalVat.toUpperCase(), labelX, ty);
 			doc.setTextColor(...C.text);
 			doc.text(currencyFormatter.format(totals.vat), valX, ty, { align: 'right' });
-			ty += 5;
+			ty += 7;
 		}
 
-		// Separator
-		doc.setDrawColor(...C.primary);
-		doc.setLineWidth(0.2);
+		// Separator — thin top border for total
+		doc.setDrawColor(...C.border);
+		doc.setLineWidth(0.3);
 		doc.line(labelX, ty - 2, valX, ty - 2);
 
 		// Grand total
@@ -394,7 +408,7 @@ function buildInvoicePDF(
 		doc.text(t.totalAmount.toUpperCase(), labelX, ty + 2);
 		doc.text(currencyFormatter.format(totals.gross), valX, ty + 2, { align: 'right' });
 
-		y += cardTotalH + 6;
+		y += totalH + 8;
 	}
 
 	// ── 7. Reverse charge notice ─────────────────────────────────────────
@@ -411,17 +425,18 @@ function buildInvoicePDF(
 		doc.setTextColor(...C.warningText);
 		const rcLines = doc.splitTextToSize(t.reverseChargeNotice, CONTENT_W - 10) as string[];
 		doc.text(rcLines, ML + 5, y + 5);
-		y += rcH + 4;
+		y += rcH + 6;
 	}
 
 	// ── 8. Closing + Signature ───────────────────────────────────────────
 	if (closing) {
-		y = ensureSpace(doc, y, 12);
+		y += 4; // extra breathing room before closing
+		y = ensureSpace(doc, y, 16);
 		doc.setFontSize(10);
 		doc.setFont('helvetica', 'italic');
 		doc.setTextColor(...C.text);
 		doc.text(closing, ML, y);
-		y += 5;
+		y += 6;
 	}
 	if (signature) {
 		doc.setFontSize(10);
@@ -431,56 +446,25 @@ function buildInvoicePDF(
 		y += 8;
 	}
 
-	// ── 9. Terms & Privacy ───────────────────────────────────────────────
-	if (terms || privacy) {
-		const LINE_H = 3.5;
-		if (terms) {
-			y = ensureSpace(doc, y, 8);
-			doc.setFontSize(8);
-			doc.setFont('helvetica', 'bold');
-			doc.setTextColor(...C.primary);
-			doc.text(t.termsAndConditions.toUpperCase(), ML, y);
-			y += LINE_H;
-			doc.setFont('helvetica', 'normal');
-			doc.setTextColor(...C.textMuted);
-			const termsLines = doc.splitTextToSize(terms, CONTENT_W) as string[];
-			for (const line of termsLines) {
-				y = ensureSpace(doc, y, LINE_H + 2);
-				doc.text(line, ML, y);
-				y += LINE_H;
-			}
-			y += 3;
-		}
-		if (privacy) {
-			y = ensureSpace(doc, y, 8);
-			doc.setFontSize(8);
-			doc.setFont('helvetica', 'bold');
-			doc.setTextColor(...C.primary);
-			doc.text(t.privacyPolicy.toUpperCase(), ML, y);
-			y += LINE_H;
-			doc.setFont('helvetica', 'normal');
-			doc.setTextColor(...C.textMuted);
-			const privacyLines = doc.splitTextToSize(privacy, CONTENT_W) as string[];
-			for (const line of privacyLines) {
-				y = ensureSpace(doc, y, LINE_H + 2);
-				doc.text(line, ML, y);
-				y += LINE_H;
-			}
-			y += 3;
-		}
-	}
-
-	// ── 10. CoinGecko attribution ────────────────────────────────────────
+	// ── 9. CoinGecko attribution ────────────────────────────────────────
 	if (includeCoingeckoAttribution) {
 		y = ensureSpace(doc, y, 8);
 		doc.setFontSize(8);
 		doc.setFont('helvetica', 'normal');
 		doc.setTextColor(...C.textMuted);
-		doc.text(`${t.coingeckoAttribution} CoinGecko (coingecko.com)`, ML, y);
+		doc.text(`${t.coingeckoAttribution} `, ML, y);
+		const attrWidth = doc.getTextWidth(`${t.coingeckoAttribution} `);
+		doc.setTextColor(75, 204, 0); // CoinGecko green
+		doc.setFont('helvetica', 'bold');
+		doc.text('CoinGecko', ML + attrWidth, y);
+		const cgWidth = doc.getTextWidth('CoinGecko');
+		doc.setFont('helvetica', 'normal');
+		doc.setTextColor(...C.textMuted);
+		doc.text(' (coingecko.com)', ML + attrWidth + cgWidth, y);
 		y += 4;
 	}
 
-	// ── 10b. Conversion rates table ─────────────────────────────────────
+	// ── 10. Conversion rates table ──────────────────────────────────────
 	if (invoiceGroups.length > 0) {
 		const conversionMap = new Map<
 			string,
@@ -526,18 +510,21 @@ function buildInvoicePDF(
 				],
 				body: conversionRows,
 				headStyles: {
-					fillColor: C.textMuted,
-					textColor: C.white,
+					fillColor: C.tableHeaderBg,
+					textColor: C.text,
 					fontStyle: 'bold',
 					fontSize: 7,
-					cellPadding: 2,
+					cellPadding: 3,
 				},
 				bodyStyles: {
 					fontSize: 8,
-					cellPadding: 2,
-					textColor: C.textMuted,
+					cellPadding: 3,
+					textColor: C.text,
 				},
-				theme: 'grid',
+				alternateRowStyles: {
+					fillColor: C.stripedRowBg,
+				},
+				theme: 'striped',
 				styles: {
 					lineColor: C.border,
 					lineWidth: 0.2,
@@ -551,19 +538,74 @@ function buildInvoicePDF(
 		}
 	}
 
-	// ── 11. Footer on every page ─────────────────────────────────────────
+	// ── 11. Terms & Privacy (inline, side by side) ─────────────────────
+	y += 12; // top margin before terms
+	if (terms || privacy) {
+		const LINE_H = 3;
+		const colW = (CONTENT_W - 6) / 2;
+
+		doc.setFontSize(7);
+		doc.setFont('helvetica', 'normal');
+		const termsLines = terms ? (doc.splitTextToSize(terms, colW) as string[]) : [];
+		const privacyLines = privacy ? (doc.splitTextToSize(privacy, colW) as string[]) : [];
+		const termsH = terms ? 4 + termsLines.length * LINE_H : 0;
+		const privacyH = privacy ? 4 + privacyLines.length * LINE_H : 0;
+		const legalH = Math.max(termsH, privacyH);
+
+		y = ensureSpace(doc, y, legalH + 6);
+
+		// Separator line
+		doc.setDrawColor(...C.border);
+		doc.setLineWidth(0.3);
+		doc.line(ML, y, PAGE_W - MR, y);
+		y += 5;
+
+		const leftX = ML;
+		const rightX = ML + colW + 6;
+
+		if (terms) {
+			doc.setFontSize(7);
+			doc.setFont('helvetica', 'bold');
+			doc.setTextColor(...C.primary);
+			doc.text(t.termsAndConditions.toUpperCase(), leftX, y);
+			doc.setFont('helvetica', 'normal');
+			doc.setTextColor(...C.textMuted);
+			let ty = y + LINE_H;
+			for (const line of termsLines) {
+				doc.text(line, leftX, ty);
+				ty += LINE_H;
+			}
+		}
+
+		if (privacy) {
+			doc.setFontSize(7);
+			doc.setFont('helvetica', 'bold');
+			doc.setTextColor(...C.primary);
+			doc.text(t.privacyPolicy.toUpperCase(), rightX, y);
+			doc.setFont('helvetica', 'normal');
+			doc.setTextColor(...C.textMuted);
+			let py = y + LINE_H;
+			for (const line of privacyLines) {
+				doc.text(line, rightX, py);
+				py += LINE_H;
+			}
+		}
+
+		y += legalH + 4;
+	}
+
+	// ── 12. Footer on every page ────────────────────────────────────────
 	if (footer) {
 		const totalPages = doc.getNumberOfPages();
 		for (let i = 1; i <= totalPages; i++) {
 			doc.setPage(i);
 			doc.setDrawColor(...C.border);
 			doc.setLineWidth(0.3);
-			doc.line(ML, FOOTER_BOTTOM - 6, PAGE_W - MR, FOOTER_BOTTOM - 6);
-
-			doc.setFontSize(8);
+			doc.line(ML, FOOTER_BOTTOM - 4, PAGE_W - MR, FOOTER_BOTTOM - 4);
+			doc.setFontSize(7);
 			doc.setFont('helvetica', 'normal');
 			doc.setTextColor(...C.textMuted);
-			doc.text(footer, PAGE_W / 2, FOOTER_BOTTOM - 2, { align: 'center' });
+			doc.text(footer, PAGE_W / 2, FOOTER_BOTTOM, { align: 'center' });
 		}
 	}
 

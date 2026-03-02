@@ -1012,7 +1012,7 @@ export function GenerateInvoiceDialog({
                   <Input
                     id="invoice.title"
                     {...register('invoice.title')}
-                    placeholder="Invoice title"
+                    placeholder="Invoice (default)"
                   />
                 </div>
                 <div>
