@@ -8,7 +8,7 @@ import { logger } from '@/utils/logger';
 import { extractPolicyId, extractAssetName } from '@/utils/converter/agent-identifier';
 import { validateHexString } from '@/utils/validator/hex';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
-import { metadataSchemaCombined, metadataSchemaV2 } from '@/routes/api/registry/wallet';
+import { metadataSchemaCombined, metadataSchema, metadataSchemaV2 } from '@/routes/api/registry/wallet';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 
 export const queryAgentByIdentifierSchemaInput = z.object({
@@ -231,7 +231,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 			};
 		}
 
-		const data = parsedMetadata.data as z.infer<typeof import('@/routes/api/registry/wallet').metadataSchema>;
+		const data = parsedMetadata.data as z.infer<typeof metadataSchema>;
 		return {
 			policyId: policyId,
 			assetName: extractAssetName(input.agentIdentifier),
