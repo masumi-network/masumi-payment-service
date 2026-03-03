@@ -813,9 +813,6 @@ model HydraParticipant {
   walletId String
   Wallet   HotWallet @relation("HydraParticipantWallet", fields: [walletId], references: [id], onDelete: Restrict)
 
-  /// Participant order/index in the head (0-based)
-  participantIndex Int
-
   /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
   nodeUrl String
 

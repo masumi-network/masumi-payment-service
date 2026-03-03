@@ -53,7 +53,6 @@ CREATE TABLE "HydraParticipant" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "hydraHeadId" TEXT NOT NULL,
     "walletId" TEXT NOT NULL,
-    "participantIndex" INTEGER NOT NULL,
     "nodeUrl" TEXT NOT NULL,
     "nodeHttpUrl" TEXT NOT NULL,
     "hasCommitted" BOOLEAN NOT NULL DEFAULT false,
