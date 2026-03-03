@@ -149,3 +149,6 @@ ALTER TABLE "HydraParticipant" ADD CONSTRAINT "HydraParticipant_hydraSecretId_fk
 
 -- AddForeignKey
 ALTER TABLE "HydraHeadError" ADD CONSTRAINT "HydraHeadError_hydraHeadId_fkey" FOREIGN KEY ("hydraHeadId") REFERENCES "HydraHead"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- CheckConstraint
+ALTER TABLE "HydraRelation" ADD CONSTRAINT "HydraRelation_wallet_order_check" CHECK ("walletIdA" < "walletIdB");
