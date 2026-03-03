@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
 import { cn, formatFundUnit } from '@/lib/utils';
@@ -69,7 +69,7 @@ export default function Transactions() {
   } = useTransactions(filterParams, { trackVisit: false });
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
-  const { transactions: allTransactionsForCounts } = useTransactions();
+  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
 
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
@@ -129,11 +129,13 @@ export default function Transactions() {
     });
   }, [transactions]);
 
+  // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
+  const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('masumi_last_transactions_visit', new Date().toISOString());
-      localStorage.setItem('masumi_new_transactions_count', '0');
-    }
+    markAllAsReadRef.current = markAllAsRead;
+  }, [markAllAsRead]);
+  useEffect(() => {
+    markAllAsReadRef.current();
   }, [network, apiClient, selectedPaymentSourceId]);
 
   const refreshTransactions = useCallback(() => {
