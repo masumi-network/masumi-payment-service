@@ -739,8 +739,6 @@ model HydraRelation {
   @@unique([network, walletIdA, walletIdB])
   /// Primary lookup: find relation between two specific wallets
   @@index([walletIdA, walletIdB])
-  /// Reverse lookup
-  @@index([walletIdB, walletIdA])
 }
 
 /// A single Hydra head instance within a participant relation.
