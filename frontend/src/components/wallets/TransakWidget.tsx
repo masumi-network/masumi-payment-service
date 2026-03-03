@@ -10,9 +10,16 @@ interface TransakWidgetProps {
   onClose: () => void;
   walletAddress: string;
   onSuccess?: () => void;
+  isChild?: boolean;
 }
 
-export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: TransakWidgetProps) {
+export function TransakWidget({
+  isOpen,
+  onClose,
+  walletAddress,
+  onSuccess,
+  isChild,
+}: TransakWidgetProps) {
   const { network } = useAppContext();
 
   useEffect(() => {
@@ -44,7 +51,11 @@ export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: Tra
 
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent>
+        <DialogContent
+          variant={isChild ? 'slide-from-right' : 'default'}
+          hideOverlay={isChild}
+          onBack={isChild ? onClose : undefined}
+        >
           <DialogHeader>
             <DialogTitle>Preprod Testnet Faucet</DialogTitle>
             <DialogDescription>
@@ -80,7 +91,12 @@ export function TransakWidget({ isOpen, onClose, walletAddress, onSuccess }: Tra
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="p-0 h-full max-h-[600px]">
+      <DialogContent
+        className="p-0 h-full max-h-[600px]"
+        variant={isChild ? 'slide-from-right' : 'default'}
+        hideOverlay={isChild}
+        onBack={isChild ? onClose : undefined}
+      >
         <iframe
           src={transakUrl.toString()}
           className="w-full h-full rounded-lg"

@@ -13,6 +13,7 @@ import {
   validateCardanoAddress,
   hexToAscii,
 } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
@@ -50,9 +51,15 @@ interface WalletDetailsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   wallet: WalletWithBalance | null;
+  isChild?: boolean;
 }
 
-export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDialogProps) {
+export function WalletDetailsDialog({
+  isOpen,
+  onClose,
+  wallet,
+  isChild,
+}: WalletDetailsDialogProps) {
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
@@ -299,7 +306,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
   return (
     <>
       <Dialog
-        open={isOpen && !selectedWalletForTopup}
+        open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
             //setSelectedWalletForSwap(null);
@@ -308,7 +315,13 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           }
         }}
       >
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent
+          className="sm:max-w-[600px]"
+          variant={isChild ? 'slide-from-right' : 'default'}
+          isPushedBack={!!selectedWalletForTopup}
+          hideOverlay={isChild}
+          onBack={isChild ? onClose : undefined}
+        >
           <DialogHeader>
             <DialogTitle>Wallet Details</DialogTitle>
             <DialogDescription>{wallet.type} Wallet</DialogDescription>
@@ -318,16 +331,8 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
             {/* Wallet Address Section */}
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={getExplorerUrl(wallet.walletAddress, network)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-sm break-all hover:underline text-primary"
-                >
-                  {wallet.walletAddress}
-                </a>
-                <CopyButton value={wallet.walletAddress} />
+              <div className="mt-1">
+                <WalletLink address={wallet.walletAddress} network={network} />
               </div>
             </div>
 
@@ -543,15 +548,11 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
                   <div className="flex items-center gap-2">
                     {wallet.collectionAddress ? (
                       <>
-                        <a
-                          href={getExplorerUrl(wallet.collectionAddress, network)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-sm hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.collectionAddress, 15)}
-                        </a>
-                        <CopyButton value={wallet.collectionAddress} />
+                        <WalletLink
+                          address={wallet.collectionAddress}
+                          network={network}
+                          shorten={15}
+                        />
                         <Button
                           variant="outline"
                           size="sm"
@@ -600,6 +601,7 @@ export function WalletDetailsDialog({ isOpen, onClose, wallet }: WalletDetailsDi
           toast.success('Top up successful');
           fetchTokenBalances();
         }}
+        isChild
       />
     </>
   );

@@ -656,3 +656,116 @@ input[type='number'] {
 .sidebar-active-indicator.is-active::before {
   transform: translateY(-50%) scaleY(1);
 }
+
+/* ─── Network toggle active indicator (left bar) ─── */
+.network-active-bar {
+  position: relative;
+  overflow: hidden;
+}
+.network-active-bar::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 2px;
+  height: 40%;
+  border-radius: 2px;
+  background-color: hsl(var(--primary));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.network-active-bar.is-active::after {
+  transform: translateY(-50%) scaleY(1);
+}
+.network-active-bar.is-active {
+  padding-left: 2px;
+}
+
+/* ─── Dialog stack system ─── */
+:root {
+  --dialog-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --dialog-duration: 280ms;
+}
+
+/* Default enter/exit — uses `transform` so it composes with Tailwind's
+   individual `translate` centering without overriding it. */
+@keyframes dialogEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes dialogExit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Child dialog slide from right — also uses `transform` to preserve centering */
+@keyframes dialogSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes dialogSlideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+}
+
+/* Variant classes — toggled via data-state from Radix */
+[data-state='open'].dialog-default-variant {
+  animation: dialogEnter var(--dialog-duration) var(--dialog-spring) forwards;
+}
+[data-state='closed'].dialog-default-variant {
+  animation: dialogExit var(--dialog-duration) var(--dialog-spring) forwards;
+}
+[data-state='open'].dialog-slide-variant {
+  animation: dialogSlideInRight var(--dialog-duration) var(--dialog-spring) forwards;
+}
+[data-state='closed'].dialog-slide-variant {
+  animation: dialogSlideOutRight var(--dialog-duration) var(--dialog-spring) forwards;
+}
+
+/* Pushed-back parent: CSS transition on individual scale + opacity + filter */
+.dialog-content-stackable {
+  scale: 1;
+  opacity: 1;
+  filter: brightness(1);
+  transition:
+    scale var(--dialog-duration) var(--dialog-spring),
+    opacity var(--dialog-duration) var(--dialog-spring),
+    filter var(--dialog-duration) var(--dialog-spring);
+}
+.dialog-content-stackable.is-pushed-back {
+  scale: 0.96;
+  opacity: 0.4;
+  filter: brightness(0.7);
+  pointer-events: none;
+}
+
+/* Transparent overlay for child dialogs (no double blur) */
+.dialog-overlay-hidden {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
