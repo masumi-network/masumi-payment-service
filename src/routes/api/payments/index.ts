@@ -1,7 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   HotWalletType,
   Network,
   OnChainState,
@@ -33,11 +32,13 @@ import {
   transformPaymentGetAmounts,
 } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
-
-enum FilterOnChainState {
-  RefundRequests = 'RefundRequests',
-  Disputes = 'Disputes',
-}
+import { ApiHandlerOptions } from '@/utils/shared/types';
+import {
+  buildTransactionHistoryInclude,
+  parseAmountSearchRange,
+  buildMatchingStates,
+  buildTransactionSearchFilter,
+} from '@/utils/shared/queries';
 
 export const queryPaymentsSchemaInput = z.object({
   limit: z
@@ -61,9 +62,9 @@ export const queryPaymentsSchemaInput = z.object({
     .nullable()
     .describe('The smart contract address of the payment source'),
   filterOnChainState: z
-    .nativeEnum(FilterOnChainState)
+    .nativeEnum(OnChainState)
     .optional()
-    .describe('Filter by on-chain state category (RefundRequests or Disputes)'),
+    .describe('Filter by on-chain state'),
   searchQuery: z
     .string()
     .optional()
@@ -376,12 +377,7 @@ export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof queryPaymentsSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
       options.networkLimit,
@@ -389,115 +385,31 @@ export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
       options.permission,
     );
 
-    // Build onChainState filter
-    let onChainStateFilter: OnChainState[] | undefined;
-    if (input.filterOnChainState === FilterOnChainState.RefundRequests) {
-      onChainStateFilter = [OnChainState.RefundRequested];
-    } else if (input.filterOnChainState === FilterOnChainState.Disputes) {
-      onChainStateFilter = [OnChainState.Disputed];
-    }
-
-    // Build search query filter
     const searchLower = input.searchQuery?.toLowerCase();
-    const matchingStates = searchLower
-      ? Object.values(OnChainState).filter((s) =>
-          s.toLowerCase().includes(searchLower),
-        )
+    const matchingStates = buildMatchingStates(searchLower);
+    const amountFilter = searchLower
+      ? parseAmountSearchRange(searchLower)
       : undefined;
 
-    // Check if search query is a numeric amount (for ADA amount filtering)
-    // This matches amounts where the formatted ADA string contains the search query
-    // e.g., "5.5" matches 5.50, 5.51, ..., 5.59 ADA
-    let amountFilter: { gte: bigint; lte: bigint } | undefined;
-    if (searchLower) {
-      // Try to parse as a number (handles decimals like "5.5", "10.25", etc.)
-      const numericMatch = searchLower.match(/^(\d+\.?\d*)$/);
-      if (numericMatch) {
-        const numericValue = parseFloat(numericMatch[1]);
-        if (!isNaN(numericValue) && numericValue >= 0) {
-          // Convert to lovelace (ADA * 1,000,000)
-          // For "5.5", we want to match amounts from 5.50 to 5.59 ADA
-          // For "5", we want to match amounts from 5.00 to 5.99 ADA
-          const hasDecimal = numericMatch[1].includes('.');
-          let minLovelace: bigint;
-          let maxLovelace: bigint;
-
-          if (hasDecimal) {
-            // Has decimal: "5.5" -> match 5.50 to 5.59
-            minLovelace = BigInt(Math.floor(numericValue * 1000000));
-            // Round up to next decimal place: 5.5 -> 5.6, then subtract 1 lovelace
-            const nextDecimal = Math.ceil(numericValue * 10) / 10;
-            maxLovelace = BigInt(Math.floor(nextDecimal * 1000000)) - BigInt(1);
-          } else {
-            // No decimal: "5" -> match 5.00 to 5.99
-            minLovelace = BigInt(numericValue * 1000000);
-            maxLovelace = BigInt((numericValue + 1) * 1000000) - BigInt(1);
-          }
-
-          amountFilter = { gte: minLovelace, lte: maxLovelace };
-        }
-      }
-    }
-
-    const whereClause = {
-      PaymentSource: {
-        network: input.network,
-        smartContractAddress: input.filterSmartContractAddress ?? undefined,
-        deletedAt: null,
-      },
-      ...(onChainStateFilter
-        ? { onChainState: { in: onChainStateFilter } }
-        : {}),
-      ...(searchLower
-        ? {
-            OR: [
-              { id: { contains: searchLower, mode: 'insensitive' as const } },
-              {
-                CurrentTransaction: {
-                  txHash: {
-                    contains: searchLower,
-                    mode: 'insensitive' as const,
-                  },
-                },
-              },
-              {
-                SmartContractWallet: {
-                  walletAddress: {
-                    contains: searchLower,
-                    mode: 'insensitive' as const,
-                  },
-                },
-              },
-              ...(matchingStates && matchingStates.length > 0
-                ? [{ onChainState: { in: matchingStates } }]
-                : []),
-              ...(amountFilter
-                ? [
-                    {
-                      RequestedFunds: {
-                        some: {
-                          amount: {
-                            gte: amountFilter.gte,
-                            lte: amountFilter.lte,
-                          },
-                        },
-                      },
-                    },
-                  ]
-                : []),
-            ],
-          }
-        : {}),
-    };
-
     const result = await prisma.paymentRequest.findMany({
-      where: whereClause,
+      where: {
+        PaymentSource: {
+          network: input.network,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+          deletedAt: null,
+        },
+        ...(input.filterOnChainState
+          ? { onChainState: input.filterOnChainState }
+          : {}),
+        ...buildTransactionSearchFilter(
+          searchLower,
+          matchingStates,
+          amountFilter,
+          'RequestedFunds',
+        ),
+      },
       orderBy: { createdAt: 'desc' },
-      cursor: input.cursorId
-        ? {
-            id: input.cursorId,
-          }
-        : undefined,
+      cursor: input.cursorId ? { id: input.cursorId } : undefined,
       take: input.limit,
       include: {
         BuyerWallet: true,
@@ -508,16 +420,11 @@ export const queryPaymentEntryGet = payAuthenticatedEndpointFactory.build({
         CurrentTransaction: true,
         WithdrawnForSeller: true,
         WithdrawnForBuyer: true,
-        TransactionHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: input.includeHistory == true ? undefined : 0,
-        },
+        TransactionHistory: buildTransactionHistoryInclude(
+          input.includeHistory,
+        ),
       },
     });
-
-    if (result == null) {
-      throw createHttpError(404, 'Payment not found');
-    }
 
     return {
       Payments: result.map((payment) => ({
@@ -553,12 +460,7 @@ export const queryPaymentCountGet = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof queryPaymentCountSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
       options.networkLimit,
@@ -663,12 +565,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof createPaymentsSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
       options.networkLimit,

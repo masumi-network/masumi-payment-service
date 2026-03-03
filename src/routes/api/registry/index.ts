@@ -1,7 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import {
-  $Enums,
   HotWalletType,
   Network,
   PaymentType,
@@ -15,6 +14,7 @@ import { DEFAULTS } from '@/utils/config';
 import { checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
+import { ApiHandlerOptions } from '@/utils/shared/types';
 
 enum FilterStatus {
   Registered = 'Registered',
@@ -24,6 +24,12 @@ enum FilterStatus {
 }
 
 export const queryRegistryRequestSchemaInput = z.object({
+  limit: z
+    .number({ coerce: true })
+    .min(1)
+    .max(100)
+    .default(10)
+    .describe('The number of registry entries to return'),
   cursorId: z
     .string()
     .optional()
@@ -245,12 +251,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof queryRegistryRequestSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
       options.networkLimit,
@@ -284,47 +285,48 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
         )
       : undefined;
 
-    const whereClause = {
-      PaymentSource: {
-        network: input.network,
-        deletedAt: null,
-        smartContractAddress: input.filterSmartContractAddress ?? undefined,
-      },
-      SmartContractWallet: { deletedAt: null },
-      ...(stateFilter ? { state: { in: stateFilter } } : {}),
-      ...(searchLower
-        ? {
-            OR: [
-              { name: { contains: searchLower, mode: 'insensitive' as const } },
-              {
-                description: {
-                  contains: searchLower,
-                  mode: 'insensitive' as const,
-                },
-              },
-              { tags: { hasSome: [searchLower] } },
-              {
-                SmartContractWallet: {
-                  walletAddress: {
+    const result = await prisma.registryRequest.findMany({
+      where: {
+        PaymentSource: {
+          network: input.network,
+          deletedAt: null,
+          smartContractAddress: input.filterSmartContractAddress ?? undefined,
+        },
+        SmartContractWallet: { deletedAt: null },
+        ...(stateFilter ? { state: { in: stateFilter } } : {}),
+        ...(searchLower
+          ? {
+              OR: [
+                {
+                  name: {
                     contains: searchLower,
                     mode: 'insensitive' as const,
                   },
                 },
-              },
-              ...(matchingStates && matchingStates.length > 0
-                ? [{ state: { in: matchingStates } }]
-                : []),
-            ],
-          }
-        : {}),
-    };
-
-    let result = await prisma.registryRequest.findMany({
-      where: whereClause,
-      orderBy: {
-        createdAt: 'desc',
+                {
+                  description: {
+                    contains: searchLower,
+                    mode: 'insensitive' as const,
+                  },
+                },
+                { tags: { hasSome: [searchLower] } },
+                {
+                  SmartContractWallet: {
+                    walletAddress: {
+                      contains: searchLower,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                },
+                ...(matchingStates && matchingStates.length > 0
+                  ? [{ state: { in: matchingStates } }]
+                  : []),
+              ],
+            }
+          : {}),
       },
-      take: 10,
+      orderBy: { createdAt: 'desc' },
+      take: input.limit,
       cursor: input.cursorId ? { id: input.cursorId } : undefined,
       include: {
         SmartContractWallet: true,
@@ -333,49 +335,6 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
         ExampleOutputs: true,
       },
     });
-
-    // Filter by price if search query is provided (price filtering happens in-memory)
-    // Database already filtered by name, description, tags, wallet, and state
-    // We add price matching here since it requires calculated values
-    if (searchLower && result.length > 0) {
-      result = result.filter((item) => {
-        // Items already passed DB filter, so they match name/description/tags/wallet/state
-        // We also check price matching here
-        const matchedByName = item.name.toLowerCase().includes(searchLower);
-        const matchedByDescription = item.description
-          ?.toLowerCase()
-          .includes(searchLower);
-        const matchedByTags = item.tags.some((tag) =>
-          tag.toLowerCase().includes(searchLower),
-        );
-        const matchedByWallet = item.SmartContractWallet.walletAddress
-          .toLowerCase()
-          .includes(searchLower);
-        const matchedByState = matchingStates?.includes(item.state);
-
-        // Check price matching
-        let matchedByPrice = false;
-        if (item.Pricing.pricingType === PricingType.Fixed) {
-          const amounts = item.Pricing.FixedPricing?.Amounts || [];
-          matchedByPrice = amounts.some((price) => {
-            const priceInAda = (Number(price.amount) / 1000000).toFixed(2);
-            return priceInAda.includes(searchLower);
-          });
-        } else if (item.Pricing.pricingType === PricingType.Free) {
-          matchedByPrice = searchLower.includes('free');
-        }
-
-        // Match if any criteria matches
-        return (
-          matchedByName ||
-          matchedByDescription ||
-          matchedByTags ||
-          matchedByWallet ||
-          matchedByState ||
-          matchedByPrice
-        );
-      });
-    }
 
     return {
       Assets: result.map((item) => ({
@@ -429,12 +388,7 @@ export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof queryRegistryCountSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     await checkIsAllowedNetworkOrThrowUnauthorized(
       options.networkLimit,
@@ -585,12 +539,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
     options,
   }: {
     input: z.infer<typeof registerAgentSchemaInput>;
-    options: {
-      id: string;
-      permission: $Enums.Permission;
-      networkLimit: $Enums.Network[];
-      usageLimited: boolean;
-    };
+    options: ApiHandlerOptions;
   }) => {
     const startTime = Date.now();
     try {
