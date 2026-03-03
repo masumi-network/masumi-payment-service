@@ -1,11 +1,12 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import { useState } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
+import { WalletLink } from '@/components/ui/wallet-link';
 
 interface PaymentSourceDialogProps {
   open: boolean;
@@ -65,16 +66,8 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
             <label className="text-sm font-medium text-muted-foreground">
               Smart Contract Address
             </label>
-            <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
-              <a
-                href={getExplorerUrl(paymentSource.smartContractAddress, network)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-mono flex-1 hover:underline text-primary"
-              >
-                {paymentSource.smartContractAddress}
-              </a>
-              <CopyButton value={paymentSource.smartContractAddress} />
+            <div className="p-3 bg-muted rounded-md">
+              <WalletLink address={paymentSource.smartContractAddress} network={network} />
             </div>
           </div>
 
@@ -106,18 +99,8 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono flex-1">
-                        Address:{' '}
-                        <a
-                          href={getExplorerUrl(wallet.walletAddress, network)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.walletAddress, 10)}
-                        </a>
-                      </span>
-                      <CopyButton value={wallet.walletAddress} />
+                      <span className="text-xs text-muted-foreground">Address:</span>
+                      <WalletLink address={wallet.walletAddress} network={network} shorten={10} />
                     </div>
                   </div>
                 ))}
@@ -158,28 +141,16 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Address:</span>
-                        <a
-                          href={getExplorerUrl(wallet.walletAddress, network)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-mono flex-1 hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.walletAddress, 10)}
-                        </a>
-                        <CopyButton value={wallet.walletAddress} />
+                        <WalletLink address={wallet.walletAddress} network={network} shorten={10} />
                       </div>
                       {wallet.collectionAddress && (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">Collection:</span>
-                          <a
-                            href={getExplorerUrl(wallet.collectionAddress, network)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-mono flex-1 hover:underline text-primary"
-                          >
-                            {shortenAddress(wallet.collectionAddress, 10)}
-                          </a>
-                          <CopyButton value={wallet.collectionAddress} />
+                          <WalletLink
+                            address={wallet.collectionAddress}
+                            network={network}
+                            shorten={10}
+                          />
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -230,28 +201,16 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">Address:</span>
-                        <a
-                          href={getExplorerUrl(wallet.walletAddress, network)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-mono flex-1 hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.walletAddress, 10)}
-                        </a>
-                        <CopyButton value={wallet.walletAddress} />
+                        <WalletLink address={wallet.walletAddress} network={network} shorten={10} />
                       </div>
                       {wallet.collectionAddress && (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">Collection:</span>
-                          <a
-                            href={getExplorerUrl(wallet.collectionAddress, network)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-mono flex-1 hover:underline text-primary"
-                          >
-                            {shortenAddress(wallet.collectionAddress, 10)}
-                          </a>
-                          <CopyButton value={wallet.collectionAddress} />
+                          <WalletLink
+                            address={wallet.collectionAddress}
+                            network={network}
+                            shorten={10}
+                          />
                         </div>
                       )}
                       <div className="flex items-center gap-2">
@@ -288,20 +247,11 @@ export function PaymentSourceDialog({ open, onClose, paymentSource }: PaymentSou
               <div className="space-y-3 pl-4">
                 {paymentSource.FeeReceiverNetworkWallet ? (
                   <div className="p-3 border rounded-md space-y-2">
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={getExplorerUrl(
-                          paymentSource.FeeReceiverNetworkWallet.walletAddress,
-                          network,
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-mono flex-1 hover:underline text-primary"
-                      >
-                        {shortenAddress(paymentSource.FeeReceiverNetworkWallet.walletAddress, 10)}
-                      </a>
-                      <CopyButton value={paymentSource.FeeReceiverNetworkWallet.walletAddress} />
-                    </div>
+                    <WalletLink
+                      address={paymentSource.FeeReceiverNetworkWallet.walletAddress}
+                      network={network}
+                      shorten={10}
+                    />
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground">No fee receiver wallet found</div>

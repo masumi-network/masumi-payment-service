@@ -42,6 +42,7 @@ import {
   getPaymentSourceExtended,
 } from '@/lib/api/generated';
 import { handleApiCall, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { DEFAULT_ADMIN_WALLETS, DEFAULT_FEE_CONFIG } from '@/lib/constants/defaultWallets';
 import { useForm, useFieldArray } from 'react-hook-form';
@@ -1400,33 +1401,11 @@ function AddAiAgentScreen({
                   <Wallet className="h-3 w-3" /> Selling
                 </Badge>
                 {sellingWallet?.address ? (
-                  <a
-                    href={getExplorerUrl(sellingWallet.address, network)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-sm truncate hover:underline text-primary flex items-center gap-1 group"
-                  >
-                    {shortenAddress(sellingWallet.address, 10)}
-                    <ExternalLink className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-                  </a>
+                  <WalletLink address={sellingWallet.address} network={network} shorten={10} />
                 ) : (
                   <span className="text-sm text-muted-foreground">No wallet</span>
                 )}
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0 icon-bounce"
-                onClick={() => {
-                  if (sellingWallet?.address) {
-                    navigator.clipboard.writeText(sellingWallet.address);
-                    toast.success('Copied to clipboard');
-                  }
-                }}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
             </div>
           </CardContent>
         </Card>

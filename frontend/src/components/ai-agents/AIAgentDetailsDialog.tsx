@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn, shortenAddress, handleApiCall, formatFundUnit } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -209,11 +210,11 @@ export function AIAgentDetailsDialog({
 
   return (
     <>
-      <Dialog
-        open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen && !selectedWalletForDetails}
-        onOpenChange={onClose}
-      >
-        <DialogContent className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col">
+      <Dialog open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen} onOpenChange={onClose}>
+        <DialogContent
+          className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
+          isPushedBack={!!selectedWalletForDetails}
+        >
           {agent && (
             <>
               <DialogHeader className="px-6 shrink-0">
@@ -510,17 +511,15 @@ export function AIAgentDetailsDialog({
                           <span className="text-sm text-muted-foreground">
                             Linked Wallet Address
                           </span>
-                          <div className="font-mono text-sm flex items-center gap-2">
-                            <button
-                              className="hover:underline text-primary cursor-pointer"
-                              onClick={() =>
-                                handleWalletClick(agent.SmartContractWallet.walletVkey)
-                              }
-                            >
-                              {shortenAddress(agent.SmartContractWallet.walletAddress)}
-                            </button>
-                            <CopyButton value={agent.SmartContractWallet.walletAddress} />
-                          </div>
+                          <WalletLink
+                            address={agent.SmartContractWallet.walletAddress}
+                            vkey={agent.SmartContractWallet.walletVkey}
+                            network={network}
+                            shorten={4}
+                            onInternalClick={() =>
+                              handleWalletClick(agent.SmartContractWallet.walletVkey)
+                            }
+                          />
                         </div>
                       </div>
                     </div>
@@ -579,6 +578,7 @@ export function AIAgentDetailsDialog({
         isOpen={!!selectedWalletForDetails}
         onClose={() => setSelectedWalletForDetails(null)}
         wallet={selectedWalletForDetails}
+        isChild
       />
     </>
   );
