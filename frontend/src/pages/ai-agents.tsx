@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+
 import { useRouter } from 'next/router';
 import { RegisterAIAgentDialog } from '@/components/ai-agents/RegisterAIAgentDialog';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +37,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -65,8 +67,14 @@ export default function AIAgentsPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [isRegisterDialogOpen, setIsRegisterDialogOpen] = useState(false);
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
-  const [filteredAgents, setFilteredAgents] = useState<AIAgent[]>([]);
+  const [activeTab, setActiveTab] = useState('All');
+
+  const filterStatus = useMemo(() => {
+    if (activeTab === 'All') return undefined;
+    return activeTab as 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+  }, [activeTab]);
 
   // Use React Query for initial load (cached)
   const {
@@ -76,7 +84,10 @@ export default function AIAgentsPage() {
     refetch,
     hasMore: hasMoreAgents,
     loadMore,
-  } = useAgents();
+  } = useAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
@@ -90,7 +101,6 @@ export default function AIAgentsPage() {
   useEffect(() => {
     setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
-  const [activeTab, setActiveTab] = useState('All');
   const [selectedAgentForDetails, setSelectedAgentForDetails] = useState<AIAgent | null>(null);
   const [initialDialogTab, setInitialDialogTab] = useState<'Details' | 'Earnings'>('Details');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
@@ -103,52 +113,6 @@ export default function AIAgentsPage() {
     { name: 'Pending', count: null },
     { name: 'Failed', count: null },
   ];
-
-  const filterAgents = useCallback(() => {
-    let filtered = [...agents];
-
-    if (activeTab === 'Registered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Registered');
-    } else if (activeTab === 'Deregistered') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Deregistered');
-    } else if (activeTab === 'Pending') {
-      filtered = filtered.filter((agent) => parseAgentStatus(agent.state) === 'Pending');
-    } else if (activeTab === 'Failed') {
-      filtered = filtered.filter((agent) => agent.state && agent.state.includes('Failed'));
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((agent) => {
-        const matchName = agent.name?.toLowerCase().includes(query) || false;
-        const matchDescription = agent.description?.toLowerCase().includes(query) || false;
-        const matchTags = agent.Tags?.some((tag) => tag.toLowerCase().includes(query)) || false;
-        const matchWallet =
-          agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
-        const matchState = agent.state?.toLowerCase().includes(query) || false;
-        const matchPrice =
-          agent.AgentPricing &&
-          agent.AgentPricing.pricingType == 'Fixed' &&
-          agent.AgentPricing.Pricing?.[0]?.amount
-            ? (parseInt(agent.AgentPricing.Pricing[0].amount) / 1000000).toFixed(2).includes(query)
-            : agent.AgentPricing &&
-              agent.AgentPricing.pricingType == 'Free' &&
-              'free'.includes(query);
-
-        return (
-          matchName || matchDescription || matchTags || matchWallet || matchState || matchPrice
-        );
-      });
-    }
-
-    setFilteredAgents(filtered);
-  }, [agents, searchQuery, activeTab]);
-
-  // Initial load is handled by useAgents hook - no useEffect needed
-
-  useEffect(() => {
-    filterAgents();
-  }, [filterAgents, searchQuery, activeTab]);
 
   // Handle action query parameter from search
   useEffect(() => {
@@ -336,7 +300,6 @@ export default function AIAgentsPage() {
               activeTab={activeTab}
               onTabChange={(tab) => {
                 setActiveTab(tab);
-                refetch();
               }}
             />
 
@@ -381,7 +344,7 @@ export default function AIAgentsPage() {
                 <tbody>
                   {isLoading ? (
                     <AIAgentTableSkeleton rows={5} />
-                  ) : filteredAgents.length === 0 ? (
+                  ) : agents.length === 0 ? (
                     <tr>
                       <td colSpan={8}>
                         <EmptyState
@@ -400,7 +363,7 @@ export default function AIAgentsPage() {
                       </td>
                     </tr>
                   ) : (
-                    filteredAgents.map((agent, index) => (
+                    agents.map((agent, index) => (
                       <tr
                         key={agent.id}
                         className={cn(

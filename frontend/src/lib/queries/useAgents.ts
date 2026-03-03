@@ -5,7 +5,10 @@ import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useMemo } from 'react';
 
-export function useAgents() {
+export function useAgents(params?: {
+  filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+  searchQuery?: string;
+}) {
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
@@ -16,7 +19,14 @@ export function useAgents() {
   );
 
   const query = useInfiniteQuery({
-    queryKey: ['agents', network, selectedPaymentSourceId, selectedPaymentSource],
+    queryKey: [
+      'agents',
+      network,
+      selectedPaymentSourceId,
+      selectedPaymentSource,
+      params?.filterStatus,
+      params?.searchQuery,
+    ],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSource) {
         return {
@@ -39,6 +49,8 @@ export function useAgents() {
               network: network,
               cursorId: pageParam ?? undefined,
               filterSmartContractAddress: smartContractAddress ? smartContractAddress : undefined,
+              filterStatus: params?.filterStatus,
+              searchQuery: params?.searchQuery || undefined,
             },
           }),
         {

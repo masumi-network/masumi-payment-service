@@ -32,7 +32,21 @@ type Transaction = PaymentTx | PurchaseTx;
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
-export function useTransactions() {
+export type OnChainStateFilter =
+  | 'FundsLocked'
+  | 'FundsOrDatumInvalid'
+  | 'ResultSubmitted'
+  | 'RefundRequested'
+  | 'Disputed'
+  | 'Withdrawn'
+  | 'RefundWithdrawn'
+  | 'DisputedWithdrawn';
+
+export function useTransactions(params?: {
+  filterOnChainState?: OnChainStateFilter;
+  searchQuery?: string;
+  transactionType?: 'payment' | 'purchase';
+}) {
   const { apiClient, network } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
@@ -67,29 +81,42 @@ export function useTransactions() {
   };
 
   const query = useInfiniteQuery({
-    queryKey: ['transactions', network],
+    queryKey: [
+      'transactions',
+      network,
+      params?.filterOnChainState,
+      params?.searchQuery,
+      params?.transactionType,
+    ],
     queryFn: async ({ pageParam }) => {
       const combined: Transaction[] = [];
       const cursor = pageParam ?? undefined;
 
-      const purchases = await handleApiCall(
-        () =>
-          getPurchase({
-            client: apiClient,
-            query: {
-              network,
-              cursorId: cursor,
-              includeHistory: 'true',
-              limit: 10,
+      const skipPurchases = params?.transactionType === 'payment';
+      const skipPayments = params?.transactionType === 'purchase';
+
+      const purchases = skipPurchases
+        ? null
+        : await handleApiCall(
+            () =>
+              getPurchase({
+                client: apiClient,
+                query: {
+                  network,
+                  cursorId: cursor,
+                  includeHistory: 'true',
+                  limit: 10,
+                  filterOnChainState: params?.filterOnChainState,
+                  searchQuery: params?.searchQuery || undefined,
+                },
+              }),
+            {
+              onError: (error: any) => {
+                console.error('Failed to fetch purchases:', error);
+              },
+              errorMessage: 'Failed to fetch purchases',
             },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Failed to fetch purchases:', error);
-          },
-          errorMessage: 'Failed to fetch purchases',
-        },
-      );
+          );
 
       if (purchases?.data?.data?.Purchases) {
         purchases.data.data.Purchases.forEach((purchase: any) => {
@@ -100,24 +127,28 @@ export function useTransactions() {
         });
       }
 
-      const payments = await handleApiCall(
-        () =>
-          getPayment({
-            client: apiClient,
-            query: {
-              network,
-              cursorId: cursor,
-              includeHistory: 'true',
-              limit: 10,
+      const payments = skipPayments
+        ? null
+        : await handleApiCall(
+            () =>
+              getPayment({
+                client: apiClient,
+                query: {
+                  network,
+                  cursorId: cursor,
+                  includeHistory: 'true',
+                  limit: 10,
+                  filterOnChainState: params?.filterOnChainState,
+                  searchQuery: params?.searchQuery || undefined,
+                },
+              }),
+            {
+              onError: (error: any) => {
+                console.error('Failed to fetch payments:', error);
+              },
+              errorMessage: 'Failed to fetch payments',
             },
-          }),
-        {
-          onError: (error: any) => {
-            console.error('Failed to fetch payments:', error);
-          },
-          errorMessage: 'Failed to fetch payments',
-        },
-      );
+          );
 
       if (payments?.data?.data?.Payments) {
         payments.data.data.Payments.forEach((payment: any) => {

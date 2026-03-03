@@ -25,12 +25,7 @@ import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identif
 import { HttpExistsError } from '@/utils/errors/http-exists-error';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
-import {
-	buildTransactionHistoryInclude,
-	parseAmountSearchRange,
-	buildMatchingStates,
-	buildTransactionSearchFilter,
-} from '@/utils/shared/queries';
+import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 export const queryPurchaseRequestSchemaInput = z.object({

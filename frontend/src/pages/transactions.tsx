@@ -16,10 +16,11 @@ import TransactionDetailsDialog from '@/components/transactions/TransactionDetai
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
-import { useTransactions } from '@/lib/hooks/useTransactions';
+import { useTransactions, OnChainStateFilter } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
@@ -36,6 +37,28 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+
+  const [activeTab, setActiveTab] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
+
+  const filterParams = useMemo(() => {
+    const params: {
+      filterOnChainState?: OnChainStateFilter;
+      searchQuery?: string;
+      transactionType?: 'payment' | 'purchase';
+    } = {};
+
+    if (activeTab === 'Payments') params.transactionType = 'payment';
+    else if (activeTab === 'Purchases') params.transactionType = 'purchase';
+    else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
+    else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+
+    if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
+
+    return params;
+  }, [activeTab, debouncedSearchQuery]);
+
   const {
     transactions,
     isLoading,
@@ -43,7 +66,10 @@ export default function Transactions() {
     loadMore,
     refetch: refetchTransactions,
     isFetchingNextPage,
-  } = useTransactions();
+  } = useTransactions(filterParams);
+
+  // Unfiltered call for tab badge counts (reuses dashboard cache when no args)
+  const { transactions: allTransactionsForCounts } = useTransactions();
 
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
@@ -56,23 +82,17 @@ export default function Transactions() {
     }).format(numericAmount);
   };
 
-  const [activeTab, setActiveTab] = useState('All');
-
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && transactions.length === 0;
-  const allTransactions = useMemo(() => transactions, [transactions]);
 
   const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filteredTransactions
-    const seenHashes = new Set();
-    const dedupedTransactions = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+    const seenIds = new Set<string>();
+    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
 
@@ -96,67 +116,18 @@ export default function Transactions() {
         variant: 'alert' as const,
       },
     ];
-  }, [allTransactions]);
+  }, [allTransactionsForCounts]);
 
+  // Dedup only — server handles filtering
   const filteredTransactions = useMemo(() => {
-    const seenHashes = new Set();
-    let filtered = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+    const seenIds = new Set<string>();
+    return transactions.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
-
-    if (activeTab === 'Payments') {
-      filtered = filtered.filter((t) => t.type === 'payment');
-    } else if (activeTab === 'Purchases') {
-      filtered = filtered.filter((t) => t.type === 'purchase');
-    } else if (activeTab === 'Refund Requests') {
-      filtered = filtered.filter((t) => t.onChainState === 'RefundRequested');
-    } else if (activeTab === 'Disputes') {
-      filtered = filtered.filter((t) => t.onChainState === 'Disputed');
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((transaction) => {
-        const matchId = transaction.id?.toLowerCase().includes(query) || false;
-        const matchHash =
-          transaction.CurrentTransaction?.txHash?.toLowerCase().includes(query) || false;
-        const matchState = transaction.onChainState?.toLowerCase().includes(query) || false;
-        const matchType = transaction.type?.toLowerCase().includes(query) || false;
-        const matchNetwork =
-          transaction.PaymentSource?.network?.toLowerCase().includes(query) || false;
-        const matchWallet =
-          transaction.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
-
-        const matchRequestedFunds =
-          transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some((fund) =>
-            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
-          );
-        const matchPaidFunds =
-          transaction.type === 'purchase' &&
-          transaction.PaidFunds?.some((fund) =>
-            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
-          );
-
-        return (
-          matchId ||
-          matchHash ||
-          matchState ||
-          matchType ||
-          matchNetwork ||
-          matchWallet ||
-          matchRequestedFunds ||
-          matchPaidFunds
-        );
-      });
-    }
-
-    return filtered;
-  }, [allTransactions, searchQuery, activeTab]);
+  }, [transactions]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -363,7 +334,7 @@ export default function Transactions() {
                       <Spinner size={20} addContainer />
                     </td>
                   </tr>
-                ) : allTransactions.length === 0 ? (
+                ) : transactions.length === 0 ? (
                   <tr>
                     <td colSpan={8}>
                       <EmptyState

@@ -28,12 +28,7 @@ import {
 import { validateHexString } from '@/utils/validator/hex';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
-import {
-	buildTransactionHistoryInclude,
-	parseAmountSearchRange,
-	buildMatchingStates,
-	buildTransactionSearchFilter,
-} from '@/utils/shared/queries';
+import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 
 const paymentTimeSchema = ez.dateIn();
