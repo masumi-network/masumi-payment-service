@@ -66,9 +66,9 @@ export default function Transactions() {
     loadMore,
     refetch: refetchTransactions,
     isFetchingNextPage,
-  } = useTransactions(filterParams);
+  } = useTransactions(filterParams, { trackVisit: false });
 
-  // Unfiltered call for tab badge counts (reuses dashboard cache when no args)
+  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts } = useTransactions();
 
   // Format price helper function

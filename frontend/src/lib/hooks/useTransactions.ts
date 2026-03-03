@@ -42,11 +42,15 @@ export type OnChainStateFilter =
   | 'RefundWithdrawn'
   | 'DisputedWithdrawn';
 
-export function useTransactions(params?: {
-  filterOnChainState?: OnChainStateFilter;
-  searchQuery?: string;
-  transactionType?: 'payment' | 'purchase';
-}) {
+export function useTransactions(
+  params?: {
+    filterOnChainState?: OnChainStateFilter;
+    searchQuery?: string;
+    transactionType?: 'payment' | 'purchase';
+  },
+  options?: { trackVisit?: boolean },
+) {
+  const trackVisit = options?.trackVisit !== false;
   const { apiClient, network } = useAppContext();
   const router = useRouter();
   const [newTransactionsCount, setNewTransactionsCount] = useState(0);
@@ -208,6 +212,7 @@ export function useTransactions(params?: {
   const refetch = query.refetch;
 
   useEffect(() => {
+    if (!trackVisit) return;
     if (previousNetworkRef.current !== network) {
       hasInitializedRef.current = false;
       seenTransactionIdsRef.current = new Set();
@@ -220,15 +225,16 @@ export function useTransactions(params?: {
 
       previousNetworkRef.current = network;
     }
-  }, [network]);
+  }, [network, trackVisit]);
 
   useEffect(() => {
+    if (!trackVisit) return;
     const storedCount = getNewTransactionsCount();
     setNewTransactionsCount(storedCount);
-  }, []);
+  }, [trackVisit]);
 
   useEffect(() => {
-    if (!query.data) return;
+    if (!trackVisit || !query.data) return;
 
     if (!hasInitializedRef.current) {
       seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
@@ -268,23 +274,25 @@ export function useTransactions(params?: {
       ...existingIds,
       ...transactions.map((tx) => tx.id ?? ''),
     ]);
-  }, [query.dataUpdatedAt, transactions]);
+  }, [query.dataUpdatedAt, transactions, trackVisit]);
 
   useEffect(() => {
+    if (!trackVisit) return;
     if (router.pathname === '/transactions' && newTransactionsCount > 0) {
       setNewTransactionsCount(0);
       setNewTransactionsCountInStorage(0);
       setLastVisitTimestamp(new Date().toISOString());
       seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
     }
-  }, [router.pathname, newTransactionsCount, transactions]);
+  }, [router.pathname, newTransactionsCount, transactions, trackVisit]);
 
   const markAllAsRead = useCallback(() => {
+    if (!trackVisit) return;
     setNewTransactionsCount(0);
     setNewTransactionsCountInStorage(0);
     setLastVisitTimestamp(new Date().toISOString());
     seenTransactionIdsRef.current = new Set(transactions.map((tx) => tx.id ?? ''));
-  }, [transactions]);
+  }, [transactions, trackVisit]);
 
   const loadMore = useCallback(() => {
     if (query.hasNextPage && !query.isFetchingNextPage) {
