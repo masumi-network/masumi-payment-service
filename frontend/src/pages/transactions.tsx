@@ -58,7 +58,6 @@ export default function Transactions() {
 
   const [activeTab, setActiveTab] = useState('All');
 
-
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);

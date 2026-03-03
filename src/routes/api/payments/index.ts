@@ -50,10 +50,7 @@ export const queryPaymentsSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
-	filterOnChainState: z
-		.nativeEnum(OnChainState)
-		.optional()
-		.describe('Filter by on-chain state'),
+	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
 	searchQuery: z
 		.string()
 		.optional()
@@ -67,18 +64,16 @@ export const queryPaymentsSchemaInput = z.object({
 });
 
 export const queryPaymentCountSchemaInput = z.object({
-  network: z
-    .nativeEnum(Network)
-    .describe('The network the payments were made on'),
-  filterSmartContractAddress: z
-    .string()
-    .optional()
-    .nullable()
-    .describe('The smart contract address of the payment source'),
+	network: z.nativeEnum(Network).describe('The network the payments were made on'),
+	filterSmartContractAddress: z
+		.string()
+		.optional()
+		.nullable()
+		.describe('The smart contract address of the payment source'),
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
-  total: z.number().describe('Total number of payments'),
+	total: z.number().describe('Total number of payments'),
 });
 
 export const paymentResponseSchema = z

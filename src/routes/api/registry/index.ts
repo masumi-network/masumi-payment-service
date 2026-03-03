@@ -32,10 +32,7 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
-	filterStatus: z
-		.nativeEnum(FilterStatus)
-		.optional()
-		.describe('Filter by registration status category'),
+	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
 	searchQuery: z
 		.string()
 		.optional()
@@ -146,18 +143,16 @@ export const queryRegistryRequestSchemaOutput = z.object({
 });
 
 export const queryRegistryCountSchemaInput = z.object({
-  network: z
-    .nativeEnum(Network)
-    .describe('The Cardano network used to register the agent on'),
-  filterSmartContractAddress: z
-    .string()
-    .optional()
-    .nullable()
-    .describe('The smart contract address of the payment source'),
+	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
+	filterSmartContractAddress: z
+		.string()
+		.optional()
+		.nullable()
+		.describe('The smart contract address of the payment source'),
 });
 
 export const queryRegistryCountSchemaOutput = z.object({
-  total: z.number().describe('Total number of AI agents'),
+	total: z.number().describe('Total number of AI agents'),
 });
 
 export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
@@ -218,9 +213,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 										},
 									},
 								},
-								...(matchingStates && matchingStates.length > 0
-									? [{ state: { in: matchingStates } }]
-									: []),
+								...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
 							],
 						}
 					: {}),
