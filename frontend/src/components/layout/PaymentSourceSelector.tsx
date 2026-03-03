@@ -47,32 +47,26 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
             variant="ghost"
             size="sm2"
             className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300 network-active-bar',
               network === 'Preprod'
-                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100'
+                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
                 : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
             )}
             onClick={() => onNetworkChange('Preprod')}
           >
-            {network === 'Preprod' && (
-              <span className="mr-0.5 text-[8px] text-primary animate-pop-in">●</span>
-            )}
             P
           </Button>
           <Button
             variant="ghost"
             size="sm2"
             className={cn(
-              'px-2 font-medium hover:scale-[1.03] transition-all duration-300',
+              'px-2 font-medium hover:scale-[1.03] transition-all duration-300 network-active-bar',
               network === 'Mainnet'
-                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100'
+                ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
                 : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
             )}
             onClick={() => onNetworkChange('Mainnet')}
           >
-            {network === 'Mainnet' && (
-              <span className="mr-0.5 text-[8px] text-primary animate-pop-in">●</span>
-            )}
             M
           </Button>
         </div>
@@ -110,32 +104,26 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           variant="ghost"
           size="sm2"
           className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate network-active-bar',
             network === 'Preprod'
-              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100'
+              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
               : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
           )}
           onClick={() => onNetworkChange('Preprod')}
         >
-          {network === 'Preprod' && (
-            <span className="mr-1 text-[8px] text-primary animate-pop-in">●</span>
-          )}
           Preprod
         </Button>
         <Button
           variant="ghost"
           size="sm2"
           className={cn(
-            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate',
+            'flex-1 font-medium hover:scale-[1.03] transition-all duration-300 truncate network-active-bar',
             network === 'Mainnet'
-              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100'
+              ? 'bg-[#FFFFFFD0] dark:bg-background/70 hover:bg-[#FFFFFFD0] dark:hover:bg-background/70 cursor-default hover:scale-100 is-active'
               : 'bg-[#0000000a] dark:bg-[#ffffff0a] hover:bg-[#00000014] dark:hover:bg-[#ffffff14]',
           )}
           onClick={() => onNetworkChange('Mainnet')}
         >
-          {network === 'Mainnet' && (
-            <span className="mr-1 text-[8px] text-primary animate-pop-in">●</span>
-          )}
           Mainnet
         </Button>
       </div>
@@ -204,7 +192,7 @@ function SourceDropdown({
   const router = useRouter();
 
   return (
-    <DropdownMenuContent side="right" align="start" className="w-72">
+    <DropdownMenuContent side="right" align="center" className="w-72">
       <DropdownMenuLabel>Payment Source</DropdownMenuLabel>
       {networkSources.map((source) => {
         const isSelected = source.id === selectedPaymentSourceId;
