@@ -700,7 +700,7 @@ enum HydraHeadStatus {
 }
 
 enum HydraErrorType {
-  /// When well-formed client input was not processsable.
+  /// When well-formed client input was not processable.
   CommandFailed
   /// Something went wrong while posting Hydra Layer1 transaction.
   PostTxOnChainFailed
@@ -784,7 +784,7 @@ model HydraHead {
   fanoutTxHash String?
 
   /// Errors that have occurred during the head's lifecycle
-  errors HydraHeadError[]
+  Errors HydraHeadError[]
 
   /// Participants in this head (node config, keys per head)
   Participants HydraParticipant[]
