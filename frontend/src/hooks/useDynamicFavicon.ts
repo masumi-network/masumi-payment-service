@@ -6,9 +6,7 @@ export function useDynamicFavicon() {
 
   useEffect(() => {
     const updateFavicon = () => {
-      const existingFavicon = document.querySelector(
-        'link[rel="icon"]',
-      ) as HTMLLinkElement;
+      const existingFavicon = document.querySelector('link[rel="icon"]') as HTMLLinkElement;
 
       // Check if current URL contains "admin"
       const currentUrl = window.location.href;

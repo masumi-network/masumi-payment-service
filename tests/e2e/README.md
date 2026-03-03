@@ -20,7 +20,7 @@ The E2E tests simulate real user workflows covering the complete payment service
 **Command**:
 
 ```bash
-npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
+pnpm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 ```
 
 **What it tests**: Complete 11-step flow from agent registration to refund authorization
@@ -34,7 +34,7 @@ npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
 **Command**:
 
 ```bash
-npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
 ```
 
 **What it tests**: Refund requested while funds are still locked (before result submission)
@@ -48,7 +48,7 @@ npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
 **Command**:
 
 ```bash
-npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
 ```
 
 **What it tests**: Request refund, submit result → disputed state, then cancel the refund
@@ -62,7 +62,7 @@ npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
 **Command**:
 
 ```bash
-npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 ```
 
 **What it tests**: Find existing confirmed agents and deregister them
@@ -72,7 +72,7 @@ npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 ### Run All Tests
 
 ```bash
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 ## 🏗️ Test Architecture
@@ -99,7 +99,7 @@ tests/e2e/
 
 ### 1. Prerequisites
 
-- Node.js and npm installed
+- Node.js and pnpm installed
 - PostgreSQL database running
 - Cardano Preprod testnet access
 - Server running on `http://localhost:3001`
@@ -130,27 +130,27 @@ createdb masumi_payment_service_e2e_test
 DATABASE_URL="postgresql://user:pass@localhost:5432/masumi_payment_service_e2e_test"
 
 # Run migrations and seeding
-npx prisma migrate deploy
-npx prisma db seed
+pnpm exec prisma migrate deploy
+pnpm exec prisma db seed
 ```
 
 ### 4. Start the Server
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ### 5. Run the Tests
 
 ```bash
 # Run individual tests (recommended)
-npm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
-npm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
-npm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
-npm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/complete-flow-with-refund.test.ts
+pnpm run test:e2e -- tests/e2e/flows/early-refund-complete-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/cancel-refund-request-flow.test.ts
+pnpm run test:e2e -- tests/e2e/flows/agent-deregister-delete-flow.test.ts
 
 # Or run all tests (will take longer)
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 ## 📊 Test Scenarios

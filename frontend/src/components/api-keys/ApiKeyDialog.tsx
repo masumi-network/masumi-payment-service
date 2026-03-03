@@ -19,14 +19,16 @@ interface ApiError {
 
 export function ApiKeyDialog() {
   const router = useRouter();
-  const [apiKey, setApiKey] = useState('');
+  const [apiKeyTMP, setApiKeyTMP] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { dispatch, apiClient } = useAppContext();
+  const { updateApiKey, apiClient } = useAppContext();
 
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
+    console.log('key', key);
+    console.log('apiClient', apiClient);
 
     try {
       apiClient.setConfig({ headers: { token: key } });
@@ -56,21 +58,17 @@ export function ApiKeyDialog() {
 
       if (sources.length === 0) {
         const networkLimit = statusResponse.data?.data.networkLimit ?? [];
-        const setupType = networkLimit.includes('Mainnet')
-          ? 'mainnet'
-          : 'preprod';
+        const setupType = networkLimit.includes('Mainnet') ? 'mainnet' : 'preprod';
         router.push(`/setup?type=${setupType}`);
       } else {
         router.push('/');
       }
 
-      dispatch({ type: 'SET_API_KEY', payload: key });
+      updateApiKey(apiKeyTMP);
     } catch (error: unknown) {
       const apiError = error as ApiError;
       const errorMessage =
-        apiError.error?.message ??
-        apiError.message ??
-        'Invalid Key, check the entered data';
+        apiError.error?.message ?? apiError.message ?? 'Invalid Key, check the entered data';
       setError(errorMessage);
       localStorage.removeItem('payment_api_key');
     } finally {
@@ -89,15 +87,11 @@ export function ApiKeyDialog() {
         <h1 className="text-4xl font-bold mb-4">Enter your Admin Key</h1>
 
         <p className="text-sm text-muted-foreground mb-8 text-center max-w-md">
-          Your admin key is needed to access the dashboard. This key is required
-          to manage your ai agents, payment settings and view transactions.
+          Your admin key is needed to access the dashboard. This key is required to manage your ai
+          agents, payment settings and view transactions.
         </p>
 
-        <Button
-          variant="muted"
-          className="text-sm mb-8 hover:underline"
-          asChild
-        >
+        <Button variant="muted" className="text-sm mb-8 hover:underline" asChild>
           <Link href={'https://docs.masumi.network/'} target="_blank">
             Learn more
           </Link>
@@ -106,15 +100,15 @@ export function ApiKeyDialog() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleApiKeySubmit(apiKey);
+            handleApiKeySubmit(apiKeyTMP);
           }}
           className="flex flex-col items-center gap-2 w-full max-w-[500px]"
         >
           <div className="flex gap-4 items-center w-full">
             <Input
               type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              value={apiKeyTMP}
+              onChange={(e) => setApiKeyTMP(e.target.value)}
               placeholder="Admin Key"
               required
               className={cn(

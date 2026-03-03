@@ -24,9 +24,7 @@ export function Footer() {
         </div>
         <div>
           <button
-            onClick={() =>
-              setThemePreference(theme === 'dark' ? 'light' : 'dark')
-            }
+            onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             className="text-sm text-muted-foreground hover:text-foreground p-2 rounded-full hover:bg-muted"
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
           >

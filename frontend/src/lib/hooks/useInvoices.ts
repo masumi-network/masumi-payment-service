@@ -1,0 +1,102 @@
+import { useMemo, useCallback } from 'react';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { getInvoiceMonthly } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
+
+export type InvoiceSummary = NonNullable<
+  Awaited<ReturnType<typeof getInvoiceMonthly>>['data']
+>['data']['Invoices'][number];
+
+export function useInvoices(month: string) {
+  const { apiClient } = useAppContext();
+
+  const query = useInfiniteQuery({
+    queryKey: ['invoices', month],
+    queryFn: async ({ pageParam }) => {
+      const limit = 20;
+      const result = await getInvoiceMonthly({
+        client: apiClient,
+        query: {
+          month,
+          cursorId: pageParam ?? undefined,
+          limit: limit + 1,
+        },
+      });
+
+      if (result.error) {
+        throw new Error(extractApiErrorMessage(result.error, 'Failed to fetch invoices'));
+      }
+
+      const allInvoices = result.data?.data?.Invoices ?? [];
+      const hasMore = allInvoices.length > limit;
+      const invoices = hasMore ? allInvoices.slice(0, limit) : allInvoices;
+      const nextCursor = hasMore ? invoices[invoices.length - 1]?.id : undefined;
+
+      return { invoices, nextCursor, hasMore };
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
+    enabled: !!apiClient && !!month,
+    staleTime: 15000,
+  });
+
+  const invoices = useMemo(() => {
+    const pages = query.data?.pages ?? [];
+    return pages.flatMap((page) => page.invoices);
+  }, [query.data]);
+
+  const isLoading = query.isLoading || query.isRefetching;
+  const hasMore = Boolean(query.hasNextPage);
+  const isFetchingNextPage = query.isFetchingNextPage;
+  const refetch = query.refetch;
+
+  const loadMore = useCallback(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage) {
+      query.fetchNextPage();
+    }
+  }, [query]);
+
+  return {
+    invoices,
+    isLoading,
+    isError: query.isError,
+    error: query.error,
+    hasMore,
+    loadMore,
+    isFetchingNextPage,
+    refetch,
+  };
+}
+
+/** Fetch all revisions for a single invoice base (used by the details dialog). */
+export function useInvoiceRevisions(month: string, invoiceBaseId: string | null) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['invoice-revisions', month, invoiceBaseId],
+    queryFn: async () => {
+      const result = await getInvoiceMonthly({
+        client: apiClient,
+        query: {
+          month,
+          invoiceBaseId: invoiceBaseId!,
+        },
+      });
+
+      if (result.error) {
+        throw new Error(extractApiErrorMessage(result.error, 'Failed to fetch invoice revisions'));
+      }
+
+      return result.data?.data?.Invoices ?? [];
+    },
+    enabled: !!apiClient && !!month && !!invoiceBaseId,
+    staleTime: 15000,
+  });
+
+  return {
+    revisions: query.data ?? [],
+    isLoading: query.isLoading,
+  };
+}

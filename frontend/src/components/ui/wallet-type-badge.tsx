@@ -1,10 +1,6 @@
 import { cn } from '@/lib/utils';
 import { TOOLTIP_TEXTS } from '@/lib/constants/tooltips';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface WalletTypeBadgeProps {
   type: 'Purchasing' | 'Selling';
@@ -12,16 +8,10 @@ interface WalletTypeBadgeProps {
   showTooltip?: boolean;
 }
 
-export function WalletTypeBadge({
-  type,
-  className,
-  showTooltip = true,
-}: WalletTypeBadgeProps) {
+export function WalletTypeBadge({ type, className, showTooltip = true }: WalletTypeBadgeProps) {
   const displayName = type === 'Purchasing' ? 'Buying' : 'Selling';
   const tooltipText =
-    type === 'Purchasing'
-      ? TOOLTIP_TEXTS.BUYING_WALLET_TYPE
-      : TOOLTIP_TEXTS.SELLING_WALLET_TYPE;
+    type === 'Purchasing' ? TOOLTIP_TEXTS.BUYING_WALLET_TYPE : TOOLTIP_TEXTS.SELLING_WALLET_TYPE;
 
   return (
     <div className={cn('inline-flex items-center gap-2', className)}>

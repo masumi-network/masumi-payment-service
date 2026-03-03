@@ -8,12 +8,7 @@ export interface BadgeWithTooltipProps extends BadgeProps {
   tooltipText: string;
 }
 
-function BadgeWithTooltip({
-  text,
-  tooltipText,
-  className,
-  ...badgeProps
-}: BadgeWithTooltipProps) {
+function BadgeWithTooltip({ text, tooltipText, className, ...badgeProps }: BadgeWithTooltipProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>

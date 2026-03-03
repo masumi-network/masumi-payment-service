@@ -21,9 +21,9 @@ else
     NC=""
 fi
 
-# Check if commitlint is available
-if ! command -v npx >/dev/null 2>&1; then
-    echo "${RED}❌ npx is not installed or not in PATH${NC}"
+# Check if pnpm is available
+if ! command -v pnpm >/dev/null 2>&1; then
+    echo "${RED}❌ pnpm is not installed or not in PATH${NC}"
     exit 1
 fi
 
@@ -36,7 +36,7 @@ fi
 
 echo "${BLUE}🔍 Checking commit message format...${NC}"
 # Use node process to handle Windows/Unix path differences
-npx --no -- commitlint --edit "$commit_msg_file" || 
+pnpm exec commitlint --edit "$commit_msg_file" || 
 (
     echo "${RED}❌ Commit message does not follow conventional commit format.${NC}"
     echo "${RED}Format: <type>(<scope>): <subject>${NC}"

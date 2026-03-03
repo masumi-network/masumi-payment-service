@@ -17,12 +17,12 @@ To generate the smart contracts
 
 ## Running various scripts
 
-To run the scripts you also need to install (Node.js)[https://nodejs.org/en/download/package-manager] and install the dependencies via `npm install`.
+To run the scripts you also need to install (Node.js)[https://nodejs.org/en/download/package-manager] and install the dependencies via `pnpm install`.
 
 Afterwards you can run various scripts:
 
 ```sh
-npm run generate-wallet
+pnpm run generate-wallet
 ```
 
 To generate a testnet wallet.
@@ -32,13 +32,13 @@ The address will be found in the `wallet.addr` and `wallet.sk` (private key) fil
 The following commands will require the `BLOCKFROST_API_KEY` environment variable to be set. Make sure to register an account on [Blockfrost](https://blockfrost.io/) and get your key for either the mainnet (not recommended) or preprod network and use it consistently.
 
 ```sh
-npm run mint
+pnpm run mint
 ```
 
 To mint an example registry asset. The metadata can be configured in the `mint-example.mjs` file.
 
 ```sh
-npm run defrag
+pnpm run defrag
 ```
 
 To defrag the wallet (if there are no split up utxos containing only lovelace)

@@ -1,0 +1,20 @@
+packages:
+  - 'frontend'
+
+overrides:
+  libsodium-wrappers-sumo: 0.7.15
+  libsodium-sumo: 0.7.15
+
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+  - '@scarf/scarf'
+  - 'chacha-native'
+  - 'core-js'
+  - 'esbuild'
+  - 'unrs-resolver'
+
+onlyBuiltDependencies:
+  - '@prisma/engines'
+  - 'prisma'
+  - 'protobufjs'
+  - 'sharp'

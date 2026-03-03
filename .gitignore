@@ -15,9 +15,11 @@ coverage
 src/utils/.DS_Store
 src/services/.DS_Store
 .DS_Store
-# claude config
-.claude
-.cursor
+
+# Claude local settings (user-specific)
+.claude/
+
+/certs/
 
 frontend/.env
 smart-contracts/registry/wallet1.addr
@@ -27,6 +29,15 @@ smart-contracts/registry/wallet1.sk
 smart-contracts/payment/wallet_2_.sk
 smart-contracts/payment/wallet_2_.addr
 
+# Mock data scripts (local dev only)
+scripts/add-mock-payments.ts
+
 otelcol-contrib
+test-output/example-invoice.pdf
+test-output/minimal-invoice.pdf
 tests/e2e/.e2e-global-state.json
-tests/e2e/.e2e-global-state.json
+scripts/example-invoice.pdf
+scripts/example-invoice.html
+
+# Prisma Generated Files
+src/generated/

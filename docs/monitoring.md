@@ -19,33 +19,11 @@ This is a beta feature and will be improved and expanded in the future.
 
 ### Enabling the OpenTelemetry SDK
 
-The SDK starts when `src/tracing.ts` is executed. You can enable it in one of two ways:
+To enable the OpenTelemetry SDK, you need to add the following to your `.env` file:
 
-1. Programmatic import (simplest)
-
-Add this as the first import in `src/index.ts`:
-
-```ts
-import './tracing';
+```env
+OTEL_EXPORTER_OTLP_ENDPOINT="your_otlp_endpoint"
 ```
-
-2. Preload at runtime (no code change)
-
-When running the compiled build, start it with the following command:
-
-```bash
-npm run start:trace
-```
-
-or
-
-During development runs, you can use the following command:
-
-```bash
-npm run dev:trace
-```
-
-> Use exactly one of the options above. If both are used, the SDK may be initialized twice.
 
 ### Configuration (environment variables)
 
@@ -94,14 +72,23 @@ SIGNOZ_INGESTION_KEY=<your_signoz_ingestion_key>
 2. Enable the logging and tracing as described above.
 3. Run the service:
 
-```bash
-# development
-npm run dev
+It should show a message like this:
 
-# production
-npm run build
-NODE_OPTIONS="--require ./dist/tracing.js" node ./dist/index.js
 ```
+🚀 Initializing OpenTelemetry for masumi-payment-service v0.1.0
+📊 Traces endpoint: http://localhost:4318/v1/traces
+📈 Metrics endpoint: http://localhost:4318/v1/metrics
+📝 Logs endpoint: http://localhost:4318/v1/logs
+✅ OpenTelemetry SDK initialized successfully
+```
+
+In case this message is not shown or the following message is shown:
+
+```
+***************************************************************** OTEL is not configured *****************************************************************
+```
+
+then you need to check your `.env` file and make sure the `OTEL_EXPORTER_OTLP_ENDPOINT` and `SIGNOZ_INGESTION_KEY` are set correctly.
 
 Generate traffic by calling APIs; spans, metrics, and logs should appear in your backend within seconds.
 
@@ -123,13 +110,11 @@ Generate traffic by calling APIs; spans, metrics, and logs should appear in your
 ### Troubleshooting
 
 - **No data arriving**
-
   - Verify the effective endpoints in logs. On startup, the service logs the resolved traces/metrics/logs URLs.
   - Check network egress/firewalls. Port 4318 (HTTP) must be reachable for OTLP.
   - If using SigNoz Cloud, confirm `SIGNOZ_INGESTION_KEY` is correct.
 
 - **Double initialization**
-
   - Ensure you only import `./tracing` once or only preload once with `NODE_OPTIONS`.
 
 - **TLS/Proxy issues**

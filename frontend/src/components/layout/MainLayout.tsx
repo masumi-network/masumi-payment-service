@@ -1,13 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   LayoutDashboard,
   Bot,
   Wallet,
   FileText,
-  FileInput,
+  Receipt,
   Key,
   Settings,
   Sun,
@@ -17,17 +17,28 @@ import {
   PanelLeft,
   Bell,
   Search,
-  NotebookPen,
+  Code,
+  Wand2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
+import { useSidebar } from '@/lib/contexts/SidebarContext';
 import { cn } from '@/lib/utils';
 import { useTransactions } from '@/lib/hooks/useTransactions';
 import { NotificationsDialog } from '@/components/notifications/NotificationsDialog';
 import { SearchDialog } from '@/components/search/SearchDialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import MasumiLogo from '@/components/MasumiLogo';
 import { formatCount } from '@/lib/utils';
 import MasumiIconFlat from '@/components/MasumiIconFlat';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
@@ -38,96 +49,69 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { newTransactionsCount } = useTransactions();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  });
-  const [isHovered, setIsHovered] = useState(false);
+  const {
+    collapsed,
+    setCollapsed,
+    isHovered,
+    setIsHovered,
+    shouldAnimateIcon,
+    hasAnimatedNav,
+    markNavAnimated,
+  } = useSidebar();
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { state, dispatch, isChangingNetwork } = useAppContext();
+  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep } = useAppContext();
+  const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
+  const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
+  const isFirstNavMount = !hasAnimatedNav;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setIsMac(window.navigator.userAgent.includes('Macintosh'));
+      queueMicrotask(() => setIsMac(window.navigator.userAgent.includes('Macintosh')));
     }
   }, []);
 
   useEffect(() => {
-    if (isChangingTheme) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
-      }
-
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
+    if (!hasAnimatedNav) {
+      const timer = setTimeout(() => markNavAnimated(), 1000);
+      return () => clearTimeout(timer);
     }
-  }, [isChangingTheme]);
+  }, [hasAnimatedNav, markNavAnimated]);
 
-  useEffect(() => {
-    if (isChangingNetwork) {
-      const app = document.getElementById('__next');
-      if (app) {
-        app.style.transition = 'all 0.2s ease';
-        app.style.filter = 'blur(10px)';
-        app.style.pointerEvents = 'none';
-        app.style.opacity = '1';
-        app.style.scale = '1.1';
+  const applyBlurTransition = useCallback((isActive: boolean) => {
+    if (!isActive) return;
+    const app = document.getElementById('__next');
+    if (!app) return;
+
+    app.style.transition = 'all 0.2s ease';
+    app.style.filter = 'blur(10px)';
+    app.style.pointerEvents = 'none';
+    app.style.opacity = '1';
+    app.style.scale = '1.1';
+
+    const timer = setTimeout(() => {
+      app.style.filter = '';
+      app.style.pointerEvents = 'auto';
+      app.style.opacity = '1';
+      app.style.scale = '1';
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      const el = document.getElementById('__next');
+      if (el) {
+        el.style.filter = '';
+        el.style.transition = '';
+        el.style.pointerEvents = 'auto';
+        el.style.opacity = '1';
+        el.style.scale = '1';
       }
+    };
+  }, []);
 
-      const timer = setTimeout(() => {
-        if (app) {
-          app.style.filter = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      }, 200);
-
-      return () => {
-        clearTimeout(timer);
-        const app = document.getElementById('__next');
-        if (app) {
-          app.style.filter = '';
-          app.style.transition = '';
-          app.style.pointerEvents = 'auto';
-          app.style.opacity = '1';
-          app.style.scale = '1';
-        }
-      };
-    }
-  }, [isChangingNetwork]);
-
-  useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-  }, [collapsed]);
+  useEffect(() => applyBlurTransition(isChangingTheme), [isChangingTheme, applyBlurTransition]);
+  useEffect(() => applyBlurTransition(isChangingNetwork), [isChangingNetwork, applyBlurTransition]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -140,54 +124,116 @@ export function MainLayout({ children }: MainLayoutProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+  const { paymentSources } = usePaymentSourceExtendedAll();
+  const hasPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  // Check if user has payment sources
-  const hasPaymentSources =
-    state.paymentSources && state.paymentSources.length > 0;
-
-  const navItems = hasPaymentSources
-    ? [
-        { href: '/', name: 'Dashboard', icon: LayoutDashboard, badge: null },
-        { href: '/ai-agents', name: 'AI Agents', icon: Bot, badge: null },
-        { href: '/wallets', name: 'Wallets', icon: Wallet, badge: null },
+  const navItems = useMemo(() => {
+    // While in setup mode, show only the setup sidebar
+    if (isSetupMode || !hasPaymentSources) {
+      return [
         {
-          href: '/transactions',
-          name: 'Transactions',
-          icon: FileText,
-          badge: formatCount(newTransactionsCount),
-        },
-        {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: FileInput,
+          href: '/setup',
+          name: 'Setup',
+          icon: <Wand2 className="h-4 w-4" />,
           badge: null,
+          group: 0,
         },
         {
-          href: '/input-schema-validator',
-          name: 'Input Schema Validator',
-          icon: NotebookPen,
+          href: '/api-keys',
+          name: 'API keys',
+          icon: <Key className="h-4 w-4" />,
           badge: null,
+          group: 1,
         },
-        { href: '/api-keys', name: 'API keys', icon: Key, badge: null },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
-      ]
-    : [
         {
-          href: '/payment-sources',
-          name: 'Payment sources',
-          icon: FileInput,
+          href: '/developers',
+          name: 'Developers',
+          icon: <Code className="h-4 w-4 text-violet-500" />,
           badge: null,
+          group: 1,
         },
-        { href: '/settings', name: 'Settings', icon: Settings, badge: null },
       ];
+    }
+    return [
+      {
+        href: '/',
+        name: 'Dashboard',
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
+        href: '/ai-agents',
+        name: 'AI Agents',
+        icon: <Bot className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
+        href: '/wallets',
+        name: 'Wallets',
+        icon: <Wallet className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
+        href: '/transactions',
+        name: 'Transactions',
+        icon: <FileText className="h-4 w-4" />,
+        badge: formatCount(newTransactionsCount),
+        group: 0,
+      },
+      {
+        href: '/invoices',
+        name: 'Invoices',
+        icon: <Receipt className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
+        href: '/api-keys',
+        name: 'API keys',
+        icon: <Key className="h-4 w-4" />,
+        badge: null,
+        group: 1,
+      },
+      {
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+        group: 1,
+      },
+    ];
+  }, [isSetupMode, hasPaymentSources, newTransactionsCount]);
 
-  const handleOpenNotifications = () => {
-    setIsNotificationsOpen(true);
-    // Don't mark as read immediately, let user view notifications first
+  const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
+    if (newNetwork === network) return;
+    if (router.pathname === '/setup') {
+      if (setupWizardStep > 0) {
+        setPendingNetwork(newNetwork);
+        setShowNetworkSwitchConfirm(true);
+        return;
+      }
+      setNetwork(newNetwork);
+      router.replace('/setup?network=' + newNetwork, undefined, { shallow: true });
+      return;
+    }
+    setNetwork(newNetwork);
   };
 
-  const handleNetworkChange = (network: 'Preprod' | 'Mainnet') => {
-    dispatch({ type: 'SET_NETWORK', payload: network });
+  const confirmNetworkSwitch = () => {
+    const targetNetwork = pendingNetwork;
+    setShowNetworkSwitchConfirm(false);
+    setPendingNetwork(null);
+    if (targetNetwork === null) return;
+    setNetwork(targetNetwork);
+    if (router.pathname === '/setup') {
+      router.replace('/setup?network=' + targetNetwork, undefined, { shallow: true });
+    }
   };
 
   return (
@@ -215,56 +261,11 @@ export function MainLayout({ children }: MainLayoutProps) {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         style={{
-          width:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          width: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
+          pointerEvents: 'auto',
         }}
       >
         <div className="flex flex-col">
-          <div
-            className={cn(
-              'flex gap-2 border-b p-2.5 px-4 w-full',
-              collapsed && !isHovered ? 'justify-center items-center' : '',
-            )}
-          >
-            <div
-              className={cn(
-                'grid w-full p-1 bg-[#F4F4F5] dark:bg-secondary rounded-md',
-                collapsed && !isHovered
-                  ? 'grid-cols-2 w-auto gap-0.5'
-                  : 'grid-cols-2 gap-2',
-              )}
-            >
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  state.network === 'Preprod' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Preprod')}
-              >
-                {collapsed && !isHovered ? 'P' : 'Preprod'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm2"
-                className={cn(
-                  'flex-1 font-medium hover:bg-[#FFF0] hover:scale-[1.1] transition-all duration-300 truncate',
-                  collapsed && !isHovered && 'px-2',
-                  state.network === 'Mainnet' &&
-                    'bg-[#FFF] dark:bg-background hover:bg-[#FFF] dark:hover:bg-background',
-                )}
-                onClick={() => handleNetworkChange('Mainnet')}
-              >
-                {collapsed && !isHovered ? 'M' : 'Mainnet'}
-              </Button>
-            </div>
-          </div>
-
           <div
             className={cn(
               'flex items-center p-2 px-4 border-b border-border',
@@ -272,22 +273,21 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!(collapsed && !isHovered) ? (
-              <Link
-                href="/"
-                style={{
-                  animation: 'scaleIn 0.3s ease-out',
-                  transformOrigin: 'left center',
-                }}
-              >
+              <Link href="/" key="masumi-logo-full">
                 <MasumiLogo />
               </Link>
             ) : (
               <Link
                 href="/"
+                key="masumi-logo-icon"
                 className="flex items-center justify-center w-8 h-8"
-                style={{
-                  animation: 'rotateIn 0.3s ease-out',
-                }}
+                style={
+                  shouldAnimateIcon && collapsed && !isHovered
+                    ? {
+                        animation: 'rotateIn 0.3s ease-out',
+                      }
+                    : undefined
+                }
               >
                 <MasumiIconFlat className="w-6 h-6" />
               </Link>
@@ -298,90 +298,144 @@ export function MainLayout({ children }: MainLayoutProps) {
                 size="icon"
                 className={cn(
                   'h-8 w-8',
-                  collapsed
-                    ? 'text-muted-foreground opacity-50'
-                    : 'text-foreground opacity-100',
+                  collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
                 )}
                 onClick={() => setCollapsed(!collapsed)}
               >
-                <PanelLeft
-                  className={cn('h-4 w-4 transition-transform duration-300')}
-                />
+                <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
               </Button>
             )}
+          </div>
+
+          <div
+            className={cn('p-2 w-full', collapsed && !isHovered ? 'flex justify-center' : 'px-2')}
+          >
+            <NetworkSourceCard
+              collapsed={collapsed && !isHovered}
+              onNetworkChange={handleNetworkChange}
+            />
           </div>
         </div>
 
         <nav
           className={cn(
-            'flex flex-col gap-1 mt-2 p-2',
+            'flex flex-col gap-1 p-2',
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center rounded-lg text-sm transition-all relative',
-                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
-                collapsed && !isHovered
-                  ? 'h-10 w-10 justify-center'
-                  : 'px-3 h-10 gap-3',
-                router.pathname === item.href &&
-                  'bg-[#F4F4F5] dark:bg-secondary font-bold',
-              )}
-              title={collapsed && !isHovered ? item.name : undefined}
-            >
-              <item.icon className="h-4 w-4 min-w-4" />
-              {!(collapsed && !isHovered) && (
-                <span className="truncate">{item.name}</span>
-              )}
-              {!(collapsed && !isHovered) && item.badge && (
-                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-              {collapsed && !isHovered && item.badge && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white">
-                  {item.badge}
-                </span>
-              )}
-            </Link>
-          ))}
+          {navItems.map((item, index) => {
+            const isDev = item.href === '/developers';
+            const isActive = router.pathname === item.href;
+            const showSeparator = index > 0 && item.group !== navItems[index - 1].group;
+            return (
+              <div
+                key={item.href}
+                className={isFirstNavMount ? 'animate-fade-in-up opacity-0' : undefined}
+                style={
+                  isFirstNavMount
+                    ? { animationDelay: `${300 + Math.min(index, 7) * 40}ms` }
+                    : undefined
+                }
+              >
+                {showSeparator && (
+                  <div
+                    className={cn(
+                      'my-1.5',
+                      collapsed && !isHovered ? 'mx-1' : 'mx-2',
+                      'border-t border-border',
+                    )}
+                  />
+                )}
+                <Link
+                  href={item.href}
+                  className={cn(
+                    'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
+                    isDev
+                      ? isActive
+                        ? 'bg-violet-500/15 dark:bg-violet-500/20 font-bold text-violet-700 dark:text-violet-300 is-active'
+                        : 'hover:bg-violet-500/10 dark:hover:bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                      : cn(
+                          'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                          isActive && 'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
+                        ),
+                    collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+                  )}
+                  title={collapsed && !isHovered ? item.name : undefined}
+                >
+                  {item.icon}
+                  {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
+                  {!(collapsed && !isHovered) && item.badge && (
+                    <span
+                      key={item.badge}
+                      className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                  {collapsed && !isHovered && item.badge && (
+                    <span
+                      key={item.badge}
+                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              </div>
+            );
+          })}
         </nav>
 
         <div
           className={cn(
             'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
-            collapsed && !isHovered ? 'px-2' : 'px-4',
+            collapsed && !isHovered ? 'px-0' : 'px-2',
           )}
         >
-          <div className="flex items-center justify-between">
+          <div className={cn('mb-2', collapsed && !isHovered ? 'flex justify-center' : '')}>
+            <Link
+              href="/settings"
+              className={cn(
+                'flex items-center rounded-lg text-sm transition-colors duration-150 relative sidebar-active-indicator',
+                'hover:bg-[#F4F4F5] dark:hover:bg-secondary',
+                router.pathname === '/settings' &&
+                  'bg-[#F4F4F5] dark:bg-secondary font-bold is-active',
+                collapsed && !isHovered ? 'h-10 w-10 justify-center' : 'px-3 h-10 gap-3',
+              )}
+              title={collapsed && !isHovered ? 'Settings' : undefined}
+            >
+              <Settings className="h-4 w-4" />
+              {!(collapsed && !isHovered) && <span className="truncate">Settings</span>}
+            </Link>
+          </div>
+          <div className="border-t border-border mx-2 mb-2" />
+          <div className="flex items-center justify-between px-2">
             <div
               className={cn(
-                'flex gap-4 text-xs text-muted-foreground',
+                'flex items-center gap-0 text-xs text-muted-foreground',
                 collapsed && !isHovered && 'hidden',
               )}
             >
               <Link
                 href="https://www.masumi.network/about"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
                 About
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.house-of-communication.com/de/en/footer/privacy-policy.html"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
-                Privacy Policy
+                Privacy
               </Link>
+              <span className="mx-2 text-muted-foreground/40">|</span>
               <Link
                 href="https://www.masumi.network/product-releases"
                 target="_blank"
-                className="truncate"
+                className="truncate hover:text-foreground transition-colors"
               >
                 Changelog
               </Link>
@@ -390,14 +444,12 @@ export function MainLayout({ children }: MainLayoutProps) {
               variant="ghost"
               size="icon"
               className={cn('h-8 w-8', collapsed && !isHovered && 'mx-auto')}
-              onClick={() =>
-                setThemePreference(theme === 'dark' ? 'light' : 'dark')
-              }
+              onClick={() => setThemePreference(theme === 'dark' ? 'light' : 'dark')}
             >
               {theme === 'dark' ? (
-                <Sun className="h-4 w-4" />
+                <Sun key="sun" className="h-4 w-4 animate-pop-in" />
               ) : (
-                <Moon className="h-4 w-4" />
+                <Moon key="moon" className="h-4 w-4 animate-pop-in" />
               )}
             </Button>
           </div>
@@ -405,12 +457,9 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       <div
-        className="flex flex-col min-h-screen w-[100vw] transition-all duration-300"
+        className="flex flex-col min-h-screen w-screen transition-all duration-300"
         style={{
-          paddingLeft:
-            collapsed && !isHovered
-              ? `${sideBarWidthCollapsed}px`
-              : `${sideBarWidth}px`,
+          paddingLeft: collapsed && !isHovered ? `${sideBarWidthCollapsed}px` : `${sideBarWidth}px`,
         }}
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
@@ -455,7 +504,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                       ? 'bg-red-500 text-white hover:bg-red-600 dark:bg-red-500 dark:text-white dark:hover:bg-red-600'
                       : '',
                   )}
-                  onClick={handleOpenNotifications}
+                  onClick={() => setIsNotificationsOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
                   {formatCount(newTransactionsCount)}
@@ -465,14 +514,42 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
         </div>
 
-        <main className="flex-1 relative z-10 w-full">
-          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">
-            {children}
-          </div>
+        <main className="flex-1 relative z-10 w-full animate-content-fade-in">
+          <div className="max-w-[1400px] mx-auto w-full p-8 px-4">{children}</div>
         </main>
       </div>
 
       <SearchDialog open={isSearchOpen} onOpenChange={setIsSearchOpen} />
+
+      <Dialog
+        open={showNetworkSwitchConfirm}
+        onOpenChange={(open) => {
+          setShowNetworkSwitchConfirm(open);
+          if (!open) setPendingNetwork(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch network?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">
+            Switching network will cancel the current setup. You will need to start again for the
+            new network. Do you want to continue?
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowNetworkSwitchConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={confirmNetworkSwitch}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isNotificationsOpen && (
         <NotificationsDialog

@@ -46,16 +46,16 @@ export function RefreshButton({
         size="icon"
         onClick={onRefresh}
         disabled={isDisabled}
-        className={cn(
-          sizeClasses[size],
-          isRefreshing && 'cursor-not-allowed',
-          className,
-        )}
+        className={cn(sizeClasses[size], isRefreshing && 'cursor-not-allowed', className)}
         title={isRefreshing ? 'Refreshing...' : 'Refresh'}
       >
         <RefreshCw
           className={cn(iconSizes[size], isRefreshing && 'animate-spin')}
-          style={isRefreshing ? { animationDuration: '1s' } : undefined}
+          style={
+            isRefreshing
+              ? { animationDuration: '0.8s', animationTimingFunction: 'ease-in-out' }
+              : undefined
+          }
         />
       </Button>
     );
@@ -66,16 +66,16 @@ export function RefreshButton({
       variant="outline"
       onClick={onRefresh}
       disabled={isDisabled}
-      className={cn(
-        'flex items-center gap-2',
-        isRefreshing && 'cursor-not-allowed',
-        className,
-      )}
+      className={cn('flex items-center gap-2', isRefreshing && 'cursor-not-allowed', className)}
       title={isRefreshing ? 'Refreshing...' : 'Refresh'}
     >
       <RefreshCw
         className={cn(iconSizes[size], isRefreshing && 'animate-spin')}
-        style={isRefreshing ? { animationDuration: '1s' } : undefined}
+        style={
+          isRefreshing
+            ? { animationDuration: '0.8s', animationTimingFunction: 'ease-in-out' }
+            : undefined
+        }
       />
       <span className={textSizes[size]}>Refresh</span>
     </Button>

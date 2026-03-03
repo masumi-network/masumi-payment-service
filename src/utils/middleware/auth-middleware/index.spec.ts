@@ -1,227 +1,260 @@
+import { jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { testMiddleware } from 'express-zod-api';
-import { authMiddleware } from './index';
-import { ApiKeyStatus, Network, Permission } from '@prisma/client';
+import { ApiKeyStatus, Network, Permission } from '@/generated/prisma/client';
+import { generateSHA256Hash } from '@/utils/crypto';
 
-jest.mock('@/utils/db', () => ({
-  prisma: {
-    apiKey: {
-      findUnique: jest.fn(),
-    },
-  },
+type AnyMock = Mock<(...args: any[]) => any>;
+
+jest.unstable_mockModule('@/utils/db', () => ({
+	prisma: {
+		apiKey: {
+			findUnique: jest.fn(),
+		},
+	},
 }));
 
+const { authMiddleware } = await import('./index');
+const { prisma } = await import('@/utils/db');
+const mockFindUnique = prisma.apiKey.findUnique as AnyMock;
+
 describe('authMiddleware', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+	it('should resolve successfully if valid token provided', async () => {
+		mockFindUnique.mockResolvedValue({
+			id: 1,
+			permission: Permission.Admin,
+			status: ApiKeyStatus.Active,
+			tokenHash: generateSHA256Hash('valid'),
+			token: 'valid',
+			usageLimited: true,
+			networkLimit: [],
+		});
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: {
+				method: 'POST',
+				body: {},
+				headers: { token: 'valid' },
+			},
+		});
 
-  it('should throw 401 if no token provided read', async () => {
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.Read),
-        requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, no authentication token provided');
-  });
-  it('should throw 401 if no token provided pay', async () => {
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.ReadAndPay),
-        requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, no authentication token provided');
-  });
-  it('should throw 401 if no token provided admin', async () => {
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.Admin),
-        requestProps: { method: 'POST', body: {}, headers: {} },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, no authentication token provided');
-  });
-  it('should throw 401 if invalid token read', async () => {
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(null);
+		expect(responseMock.statusCode).toBe(200);
+	});
 
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.Read),
-        requestProps: {
-          method: 'POST',
-          body: {},
-          headers: { token: 'invalid' },
-        },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, invalid authentication token provided');
-  });
-  it('should throw 401 if invalid token pay', async () => {
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(null);
+	it('should throw 401 if no token provided read', async () => {
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Read),
+			requestProps: { method: 'POST', body: {}, headers: {} },
+		});
 
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.ReadAndPay),
-        requestProps: {
-          method: 'POST',
-          body: {},
-          headers: { token: 'invalid' },
-        },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, invalid authentication token provided');
-  });
-  it('should throw 401 if invalid token admin', async () => {
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(null);
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if no token provided pay', async () => {
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.ReadAndPay),
+			requestProps: { method: 'POST', body: {}, headers: {} },
+		});
 
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.Admin),
-        requestProps: {
-          method: 'POST',
-          body: {},
-          headers: { token: 'invalid' },
-        },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, invalid authentication token provided');
-  });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if no token provided admin', async () => {
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: { method: 'POST', body: {}, headers: {} },
+		});
 
-  it('should throw 401 if pay required but user is read', async () => {
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue({
-      id: 1,
-      permission: Permission.Read,
-      status: ApiKeyStatus.Active,
-      usageLimited: true,
-    });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if invalid token read', async () => {
+		mockFindUnique.mockResolvedValue(null);
 
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.ReadAndPay),
-        requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, payment access required');
-  });
-  it('should throw 401 if admin required but user is not admin', async () => {
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue({
-      id: 1,
-      permission: Permission.ReadAndPay,
-      status: ApiKeyStatus.Active,
-      usageLimited: true,
-      networkLimit: [Network.Preprod],
-    });
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Read),
+			requestProps: {
+				method: 'POST',
+				body: {},
+				headers: { token: 'invalid' },
+			},
+		});
 
-    await expect(
-      testMiddleware({
-        middleware: authMiddleware(Permission.Admin),
-        requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-        options: {},
-      }),
-    ).rejects.toThrow('Unauthorized, admin access required');
-  });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if invalid token pay', async () => {
+		mockFindUnique.mockResolvedValue(null);
 
-  it('should pass validation with valid user token', async () => {
-    const mockApiKey = {
-      id: 1,
-      permission: Permission.Read,
-      status: ApiKeyStatus.Active,
-      usageLimited: true,
-      networkLimit: [],
-    };
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.ReadAndPay),
+			requestProps: {
+				method: 'POST',
+				body: {},
+				headers: { token: 'invalid' },
+			},
+		});
 
-    const { output } = await testMiddleware({
-      middleware: authMiddleware(Permission.Read),
-      requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
-    });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if invalid token admin', async () => {
+		mockFindUnique.mockResolvedValue(null);
 
-    expect(output).toEqual({
-      id: mockApiKey.id,
-      permission: mockApiKey.permission,
-      usageLimited: mockApiKey.usageLimited,
-      networkLimit: mockApiKey.networkLimit,
-    });
-  });
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: {
+				method: 'POST',
+				body: {},
+				headers: { token: 'invalid' },
+			},
+		});
 
-  it('should pass validation with valid pay token', async () => {
-    const mockApiKey = {
-      id: 1,
-      permission: Permission.ReadAndPay,
-      status: ApiKeyStatus.Active,
-      usageLimited: true,
-      networkLimit: [],
-    };
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
+		expect(responseMock.statusCode).toBe(401);
+	});
 
-    const { output } = await testMiddleware({
-      middleware: authMiddleware(Permission.ReadAndPay),
-      requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
-    });
+	it('should throw 401 if pay required but user is read', async () => {
+		mockFindUnique.mockResolvedValue({
+			id: 1,
+			permission: Permission.Read,
+			status: ApiKeyStatus.Active,
+			tokenHash: generateSHA256Hash('valid'),
+			token: 'valid',
+			usageLimited: true,
+		});
 
-    expect(output).toEqual({
-      id: mockApiKey.id,
-      permission: mockApiKey.permission,
-      usageLimited: mockApiKey.usageLimited,
-      networkLimit: [],
-    });
-  });
-  it('should pass validation with valid admin token', async () => {
-    const mockApiKey = {
-      id: 1,
-      permission: Permission.Admin,
-      status: ApiKeyStatus.Active,
-      usageLimited: false,
-      networkLimit: [],
-    };
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.ReadAndPay),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
 
-    const { output } = await testMiddleware({
-      middleware: authMiddleware(Permission.Admin),
-      requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
-    });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if admin required but user is not admin', async () => {
+		mockFindUnique.mockResolvedValue({
+			id: 1,
+			permission: Permission.ReadAndPay,
+			status: ApiKeyStatus.Active,
+			tokenHash: generateSHA256Hash('valid'),
+			token: 'valid',
+			usageLimited: true,
+			networkLimit: [Network.Preprod],
+		});
 
-    expect(output).toEqual({
-      id: mockApiKey.id,
-      permission: mockApiKey.permission,
-      networkLimit: [Network.Mainnet, Network.Preprod],
-      usageLimited: false,
-    });
-  });
-  it('should pass validation with valid network ', async () => {
-    const mockApiKey = {
-      id: 1,
-      permission: Permission.ReadAndPay,
-      status: ApiKeyStatus.Active,
-      usageLimited: false,
-      networkLimit: [Network.Preprod, Network.Mainnet],
-    };
-    const { prisma } = require('@/utils/db');
-    (prisma.apiKey.findUnique as jest.Mock).mockResolvedValue(mockApiKey);
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
 
-    const { output } = await testMiddleware({
-      middleware: authMiddleware(Permission.ReadAndPay),
-      requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
-      options: {},
-    });
+		expect(responseMock.statusCode).toBe(401);
+	});
+	it('should throw 401 if token is revoked', async () => {
+		mockFindUnique.mockResolvedValue({
+			id: 1,
+			permission: Permission.Admin,
+			status: ApiKeyStatus.Revoked,
+			tokenHash: generateSHA256Hash('valid'),
+			token: 'valid',
+			usageLimited: true,
+			networkLimit: [Network.Preprod],
+		});
 
-    expect(output).toEqual({
-      id: mockApiKey.id,
-      permission: mockApiKey.permission,
-      networkLimit: mockApiKey.networkLimit,
-      usageLimited: mockApiKey.usageLimited,
-    });
-  });
+		const { responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect(responseMock.statusCode).toBe(401);
+	});
+
+	it('should pass validation with valid user token', async () => {
+		const mockApiKey = {
+			id: 1,
+			permission: Permission.Read,
+			status: ApiKeyStatus.Active,
+			tokenHash: generateSHA256Hash('valid'),
+			token: 'valid',
+			usageLimited: true,
+			networkLimit: [],
+		};
+		mockFindUnique.mockResolvedValue(mockApiKey);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware(Permission.Read),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect(output).toEqual({
+			id: mockApiKey.id,
+			permission: mockApiKey.permission,
+			usageLimited: mockApiKey.usageLimited,
+			networkLimit: mockApiKey.networkLimit,
+		});
+	});
+
+	it('should pass validation with valid pay token', async () => {
+		const mockApiKey = {
+			id: 1,
+			permission: Permission.ReadAndPay,
+			status: ApiKeyStatus.Active,
+			usageLimited: true,
+			networkLimit: [],
+		};
+		mockFindUnique.mockResolvedValue(mockApiKey);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware(Permission.ReadAndPay),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect(output).toEqual({
+			id: mockApiKey.id,
+			permission: mockApiKey.permission,
+			usageLimited: mockApiKey.usageLimited,
+			networkLimit: [],
+		});
+	});
+	it('should pass validation with valid admin token', async () => {
+		const mockApiKey = {
+			id: 1,
+			permission: Permission.Admin,
+			status: ApiKeyStatus.Active,
+			usageLimited: false,
+			networkLimit: [],
+		};
+		mockFindUnique.mockResolvedValue(mockApiKey);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware(Permission.Admin),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect(output).toEqual({
+			id: mockApiKey.id,
+			permission: mockApiKey.permission,
+			networkLimit: [Network.Mainnet, Network.Preprod],
+			usageLimited: false,
+		});
+	});
+	it('should pass validation with valid network ', async () => {
+		const mockApiKey = {
+			id: 1,
+			permission: Permission.ReadAndPay,
+			status: ApiKeyStatus.Active,
+			usageLimited: false,
+			networkLimit: [Network.Preprod, Network.Mainnet],
+		};
+		mockFindUnique.mockResolvedValue(mockApiKey);
+
+		const { output, responseMock } = await testMiddleware({
+			middleware: authMiddleware(Permission.ReadAndPay),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+		expect(responseMock.statusCode).toBe(200);
+
+		expect(output).toEqual({
+			id: mockApiKey.id,
+			permission: mockApiKey.permission,
+			networkLimit: mockApiKey.networkLimit,
+			usageLimited: mockApiKey.usageLimited,
+		});
+	});
 });
