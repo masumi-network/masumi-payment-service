@@ -14,7 +14,7 @@ import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { handleApiCall } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
@@ -88,7 +88,6 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     handleSubmit,
     control,
     setValue,
-    watch,
     reset,
     formState: { errors },
   } = useForm<ApiKeyFormValues>({
@@ -104,10 +103,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     },
   });
 
-  const permissionPreset = watch('permissionPreset');
-  const canAdmin = watch('canAdmin');
-  const canPay = watch('canPay');
-  const usageLimited = watch('usageLimited');
+  const permissionPreset = useWatch({ control, name: 'permissionPreset', defaultValue: 'Read' });
+  const canAdmin = useWatch({ control, name: 'canAdmin', defaultValue: false });
+  const canPay = useWatch({ control, name: 'canPay', defaultValue: false });
+  const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
 
   // Update flags when preset changes
   useEffect(() => {

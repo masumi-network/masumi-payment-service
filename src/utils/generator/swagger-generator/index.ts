@@ -348,11 +348,11 @@ import {
 	deleteWebhookSchemaOutput,
 } from '@/routes/api/webhooks';
 import {
-	monitoringStatusResponseSchema,
-	triggerMonitoringCycleResponseSchema,
-	startMonitoringSchemaInput,
-	startMonitoringResponseSchema,
-	stopMonitoringResponseSchema,
+	monitoringStatusResponseSchema as _monitoringStatusResponseSchema,
+	triggerMonitoringCycleResponseSchema as _triggerMonitoringCycleResponseSchema,
+	startMonitoringSchemaInput as _startMonitoringSchemaInput,
+	startMonitoringResponseSchema as _startMonitoringResponseSchema,
+	stopMonitoringResponseSchema as _stopMonitoringResponseSchema,
 } from '@/routes/api/monitoring';
 import {
 	postGenerateMonthlyInvoiceSchemaInput,
