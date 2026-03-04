@@ -8,7 +8,7 @@
 	"type": "module",
 	"packageManager": "pnpm@10.30.2",
 	"scripts": {
-		"postinstall": "pnpm run prisma:generate",
+		"postinstall": "test -f prisma/prisma.config.ts && pnpm run prisma:generate || true",
 		"prepare": "husky",
 		"lint": "eslint \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint",
 		"lint:fix": "eslint --fix \"src/**/*.{ts,js}\" --config eslint.config.mjs && pnpm -C frontend run lint:fix",
