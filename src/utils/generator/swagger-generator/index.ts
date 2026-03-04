@@ -327,7 +327,7 @@ import {
 	postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
-import { swapTokensSchemaInput, swapTokensSchemaOutput } from '@/routes/api/swap';
+import { swapTokensSchemaInput, swapTokensSchemaOutput } from '@/routes/api/swap/schemas';
 import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
