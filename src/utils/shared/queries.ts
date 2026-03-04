@@ -34,7 +34,15 @@ export function parseAmountSearchRange(searchQuery: string): { gte: bigint; lte:
 
 export function buildMatchingStates(searchLower: string | undefined): OnChainState[] | undefined {
 	if (!searchLower) return undefined;
-	return Object.values(OnChainState).filter((s) => s.toLowerCase().includes(searchLower));
+	return Object.values(OnChainState).filter(
+		(s) =>
+			s.toLowerCase().includes(searchLower) ||
+			s
+				.replace(/([A-Z])/g, ' $1')
+				.trim()
+				.toLowerCase()
+				.includes(searchLower),
+	);
 }
 
 export function buildTransactionSearchFilter(

@@ -177,7 +177,9 @@ export default function Transactions() {
     const amountRange = parseAmountSearchRange(query);
 
     // Mirror backend buildMatchingStates
-    const matchingStates = ON_CHAIN_STATES.filter((s) => s.toLowerCase().includes(query));
+    const matchingStates = ON_CHAIN_STATES.filter(
+      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
+    );
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
