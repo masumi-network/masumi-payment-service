@@ -190,7 +190,7 @@ const apiKeyExample = {
 		},
 	],
 	status: ApiKeyStatus.Active,
-	PaymentSourceScopes: [],
+	WalletScopes: [],
 } satisfies z.infer<typeof apiKeyOutputSchema>;
 
 const walletExample = {
