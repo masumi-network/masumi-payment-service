@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react';
+import { Search, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from './input';
 
@@ -7,6 +7,7 @@ interface SearchInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  isLoading?: boolean;
 }
 
 export function SearchInput({
@@ -14,10 +15,15 @@ export function SearchInput({
   onChange,
   placeholder = 'Search...',
   className,
+  isLoading,
 }: SearchInputProps) {
   return (
     <div className="relative group">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-all duration-200 group-focus-within:scale-90 group-focus-within:text-foreground" />
+      {isLoading ? (
+        <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+      ) : (
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-all duration-200 group-focus-within:scale-90 group-focus-within:text-foreground" />
+      )}
       <Input
         className={cn('pl-9 h-9', value && 'pr-8', className)}
         placeholder={placeholder}

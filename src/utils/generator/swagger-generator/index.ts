@@ -15,6 +15,8 @@ import {
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
+	queryPaymentCountSchemaInput,
+	queryPaymentCountSchemaOutput,
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from '@/routes/api/payments';
@@ -23,6 +25,8 @@ import { postPaymentIncomeSchemaInput, postPaymentIncomeSchemaOutput } from '@/r
 import {
 	createPurchaseInitSchemaInput,
 	createPurchaseInitSchemaOutput,
+	queryPurchaseCountSchemaInput,
+	queryPurchaseCountSchemaOutput,
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases';
@@ -30,6 +34,8 @@ import { postPurchaseSpendingSchemaInput, postPurchaseSpendingSchemaOutput } fro
 import {
 	queryRegistryRequestSchemaInput,
 	queryRegistryRequestSchemaOutput,
+	queryRegistryCountSchemaInput,
+	queryRegistryCountSchemaOutput,
 	registerAgentSchemaInput,
 	registerAgentSchemaOutput,
 	deleteAgentRegistrationSchemaInput,
@@ -918,6 +924,84 @@ export function generateOpenAPI() {
 
 	registry.registerPath({
 		method: 'get',
+		path: '/payment/count',
+		description: 'Gets the total count of payments.',
+		summary: 'Get the total number of payments. (READ access required)',
+		tags: ['payment'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryPaymentCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total payments count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryPaymentCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 150,
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/purchase/count',
+		description: 'Gets the total count of purchases.',
+		summary: 'Get the total number of purchases. (READ access required)',
+		tags: ['purchase'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryPurchaseCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total purchases count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryPurchaseCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 75,
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
 		path: '/payment/diff/onchain-state-or-result',
 		description: 'Returns payments whose on-chain state or result hash changed since lastUpdate.',
 		summary: 'Diff payments by on-chain-state/result timestamp (READ access required)',
@@ -1448,6 +1532,45 @@ export function generateOpenAPI() {
 									data: {
 										invoice: 'BASE64_PDF_STRING',
 										cancellationInvoice: 'BASE64_CANCELLATION_PDF_STRING_OR_UNDEFINED',
+									},
+								},
+							}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/registry/count',
+		description: 'Gets the total count of AI agents.',
+		summary: 'Get the total number of AI agents. (READ access required)',
+		tags: ['registry'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: queryRegistryCountSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					filterSmartContractAddress: null,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Total AI agents count',
+				content: {
+					'application/json': {
+						schema: z
+							.object({
+								status: z.string(),
+								data: queryRegistryCountSchemaOutput,
+							})
+							.openapi({
+								example: {
+									status: 'success',
+									data: {
+										total: 42,
 									},
 								},
 							}),

@@ -27,8 +27,6 @@ export function ApiKeyDialog() {
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
-    console.log('key', key);
-    console.log('apiClient', apiClient);
 
     try {
       apiClient.setConfig({ headers: { token: key } });

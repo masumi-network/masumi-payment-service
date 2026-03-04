@@ -6,11 +6,11 @@ import {
 	updateAPIKeyEndpointPatch,
 	deleteAPIKeyEndpointDelete,
 } from './api-key';
-import { createPurchaseInitPost, queryPurchaseRequestGet } from './purchases';
+import { createPurchaseInitPost, queryPurchaseCountGet, queryPurchaseRequestGet } from './purchases';
 import { postPurchaseSpending } from './purchases/spending';
-import { paymentInitPost, queryPaymentEntryGet } from './payments';
+import { paymentInitPost, queryPaymentCountGet, queryPaymentEntryGet } from './payments';
 import { getPaymentIncome } from './payments/income';
-import { deleteAgentRegistration, queryRegistryRequestGet, registerAgentPost } from './registry';
+import { deleteAgentRegistration, queryRegistryCountGet, queryRegistryRequestGet, registerAgentPost } from './registry';
 import {
 	paymentSourceExtendedEndpointDelete,
 	paymentSourceExtendedEndpointGet,
@@ -82,6 +82,9 @@ export const apiRouter: Routing = {
 			spending: {
 				post: postPurchaseSpending,
 			},
+			count: {
+				get: queryPurchaseCountGet,
+			},
 		},
 		payment: {
 			get: queryPaymentEntryGet,
@@ -110,6 +113,9 @@ export const apiRouter: Routing = {
 			income: {
 				post: getPaymentIncome,
 			},
+			count: {
+				get: queryPaymentCountGet,
+			},
 		},
 		registry: {
 			get: queryRegistryRequestGet,
@@ -126,6 +132,9 @@ export const apiRouter: Routing = {
 			},
 			'agent-identifier': {
 				get: queryAgentByIdentifierGet,
+			},
+			count: {
+				get: queryRegistryCountGet,
 			},
 		},
 		'api-key-status': {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
 import { cn, formatFundUnit } from '@/lib/utils';
@@ -7,7 +7,6 @@ import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { MoreHorizontal, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
@@ -16,10 +15,12 @@ import TransactionDetailsDialog from '@/components/transactions/TransactionDetai
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
-import { useTransactions } from '@/lib/hooks/useTransactions';
+import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
@@ -34,8 +35,35 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
   return new Date(timestamp).toLocaleString();
 };
 
+const formatStatus = (status: string | null) => {
+  if (!status) return '—';
+  return status.replace(/([A-Z])/g, ' $1').trim();
+};
+
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+
+  const [activeTab, setActiveTab] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
+
+  const filterParams = useMemo(() => {
+    const params: {
+      filterOnChainState?: OnChainStateFilter;
+      searchQuery?: string;
+      transactionType?: 'payment' | 'purchase';
+    } = {};
+
+    if (activeTab === 'Payments') params.transactionType = 'payment';
+    else if (activeTab === 'Purchases') params.transactionType = 'purchase';
+    else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
+    else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+
+    if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
+
+    return params;
+  }, [activeTab, debouncedSearchQuery]);
+
   const {
     transactions,
     isLoading,
@@ -43,7 +71,12 @@ export default function Transactions() {
     loadMore,
     refetch: refetchTransactions,
     isFetchingNextPage,
-  } = useTransactions();
+    isFetching: isFetchingTransactions,
+    isPlaceholderData,
+  } = useTransactions(filterParams, { trackVisit: false });
+
+  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
+  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
 
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
@@ -56,23 +89,17 @@ export default function Transactions() {
     }).format(numericAmount);
   };
 
-  const [activeTab, setActiveTab] = useState('All');
-
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const isLoadingMore = isFetchingNextPage;
-  const isInitialLoading = isLoading && transactions.length === 0;
-  const allTransactions = useMemo(() => transactions, [transactions]);
+  const isInitialLoading = isLoading && !transactions.length;
 
   const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filteredTransactions
-    const seenHashes = new Set();
-    const dedupedTransactions = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+    const seenIds = new Set<string>();
+    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
 
@@ -96,73 +123,69 @@ export default function Transactions() {
         variant: 'alert' as const,
       },
     ];
-  }, [allTransactions]);
+  }, [allTransactionsForCounts]);
 
+  // Dedup only — server handles filtering
   const filteredTransactions = useMemo(() => {
-    const seenHashes = new Set();
-    let filtered = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+    const seenIds = new Set<string>();
+    return transactions.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
+  }, [transactions]);
 
-    if (activeTab === 'Payments') {
-      filtered = filtered.filter((t) => t.type === 'payment');
-    } else if (activeTab === 'Purchases') {
-      filtered = filtered.filter((t) => t.type === 'purchase');
-    } else if (activeTab === 'Refund Requests') {
-      filtered = filtered.filter((t) => t.onChainState === 'RefundRequested');
-    } else if (activeTab === 'Disputes') {
-      filtered = filtered.filter((t) => t.onChainState === 'Disputed');
-    }
+  // True whenever server-authoritative results haven't arrived yet:
+  // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((transaction) => {
-        const matchId = transaction.id?.toLowerCase().includes(query) || false;
-        const matchHash =
-          transaction.CurrentTransaction?.txHash?.toLowerCase().includes(query) || false;
-        const matchState = transaction.onChainState?.toLowerCase().includes(query) || false;
-        const matchType = transaction.type?.toLowerCase().includes(query) || false;
-        const matchNetwork =
-          transaction.PaymentSource?.network?.toLowerCase().includes(query) || false;
-        const matchWallet =
-          transaction.SmartContractWallet?.walletAddress?.toLowerCase().includes(query) || false;
+  // Client-side filter for instant feedback while server results are pending.
+  // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
+  // to avoid items appearing/disappearing when the server responds.
+  const displayTransactions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
+      return filteredTransactions;
 
-        const matchRequestedFunds =
-          transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some((fund) =>
-            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
-          );
-        const matchPaidFunds =
-          transaction.type === 'purchase' &&
-          transaction.PaidFunds?.some((fund) =>
-            (parseInt(fund.amount) / 1000000).toString().toLowerCase().includes(query),
-          );
+    const amountRange = parseAmountSearchRange(query);
 
-        return (
-          matchId ||
-          matchHash ||
-          matchState ||
-          matchType ||
-          matchNetwork ||
-          matchWallet ||
-          matchRequestedFunds ||
-          matchPaidFunds
-        );
-      });
-    }
+    // Mirror backend buildMatchingStates
+    const matchingStates = ON_CHAIN_STATES.filter(
+      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
+    );
 
-    return filtered;
-  }, [allTransactions, searchQuery, activeTab]);
+    return filteredTransactions.filter((tx) => {
+      if (tx.id?.toLowerCase().includes(query)) return true;
+      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
+      if (tx.type?.toLowerCase().includes(query)) return true;
+      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
+        return true;
+      if (amountRange) {
+        const funds =
+          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
+        if (
+          funds?.some((f) => {
+            const amt = parseInt(f.amount);
+            return amt >= amountRange.min && amt <= amountRange.max;
+          })
+        )
+          return true;
+      }
+      return false;
+    });
+  }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
+  // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
+  const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('masumi_last_transactions_visit', new Date().toISOString());
-      localStorage.setItem('masumi_new_transactions_count', '0');
-    }
+    markAllAsReadRef.current = markAllAsRead;
+  }, [markAllAsRead]);
+  useEffect(() => {
+    markAllAsReadRef.current();
   }, [network, apiClient, selectedPaymentSourceId]);
 
   const refreshTransactions = useCallback(() => {
@@ -193,11 +216,6 @@ export default function Transactions() {
       default:
         return 'text-muted-foreground';
     }
-  };
-
-  const formatStatus = (status: string | null) => {
-    if (!status) return '—';
-    return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
   // Generate CSV data for transactions
@@ -290,10 +308,13 @@ export default function Transactions() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              <RefreshButton
+                onRefresh={() => refreshTransactions()}
+                isRefreshing={isFetchingTransactions}
+              />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={filteredTransactions.length === 0}
+                disabled={displayTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
@@ -324,12 +345,18 @@ export default function Transactions() {
                 onChange={setSearchQuery}
                 placeholder="Search by ID, hash, status, amount..."
                 className="max-w-xs"
+                isLoading={isSearchPending && !!searchQuery}
               />
             </div>
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full">
+            <table
+              className={cn(
+                'w-full transition-opacity duration-150',
+                isSearchPending && 'opacity-70',
+              )}
+            >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
@@ -355,35 +382,39 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isInitialLoading || (displayTransactions.length === 0 && isSearchPending) ? (
                   <TransactionTableSkeleton rows={5} />
-                ) : isInitialLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
-                ) : filteredTransactions.length === 0 ? (
+                ) : displayTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={8}>
                       <EmptyState
-                        icon="inbox"
-                        title="No transactions found"
-                        description="Transactions will appear here once payments are made."
+                        icon={searchQuery ? 'search' : 'inbox'}
+                        title={
+                          searchQuery
+                            ? 'No transactions found matching your search'
+                            : 'No transactions found'
+                        }
+                        description={
+                          searchQuery
+                            ? 'Try adjusting your search terms'
+                            : 'Transactions will appear here once payments are made.'
+                        }
                         action={
-                          <Link
-                            href="/developers"
-                            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-                          >
-                            <FlaskConical className="h-3.5 w-3.5" />
-                            Create a test transaction
-                          </Link>
+                          !searchQuery ? (
+                            <Link
+                              href="/developers"
+                              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                            >
+                              <FlaskConical className="h-3.5 w-3.5" />
+                              Create a test transaction
+                            </Link>
+                          ) : undefined
                         }
                       />
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction, index) => (
+                  displayTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(
