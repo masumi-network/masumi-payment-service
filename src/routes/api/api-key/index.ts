@@ -267,7 +267,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					}
 				}
 
-				if (input.addWalletIds?.length) {
+				const isAdmin = apiKey.permission === Permission.Admin;
+				if (!isAdmin && input.addWalletIds?.length) {
 					const found = await prisma.hotWallet.findMany({
 						where: { id: { in: input.addWalletIds }, deletedAt: null },
 						select: { id: true },
@@ -283,7 +284,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						skipDuplicates: true,
 					});
 				}
-				if (input.removeWalletIds?.length) {
+				if (!isAdmin && input.removeWalletIds?.length) {
 					await prisma.apiKeyWalletScope.deleteMany({
 						where: {
 							apiKeyId: input.id,
