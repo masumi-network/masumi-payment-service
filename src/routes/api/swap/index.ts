@@ -30,9 +30,13 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 			// Lock the wallet in a transaction to prevent concurrent usage
 			const wallet = await prisma.$transaction(
 				async (prisma) => {
-					const wallet = await prisma.hotWallet.findUnique({
+					const wallet = await prisma.hotWallet.findFirst({
 						where: {
 							walletVkey: input.walletVkey,
+							deletedAt: null,
+							PaymentSource: {
+								network: { in: ctx.networkLimit },
+							},
 						},
 						include: {
 							Secret: true,
@@ -46,10 +50,6 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 
 					if (wallet == null) {
 						throw createHttpError(404, 'Wallet not found');
-					}
-
-					if (wallet.deletedAt != null) {
-						throw createHttpError(404, 'Wallet has been deleted');
 					}
 
 					if (wallet.lockedAt != null) {
@@ -146,8 +146,14 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
 
-			const wallet = await prisma.hotWallet.findUnique({
-				where: { walletVkey: input.walletVkey },
+			const wallet = await prisma.hotWallet.findFirst({
+				where: {
+					walletVkey: input.walletVkey,
+					deletedAt: null,
+					PaymentSource: {
+						network: { in: ctx.networkLimit },
+					},
+				},
 				include: {
 					PaymentSource: {
 						include: {
@@ -157,7 +163,7 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 				},
 			});
 
-			if (wallet == null || wallet.deletedAt != null) {
+			if (wallet == null) {
 				throw createHttpError(404, 'Wallet not found');
 			}
 

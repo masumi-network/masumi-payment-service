@@ -15,5 +15,14 @@
     "policyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
     "assetName": "USDM",
     "hexedAssetName": "0014df105553444d"
+  },
+  {
+    "name": "USDCx",
+    "address": "usdcx-address",
+    "symbol": "USDCx",
+    "poolId": "bdf5e1ccc9aea3c8d587cc6b6fb74ea531538e96ab8cb7d56238698e",
+    "policyId": "1f3aec8bfe7ea4fe14c5f121e2a92e301afe414147860d557cac7e34",
+    "assetName": "USDCx",
+    "hexedAssetName": "5553444378"
   }
 ]

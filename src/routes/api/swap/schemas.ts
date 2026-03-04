@@ -6,7 +6,11 @@ import { z } from 'zod';
  */
 export const swapTokensSchemaInput = z.object({
 	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) to identify the wallet'),
-	amount: z.number().positive().describe('Amount to swap (in ADA or token units)'),
+	amount: z
+		.number()
+		.positive()
+		.max(1e12)
+		.describe('Amount to swap (in ADA or token units). Capped to prevent overflow/DoS.'),
 	fromToken: z
 		.object({
 			policyId: z.string().describe('Policy ID of the source token. Use empty string "" for ADA (native token)'),

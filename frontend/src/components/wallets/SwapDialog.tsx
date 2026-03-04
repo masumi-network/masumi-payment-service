@@ -25,6 +25,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
+import usdcxIcon from '@/assets/usdcx.png';
 
 interface SwapDialogProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export function SwapDialog({
   const { apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
+  const [otherTokenBalances, setOtherTokenBalances] = useState<Record<string, number>>({});
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,8 +157,29 @@ export function SwapDialog({
           );
         }, 0) ?? 0;
 
+      const others: Record<string, number> = {};
+      for (const token of swappableTokens) {
+        if (token.symbol === 'ADA' || token.symbol === 'USDM') continue;
+        if (!token.policyId || !token.hexedAssetName || token.hexedAssetName === 'NATIVE') continue;
+        const fullUnit = token.policyId + token.hexedAssetName;
+        const sum =
+          result?.data?.data?.Utxos?.reduce((acc, utxo) => {
+            return (
+              acc +
+              utxo.Amounts.reduce((acc, asset) => {
+                if (asset.unit === fullUnit) {
+                  return acc + (asset.quantity ?? 0);
+                }
+                return acc;
+              }, 0)
+            );
+          }, 0) ?? 0;
+        others[token.symbol] = sum / 1_000_000;
+      }
+
       setAdaBalance(lovelace / 1000000);
       setUsdmBalance(usdm / 1000000);
+      setOtherTokenBalances(others);
       setBalanceError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
@@ -206,7 +229,7 @@ export function SwapDialog({
       case 'USDM':
         return usdmBalance;
       default:
-        return 0;
+        return otherTokenBalances[tokenSymbol] ?? 0;
     }
   };
 
@@ -249,8 +272,14 @@ export function SwapDialog({
   const conversionRate = getConversionRate();
   const toAmount = fromAmount * conversionRate;
 
-  const formattedDollarValue =
-    selectedFromToken.symbol === 'USDM' ? `~$${fromAmount.toFixed(2)}` : `$${toAmount.toFixed(2)}`;
+  const STABLECOIN_SYMBOLS = ['USDM', 'USDCx'];
+  const fromIsStablecoin = STABLECOIN_SYMBOLS.includes(selectedFromToken.symbol);
+  const toIsAda = selectedToToken.symbol === 'ADA';
+  const formattedDollarValue = fromIsStablecoin
+    ? `~$${fromAmount.toFixed(2)}`
+    : toIsAda
+      ? `$${(toAmount * adaToUsdRate).toFixed(2)}`
+      : `$${toAmount.toFixed(2)}`;
 
   const formattedFromBalance = formatBalance(
     getBalanceForToken(selectedFromToken.symbol).toFixed(6),
@@ -284,15 +313,19 @@ export function SwapDialog({
         throw new Error('Pool ID not found for selected tokens');
       }
 
+      type SwappableToken = (typeof swappableTokens)[number] & { hexedAssetName?: string };
+      const assetNameForApi = (token: SwappableToken): string => {
+        if (token.assetName === 'ADA' || token.assetName === 'NATIVE') return '';
+        if (token.hexedAssetName && token.hexedAssetName !== 'NATIVE') return token.hexedAssetName;
+        return token.assetName || '';
+      };
+
       const fromToken = {
         policyId:
           selectedFromToken.policyId === 'NATIVE' || selectedFromToken.policyId === ''
             ? ''
             : selectedFromToken.policyId || '',
-        assetName:
-          selectedFromToken.assetName === 'ADA' || selectedFromToken.assetName === 'NATIVE'
-            ? ''
-            : selectedFromToken.assetName || '',
+        assetName: assetNameForApi(selectedFromToken as SwappableToken),
         name: selectedFromToken.name || selectedFromToken.symbol,
       };
 
@@ -301,10 +334,7 @@ export function SwapDialog({
           selectedToToken.policyId === 'NATIVE' || selectedToToken.policyId === ''
             ? ''
             : selectedToToken.policyId || '',
-        assetName:
-          selectedToToken.assetName === 'ADA' || selectedToToken.assetName === 'NATIVE'
-            ? ''
-            : selectedToToken.assetName || '',
+        assetName: assetNameForApi(selectedToToken as SwappableToken),
         name: selectedToToken.name || selectedToToken.symbol,
       };
 
@@ -420,6 +450,8 @@ export function SwapDialog({
         return adaIcon;
       case 'USDM':
         return usdmIcon;
+      case 'USDCx':
+        return usdcxIcon;
       case 'NMKR':
         return nmkrIcon;
       default:
