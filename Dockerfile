@@ -14,8 +14,8 @@ COPY tsconfig.json .
 COPY eslint.config.mjs .
 COPY frontend/package.json ./frontend/
 
-RUN pnpm install --frozen-lockfile
-RUN pnpm exec prisma generate
+RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm run prisma:generate
 RUN pnpm run build
 RUN pnpm run swagger-json
 
