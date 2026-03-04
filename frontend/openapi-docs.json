@@ -3020,7 +3020,7 @@
                                                 }
                                             ],
                                             "status": "Active",
-                                            "PaymentSourceScopes": []
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3423,7 +3423,7 @@
                                                         }
                                                     ],
                                                     "status": "Active",
-                                                    "PaymentSourceScopes": []
+                                                    "WalletScopes": []
                                                 }
                                             ]
                                         },
@@ -3579,7 +3579,7 @@
                                                 }
                                             ],
                                             "status": "Active",
-                                            "PaymentSourceScopes": []
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3757,7 +3757,7 @@
                                                 }
                                             ],
                                             "status": "Active",
-                                            "PaymentSourceScopes": []
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
@@ -3845,7 +3845,7 @@
                                                 }
                                             ],
                                             "status": "Revoked",
-                                            "PaymentSourceScopes": []
+                                            "WalletScopes": []
                                         }
                                     }
                                 }
