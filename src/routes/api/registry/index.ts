@@ -214,6 +214,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 									},
 								},
 								...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
+								...('free'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Free } }] : []),
 							],
 						}
 					: {}),

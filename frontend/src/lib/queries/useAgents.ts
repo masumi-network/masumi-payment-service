@@ -5,6 +5,8 @@ import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
 import { useMemo } from 'react';
 
+const PAGE_SIZE = 10;
+
 export function useAgents(params?: {
   filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   searchQuery?: string;
@@ -49,6 +51,7 @@ export function useAgents(params?: {
               network: network,
               cursorId: pageParam ?? undefined,
               filterSmartContractAddress: smartContractAddress ? smartContractAddress : undefined,
+              limit: PAGE_SIZE,
               filterStatus: params?.filterStatus,
               searchQuery: params?.searchQuery || undefined,
             },
@@ -60,7 +63,7 @@ export function useAgents(params?: {
 
       const agents = response?.data?.data?.Assets ?? [];
       const nextCursor =
-        agents.length === 10 && agents[agents.length - 1]?.id
+        agents.length === PAGE_SIZE && agents[agents.length - 1]?.id
           ? agents[agents.length - 1].id
           : undefined;
 

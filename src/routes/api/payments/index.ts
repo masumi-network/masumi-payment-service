@@ -30,6 +30,7 @@ import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/uti
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -494,7 +495,7 @@ export const createPaymentSchemaOutput = paymentResponseSchema.omit({
 	ActionHistory: true,
 });
 
-export const paymentInitPost = readAuthenticatedEndpointFactory.build({
+export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,
