@@ -19,9 +19,11 @@ export function parseAmountSearchRange(searchQuery: string): { gte: bigint; lte:
 	let maxLovelace: bigint;
 
 	if (hasDecimal) {
+		const decimalDigits = numericMatch[1].split('.')[1].length;
+		const precision = Math.pow(10, decimalDigits);
 		minLovelace = BigInt(Math.floor(numericValue * 1000000));
-		const nextDecimal = Math.ceil(numericValue * 10) / 10;
-		maxLovelace = BigInt(Math.floor(nextDecimal * 1000000)) - 1n;
+		const nextStep = (Math.floor(numericValue * precision) + 1) / precision;
+		maxLovelace = BigInt(Math.floor(nextStep * 1000000)) - 1n;
 	} else {
 		minLovelace = BigInt(Math.floor(numericValue * 1000000));
 		maxLovelace = BigInt(Math.floor((numericValue + 1) * 1000000)) - 1n;

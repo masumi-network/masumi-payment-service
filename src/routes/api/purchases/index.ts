@@ -27,6 +27,7 @@ import { recordBusinessEndpointError } from '@/utils/metrics';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -232,7 +233,7 @@ export const queryPurchaseRequestSchemaOutput = z.object({
 	Purchases: z.array(purchaseResponseSchema),
 });
 
-export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseRequestSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
@@ -383,7 +384,7 @@ export const queryPurchaseRequestGet = payAuthenticatedEndpointFactory.build({
 	},
 });
 
-export const queryPurchaseCountGet = payAuthenticatedEndpointFactory.build({
+export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryPurchaseCountSchemaInput,
 	output: queryPurchaseCountSchemaOutput,
