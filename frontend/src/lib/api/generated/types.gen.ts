@@ -1989,7 +1989,7 @@ export type PostSwapData = {
          */
         walletVkey: string;
         /**
-         * Amount to swap (in ADA or token units)
+         * Amount to swap (in ADA or token units). Capped to prevent overflow/DoS.
          */
         amount: number;
         /**

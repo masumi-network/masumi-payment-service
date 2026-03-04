@@ -3843,7 +3843,8 @@
                                         "type": "number",
                                         "minimum": 0,
                                         "exclusiveMinimum": true,
-                                        "description": "Amount to swap (in ADA or token units)"
+                                        "maximum": 1000000000000,
+                                        "description": "Amount to swap (in ADA or token units). Capped to prevent overflow/DoS."
                                     },
                                     "fromToken": {
                                         "type": "object",
