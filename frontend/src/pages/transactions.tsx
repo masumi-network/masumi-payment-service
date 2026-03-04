@@ -1,24 +1,27 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { cn } from '@/lib/utils';
+
+import { cn, formatFundUnit } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
-import { Spinner } from '@/components/ui/spinner';
-import { Search } from 'lucide-react';
+import { MoreHorizontal, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
 import { CopyButton } from '@/components/ui/copy-button';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
-import { useTransactions } from '@/lib/hooks/useTransactions';
+import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
+import { AnimatedPage } from '@/components/ui/animated-page';
+import { SearchInput } from '@/components/ui/search-input';
+import { EmptyState } from '@/components/ui/empty-state';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -32,9 +35,35 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
   return new Date(timestamp).toLocaleString();
 };
 
+const formatStatus = (status: string | null) => {
+  if (!status) return '—';
+  return status.replace(/([A-Z])/g, ' $1').trim();
+};
+
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } =
-    useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+
+  const [activeTab, setActiveTab] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery);
+
+  const filterParams = useMemo(() => {
+    const params: {
+      filterOnChainState?: OnChainStateFilter;
+      searchQuery?: string;
+      transactionType?: 'payment' | 'purchase';
+    } = {};
+
+    if (activeTab === 'Payments') params.transactionType = 'payment';
+    else if (activeTab === 'Purchases') params.transactionType = 'purchase';
+    else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
+    else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+
+    if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
+
+    return params;
+  }, [activeTab, debouncedSearchQuery]);
+
   const {
     transactions,
     isLoading,
@@ -42,7 +71,12 @@ export default function Transactions() {
     loadMore,
     refetch: refetchTransactions,
     isFetchingNextPage,
-  } = useTransactions();
+    isFetching: isFetchingTransactions,
+    isPlaceholderData,
+  } = useTransactions(filterParams, { trackVisit: false });
+
+  // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
+  const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
 
   // Format price helper function
   const formatPrice = (amount: string | undefined) => {
@@ -55,73 +89,24 @@ export default function Transactions() {
     }).format(numericAmount);
   };
 
-  // Format fund unit display helper function
-  const formatFundUnit = (
-    unit: string | undefined,
-    network: string | undefined,
-  ): string => {
-    if (!network) {
-      // If no network, fallback to basic unit formatting
-      if (unit === 'lovelace' || !unit) {
-        return 'ADA';
-      }
-      return unit;
-    }
-
-    if (!unit) {
-      return 'ADA';
-    }
-
-    const usdmConfig = getUsdmConfig(network);
-    const isUsdm =
-      unit === usdmConfig.fullAssetId ||
-      unit === usdmConfig.policyId ||
-      unit === 'USDM' ||
-      unit === 'tUSDM';
-
-    if (isUsdm) {
-      return network.toLowerCase() === 'preprod' ? 'tUSDM' : 'USDM';
-    }
-
-    const isTestUsdm = unit === TESTUSDM_CONFIG.unit;
-    if (isTestUsdm) {
-      return 'tUSDM';
-    }
-    return unit ?? '—';
-  };
-  const [activeTab, setActiveTab] = useState('All');
-  const [selectedTransactions, setSelectedTransactions] = useState<string[]>(
-    [],
-  );
-
-  const [filteredTransactions, setFilteredTransactions] = useState<
-    Transaction[]
-  >([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const isLoadingMore = isFetchingNextPage;
-  const isInitialLoading = isLoading && transactions.length === 0;
-  const allTransactions = useMemo(() => transactions, [transactions]);
+  const isInitialLoading = isLoading && !transactions.length;
 
   const tabs = useMemo(() => {
-    // Apply the same deduplication logic as filterTransactions
-    const seenHashes = new Set();
-    const dedupedTransactions = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+    const seenIds = new Set<string>();
+    const dedupedTransactions = allTransactionsForCounts.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
 
     const refundCount = dedupedTransactions.filter(
       (t) => t.onChainState === 'RefundRequested',
     ).length;
-    const disputeCount = dedupedTransactions.filter(
-      (t) => t.onChainState === 'Disputed',
-    ).length;
+    const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
 
     return [
       { name: 'All', count: null },
@@ -130,99 +115,78 @@ export default function Transactions() {
       {
         name: 'Refund Requests',
         count: refundCount || null,
+        variant: 'alert' as const,
       },
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
       },
     ];
-  }, [allTransactions]);
+  }, [allTransactionsForCounts]);
 
-  const filterTransactions = useCallback(() => {
-    const seenHashes = new Set();
-    let filtered = [...allTransactions].filter((tx) => {
-      const id = tx.id;
-      if (!id) return true;
-      if (seenHashes.has(id)) return false;
-      seenHashes.add(id);
+  // Dedup only — server handles filtering
+  const filteredTransactions = useMemo(() => {
+    const seenIds = new Set<string>();
+    return transactions.filter((tx) => {
+      if (!tx.id) return true;
+      if (seenIds.has(tx.id)) return false;
+      seenIds.add(tx.id);
       return true;
     });
+  }, [transactions]);
 
-    if (activeTab === 'Payments') {
-      filtered = filtered.filter((t) => t.type === 'payment');
-    } else if (activeTab === 'Purchases') {
-      filtered = filtered.filter((t) => t.type === 'purchase');
-    } else if (activeTab === 'Refund Requests') {
-      filtered = filtered.filter((t) => t.onChainState === 'RefundRequested');
-    } else if (activeTab === 'Disputes') {
-      filtered = filtered.filter((t) => t.onChainState === 'Disputed');
-    }
+  // True whenever server-authoritative results haven't arrived yet:
+  // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
 
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((transaction) => {
-        const matchId = transaction.id?.toLowerCase().includes(query) || false;
-        const matchHash =
-          transaction.CurrentTransaction?.txHash
-            ?.toLowerCase()
-            .includes(query) || false;
-        const matchState =
-          transaction.onChainState?.toLowerCase().includes(query) || false;
-        const matchType =
-          transaction.type?.toLowerCase().includes(query) || false;
-        const matchNetwork =
-          transaction.PaymentSource?.network?.toLowerCase().includes(query) ||
-          false;
-        const matchWallet =
-          transaction.SmartContractWallet?.walletAddress
-            ?.toLowerCase()
-            .includes(query) || false;
+  // Client-side filter for instant feedback while server results are pending.
+  // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
+  // to avoid items appearing/disappearing when the server responds.
+  const displayTransactions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
+      return filteredTransactions;
 
-        const matchRequestedFunds =
-          transaction.type === 'payment' &&
-          transaction.RequestedFunds?.some(
-            (fund) => parseInt(fund.amount) / 1000000,
-          )
-            .toString()
-            .toLowerCase()
-            .includes(query);
-        const matchPaidFunds =
-          transaction.type === 'purchase' &&
-          transaction.PaidFunds?.some((fund) => parseInt(fund.amount) / 1000000)
-            .toString()
-            .toLowerCase()
-            .includes(query);
+    const amountRange = parseAmountSearchRange(query);
 
-        return (
-          matchId ||
-          matchHash ||
-          matchState ||
-          matchType ||
-          matchNetwork ||
-          matchWallet ||
-          matchRequestedFunds ||
-          matchPaidFunds
-        );
-      });
-    }
+    // Mirror backend buildMatchingStates
+    const matchingStates = ON_CHAIN_STATES.filter(
+      (s) => s.toLowerCase().includes(query) || formatStatus(s).toLowerCase().includes(query),
+    );
 
-    setFilteredTransactions(filtered);
-  }, [allTransactions, searchQuery, activeTab]);
+    return filteredTransactions.filter((tx) => {
+      if (tx.id?.toLowerCase().includes(query)) return true;
+      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
+      if (tx.type?.toLowerCase().includes(query)) return true;
+      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
+        return true;
+      if (amountRange) {
+        const funds =
+          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
+        if (
+          funds?.some((f) => {
+            const amt = parseInt(f.amount);
+            return amt >= amountRange.min && amt <= amountRange.max;
+          })
+        )
+          return true;
+      }
+      return false;
+    });
+  }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
+  // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
+  const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
-    // Set last visit timestamp when user visits transactions page
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(
-        'masumi_last_transactions_visit',
-        new Date().toISOString(),
-      );
-      localStorage.setItem('masumi_new_transactions_count', '0');
-    }
+    markAllAsReadRef.current = markAllAsRead;
+  }, [markAllAsRead]);
+  useEffect(() => {
+    markAllAsReadRef.current();
   }, [network, apiClient, selectedPaymentSourceId]);
-
-  useEffect(() => {
-    filterTransactions();
-  }, [filterTransactions, searchQuery, activeTab]);
 
   const refreshTransactions = useCallback(() => {
     refetchTransactions?.();
@@ -234,23 +198,7 @@ export default function Transactions() {
     }
   }, [hasMore, isLoadingMore, loadMore]);
 
-  const handleSelectTransaction = (id: string) => {
-    setSelectedTransactions((prev) =>
-      prev.includes(id)
-        ? prev.filter((transactionId) => transactionId !== id)
-        : [...prev, id],
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (filteredTransactions.length === selectedTransactions.length) {
-      setSelectedTransactions([]);
-    } else {
-      setSelectedTransactions(filteredTransactions.map((t) => t.id));
-    }
-  };
-
-  const getStatusColor = (status: string, hasError?: boolean) => {
+  const getStatusColor = (status: string | null, hasError?: boolean) => {
     if (hasError) return 'text-destructive';
     switch (status?.toLowerCase()) {
       case 'fundslocked':
@@ -270,11 +218,6 @@ export default function Transactions() {
     }
   };
 
-  const formatStatus = (status: string) => {
-    if (!status) return '—';
-    return status.replace(/([A-Z])/g, ' $1').trim();
-  };
-
   // Generate CSV data for transactions
   const generateCSVData = useCallback(
     (transactions: Transaction[]): string => {
@@ -285,11 +228,12 @@ export default function Transactions() {
         'Network',
         'Status',
         'Date',
-        'Fee Rate Permille',
+        'Fee rate (%)',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille =
-          selectedPaymentSource?.feeRatePermille ?? 'Unknown';
+        const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+        const feeRateDisplay =
+          typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
         const paymentAmounts = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
@@ -306,9 +250,7 @@ export default function Transactions() {
             })),
           );
         }
-        const amount = paymentAmounts
-          .map((amount) => `${amount.amount} ${amount.unit}`)
-          .join(', ');
+        const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
 
         const hash = transaction.CurrentTransaction?.txHash || '—';
         const status = formatStatus(transaction.onChainState);
@@ -321,22 +263,17 @@ export default function Transactions() {
           transaction.PaymentSource.network,
           status,
           date,
-          feeRatePermille,
+          feeRateDisplay,
         ];
       });
 
-      return [headers, ...rows]
-        .map((row) => row.map((field) => `"${field}"`).join(','))
-        .join('\n');
+      return [headers, ...rows].map((row) => row.map((field) => `"${field}"`).join(',')).join('\n');
     },
     [selectedPaymentSource?.feeRatePermille, network],
   );
 
   // Download CSV file
-  const downloadCSV = (
-    transactions: Transaction[],
-    filename: string = 'transactions.csv',
-  ) => {
+  const downloadCSV = (transactions: Transaction[], filename: string = 'transactions.csv') => {
     const csvData = generateCSVData(transactions);
     const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -354,11 +291,11 @@ export default function Transactions() {
       <Head>
         <title>Transactions | Admin Interface</title>
       </Head>
-      <div>
-        <div className="mb-6">
+      <AnimatedPage>
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold mb-1">Transactions</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
@@ -369,42 +306,30 @@ export default function Transactions() {
                   Learn more
                 </a>
               </p>
-              {(() => {
-                const feeRate = selectedPaymentSource?.feeRatePermille;
-
-                if (!feeRate) {
-                  return (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Fee rate: none applied
-                      {selectedPaymentSource
-                        ? ` (${selectedPaymentSource.network})`
-                        : ' (default)'}
-                    </p>
-                  );
-                }
-
-                return (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Fee rate: {(feeRate / 10).toFixed(1)}%
-                    {selectedPaymentSource
-                      ? ` (${selectedPaymentSource.network})`
-                      : ' (default)'}
-                  </p>
-                );
-              })()}
             </div>
-            <Button
-              onClick={() => setShowDownloadDialog(true)}
-              disabled={filteredTransactions.length === 0}
-              className="flex items-center gap-2"
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
+            <div className="flex items-center gap-2">
+              <RefreshButton
+                onRefresh={() => refreshTransactions()}
+                isRefreshing={isFetchingTransactions}
+              />
+              <Button
+                onClick={() => setShowDownloadDialog(true)}
+                disabled={displayTransactions.length === 0}
+                variant="outline"
+                className="flex items-center gap-2 btn-hover-lift"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV
+              </Button>
+              <Link href="/developers">
+                <Button className="flex items-center gap-2 btn-hover-lift">
+                  <FlaskConical className="h-4 w-4" />
+                  Test transaction
+                </Button>
+              </Link>
+            </div>
           </div>
-        </div>
 
-        <div className="space-y-6">
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
@@ -414,90 +339,95 @@ export default function Transactions() {
           />
 
           <div className="flex items-center justify-between">
-            <div className="relative flex-1">
-              <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search by ID, hash, status, amount..."
-                className="max-w-xs pl-10"
+            <div className="flex-1">
+              <SearchInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <RefreshButton
-                onRefresh={() => refreshTransactions()}
-                isRefreshing={isLoading}
+                onChange={setSearchQuery}
+                placeholder="Search by ID, hash, status, amount..."
+                className="max-w-xs"
+                isLoading={isSearchPending && !!searchQuery}
               />
             </div>
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full">
-              <thead>
+            <table
+              className={cn(
+                'w-full transition-opacity duration-150',
+                isSearchPending && 'opacity-70',
+              )}
+            >
+              <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium">
-                    <Checkbox
-                      checked={
-                        filteredTransactions.length > 0 &&
-                        selectedTransactions.length ===
-                          filteredTransactions.length
-                      }
-                      onCheckedChange={handleSelectAll}
-                    />
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                    Type
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">Type</th>
-                  <th className="p-4 text-left text-sm font-medium">
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">Amount</th>
-                  <th className="p-4 text-left text-sm font-medium">Network</th>
-                  <th className="p-4 text-left text-sm font-medium">Status</th>
-                  <th className="p-4 text-left text-sm font-medium">
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Amount
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Network
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Unlock Time
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">Date</th>
-                  <th className="p-4 text-left text-sm font-medium"></th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Date</th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pr-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isInitialLoading || (displayTransactions.length === 0 && isSearchPending) ? (
                   <TransactionTableSkeleton rows={5} />
-                ) : isInitialLoading ? (
+                ) : displayTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
-                ) : filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="text-center py-8">
-                      No transactions found
+                    <td colSpan={8}>
+                      <EmptyState
+                        icon={searchQuery ? 'search' : 'inbox'}
+                        title={
+                          searchQuery
+                            ? 'No transactions found matching your search'
+                            : 'No transactions found'
+                        }
+                        description={
+                          searchQuery
+                            ? 'Try adjusting your search terms'
+                            : 'Transactions will appear here once payments are made.'
+                        }
+                        action={
+                          !searchQuery ? (
+                            <Link
+                              href="/developers"
+                              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                            >
+                              <FlaskConical className="h-3.5 w-3.5" />
+                              Create a test transaction
+                            </Link>
+                          ) : undefined
+                        }
+                      />
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction) => (
+                  displayTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(
-                        'border-b last:border-b-0',
+                        'border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
                         transaction.NextAction?.errorType
-                          ? 'bg-destructive/10'
+                          ? 'bg-destructive/10 border-l-2 border-l-destructive'
                           : '',
                         'cursor-pointer hover:bg-muted/50',
                       )}
+                      style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedTransactions.includes(
-                            transaction.id,
-                          )}
-                          onCheckedChange={() =>
-                            handleSelectTransaction(transaction.id)
-                          }
-                        />
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4 pl-6">
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
@@ -508,15 +438,12 @@ export default function Transactions() {
                               : '—'}
                           </span>
                           {transaction.CurrentTransaction?.txHash && (
-                            <CopyButton
-                              value={transaction.CurrentTransaction?.txHash}
-                            />
+                            <CopyButton value={transaction.CurrentTransaction?.txHash} />
                           )}
                         </div>
                       </td>
                       <td className="p-4">
-                        {transaction.type === 'payment' &&
-                        transaction.RequestedFunds?.length
+                        {transaction.type === 'payment' && transaction.RequestedFunds?.length
                           ? transaction.RequestedFunds.map((fund, index) => {
                               const amount = formatPrice(fund.amount);
                               const unit = formatFundUnit(fund.unit, network);
@@ -526,8 +453,7 @@ export default function Transactions() {
                                 </div>
                               );
                             })
-                          : transaction.type === 'purchase' &&
-                              transaction.PaidFunds?.length
+                          : transaction.type === 'purchase' && transaction.PaidFunds?.length
                             ? transaction.PaidFunds.map((fund, index) => {
                                 const amount = formatPrice(fund.amount);
                                 const unit = formatFundUnit(fund.unit, network);
@@ -539,9 +465,7 @@ export default function Transactions() {
                               })
                             : '—'}
                       </td>
-                      <td className="p-4">
-                        {transaction.PaymentSource.network}
-                      </td>
+                      <td className="p-4">{transaction.PaymentSource.network}</td>
                       <td className="p-4">
                         <span
                           className={getStatusColor(
@@ -551,7 +475,7 @@ export default function Transactions() {
                         >
                           {transaction.onChainState === 'Disputed' ? (
                             <span className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                              <div className="w-2 h-2 bg-orange-500 rounded-full animate-subtle-pulse"></div>
                               {formatStatus(transaction.onChainState)}
                             </span>
                           ) : (
@@ -564,12 +488,10 @@ export default function Transactions() {
                           ? formatTimestamp(transaction.unlockTime)
                           : '—'}
                       </td>
-                      <td className="p-4">
-                        {new Date(transaction.createdAt).toLocaleString()}
-                      </td>
-                      <td className="p-4">
+                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
+                      <td className="p-4 pr-8">
                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                          ⋮
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </td>
                     </tr>
@@ -581,32 +503,28 @@ export default function Transactions() {
 
           <div className="flex flex-col gap-4 items-center">
             {!isInitialLoading && (
-              <Pagination
-                hasMore={hasMore}
-                isLoading={isLoadingMore}
-                onLoadMore={handleLoadMore}
-              />
+              <Pagination hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
             )}
           </div>
         </div>
-      </div>
 
-      <TransactionDetailsDialog
-        transaction={selectedTransaction}
-        onClose={() => setSelectedTransaction(null)}
-        onRefresh={refreshTransactions}
-      />
+        <TransactionDetailsDialog
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+          onRefresh={refreshTransactions}
+        />
 
-      <DownloadDetailsDialog
-        open={showDownloadDialog}
-        onClose={() => setShowDownloadDialog(false)}
-        onDownload={(startDate, endDate, filteredTransactions) => {
-          downloadCSV(
-            filteredTransactions,
-            `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
-          );
-        }}
-      />
+        <DownloadDetailsDialog
+          open={showDownloadDialog}
+          onClose={() => setShowDownloadDialog(false)}
+          onDownload={(startDate, endDate, filteredTransactions) => {
+            downloadCSV(
+              filteredTransactions,
+              `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
+            );
+          }}
+        />
+      </AnimatedPage>
     </MainLayout>
   );
 }

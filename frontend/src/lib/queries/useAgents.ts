@@ -1,27 +1,24 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
-import {
-  getRegistry,
-  PaymentSourceExtended,
-  RegistryEntry,
-} from '@/lib/api/generated';
+import { useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
+import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '../hooks/usePaymentSourceExtendedAll';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
-export function useAgents() {
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } =
-    useAppContext();
+const PAGE_SIZE = 10;
+
+export function useAgents(params?: {
+  filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+  searchQuery?: string;
+}) {
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
-  }, [paymentSources, network]);
+  const hasCurrentNetworkPaymentSources = useMemo(
+    () => paymentSources.some((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
   const query = useInfiniteQuery({
     queryKey: [
@@ -29,6 +26,8 @@ export function useAgents() {
       network,
       selectedPaymentSourceId,
       selectedPaymentSource,
+      params?.filterStatus,
+      params?.searchQuery,
     ],
     queryFn: async ({ pageParam }) => {
       if (!selectedPaymentSource) {
@@ -51,9 +50,10 @@ export function useAgents() {
             query: {
               network: network,
               cursorId: pageParam ?? undefined,
-              filterSmartContractAddress: smartContractAddress
-                ? smartContractAddress
-                : undefined,
+              filterSmartContractAddress: smartContractAddress ? smartContractAddress : undefined,
+              limit: PAGE_SIZE,
+              filterStatus: params?.filterStatus,
+              searchQuery: params?.searchQuery || undefined,
             },
           }),
         {
@@ -63,7 +63,7 @@ export function useAgents() {
 
       const agents = response?.data?.data?.Assets ?? [];
       const nextCursor =
-        agents.length === 10 && agents[agents.length - 1]?.id
+        agents.length === PAGE_SIZE && agents[agents.length - 1]?.id
           ? agents[agents.length - 1].id
           : undefined;
 
@@ -73,11 +73,10 @@ export function useAgents() {
       };
     },
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage: { nextCursor: string | undefined }) =>
-      lastPage.nextCursor,
-    enabled:
-      currentNetworkPaymentSources.length > 0 && !!selectedPaymentSourceId,
+    getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
+    enabled: hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const agents = useMemo(() => {
@@ -94,10 +93,7 @@ export function useAgents() {
       unique.push(tx);
     });
 
-    return unique.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [query.data]);
 
   return {
@@ -106,6 +102,7 @@ export function useAgents() {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
+    isPlaceholderData: query.isPlaceholderData,
     refetch: query.refetch,
     loadMore: query.fetchNextPage,
   };

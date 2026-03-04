@@ -17,11 +17,7 @@ const MasumiLogo = React.memo(() => {
         height={32}
         priority
       />
-      <Image
-        src={theme === 'dark' ? kanjiWhite : kanjiBlack}
-        alt="Kanji"
-        priority
-      />
+      <Image src={theme === 'dark' ? kanjiWhite : kanjiBlack} alt="Kanji" priority />
     </div>
   );
 });

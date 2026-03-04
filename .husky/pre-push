@@ -30,9 +30,9 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     exit 1
 fi
 
-# Check if npm is available
-if ! command -v npm >/dev/null 2>&1; then
-    echo "${RED}❌ npm is not installed or not in PATH${NC}"
+# Check if pnpm is available
+if ! command -v pnpm >/dev/null 2>&1; then
+    echo "${RED}❌ pnpm is not installed or not in PATH${NC}"
     exit 2
 fi
 
@@ -64,27 +64,44 @@ while IFS= read -r line || [ -n "$line" ]; do
     fi
 done
 
-# Run ESLint only on staged files
-echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
-npm run lint -- || \
-(
-    echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
+# Run Prettier to fix formatting
+echo "${BLUE}🔍 Running Prettier (format fix)...${NC}"
+if ! pnpm run format; then
+    echo "${RED}❌ Prettier formatting failed. Please fix errors and try again.${NC}"
     exit 4
-)
+fi
 
-# Generate Swagger documentation
-echo "${BLUE}🔍 Generating Swagger documentation...${NC}"
-if ! npm run swagger-json; then
-    echo "${RED}❌ Swagger documentation generation failed. Please fix any API documentation issues and try again.${NC}"
+# Run ESLint on full project
+echo "${BLUE}🔍 Running ESLint (full project)...${NC}"
+if ! pnpm run lint; then
+    echo "${RED}❌ ESLint check failed. Please fix the errors and try committing again.${NC}"
+    exit 5
+fi
+
+# Generate Swagger JSON
+echo "${BLUE}🔍 Generating Swagger JSON...${NC}"
+if ! pnpm run swagger-json; then
+    echo "${RED}❌ Swagger JSON generation failed. Please fix errors and try again.${NC}"
     exit 6
 fi
 
+# Check if OpenAPI JSON file changed
+echo "${BLUE}🔍 Checking if OpenAPI JSON changed...${NC}"
+if git diff --exit-code --quiet -- src/utils/generator/swagger-generator/openapi-docs.json; then
+    echo "${GREEN}✅ OpenAPI JSON unchanged, skipping Postman collection generation${NC}"
+else
+    echo "${BLUE}🔍 OpenAPI JSON changed, generating Postman collection...${NC}"
+    if ! pnpm run swagger-postman; then
+        echo "${RED}❌ Postman collection generation failed. Please fix errors and try again.${NC}"
+        exit 7
+    fi
+fi
+
 # Generate types
-echo "${BLUE}🔍 Generating types...${NC}"
-cd frontend && npm run openapi-ts-latest && cd ..
-if [ $? -ne 0 ]; then
+echo "${BLUE}🔍 Generating frontend types...${NC}"
+if ! (cd frontend && pnpm run openapi-ts-latest); then
     echo "${RED}❌ Type generation for the frontend failed. Please fix errors and try again.${NC}"
-    exit 7
+    exit 8
 fi
 
 # Check for changes in generated files
@@ -94,7 +111,7 @@ if git diff --quiet; then
 else
     echo "${BLUE}📝 Committing generated file changes...${NC}"
     git add .
-    git commit -m "chore: update generated files" --no-verify
+    git commit -m "chore: generate, format and lint" --no-verify
     echo "${GREEN}✅ Generated files committed${NC}"
 fi
 

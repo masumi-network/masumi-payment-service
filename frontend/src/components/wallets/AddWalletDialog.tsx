@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import {
@@ -45,20 +44,12 @@ interface AddWalletDialogProps {
 const walletSchema = z.object({
   mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
   note: z.string().min(1, 'Note is required'),
-  collectionAddress: z
-    .string()
-    .min(1, 'Collection address is required')
-    .nullable()
-    .optional(),
+  collectionAddress: z.string().min(1, 'Collection address is required').nullable().optional(),
 });
 
 type WalletFormValues = z.infer<typeof walletSchema>;
 
-export function AddWalletDialog({
-  open,
-  onClose,
-  onSuccess,
-}: AddWalletDialogProps) {
+export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogProps) {
   const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -81,12 +72,11 @@ export function AddWalletDialog({
     },
   });
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
   useEffect(() => {
@@ -112,8 +102,7 @@ export function AddWalletDialog({
 
       if (response.error) {
         const error = response.error as { message: string };
-        const errorMessage =
-          error.message || 'Failed to generate mnemonic phrase';
+        const errorMessage = error.message || 'Failed to generate mnemonic phrase';
         setError(errorMessage);
         toast.error(errorMessage);
         return;
@@ -127,9 +116,7 @@ export function AddWalletDialog({
     } catch (error: any) {
       console.error('Error generating mnemonic:', error);
       const errorMessage =
-        error?.response?.data?.error ||
-        error?.message ||
-        'Failed to generate mnemonic phrase';
+        error?.response?.data?.error || error?.message || 'Failed to generate mnemonic phrase';
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -140,8 +127,7 @@ export function AddWalletDialog({
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
 
-    let collectionAddress: string | null =
-      data.collectionAddress?.trim() || null;
+    let collectionAddress: string | null = data.collectionAddress?.trim() || null;
 
     // Validate collection address if provided
     if (collectionAddress) {
@@ -179,9 +165,7 @@ export function AddWalletDialog({
           client: apiClient,
           body: {
             id: paymentSourceId,
-            [type === 'Purchasing'
-              ? 'AddPurchasingWallets'
-              : 'AddSellingWallets']: [
+            [type === 'Purchasing' ? 'AddPurchasingWallets' : 'AddSellingWallets']: [
               {
                 walletMnemonic: data.mnemonic.trim(),
                 note: data.note.trim(),
@@ -220,9 +204,7 @@ export function AddWalletDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-              {error}
-            </div>
+            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</div>
           )}
 
           <div className="space-y-2">
@@ -230,9 +212,7 @@ export function AddWalletDialog({
             <div className="flex items-center gap-4 flex-nowrap">
               <Select
                 value={type}
-                onValueChange={(value: 'Purchasing' | 'Selling') =>
-                  setType(value)
-                }
+                onValueChange={(value: 'Purchasing' | 'Selling') => setType(value)}
               >
                 <SelectTrigger className="flex-1">
                   <SelectValue placeholder="Select wallet type" />
@@ -242,7 +222,7 @@ export function AddWalletDialog({
                   <SelectItem value="Selling">Selling wallet</SelectItem>
                 </SelectContent>
               </Select>
-              <WalletTypeBadge type={type} className="flex-shrink-0" />
+              <WalletTypeBadge type={type} className="shrink-0" />
             </div>
             <p className="text-sm text-muted-foreground">
               {type === 'Purchasing'
@@ -274,9 +254,7 @@ export function AddWalletDialog({
               className="min-h-[100px] font-mono"
             />
             {errors.mnemonic && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.mnemonic.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
             )}
           </div>
 
@@ -289,36 +267,24 @@ export function AddWalletDialog({
               placeholder="Enter a note to identify this wallet"
               required
             />
-            {errors.note && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.note.message}
-              </p>
-            )}
+            {errors.note && <p className="text-xs text-destructive mt-1">{errors.note.message}</p>}
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection
-              Address{' '}
+              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
             </label>
             <Input
               {...register('collectionAddress')}
               placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
             />
             {errors.collectionAddress && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.collectionAddress.message}
-              </p>
+              <p className="text-xs text-destructive mt-1">{errors.collectionAddress.message}</p>
             )}
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>

@@ -37,11 +37,7 @@ export function useRate() {
   return {
     rate: data ?? null,
     isLoading: isPending || (!data && isFetching),
-    error: error
-      ? error instanceof Error
-        ? error.message
-        : 'Failed to fetch rate'
-      : null,
+    error: error ? (error instanceof Error ? error.message : 'Failed to fetch rate') : null,
     refetch,
   };
 }

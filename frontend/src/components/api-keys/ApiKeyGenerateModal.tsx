@@ -55,9 +55,7 @@ export function ApiKeyGenerateModal({
       const result = await response.json();
 
       if (result.error) {
-        throw new Error(
-          result.error.message || result.error || 'Failed to generate API key',
-        );
+        throw new Error(result.error.message || result.error || 'Failed to generate API key');
       }
 
       toast.success('API key generated successfully');
@@ -65,8 +63,7 @@ export function ApiKeyGenerateModal({
       onClose();
     } catch (error) {
       console.error('Error generating API key:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : 'Failed to generate API key';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate API key';
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -116,12 +113,7 @@ export function ApiKeyGenerateModal({
           )}
 
           <div className="flex justify-end space-x-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
+            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading}>

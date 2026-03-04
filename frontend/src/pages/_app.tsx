@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { AppProvider } from '@/lib/contexts/AppContext';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -10,7 +9,7 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { ApiKeyDialog } from '@/components/api-keys/ApiKeyDialog';
 import { getHealth, getApiKeyStatus } from '@/lib/api/generated';
-import { ThemeProvider } from '@/lib/contexts/ThemeContext';
+import { ThemeProvider, useTheme } from '@/lib/contexts/ThemeContext';
 import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { Spinner } from '@/components/ui/spinner';
@@ -30,16 +29,31 @@ function App({ Component, pageProps, router }: AppProps) {
         <AppProvider>
           <SidebarProvider>
             <TooltipProvider delayDuration={200}>
-              <ThemedApp
-                Component={Component}
-                pageProps={pageProps}
-                router={router}
-              />
+              <ThemedApp Component={Component} pageProps={pageProps} router={router} />
             </TooltipProvider>
           </SidebarProvider>
         </AppProvider>
       </QueryProvider>
     </ThemeProvider>
+  );
+}
+
+function ToastWrapper() {
+  const { theme } = useTheme();
+  return createPortal(
+    <ToastContainer
+      position="top-right"
+      autoClose={3000}
+      hideProgressBar={false}
+      newestOnTop
+      closeOnClick
+      rtl={false}
+      pauseOnFocusLoss
+      draggable
+      pauseOnHover
+      theme={theme === 'dark' ? 'dark' : 'light'}
+    />,
+    document.body,
   );
 }
 
@@ -56,13 +70,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     network,
     setNetwork,
     authorized,
+    isSetupMode,
   } = useAppContext();
 
   // Add dynamic favicon functionality
   useDynamicFavicon();
 
   useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   useEffect(() => {
@@ -76,30 +91,30 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const { mainnetPaymentSources, preprodPaymentSources, isLoading } =
-    usePaymentSourceExtendedAll();
+  const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
 
   useEffect(() => {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    // Pages accessible even without payment sources (shown in setup sidebar)
+    const setupAccessiblePages = ['/api-keys', '/developers', '/settings'];
     if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0) {
-      const protectedPages = [
-        '/',
-        '/ai-agents',
-        '/wallets',
-        '/transactions',
-        '/api-keys',
-      ];
+      const protectedPages = ['/', '/ai-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
-        router.replace(
-          '/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'),
-        );
+        router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
-    } else if (apiKey && isHealthy && currentNetworkPaymentSources.length > 0) {
-      if (router.pathname === '/setup') {
-        router.replace('/');
-      }
+    }
+    // If setup mode is active (persisted from before reload), redirect back to setup
+    // but allow access to pages shown in the setup sidebar
+    if (
+      apiKey &&
+      isHealthy &&
+      isSetupMode &&
+      router.pathname !== '/setup' &&
+      !setupAccessiblePages.includes(router.pathname)
+    ) {
+      router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
     }
   }, [
     apiKey,
@@ -109,20 +124,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     network,
     mainnetPaymentSources,
     preprodPaymentSources,
+    isSetupMode,
   ]);
 
   useEffect(() => {
     const init = async () => {
-      const response = await handleApiCall(
-        () => getHealth({ client: apiClient }),
-        {
-          onError: (error: any) => {
-            console.error('Health check failed:', error);
-            setIsHealthy(false);
-          },
-          errorMessage: 'Health check failed',
+      const response = await handleApiCall(() => getHealth({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('Health check failed:', error);
+          setIsHealthy(false);
         },
-      );
+        errorMessage: 'Health check failed',
+      });
 
       if (!response) {
         setIsHealthy(false);
@@ -142,17 +155,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           token: storedApiKey,
         },
       });
-      const apiKeyStatus = await handleApiCall(
-        () => getApiKeyStatus({ client: apiClient }),
-        {
-          onError: (error: any) => {
-            console.error('API key status check failed:', error);
-            setIsHealthy(true);
-            setAuthorized(false);
-          },
-          errorMessage: 'API key validation failed',
+      const apiKeyStatus = await handleApiCall(() => getApiKeyStatus({ client: apiClient }), {
+        onError: (error: any) => {
+          console.error('API key status check failed:', error);
+          setIsHealthy(true);
+          setAuthorized(false);
         },
-      );
+        errorMessage: 'API key validation failed',
+      });
 
       if (!apiKeyStatus) {
         setIsHealthy(true);
@@ -176,18 +186,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     init();
   }, [apiClient, signOut, setAuthorized, updateApiKey]);
 
-  // Watch for network changes in URL and update state
+  // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
+  // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
+  // this effect does not re-run with stale router.query and overwrite the new value.
   useEffect(() => {
     const networkParam = router.query.network as string;
-
-    if (networkParam && networkParam !== network) {
-      if (networkParam.toLowerCase() === 'mainnet') {
-        setNetwork('Mainnet');
-      } else if (networkParam.toLowerCase() === 'preprod') {
-        setNetwork('Preprod');
-      }
+    if (!networkParam) return;
+    if (networkParam.toLowerCase() === 'mainnet') {
+      setNetwork('Mainnet');
+    } else if (networkParam.toLowerCase() === 'preprod') {
+      setNetwork('Preprod');
     }
-  }, [router.query.network, network, setNetwork]);
+  }, [router.query.network, setNetwork]);
 
   if (isHealthy === null) {
     return (
@@ -205,8 +215,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid or does not have admin permissions. Please
-            sign out and sign in with an admin API key.
+            Your API key is invalid or does not have admin permissions. Please sign out and sign in
+            with an admin API key.
           </div>
           <Button
             variant="destructive"
@@ -242,8 +252,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="flex-1 flex items-center justify-center bg-background text-foreground">
           <div className="text-center space-y-4 p-4">
             <div className="text-lg text-muted-foreground">
-              Please use a desktop device to <br /> access the Masumi Admin
-              Interface
+              Please use a desktop device to <br /> access the Masumi Admin Interface
             </div>
             <Button variant="muted">
               <Link href="https://docs.masumi.io" target="_blank">
@@ -260,22 +269,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   return (
     <>
       {apiKey ? <Component {...pageProps} /> : <ApiKeyDialog />}
-      {mounted &&
-        createPortal(
-          <ToastContainer
-            position="top-right"
-            autoClose={3000}
-            hideProgressBar={false}
-            newestOnTop
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-            theme="dark"
-          />,
-          document.body,
-        )}
+      {mounted && <ToastWrapper />}
     </>
   );
 }

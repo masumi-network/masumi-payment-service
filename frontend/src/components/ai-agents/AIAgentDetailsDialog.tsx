@@ -1,21 +1,14 @@
 /* eslint-disable react-hooks/rules-of-hooks */
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, shortenAddress, handleApiCall, getExplorerUrl } from '@/lib/utils';
+import { cn, shortenAddress, handleApiCall, formatFundUnit } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
+import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import formatBalance from '@/lib/formatBalance';
 import { CopyButton } from '@/components/ui/copy-button';
-import {
-  PaymentSourceExtended,
-  postRegistryDeregister,
-} from '@/lib/api/generated';
-import { TESTUSDM_CONFIG, getUsdmConfig } from '@/lib/constants/defaultWallets';
-import { GetRegistryResponses, deleteRegistry } from '@/lib/api/generated';
+import { PaymentSourceExtended, postRegistryDeregister } from '@/lib/api/generated';
+import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 
 import { Separator } from '@/components/ui/separator';
 import { Link2, Trash2 } from 'lucide-react';
@@ -28,7 +21,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 
-type AIAgent = GetRegistryResponses['200']['data']['Assets'][0];
+type AIAgent = RegistryEntry;
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -86,12 +79,13 @@ export function AIAgentDetailsDialog({
   const [isPurchaseDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] = useState<
+    PaymentSourceExtended[]
+  >([]);
+  const [selectedWalletForDetails, setSelectedWalletForDetails] =
+    useState<WalletWithBalance | null>(null);
   useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
+    setCurrentNetworkPaymentSources(paymentSources.filter((ps) => ps.network === network));
   }, [paymentSources, network]);
 
   // Update activeTab when initialTab changes (when dialog opens with different tab)
@@ -106,15 +100,13 @@ export function AIAgentDetailsDialog({
     }
   }, [agent, activeTab]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString();
+  const formatDate = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleDateString();
   };
 
   const handleDelete = useCallback(async () => {
-    if (
-      agent?.state === 'RegistrationFailed' ||
-      agent?.state === 'DeregistrationConfirmed'
-    ) {
+    if (agent?.state === 'RegistrationFailed' || agent?.state === 'DeregistrationConfirmed') {
       await handleApiCall(
         () =>
           deleteRegistry({
@@ -190,29 +182,53 @@ export function AIAgentDetailsDialog({
     network,
   ]);
 
+  const handleWalletClick = useCallback(
+    (walletVkey: string) => {
+      const allWallets = currentNetworkPaymentSources.flatMap((source) => [
+        ...(source.SellingWallets || []).map((w: any) => ({
+          ...w,
+          type: 'Selling' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+        ...(source.PurchasingWallets || []).map((w: any) => ({
+          ...w,
+          type: 'Purchasing' as const,
+          balance: '0',
+          usdmBalance: '0',
+        })),
+      ]);
+      const found = allWallets.find((w: any) => w.walletVkey === walletVkey);
+      if (!found) {
+        toast.error('Wallet not found');
+        return;
+      }
+      setSelectedWalletForDetails(found as WalletWithBalance);
+    },
+    [currentNetworkPaymentSources],
+  );
+
   return (
     <>
-      <Dialog
-        open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen}
-        onOpenChange={onClose}
-      >
-        <DialogContent className="max-w-[600px] px-0">
+      <Dialog open={!!agent && !isDeleteDialogOpen && !isPurchaseDialogOpen} onOpenChange={onClose}>
+        <DialogContent
+          className="max-w-[600px] max-h-[90vh] px-0 pb-0 flex flex-col"
+          isPushedBack={!!selectedWalletForDetails}
+        >
           {agent && (
             <>
-              <DialogHeader className="px-6">
+              <DialogHeader className="px-6 shrink-0">
                 <DialogTitle>{agent.name}</DialogTitle>
               </DialogHeader>
 
               <Tabs
                 tabs={[{ name: 'Details' }, { name: 'Earnings' }]}
                 activeTab={activeTab || 'Details'}
-                onTabChange={(tabName) =>
-                  setActiveTab(tabName as 'Details' | 'Earnings')
-                }
-                className="px-6"
+                onTabChange={(tabName) => setActiveTab(tabName as 'Details' | 'Earnings')}
+                className="px-6 shrink-0"
               />
 
-              <div className="space-y-6 py-4 px-6 max-h-[600px] overflow-y-auto pb-20">
+              <div className="space-y-6 py-4 px-6 overflow-y-auto min-h-0 flex-1">
                 {activeTab === 'Details' && (
                   <>
                     {/* Status and Description */}
@@ -257,15 +273,11 @@ export function AIAgentDetailsDialog({
                     {agent.apiBaseUrl && (
                       <Card>
                         <CardHeader>
-                          <CardTitle className="text-sm font-medium">
-                            API Base URL
-                          </CardTitle>
+                          <CardTitle className="text-sm font-medium">API Base URL</CardTitle>
                         </CardHeader>
                         <CardContent>
                           <div className="flex items-center justify-between py-2 gap-2 bg-muted/40 p-2 rounded-lg border">
-                            <span className="text-sm text-muted-foreground">
-                              Endpoint
-                            </span>
+                            <span className="text-sm text-muted-foreground">Endpoint</span>
                             <div className="font-mono text-sm flex items-center gap-2 truncate">
                               <a
                                 href={agent.apiBaseUrl}
@@ -285,9 +297,7 @@ export function AIAgentDetailsDialog({
                     {/* Tags */}
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-sm font-medium">
-                          Tags
-                        </CardTitle>
+                        <CardTitle className="text-sm font-medium">Tags</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="flex flex-wrap gap-2">
@@ -298,9 +308,7 @@ export function AIAgentDetailsDialog({
                               </Badge>
                             ))
                           ) : (
-                            <span className="text-sm text-muted-foreground">
-                              No tags
-                            </span>
+                            <span className="text-sm text-muted-foreground">No tags</span>
                           )}
                         </div>
                       </CardContent>
@@ -309,9 +317,7 @@ export function AIAgentDetailsDialog({
                     {/* Pricing */}
                     <Card>
                       <CardHeader>
-                        <CardTitle className="text-sm font-medium">
-                          Pricing Details
-                        </CardTitle>
+                        <CardTitle className="text-sm font-medium">Pricing Details</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
@@ -322,35 +328,22 @@ export function AIAgentDetailsDialog({
                           )}
                           {agent.AgentPricing &&
                             agent.AgentPricing?.pricingType == 'Fixed' &&
-                            agent.AgentPricing?.Pricing?.map(
-                              (price, index, arr) => (
-                                <div
-                                  key={index}
-                                  className={cn(
-                                    'flex items-center justify-between py-2',
-                                    index < arr.length - 1 && 'border-b',
-                                  )}
-                                >
-                                  <span className="text-sm text-muted-foreground">
-                                    Price (
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? 'ADA'
-                                      : price.unit ===
-                                          getUsdmConfig(network).fullAssetId
-                                        ? 'USDM'
-                                        : price.unit === TESTUSDM_CONFIG.unit
-                                          ? 'tUSDM'
-                                          : price.unit}
-                                    )
-                                  </span>
-                                  <span className="font-medium">
-                                    {price.unit === 'lovelace' || !price.unit
-                                      ? `${useFormatPrice(price.amount)} ADA`
-                                      : `${useFormatPrice(price.amount)} ${price.unit === getUsdmConfig(network).fullAssetId ? 'USDM' : price.unit === TESTUSDM_CONFIG.unit ? 'tUSDM' : price.unit}`}
-                                  </span>
-                                </div>
-                              ),
-                            )}
+                            agent.AgentPricing?.Pricing?.map((price, index, arr) => (
+                              <div
+                                key={index}
+                                className={cn(
+                                  'flex items-center justify-between py-2',
+                                  index < arr.length - 1 && 'border-b',
+                                )}
+                              >
+                                <span className="text-sm text-muted-foreground">
+                                  Price ({formatFundUnit(price.unit, network)})
+                                </span>
+                                <span className="font-medium">
+                                  {`${useFormatPrice(price.amount)} ${formatFundUnit(price.unit, network)}`}
+                                </span>
+                              </div>
+                            ))}
                           {(!agent.AgentPricing ||
                             (agent.AgentPricing.pricingType == 'Fixed' &&
                               agent.AgentPricing.Pricing.length === 0)) && (
@@ -381,9 +374,7 @@ export function AIAgentDetailsDialog({
                           </div>
                           {agent.Author.contactEmail && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Email:
-                              </span>
+                              <span className="text-muted-foreground">Email:</span>
                               <a
                                 href={`mailto:${agent.Author.contactEmail}`}
                                 className="text-primary hover:underline"
@@ -394,25 +385,20 @@ export function AIAgentDetailsDialog({
                           )}
                           {agent.Author.organization && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Organization:
-                              </span>
+                              <span className="text-muted-foreground">Organization:</span>
                               <span>{agent.Author.organization}</span>
                             </div>
                           )}
                           {agent.Author.contactOther && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Website:
-                              </span>
+                              <span className="text-muted-foreground">Website:</span>
                               <a
                                 href={agent.Author.contactOther}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-primary hover:underline flex items-center gap-1"
                               >
-                                {agent.Author.contactOther}{' '}
-                                <Link2 className="h-3 w-3" />
+                                {agent.Author.contactOther} <Link2 className="h-3 w-3" />
                               </a>
                             </div>
                           )}
@@ -423,9 +409,7 @@ export function AIAgentDetailsDialog({
                         <div className="space-y-3 text-sm">
                           {agent.Legal?.terms && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Terms of Use:
-                              </span>
+                              <span className="text-muted-foreground">Terms of Use:</span>
                               <a
                                 href={agent.Legal.terms}
                                 target="_blank"
@@ -438,9 +422,7 @@ export function AIAgentDetailsDialog({
                           )}
                           {agent.Legal?.privacyPolicy && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Privacy Policy:
-                              </span>
+                              <span className="text-muted-foreground">Privacy Policy:</span>
                               <a
                                 href={agent.Legal.privacyPolicy}
                                 target="_blank"
@@ -453,9 +435,7 @@ export function AIAgentDetailsDialog({
                           )}
                           {agent.Legal?.other && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">
-                                Support:
-                              </span>
+                              <span className="text-muted-foreground">Support:</span>
                               <a
                                 href={agent.Legal.other}
                                 target="_blank"
@@ -466,8 +446,7 @@ export function AIAgentDetailsDialog({
                               </a>
                             </div>
                           )}
-                          {(!agent.Legal ||
-                            Object.values(agent.Legal).every((v) => !v)) && (
+                          {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
                             <span className="text-muted-foreground">
                               No legal information provided.
                             </span>
@@ -477,65 +456,52 @@ export function AIAgentDetailsDialog({
                     </div>
 
                     {/* Capability */}
-                    {agent.Capability &&
-                      (agent.Capability.name || agent.Capability.version) && (
-                        <div>
-                          <h3 className="font-medium mb-2">Capability</h3>
-                          <div className="flex justify-between text-sm p-3 bg-muted/40 rounded-md">
-                            <span className="text-muted-foreground">
-                              Model:
-                            </span>
-                            <span>
-                              {agent.Capability.name} (v
-                              {agent.Capability.version})
-                            </span>
-                          </div>
+                    {agent.Capability && (agent.Capability.name || agent.Capability.version) && (
+                      <div>
+                        <h3 className="font-medium mb-2">Capability</h3>
+                        <div className="flex justify-between text-sm p-3 bg-muted/40 rounded-md">
+                          <span className="text-muted-foreground">Model:</span>
+                          <span>
+                            {agent.Capability.name} (v
+                            {agent.Capability.version})
+                          </span>
                         </div>
-                      )}
+                      </div>
+                    )}
 
                     {/* Example Outputs */}
-                    {agent.ExampleOutputs &&
-                      agent.ExampleOutputs.length > 0 && (
-                        <div>
-                          <h3 className="font-medium mb-2">Example Outputs</h3>
-                          <div className="space-y-2">
-                            {agent.ExampleOutputs.map((output, index) => (
-                              <div
-                                key={index}
-                                className="text-sm p-3 bg-muted/40 rounded-md"
-                              >
-                                <div className="flex justify-between items-center">
-                                  <div>
-                                    <p className="font-semibold">
-                                      {output.name}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">
-                                      {output.mimeType}
-                                    </p>
-                                  </div>
-                                  <a
-                                    href={output.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1"
-                                  >
-                                    View <Link2 className="h-3 w-3" />
-                                  </a>
+                    {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
+                      <div>
+                        <h3 className="font-medium mb-2">Example Outputs</h3>
+                        <div className="space-y-2">
+                          {agent.ExampleOutputs.map((output, index) => (
+                            <div key={index} className="text-sm p-3 bg-muted/40 rounded-md">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="font-semibold">{output.name}</p>
+                                  <p className="text-xs text-muted-foreground">{output.mimeType}</p>
                                 </div>
+                                <a
+                                  href={output.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline flex items-center gap-1"
+                                >
+                                  View <Link2 className="h-3 w-3" />
+                                </a>
                               </div>
-                            ))}
-                          </div>
+                            </div>
+                          ))}
                         </div>
-                      )}
+                      </div>
+                    )}
 
                     {/* Wallet Information */}
                     <div>
                       <h3 className="font-medium mb-2">Wallet Information</h3>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between py-2 border-b">
-                          <span className="text-sm text-muted-foreground">
-                            Agent Identifier
-                          </span>
+                          <span className="text-sm text-muted-foreground">Agent Identifier</span>
                           <div className="font-mono text-sm flex items-center gap-2">
                             {shortenAddress(agent.agentIdentifier || '')}
                             <CopyButton value={agent.agentIdentifier || ''} />
@@ -545,24 +511,15 @@ export function AIAgentDetailsDialog({
                           <span className="text-sm text-muted-foreground">
                             Linked Wallet Address
                           </span>
-                          <div className="font-mono text-sm flex items-center gap-2">
-                            <a
-                              href={getExplorerUrl(
-                                agent.SmartContractWallet.walletAddress,
-                                network,
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline text-primary"
-                            >
-                              {shortenAddress(
-                                agent.SmartContractWallet.walletAddress,
-                              )}
-                            </a>
-                            <CopyButton
-                              value={agent.SmartContractWallet.walletAddress}
-                            />
-                          </div>
+                          <WalletLink
+                            address={agent.SmartContractWallet.walletAddress}
+                            vkey={agent.SmartContractWallet.walletVkey}
+                            network={network}
+                            shorten={4}
+                            onInternalClick={() =>
+                              handleWalletClick(agent.SmartContractWallet.walletVkey)
+                            }
+                          />
                         </div>
                       </div>
                     </div>
@@ -572,20 +529,12 @@ export function AIAgentDetailsDialog({
                       <h3 className="font-medium mb-2">Timestamps</h3>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between py-2 border-b">
-                          <span className="text-sm text-muted-foreground">
-                            Registered On
-                          </span>
-                          <span className="font-mono text-sm">
-                            {formatDate(agent.createdAt)}
-                          </span>
+                          <span className="text-sm text-muted-foreground">Registered On</span>
+                          <span className="font-mono text-sm">{formatDate(agent.createdAt)}</span>
                         </div>
                         <div className="flex items-center justify-between py-2">
-                          <span className="text-sm text-muted-foreground">
-                            Last Updated
-                          </span>
-                          <span className="font-mono text-sm">
-                            {formatDate(agent.updatedAt)}
-                          </span>
+                          <span className="text-sm text-muted-foreground">Last Updated</span>
+                          <span className="font-mono text-sm">{formatDate(agent.updatedAt)}</span>
                         </div>
                       </div>
                     </div>
@@ -600,11 +549,8 @@ export function AIAgentDetailsDialog({
                 )}
               </div>
 
-              <div className="pt-4 border-t flex justify-end gap-2 bg-background absolute bottom-0 left-0 w-full p-4 z-10">
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                >
+              <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
+                <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -627,6 +573,12 @@ export function AIAgentDetailsDialog({
         }
         onConfirm={handleDelete}
         isLoading={isDeleting}
+      />
+      <WalletDetailsDialog
+        isOpen={!!selectedWalletForDetails}
+        onClose={() => setSelectedWalletForDetails(null)}
+        wallet={selectedWalletForDetails}
+        isChild
       />
     </>
   );

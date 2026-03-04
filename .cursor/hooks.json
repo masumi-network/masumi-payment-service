@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "pnpm run lint",
+        "pattern": "src/**/*.ts"
+      },
+      {
+        "command": "pnpm run format",
+        "pattern": "src/**/*.ts"
+      }
+    ]
+  }
+}

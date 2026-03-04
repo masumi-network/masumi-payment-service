@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useEffect, useState } from 'react';
@@ -24,7 +22,6 @@ import formatBalance from '@/lib/formatBalance';
 import Image from 'next/image';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { CopyButton } from '@/components/ui/copy-button';
-import { NMKR_CONFIG } from '@/lib/constants/defaultWallets';
 import adaIcon from '@/assets/ada.png';
 import usdmIcon from '@/assets/usdm.png';
 import nmkrIcon from '@/assets/nmkr.png';
@@ -47,7 +44,6 @@ export function SwapDialog({
   const { apiKey, apiClient } = useAppContext();
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
-  const [nmkrBalance, setNmkrBalance] = useState<number>(0);
   const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,22 +56,16 @@ export function SwapDialog({
   const [txHash, setTxHash] = useState<string | null>(null);
 
   const adaIndex = swappableTokens.findIndex((token) => token.symbol === 'ADA');
-  const usdmIndex = swappableTokens.findIndex(
-    (token) => token.symbol === 'USDM',
-  );
+  const usdmIndex = swappableTokens.findIndex((token) => token.symbol === 'USDM');
 
-  const [selectedFromToken, setSelectedFromToken] = useState(
-    swappableTokens[adaIndex],
-  );
-  const [selectedToToken, setSelectedToToken] = useState(
-    swappableTokens[usdmIndex],
-  );
+  const [selectedFromToken, setSelectedFromToken] = useState(swappableTokens[adaIndex]);
+  const [selectedToToken, setSelectedToToken] = useState(swappableTokens[usdmIndex]);
 
   const [tokenRates, setTokenRates] = useState<Record<string, number>>({});
 
-  const [swapStatus, setSwapStatus] = useState<
-    'idle' | 'processing' | 'submitted' | 'confirmed'
-  >('idle');
+  const [swapStatus, setSwapStatus] = useState<'idle' | 'processing' | 'submitted' | 'confirmed'>(
+    'idle',
+  );
 
   const fetchTokenRates = async () => {
     try {
@@ -164,22 +154,9 @@ export function SwapDialog({
             }, 0)
           );
         }, 0) ?? 0;
-      const nmkr =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === NMKR_CONFIG?.fullAssetId) {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
 
       setAdaBalance(lovelace / 1000000);
       setUsdmBalance(usdm / 1000000);
-      setNmkrBalance(nmkr / 1000000);
       setBalanceError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
@@ -196,10 +173,7 @@ export function SwapDialog({
     walletVkey !== null;
 
   const handleSwitch = () => {
-    if (
-      selectedFromToken.symbol === 'ADA' ||
-      selectedToToken.symbol === 'ADA'
-    ) {
+    if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
     }
@@ -217,10 +191,7 @@ export function SwapDialog({
       }
     } else {
       setSelectedToToken(selectedToken);
-      if (
-        selectedToken.symbol !== 'ADA' &&
-        selectedFromToken.symbol !== 'ADA'
-      ) {
+      if (selectedToken.symbol !== 'ADA' && selectedFromToken.symbol !== 'ADA') {
         setSelectedFromToken(swappableTokens[adaIndex]);
       } else if (selectedToken.symbol === selectedFromToken.symbol) {
         setSelectedFromToken(selectedToToken);
@@ -234,8 +205,6 @@ export function SwapDialog({
         return adaBalance;
       case 'USDM':
         return usdmBalance;
-      case 'NMKR':
-        return nmkrBalance;
       default:
         return 0;
     }
@@ -262,15 +231,9 @@ export function SwapDialog({
   };
 
   const getConversionRate = () => {
-    if (
-      selectedFromToken.symbol === 'ADA' &&
-      selectedToToken.symbol === 'USDM'
-    ) {
+    if (selectedFromToken.symbol === 'ADA' && selectedToToken.symbol === 'USDM') {
       return adaToUsdRate;
-    } else if (
-      selectedFromToken.symbol === 'USDM' &&
-      selectedToToken.symbol === 'ADA'
-    ) {
+    } else if (selectedFromToken.symbol === 'USDM' && selectedToToken.symbol === 'ADA') {
       return 1 / adaToUsdRate;
     } else if (selectedFromToken.symbol === 'ADA') {
       return tokenRates[selectedToToken.symbol] || 0;
@@ -287,9 +250,7 @@ export function SwapDialog({
   const toAmount = fromAmount * conversionRate;
 
   const formattedDollarValue =
-    selectedFromToken.symbol === 'USDM'
-      ? `~$${fromAmount.toFixed(2)}`
-      : `$${toAmount.toFixed(2)}`;
+    selectedFromToken.symbol === 'USDM' ? `~$${fromAmount.toFixed(2)}` : `$${toAmount.toFixed(2)}`;
 
   const formattedFromBalance = formatBalance(
     getBalanceForToken(selectedFromToken.symbol).toFixed(6),
@@ -370,8 +331,6 @@ export function SwapDialog({
           }),
         {
           onSuccess: (result) => {
-            // The API response structure: result.data.data.txHash (consistent with other API calls)
-            // Check both possible paths in case the structure differs
             const transactionHash =
               (result as any)?.data?.data?.txHash ||
               (result as any)?.data?.txHash;
@@ -384,7 +343,6 @@ export function SwapDialog({
             toast.info('Swap transaction submitted!', { theme: 'dark' });
 
             if (transactionHash) {
-              // Use timeout fallback for transaction confirmation
               setTimeout(async () => {
                 await fetchBalance();
                 setSwapStatus('confirmed');
@@ -673,7 +631,7 @@ export function SwapDialog({
                 </div>
               )}
               {isSwapping && (
-                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-bounce-bottom">
+                <div className="w-full h-[4px] bg-gray-700 rounded-full overflow-hidden animate-slide-up-from-bottom">
                   <div
                     className={`h-full transition-all duration-1000 ease-in-out ${getProgressBarColor()}`}
                     style={{
@@ -694,26 +652,18 @@ export function SwapDialog({
         </DialogContent>
       </Dialog>
       {showConfirmation && (
-        <Dialog
-          open={showConfirmation}
-          onOpenChange={() => setShowConfirmation(false)}
-        >
+        <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Confirm Swap</DialogTitle>
-              <DialogDescription>
-                Are you sure you want to swap:
-              </DialogDescription>
+              <DialogDescription>Are you sure you want to swap:</DialogDescription>
               <div className="mt-2 font-medium">
                 {fromAmount} {selectedFromToken.symbol} → {toAmount.toFixed(6)}{' '}
                 {selectedToToken.symbol}
               </div>
             </DialogHeader>
             <div className="flex justify-end space-x-2 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowConfirmation(false)}
-              >
+              <Button variant="outline" onClick={() => setShowConfirmation(false)}>
                 Cancel
               </Button>
               <Button onClick={handleConfirmSwap}>Confirm Swap</Button>

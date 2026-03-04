@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +13,7 @@ import {
   validateCardanoAddress,
   hexToAscii,
 } from '@/lib/utils';
+import { WalletLink } from '@/components/ui/wallet-link';
 import { Spinner } from '@/components/ui/spinner';
 import formatBalance from '@/lib/formatBalance';
 import { useRate } from '@/lib/hooks/useRate';
@@ -34,7 +34,6 @@ export interface TokenBalance {
   policyId: string;
   assetName: string;
   quantity: number;
-  displayName: string;
 }
 
 export interface WalletWithBalance {
@@ -52,12 +51,14 @@ interface WalletDetailsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   wallet: WalletWithBalance | null;
+  isChild?: boolean;
 }
 
 export function WalletDetailsDialog({
   isOpen,
   onClose,
   wallet,
+  isChild,
 }: WalletDetailsDialogProps) {
   const { apiClient, network } = useAppContext();
   const [isLoading, setIsLoading] = useState(true);
@@ -70,8 +71,7 @@ export function WalletDetailsDialog({
     useState<WalletWithBalance | null>(null);
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [isEditingCollectionAddress, setIsEditingCollectionAddress] =
-    useState(false);
+  const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
 
   const fetchTokenBalances = async () => {
@@ -103,10 +103,7 @@ export function WalletDetailsDialog({
             response.data.data.Utxos.forEach((utxo: any) => {
               utxo.Amounts.forEach((amount: any) => {
                 const currentAmount = balanceMap.get(amount.unit) || 0;
-                balanceMap.set(
-                  amount.unit,
-                  currentAmount + (amount.quantity || 0),
-                );
+                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
               });
             });
 
@@ -118,7 +115,6 @@ export function WalletDetailsDialog({
                   policyId: '',
                   assetName: 'ADA',
                   quantity,
-                  displayName: 'ADA',
                 });
               } else {
                 // For other tokens, split into policy ID and asset name
@@ -131,7 +127,6 @@ export function WalletDetailsDialog({
                   policyId,
                   assetName,
                   quantity,
-                  displayName: assetName || unit,
                 });
               }
             });
@@ -163,38 +158,32 @@ export function WalletDetailsDialog({
     }
   }, [isOpen, wallet?.walletAddress]);
 
+  const usdmConfig = getUsdmConfig(network);
+
+  const isUSDM = (token: TokenBalance) =>
+    token.policyId === usdmConfig.policyId && token.assetName === hexToAscii(usdmConfig.assetName);
+
   const formatTokenBalance = (token: TokenBalance) => {
     if (token.unit === 'lovelace') {
-      const ada = token.quantity / 1000000;
-      const formattedAmount =
-        ada === 0 ? 'zero' : formatBalance(ada.toFixed(6));
+      const ada = token.quantity / 1_000_000;
       return {
-        amount: formattedAmount,
+        amount: ada === 0 ? 'zero' : formatBalance(ada.toFixed(6)),
         usdValue: rate ? `≈ $${(ada * rate).toFixed(2)}` : undefined,
       };
     }
 
-    // For USDM, match by policyId and assetName (hex) - network aware
-    const usdmConfig = getUsdmConfig(network);
-    const isUSDM =
-      token.policyId === usdmConfig.policyId &&
-      token.assetName === hexToAscii(usdmConfig.assetName);
-    if (isUSDM) {
-      const usdm = token.quantity / 1000000;
-      const formattedAmount =
-        usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6));
+    if (isUSDM(token)) {
+      const usdm = token.quantity / 1_000_000;
       return {
-        amount: formattedAmount,
+        amount: usdm === 0 ? 'zero' : formatBalance(usdm.toFixed(6)),
         usdValue: `≈ $${usdm.toFixed(2)}`,
       };
     }
 
-    // For other tokens, divide by 10^6 as a default
-    const amount = token.quantity / 1000000;
-    const formattedAmount =
-      amount === 0 ? 'zero' : formatBalance(amount.toFixed(6));
+    // Unknown tokens: display raw quantity (no decimal conversion)
+    const qty = token.quantity;
     return {
-      amount: formattedAmount,
+      amount: qty === 0 ? 'zero' : formatBalance(qty.toString()),
       usdValue: undefined,
     };
   };
@@ -263,10 +252,7 @@ export function WalletDetailsDialog({
 
     // Validate the address if provided
     if (newCollectionAddress.trim()) {
-      const validation = validateCardanoAddress(
-        newCollectionAddress.trim(),
-        network,
-      );
+      const validation = validateCardanoAddress(newCollectionAddress.trim(), network);
       if (!validation.isValid) {
         toast.error('Invalid collection address: ' + validation.error);
         return;
@@ -328,7 +314,13 @@ export function WalletDetailsDialog({
           }
         }}
       >
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent
+          className="sm:max-w-[600px]"
+          variant={isChild ? 'slide-from-right' : 'default'}
+          isPushedBack={!!selectedWalletForTopup}
+          hideOverlay={isChild}
+          onBack={isChild ? onClose : undefined}
+        >
           <DialogHeader>
             <DialogTitle>Wallet Details</DialogTitle>
             <DialogDescription>{wallet.type} Wallet</DialogDescription>
@@ -338,16 +330,8 @@ export function WalletDetailsDialog({
             {/* Wallet Address Section */}
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">Wallet Address</div>
-              <div className="flex items-center gap-2 mt-1">
-                <a
-                  href={getExplorerUrl(wallet.walletAddress, network)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-mono text-sm break-all hover:underline text-primary"
-                >
-                  {wallet.walletAddress}
-                </a>
-                <CopyButton value={wallet.walletAddress} />
+              <div className="mt-1">
+                <WalletLink address={wallet.walletAddress} network={network} />
               </div>
             </div>
 
@@ -355,7 +339,7 @@ export function WalletDetailsDialog({
             {wallet.note && (
               <div className="bg-muted rounded-lg p-4">
                 <div className="text-sm font-medium">Note</div>
-                <div className="text-sm mt-1 break-words">{wallet.note}</div>
+                <div className="text-sm mt-1 wrap-break-word">{wallet.note}</div>
               </div>
             )}
 
@@ -363,11 +347,117 @@ export function WalletDetailsDialog({
             <div className="bg-muted rounded-lg p-4">
               <div className="text-sm font-medium">vKey</div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="font-mono text-xs break-all">
-                  {wallet.walletVkey}
-                </span>
+                <span className="font-mono text-xs break-all">{wallet.walletVkey}</span>
                 <CopyButton value={wallet.walletVkey} />
               </div>
+            </div>
+
+            <div className="bg-muted rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">Token Balances</div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={fetchTokenBalances}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </div>
+              {isLoading ? (
+                <div className="flex justify-center py-4">
+                  <Spinner size={20} />
+                </div>
+              ) : error ? (
+                <div className="text-sm text-destructive">{error}</div>
+              ) : (
+                <div className="space-y-2">
+                  {tokenBalances.length === 0 && (
+                    <div className="text-xs text-muted-foreground">No tokens found</div>
+                  )}
+                  {/* Sort tokens: ADA first, then USDM, then others */}
+                  {(() => {
+                    const adaToken = tokenBalances.find((t) => t.unit === 'lovelace');
+                    const usdmToken = tokenBalances.find((t) => isUSDM(t));
+                    const otherTokens = tokenBalances.filter(
+                      (t) => t.unit !== 'lovelace' && !isUSDM(t),
+                    );
+                    const sortedTokens = [adaToken, usdmToken, ...otherTokens].filter(
+                      (t): t is TokenBalance => Boolean(t),
+                    );
+
+                    return sortedTokens.map((token) => {
+                      const { amount, usdValue } = formatTokenBalance(token);
+                      const isADA = token.unit === 'lovelace';
+                      const isUsdm = isUSDM(token);
+                      const assetHex = !isADA ? token.unit.slice(56) : '';
+
+                      let displayName: string;
+                      if (isADA) {
+                        displayName = 'ADA';
+                      } else if (isUsdm) {
+                        displayName = `USDM (${shortenAddress(token.policyId)})`;
+                      } else if (assetHex.length > 12) {
+                        displayName = shortenAddress(assetHex);
+                      } else if (assetHex) {
+                        displayName = assetHex;
+                      } else {
+                        displayName = shortenAddress(token.policyId);
+                      }
+
+                      const tokenUrl =
+                        !isADA && !isUsdm
+                          ? getExplorerUrl(token.unit, network, 'token')
+                          : undefined;
+
+                      const inner = (
+                        <>
+                          <div>
+                            <div className="font-medium font-mono">{displayName}</div>
+                            {!isUsdm && token.policyId && (
+                              <div className="text-xs text-muted-foreground">
+                                Policy ID: {shortenAddress(token.policyId)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div>{amount}</div>
+                            {usdValue && (
+                              <div className="text-xs text-muted-foreground">{usdValue}</div>
+                            )}
+                          </div>
+                        </>
+                      );
+
+                      if (tokenUrl) {
+                        return (
+                          <a
+                            key={token.unit}
+                            href={tokenUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block rounded-md border dark:border-muted-foreground/20 hover:bg-accent transition-colors"
+                          >
+                            <div className="flex items-center justify-between p-3 cursor-pointer">
+                              {inner}
+                            </div>
+                          </a>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={token.unit}
+                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
+                        >
+                          {inner}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
             </div>
 
             {wallet.type !== 'Collection' && (
@@ -446,19 +536,10 @@ export function WalletDetailsDialog({
                       placeholder="Enter collection wallet address"
                       className="flex-1"
                     />
-                    <Button
-                      size="sm"
-                      onClick={handleSaveCollection}
-                      className="h-8"
-                    >
+                    <Button size="sm" onClick={handleSaveCollection} className="h-8">
                       Done
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCancelEdit}
-                      className="h-8"
-                    >
+                    <Button variant="outline" size="sm" onClick={handleCancelEdit} className="h-8">
                       Cancel
                     </Button>
                   </div>
@@ -466,18 +547,11 @@ export function WalletDetailsDialog({
                   <div className="flex items-center gap-2">
                     {wallet.collectionAddress ? (
                       <>
-                        <a
-                          href={getExplorerUrl(
-                            wallet.collectionAddress,
-                            network,
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-sm hover:underline text-primary"
-                        >
-                          {shortenAddress(wallet.collectionAddress, 15)}
-                        </a>
-                        <CopyButton value={wallet.collectionAddress} />
+                        <WalletLink
+                          address={wallet.collectionAddress}
+                          network={network}
+                          shorten={15}
+                        />
                         <Button
                           variant="outline"
                           size="sm"
@@ -489,9 +563,7 @@ export function WalletDetailsDialog({
                       </>
                     ) : (
                       <>
-                        <span className="font-mono text-sm italic text-muted-foreground">
-                          none
-                        </span>
+                        <span className="font-mono text-sm italic text-muted-foreground">none</span>
                         <Button
                           variant="outline"
                           size="sm"
@@ -506,96 +578,6 @@ export function WalletDetailsDialog({
                 )}
               </div>
             )}
-
-            <div className="bg-muted rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Token Balances</div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchTokenBalances}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              {isLoading ? (
-                <div className="flex justify-center py-4">
-                  <Spinner size={20} />
-                </div>
-              ) : error ? (
-                <div className="text-sm text-destructive">{error}</div>
-              ) : (
-                <div className="space-y-2">
-                  {tokenBalances.length === 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      No tokens found
-                    </div>
-                  )}
-                  {/* Sort tokens: ADA first, then USDM, then others */}
-                  {(() => {
-                    const adaToken = tokenBalances.find(
-                      (t) => t.unit === 'lovelace',
-                    );
-                    const usdmConfig = getUsdmConfig(network);
-                    const usdmToken = tokenBalances.find(
-                      (t) =>
-                        t.policyId === usdmConfig.policyId &&
-                        t.assetName === hexToAscii(usdmConfig.assetName),
-                    );
-                    const otherTokens = tokenBalances.filter(
-                      (t) =>
-                        t.unit !== 'lovelace' &&
-                        !(
-                          t.policyId === usdmConfig.policyId &&
-                          t.assetName === hexToAscii(usdmConfig.assetName)
-                        ),
-                    );
-                    // Filter out undefined tokens before mapping
-                    const sortedTokens = [
-                      adaToken,
-                      usdmToken,
-                      ...otherTokens,
-                    ].filter((t): t is TokenBalance => Boolean(t));
-                    return sortedTokens.map((token) => {
-                      const { amount, usdValue } = formatTokenBalance(token);
-                      const isUSDM =
-                        token.policyId === usdmConfig.policyId &&
-                        token.assetName === hexToAscii(usdmConfig.assetName);
-                      const displayName =
-                        isUSDM && token.policyId
-                          ? `USDM (${shortenAddress(token.policyId)})`
-                          : token.displayName;
-                      return (
-                        <div
-                          key={token.unit}
-                          className="flex items-center justify-between rounded-md border dark:border-muted-foreground/20 p-3"
-                        >
-                          <div>
-                            <div className="font-medium">{displayName}</div>
-                            {!isUSDM && token.policyId && (
-                              <div className="text-xs text-muted-foreground">
-                                Policy ID: {shortenAddress(token.policyId)}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div>{amount}</div>
-                            {/* Only show USD value for non-USDM tokens */}
-                            {usdValue && !isUSDM && (
-                              <div className="text-xs text-muted-foreground">
-                                {usdValue}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -616,6 +598,7 @@ export function WalletDetailsDialog({
           toast.success('Top up successful');
           fetchTokenBalances();
         }}
+        isChild
       />
     </>
   );

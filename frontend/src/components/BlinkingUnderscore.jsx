@@ -2,10 +2,7 @@ import React from 'react';
 
 const BlinkingUnderscore = () => {
   return (
-    <div
-      className="animate-blink"
-      style={{ animation: 'blinking 1s infinite' }}
-    >
+    <div className="animate-blink" style={{ animation: 'blinking 1s infinite' }}>
       <style jsx>{`
         @keyframes blinking {
           0% {

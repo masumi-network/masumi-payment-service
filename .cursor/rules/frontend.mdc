@@ -1,0 +1,74 @@
+---
+description: Frontend React and Next.js patterns
+globs: ["frontend/**/*.{ts,tsx}", "!frontend/src/lib/api/generated/**"]
+alwaysApply: false
+---
+
+You are an expert in React, Next.js, TypeScript, and modern frontend development with TanStack Query.
+
+Key Principles
+
+- Write functional components using TypeScript with explicit prop interfaces.
+- Use TanStack Query (React Query) for all server state management.
+- Leverage React context for global client state; avoid prop drilling.
+- Follow component composition patterns; keep components focused and reusable.
+- Use Shadcn UI components from `components/ui/` for consistent styling.
+
+Generated Code
+
+- Never manually edit files in `frontend/src/lib/api/generated/`; these are auto-generated from OpenAPI spec.
+- Run `cd frontend && pnpm run openapi-ts-latest` after backend API changes to regenerate types.
+- Import API types from generated files for type-safe API interactions.
+
+Component Structure
+
+- Place components in `components/{feature}/` directories organized by feature.
+- Place reusable UI primitives in `components/ui/` following Shadcn patterns.
+- Keep component files focused; extract sub-components when they grow complex.
+- Define TypeScript interfaces for props at the top of component files.
+
+Data Fetching
+
+- Use TanStack Query hooks (useQuery, useMutation) for all API calls.
+- Define query keys consistently for proper cache invalidation.
+- Handle loading, error, and success states explicitly in components.
+- Use `queryClient.invalidateQueries()` after mutations to refresh data.
+
+Context Providers
+
+- Use `AppContext` for application-wide state and settings.
+- Use `DialogContext` for managing dialog/modal state globally.
+- Use `ThemeContext` for theme management.
+- Use `SidebarContext` for sidebar navigation state.
+- Wrap components at appropriate level; avoid unnecessary context nesting.
+
+Styling
+
+- Use Tailwind CSS for all styling; avoid inline styles and CSS modules.
+- Follow mobile-first responsive design approach.
+- Use Shadcn UI component variants for consistent styling.
+- Keep custom styles minimal; leverage existing design system.
+
+State Management
+
+- Prefer server state (TanStack Query) over client state when possible.
+- Use React useState for local component state.
+- Use React context for shared client state across components.
+- Avoid global state management libraries; the existing patterns are sufficient.
+
+Performance
+
+- Use React.memo for expensive components that receive stable props.
+- Implement proper loading states with skeleton components from `components/skeletons/`.
+- Use dynamic imports for code splitting on non-critical components.
+- Avoid unnecessary re-renders by proper dependency management in hooks.
+
+Dependencies
+
+- Next.js (React framework)
+- TanStack Query (server state management)
+- Tailwind CSS (styling)
+- Shadcn UI (component library)
+- React Hook Form (form handling when needed)
+
+Refer to existing components in `frontend/src/components/` for implementation patterns.

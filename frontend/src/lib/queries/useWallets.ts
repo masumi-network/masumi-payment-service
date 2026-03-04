@@ -1,24 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import {
-  getUtxos,
-  GetPaymentSourceResponses,
-  GetUtxosResponses,
-} from '@/lib/api/generated';
-import { Client } from '@hey-api/client-axios';
+import { getUtxos, Utxo, UtxoAmount, PurchasingWallet, SellingWallet } from '@/lib/api/generated';
+import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getUsdmConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';
 
-type UTXO = GetUtxosResponses['200']['data']['Utxos'][0];
-type UTXOAmount = UTXO['Amounts'][0];
+type UTXO = Utxo;
+type UTXOAmount = UtxoAmount;
 
 type Wallet =
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['PurchasingWallets'][0] & {
+  | (PurchasingWallet & {
       type: 'Purchasing';
       network: 'Preprod' | 'Mainnet';
     })
-  | (GetPaymentSourceResponses['200']['data']['PaymentSources'][0]['SellingWallets'][0] & {
+  | (SellingWallet & {
       type: 'Selling';
       network: 'Preprod' | 'Mainnet';
     });
@@ -48,9 +44,7 @@ export async function fetchWalletBalance(
   }
   if (responseData.error) {
     console.error('Error fetching wallet balance:', responseData.error);
-    toast.error(
-      'Error fetching wallet balance: ' + errorToString(responseData.error),
-    );
+    toast.error('Error fetching wallet balance: ' + errorToString(responseData.error));
     return { ada: '0', usdm: '0' };
   }
 
@@ -92,8 +86,7 @@ type WalletsResponse = {
 };
 
 export function useWallets() {
-  const { apiClient, selectedPaymentSourceId, selectedPaymentSource } =
-    useAppContext();
+  const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSource, selectedPaymentSourceId],
@@ -141,23 +134,21 @@ export function useWallets() {
       let totalAdaBalance = 0;
       let totalUsdmBalance = 0;
 
-      const walletsWithBalance: WalletWithBalance[] = allWallets.map(
-        (wallet, index) => {
-          const balance = balanceResults[index];
-          const ada = parseInt(balance.ada || '0') || 0;
-          const usdm = parseInt(balance.usdm || '0') || 0;
+      const walletsWithBalance: WalletWithBalance[] = allWallets.map((wallet, index) => {
+        const balance = balanceResults[index];
+        const ada = parseInt(balance.ada || '0') || 0;
+        const usdm = parseInt(balance.usdm || '0') || 0;
 
-          totalAdaBalance += ada;
-          totalUsdmBalance += usdm;
+        totalAdaBalance += ada;
+        totalUsdmBalance += usdm;
 
-          return {
-            ...wallet,
-            balance: balance.ada,
-            usdmBalance: balance.usdm,
-            isLoadingBalance: false,
-          };
-        },
-      );
+        return {
+          ...wallet,
+          balance: balance.ada,
+          usdmBalance: balance.usdm,
+          isLoadingBalance: false,
+        };
+      });
 
       return {
         wallets: walletsWithBalance,

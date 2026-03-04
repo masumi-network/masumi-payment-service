@@ -1,11 +1,4 @@
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-} from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 interface SidebarContextType {
   collapsed: boolean;
@@ -13,6 +6,8 @@ interface SidebarContextType {
   isHovered: boolean;
   setIsHovered: (hovered: boolean) => void;
   shouldAnimateIcon: boolean;
+  hasAnimatedNav: boolean;
+  markNavAnimated: () => void;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -27,6 +22,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   });
   const [isHovered, setIsHovered] = useState(false);
   const [shouldAnimateIcon, setShouldAnimateIcon] = useState(false);
+  const [hasAnimatedNav, setHasAnimatedNav] = useState(false);
   const prevCollapsedRef = useRef(collapsed);
   const prevHoveredRef = useRef(isHovered);
 
@@ -41,6 +37,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     const isHoverEnding = collapsed && !isHovered && prevHoveredRef.current;
 
     if (isCollapsing || isHoverEnding) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Animation state must be set synchronously to coordinate with setTimeout cleanup
       setShouldAnimateIcon(true);
       const timer = setTimeout(() => {
         setShouldAnimateIcon(false);
@@ -58,17 +55,21 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     setCollapsedState(value);
   }, []);
 
+  const markNavAnimated = useCallback(() => {
+    setHasAnimatedNav(true);
+  }, []);
+
   const value: SidebarContextType = {
     collapsed,
     setCollapsed,
     isHovered,
     setIsHovered,
     shouldAnimateIcon,
+    hasAnimatedNav,
+    markNavAnimated,
   };
 
-  return (
-    <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>
-  );
+  return <SidebarContext.Provider value={value}>{children}</SidebarContext.Provider>;
 }
 
 export function useSidebar() {

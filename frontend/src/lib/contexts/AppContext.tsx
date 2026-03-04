@@ -5,11 +5,12 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from 'react';
 import { ErrorDialog } from '@/components/ui/error-dialog';
-import { Client, createClient } from '@hey-api/client-axios';
+import { Client, createClient } from '@/lib/api/generated/client';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
-import { PaymentSource, PaymentSourceExtended } from '../api/generated';
+import { PaymentSource } from '../api/generated';
 
 type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -22,17 +23,17 @@ export const AppContext = createContext<
       setAuthorized: (authorized: boolean) => void;
       network: NetworkType;
       setNetwork: (network: NetworkType) => void;
-      showError: (error: {
-        code?: number;
-        message: string;
-        details?: unknown;
-      }) => void;
+      showError: (error: { code?: number; message: string; details?: unknown }) => void;
       apiClient: Client;
       setApiClient: React.Dispatch<React.SetStateAction<Client>>;
       selectedPaymentSourceId: string | null;
       setSelectedPaymentSourceId: (id: string | null) => void;
       signOut: () => void;
       isChangingNetwork: boolean;
+      isSetupMode: boolean;
+      setIsSetupMode: (isSetupMode: boolean) => void;
+      setupWizardStep: number;
+      setSetupWizardStep: (step: number) => void;
     }
   | undefined
 >(undefined);
@@ -52,24 +53,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetwork] = useState<NetworkType>('Preprod');
+  const [isSetupMode, setIsSetupModeState] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('masumi_setup_mode') === 'true';
+    }
+    return false;
+  });
+  const setIsSetupMode = useCallback((value: boolean) => {
+    setIsSetupModeState(value);
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('masumi_setup_mode', 'true');
+      } else {
+        localStorage.removeItem('masumi_setup_mode');
+      }
+    }
+  }, []);
+  const [setupWizardStep, setSetupWizardStep] = useState(0);
 
   const { paymentSources } = usePaymentSourceExtendedAllWithParams({
     apiClient,
     apiKey,
   });
 
-  const [currentNetworkPaymentSources, setCurrentNetworkPaymentSources] =
-    useState<PaymentSourceExtended[]>([]);
+  const currentNetworkPaymentSources = useMemo(
+    () => paymentSources.filter((ps) => ps.network === network),
+    [paymentSources, network],
+  );
 
-  useEffect(() => {
-    setCurrentNetworkPaymentSources(
-      paymentSources.filter((ps) => ps.network === network),
-    );
-  }, [paymentSources, network]);
-
-  const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<
-    string | null
-  >(() => {
+  const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('selectedPaymentSourceId');
       return stored || null;
@@ -77,14 +89,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
 
-  const [selectedPaymentSource, setSelectedPaymentSource] =
-    useState<PaymentSource | null>(null);
+  const [selectedPaymentSource, setSelectedPaymentSource] = useState<PaymentSource | null>(null);
 
   const [isChangingNetwork, setIsChangingNetwork] = useState(false);
   const previousNetworkRef = useRef<NetworkType>(network);
 
   // Persist selectedPaymentSourceId to localStorage whenever it changes
-  const setSelectedPaymentSourceIdAndPersist = (id: string | null) => {
+  const setSelectedPaymentSourceIdAndPersist = useCallback((id: string | null) => {
     setSelectedPaymentSourceId(id);
     if (typeof window !== 'undefined') {
       if (id) {
@@ -93,10 +104,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('selectedPaymentSourceId');
       }
     }
-  };
+  }, []);
+
+  // Memoized network setter to prevent infinite re-render loops
+  // (unstable reference caused URL sync effect in _app.tsx to re-run every render)
+  const setNetworkWithReset = useCallback(
+    (newNetwork: NetworkType) => {
+      setNetwork(newNetwork);
+      setSelectedPaymentSourceIdAndPersist(null);
+    },
+    [setSelectedPaymentSourceIdAndPersist],
+  );
 
   useEffect(() => {
     if (!selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing payment source selection with network and available sources requires state updates
       setSelectedPaymentSourceIdAndPersist(currentNetworkPaymentSources[0].id);
     }
     if (selectedPaymentSourceId && currentNetworkPaymentSources.length > 0) {
@@ -105,21 +127,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (foundPaymentSource) {
-        if (foundPaymentSource.network !== network) {
-          setSelectedPaymentSourceIdAndPersist(null);
-        } else {
-          setSelectedPaymentSource(foundPaymentSource);
-        }
+        setSelectedPaymentSource(foundPaymentSource);
       } else {
         setSelectedPaymentSourceIdAndPersist(null);
         setSelectedPaymentSource(null);
       }
     }
-  }, [selectedPaymentSourceId, currentNetworkPaymentSources, network]);
+  }, [
+    selectedPaymentSourceId,
+    currentNetworkPaymentSources,
+    network,
+    setSelectedPaymentSourceIdAndPersist,
+  ]);
 
-  // Track network changes for transition effect
   useEffect(() => {
     if (previousNetworkRef.current !== network) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Network change animation state must be set synchronously to coordinate with setTimeout cleanup
       setIsChangingNetwork(true);
       setTimeout(() => {
         setIsChangingNetwork(false);
@@ -128,12 +151,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [network]);
 
-  const showError = useCallback(
-    (error: { code?: number; message: string; details?: unknown }) => {
-      setError(error);
-    },
-    [],
-  );
+  const showError = useCallback((error: { code?: number; message: string; details?: unknown }) => {
+    setError(error);
+  }, []);
 
   const signOut = useCallback(() => {
     setApiKey(null);
@@ -142,6 +162,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedPaymentSourceId(null);
     setSelectedPaymentSource(null);
     setIsChangingNetwork(false);
+    setIsSetupMode(false);
     setError(null);
 
     // Clear all localStorage items
@@ -150,7 +171,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
-  }, []);
+  }, [setIsSetupMode]);
 
   return (
     <AppContext.Provider
@@ -183,10 +204,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthorized,
         authorized,
         network,
-        setNetwork: (network: NetworkType) => {
-          setNetwork(network);
-          setSelectedPaymentSourceIdAndPersist(null);
-        },
+        setNetwork: setNetworkWithReset,
         showError,
         apiClient,
         setApiClient,
@@ -194,14 +212,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setSelectedPaymentSourceId: setSelectedPaymentSourceIdAndPersist,
         signOut,
         isChangingNetwork,
+        isSetupMode,
+        setIsSetupMode,
+        setupWizardStep,
+        setSetupWizardStep,
       }}
     >
       {children}
-      <ErrorDialog
-        open={!!error}
-        onClose={() => setError(null)}
-        error={error || { message: '' }}
-      />
+      <ErrorDialog open={!!error} onClose={() => setError(null)} error={error || { message: '' }} />
     </AppContext.Provider>
   );
 }
