@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
@@ -186,6 +186,7 @@ export function useTransactions(
     refetchInterval: 25000,
     enabled: !!apiClient,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const transactions = useMemo(() => {
@@ -205,7 +206,8 @@ export function useTransactions(
     return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [query.data]);
 
-  const isLoading = query.isLoading || query.isRefetching;
+  const isLoading = query.isLoading;
+  const isPlaceholderData = query.isPlaceholderData;
   const hasMore = Boolean(query.hasNextPage);
   const isFetchingNextPage = query.isFetchingNextPage;
   const isRefetching = query.isRefetching;
@@ -309,7 +311,9 @@ export function useTransactions(
     newTransactionsCount,
     markAllAsRead,
     isFetchingNextPage,
+    isFetching: query.isFetching,
     refetch,
     isRefetching,
+    isPlaceholderData,
   };
 }

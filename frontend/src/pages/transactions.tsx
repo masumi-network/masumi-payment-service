@@ -35,6 +35,11 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
   return new Date(timestamp).toLocaleString();
 };
 
+const formatStatus = (status: string | null) => {
+  if (!status) return '—';
+  return status.replace(/([A-Z])/g, ' $1').trim();
+};
+
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
 
@@ -66,6 +71,8 @@ export default function Transactions() {
     loadMore,
     refetch: refetchTransactions,
     isFetchingNextPage,
+    isFetching: isFetchingTransactions,
+    isPlaceholderData,
   } = useTransactions(filterParams, { trackVisit: false });
 
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
@@ -85,7 +92,7 @@ export default function Transactions() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
   const isLoadingMore = isFetchingNextPage;
-  const isInitialLoading = isLoading && transactions.length === 0;
+  const isInitialLoading = isLoading && !transactions.length;
 
   const tabs = useMemo(() => {
     const seenIds = new Set<string>();
@@ -129,6 +136,41 @@ export default function Transactions() {
     });
   }, [transactions]);
 
+  // True whenever server-authoritative results haven't arrived yet:
+  // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
+
+  // Client-side filter for instant feedback while server results are pending.
+  // Skip filtering only when the query matches the debounced value AND data is fresh
+  // (not placeholder). Otherwise always filter to avoid flashing stale unfiltered data.
+  const displayTransactions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
+      return filteredTransactions;
+
+    return filteredTransactions.filter((tx) => {
+      if (tx.id?.toLowerCase().includes(query)) return true;
+      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (tx.onChainState?.toLowerCase().includes(query)) return true;
+      if (formatStatus(tx.onChainState)?.toLowerCase().includes(query)) return true;
+      if (tx.type?.toLowerCase().includes(query)) return true;
+      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
+      if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      // Match amounts (lovelace converted to ADA)
+      const funds =
+        tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
+      if (
+        funds?.some((f) => {
+          const ada = (parseInt(f.amount) / 1000000).toFixed(2);
+          return ada.includes(query) || f.amount.includes(query);
+        })
+      )
+        return true;
+      return false;
+    });
+  }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
+
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
   useEffect(() => {
@@ -166,11 +208,6 @@ export default function Transactions() {
       default:
         return 'text-muted-foreground';
     }
-  };
-
-  const formatStatus = (status: string | null) => {
-    if (!status) return '—';
-    return status.replace(/([A-Z])/g, ' $1').trim();
   };
 
   // Generate CSV data for transactions
@@ -263,10 +300,13 @@ export default function Transactions() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <RefreshButton onRefresh={() => refreshTransactions()} isRefreshing={isLoading} />
+              <RefreshButton
+                onRefresh={() => refreshTransactions()}
+                isRefreshing={isFetchingTransactions}
+              />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={filteredTransactions.length === 0}
+                disabled={displayTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
@@ -297,12 +337,18 @@ export default function Transactions() {
                 onChange={setSearchQuery}
                 placeholder="Search by ID, hash, status, amount..."
                 className="max-w-xs"
+                isLoading={isSearchPending}
               />
             </div>
           </div>
 
           <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full">
+            <table
+              className={cn(
+                'w-full transition-opacity duration-150',
+                isSearchPending && 'opacity-70',
+              )}
+            >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
@@ -328,35 +374,39 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
+                {isInitialLoading || (displayTransactions.length === 0 && isSearchPending) ? (
                   <TransactionTableSkeleton rows={5} />
-                ) : isInitialLoading ? (
-                  <tr>
-                    <td colSpan={8}>
-                      <Spinner size={20} addContainer />
-                    </td>
-                  </tr>
-                ) : transactions.length === 0 ? (
+                ) : displayTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={8}>
                       <EmptyState
-                        icon="inbox"
-                        title="No transactions found"
-                        description="Transactions will appear here once payments are made."
+                        icon={searchQuery ? 'search' : 'inbox'}
+                        title={
+                          searchQuery
+                            ? 'No transactions found matching your search'
+                            : 'No transactions found'
+                        }
+                        description={
+                          searchQuery
+                            ? 'Try adjusting your search terms'
+                            : 'Transactions will appear here once payments are made.'
+                        }
                         action={
-                          <Link
-                            href="/developers"
-                            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-                          >
-                            <FlaskConical className="h-3.5 w-3.5" />
-                            Create a test transaction
-                          </Link>
+                          !searchQuery ? (
+                            <Link
+                              href="/developers"
+                              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+                            >
+                              <FlaskConical className="h-3.5 w-3.5" />
+                              Create a test transaction
+                            </Link>
+                          ) : undefined
                         }
                       />
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((transaction, index) => (
+                  displayTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(

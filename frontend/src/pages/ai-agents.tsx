@@ -81,6 +81,7 @@ export default function AIAgentsPage() {
     agents,
     isLoading,
     isFetching: isFetchingAgents,
+    isPlaceholderData,
     refetch,
     hasMore: hasMoreAgents,
     loadMore,
@@ -88,6 +89,31 @@ export default function AIAgentsPage() {
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  // True whenever server-authoritative results haven't arrived yet:
+  // either the debounce hasn't fired, or the server fetch is still in-flight with stale data.
+  const isSearchPending =
+    searchQuery !== debouncedSearchQuery || (isFetchingAgents && isPlaceholderData);
+
+  // Client-side filter for instant feedback while server results are pending.
+  // Skip filtering only when the query matches the debounced value AND data is fresh
+  // (not placeholder). Otherwise always filter to avoid flashing stale unfiltered data.
+  const displayAgents = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
+      return agents;
+
+    return agents.filter((agent) => {
+      if (agent.name?.toLowerCase().includes(query)) return true;
+      if (agent.description?.toLowerCase().includes(query)) return true;
+      if (agent.Tags?.some((tag) => tag.toLowerCase().includes(query))) return true;
+      if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (agent.state?.toLowerCase().includes(query)) return true;
+      if (parseAgentStatus(agent.state).toLowerCase().includes(query)) return true;
+      if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+      return false;
+    });
+  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
@@ -309,12 +335,18 @@ export default function AIAgentsPage() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                   placeholder="Search by name, description, tags, or wallet..."
+                  isLoading={isSearchPending}
                 />
               </div>
             </div>
 
             <div className="rounded-lg border overflow-x-auto">
-              <table className="w-full">
+              <table
+                className={cn(
+                  'w-full transition-opacity duration-150',
+                  isSearchPending && 'opacity-70',
+                )}
+              >
                 <thead className="bg-muted/30 dark:bg-muted/15">
                   <tr className="border-b">
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
@@ -342,9 +374,10 @@ export default function AIAgentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {isLoading ? (
+                  {(isLoading && !agents.length) ||
+                  (displayAgents.length === 0 && isSearchPending) ? (
                     <AIAgentTableSkeleton rows={5} />
-                  ) : agents.length === 0 ? (
+                  ) : displayAgents.length === 0 ? (
                     <tr>
                       <td colSpan={8}>
                         <EmptyState
@@ -363,7 +396,7 @@ export default function AIAgentsPage() {
                       </td>
                     </tr>
                   ) : (
-                    agents.map((agent, index) => (
+                    displayAgents.map((agent, index) => (
                       <tr
                         key={agent.id}
                         className={cn(
@@ -493,7 +526,7 @@ export default function AIAgentsPage() {
             </div>
 
             <div className="flex flex-col gap-4 items-center">
-              {!isLoading && (
+              {!(isLoading && !agents.length) && (
                 <Pagination
                   hasMore={hasMoreAgents}
                   isLoading={isFetchingAgents}

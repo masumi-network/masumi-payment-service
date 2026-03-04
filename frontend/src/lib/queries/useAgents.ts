@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, keepPreviousData } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
@@ -76,6 +76,7 @@ export function useAgents(params?: {
     getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
     enabled: hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId,
     staleTime: 15000,
+    placeholderData: keepPreviousData,
   });
 
   const agents = useMemo(() => {
@@ -101,6 +102,7 @@ export function useAgents(params?: {
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
+    isPlaceholderData: query.isPlaceholderData,
     refetch: query.refetch,
     loadMore: query.fetchNextPage,
   };
