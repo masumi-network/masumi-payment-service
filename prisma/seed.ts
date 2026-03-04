@@ -2,7 +2,6 @@ import {
   ApiKeyStatus,
   HotWalletType,
   Network,
-  Permission,
   PrismaClient,
   RPCProvider,
 } from '../src/generated/prisma/client';
@@ -66,19 +65,14 @@ export const seed = async (prisma: PrismaClient) => {
       canRead: true,
       canPay: true,
       canAdmin: true,
-      // Legacy permission (for backward compatibility)
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },
     update: {
       token: adminKey,
       tokenHash: generateSHA256Hash(adminKey),
-      // Flag-based permissions (new system)
       canRead: true,
       canPay: true,
       canAdmin: true,
-      // Legacy permission (for backward compatibility)
-      permission: Permission.Admin,
       status: ApiKeyStatus.Active,
     },
     where: { token: adminKey },

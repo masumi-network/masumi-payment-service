@@ -63,7 +63,6 @@ import {
 	Network,
 	PurchasingAction,
 	PaymentAction,
-	Permission,
 	ApiKeyStatus,
 	RPCProvider,
 	PricingType,
@@ -188,8 +187,8 @@ const apiKeyExample = {
 	canRead: true,
 	canPay: true,
 	canAdmin: true,
-	// Legacy permission
-	permission: Permission.Admin,
+	// Legacy permission (computed from flags)
+	permission: 'Admin',
 	usageLimited: true,
 	networkLimit: [Network.Preprod],
 	RemainingUsageCredits: [
@@ -643,7 +642,7 @@ export function generateOpenAPI() {
 										amount: '10000000', // 10 ADA (amount in lovelace: 10 * 1,000,000)
 									},
 								],
-								permission: Permission.Admin,
+								permission: 'Admin',
 							},
 						}),
 					},

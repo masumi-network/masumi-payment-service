@@ -238,7 +238,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseRequestSchemaInput,
 	output: queryPurchaseRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseRequestSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const searchLower = input.searchQuery?.toLowerCase();
 		const matchingStates = buildMatchingStates(searchLower);
@@ -389,7 +389,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPurchaseCountSchemaInput,
 	output: queryPurchaseCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const total = await prisma.purchaseRequest.count({
 			where: {

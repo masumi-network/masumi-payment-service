@@ -432,7 +432,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 	input: queryPaymentCountSchemaInput,
 	output: queryPaymentCountSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 
 		const total = await prisma.paymentRequest.count({
 			where: {
@@ -500,7 +500,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentsSchemaInput>; ctx: AuthContext }) => {
-		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.canAdmin);
 		const policyId = extractPolicyId(input.agentIdentifier);
 
 		const specifiedPaymentContract = await prisma.paymentSource.findFirst({
