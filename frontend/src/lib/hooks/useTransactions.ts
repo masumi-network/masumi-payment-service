@@ -32,15 +32,18 @@ type Transaction = PaymentTx | PurchaseTx;
 const LAST_VISIT_KEY = 'masumi_last_transactions_visit';
 const NEW_TRANSACTIONS_COUNT_KEY = 'masumi_new_transactions_count';
 
-export type OnChainStateFilter =
-  | 'FundsLocked'
-  | 'FundsOrDatumInvalid'
-  | 'ResultSubmitted'
-  | 'RefundRequested'
-  | 'Disputed'
-  | 'Withdrawn'
-  | 'RefundWithdrawn'
-  | 'DisputedWithdrawn';
+export const ON_CHAIN_STATES = [
+  'FundsLocked',
+  'FundsOrDatumInvalid',
+  'ResultSubmitted',
+  'RefundRequested',
+  'Disputed',
+  'Withdrawn',
+  'RefundWithdrawn',
+  'DisputedWithdrawn',
+] as const;
+
+export type OnChainStateFilter = (typeof ON_CHAIN_STATES)[number];
 
 export function useTransactions(
   params?: {

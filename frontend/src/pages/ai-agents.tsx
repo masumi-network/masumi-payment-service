@@ -335,7 +335,7 @@ export default function AIAgentsPage() {
                   value={searchQuery}
                   onChange={setSearchQuery}
                   placeholder="Search by name, description, tags, or wallet..."
-                  isLoading={isSearchPending}
+                  isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
             </div>

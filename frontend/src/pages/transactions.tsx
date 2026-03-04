@@ -7,7 +7,6 @@ import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { MoreHorizontal, FlaskConical } from 'lucide-react';
 import { Tabs } from '@/components/ui/tabs';
 import { Pagination } from '@/components/ui/pagination';
@@ -16,7 +15,7 @@ import TransactionDetailsDialog from '@/components/transactions/TransactionDetai
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
 import { dateRangeUtils } from '@/lib/utils';
-import { useTransactions, OnChainStateFilter } from '@/lib/hooks/useTransactions';
+import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -24,6 +23,32 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
+
+/**
+ * Parse a numeric search string into a lovelace range for amount filtering.
+ * Mirrors the backend's parseAmountSearchRange in src/utils/shared/queries.ts.
+ */
+function parseAmountSearchRange(query: string): { min: number; max: number } | undefined {
+  const numericMatch = query.match(/^(\d+\.?\d*)$/);
+  if (!numericMatch) return undefined;
+
+  const numericValue = parseFloat(numericMatch[1]);
+  if (isNaN(numericValue) || numericValue < 0) return undefined;
+
+  const hasDecimal = numericMatch[1].includes('.');
+  if (hasDecimal) {
+    const decimalDigits = numericMatch[1].split('.')[1].length;
+    const precision = Math.pow(10, decimalDigits);
+    const min = Math.floor(numericValue * 1000000);
+    const nextStep = (Math.floor(numericValue * precision) + 1) / precision;
+    const max = Math.floor(nextStep * 1000000) - 1;
+    return { min, max };
+  }
+
+  const min = Math.floor(numericValue * 1000000);
+  const max = Math.floor((numericValue + 1) * 1000000) - 1;
+  return { min, max };
+}
 
 const formatTimestamp = (timestamp: string | null | undefined): string => {
   if (!timestamp) return '—';
@@ -149,39 +174,10 @@ export default function Transactions() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
-    // Mirror backend parseAmountSearchRange: only match if query is purely numeric
-    const numericMatch = query.match(/^(\d+\.?\d*)$/);
-    let amountRange: { min: number; max: number } | undefined;
-    if (numericMatch) {
-      const numericValue = parseFloat(numericMatch[1]);
-      if (!isNaN(numericValue) && numericValue >= 0) {
-        const hasDecimal = numericMatch[1].includes('.');
-        if (hasDecimal) {
-          const decimalDigits = numericMatch[1].split('.')[1].length;
-          const precision = Math.pow(10, decimalDigits);
-          const min = Math.floor(numericValue * 1000000);
-          const nextStep = (Math.floor(numericValue * precision) + 1) / precision;
-          const max = Math.floor(nextStep * 1000000) - 1;
-          amountRange = { min, max };
-        } else {
-          const min = Math.floor(numericValue * 1000000);
-          const max = Math.floor((numericValue + 1) * 1000000) - 1;
-          amountRange = { min, max };
-        }
-      }
-    }
+    const amountRange = parseAmountSearchRange(query);
 
     // Mirror backend buildMatchingStates
-    const matchingStates = [
-      'FundsLocked',
-      'FundsOrDatumInvalid',
-      'ResultSubmitted',
-      'RefundRequested',
-      'Disputed',
-      'Withdrawn',
-      'RefundWithdrawn',
-      'DisputedWithdrawn',
-    ].filter((s) => s.toLowerCase().includes(query));
+    const matchingStates = ON_CHAIN_STATES.filter((s) => s.toLowerCase().includes(query));
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
@@ -370,7 +366,7 @@ export default function Transactions() {
                 onChange={setSearchQuery}
                 placeholder="Search by ID, hash, status, amount..."
                 className="max-w-xs"
-                isLoading={isSearchPending}
+                isLoading={isSearchPending && !!searchQuery}
               />
             </div>
           </div>
