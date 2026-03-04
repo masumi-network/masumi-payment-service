@@ -20,35 +20,10 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-/**
- * Parse a numeric search string into a lovelace range for amount filtering.
- * Mirrors the backend's parseAmountSearchRange in src/utils/shared/queries.ts.
- */
-function parseAmountSearchRange(query: string): { min: number; max: number } | undefined {
-  const numericMatch = query.match(/^(\d+\.?\d*)$/);
-  if (!numericMatch) return undefined;
-
-  const numericValue = parseFloat(numericMatch[1]);
-  if (isNaN(numericValue) || numericValue < 0) return undefined;
-
-  const hasDecimal = numericMatch[1].includes('.');
-  if (hasDecimal) {
-    const decimalDigits = numericMatch[1].split('.')[1].length;
-    const precision = Math.pow(10, decimalDigits);
-    const min = Math.floor(numericValue * 1000000);
-    const nextStep = (Math.floor(numericValue * precision) + 1) / precision;
-    const max = Math.floor(nextStep * 1000000) - 1;
-    return { min, max };
-  }
-
-  const min = Math.floor(numericValue * 1000000);
-  const max = Math.floor((numericValue + 1) * 1000000) - 1;
-  return { min, max };
-}
 
 const formatTimestamp = (timestamp: string | null | undefined): string => {
   if (!timestamp) return '—';

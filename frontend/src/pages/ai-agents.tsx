@@ -38,6 +38,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
 type AIAgent = RegistryEntry;
 
 const parseAgentStatus = (status: AIAgent['state']): string => {
@@ -103,6 +104,8 @@ export default function AIAgentsPage() {
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return agents;
 
+    const amountRange = parseAmountSearchRange(query);
+
     return agents.filter((agent) => {
       if (agent.name?.toLowerCase().includes(query)) return true;
       if (agent.description?.toLowerCase().includes(query)) return true;
@@ -111,6 +114,15 @@ export default function AIAgentsPage() {
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+      if (
+        amountRange &&
+        agent.AgentPricing?.pricingType === 'Fixed' &&
+        agent.AgentPricing.Pricing?.some((p) => {
+          const amt = parseInt(p.amount);
+          return amt >= amountRange.min && amt <= amountRange.max;
+        })
+      )
+        return true;
       return false;
     });
   }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData]);

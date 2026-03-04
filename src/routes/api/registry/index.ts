@@ -15,6 +15,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
+import { parseAmountSearchRange } from '@/utils/shared/queries';
 
 enum FilterStatus {
 	Registered = 'Registered',
@@ -177,7 +178,18 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 		// Build search query filter
 		const searchLower = input.searchQuery?.toLowerCase();
 		const matchingStates = searchLower
-			? Object.values(RegistrationState).filter((s) => s.toLowerCase().includes(searchLower))
+			? Object.values(RegistrationState).filter(
+					(s) =>
+						s.toLowerCase().includes(searchLower) ||
+						s
+							.replace(/([A-Z])/g, ' $1')
+							.trim()
+							.toLowerCase()
+							.includes(searchLower),
+				)
+			: undefined;
+		const amountFilter: { gte: bigint; lte: bigint } | undefined = searchLower
+			? parseAmountSearchRange(searchLower)
 			: undefined;
 
 		const result = await prisma.registryRequest.findMany({
@@ -215,6 +227,19 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 								},
 								...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
 								...('free'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Free } }] : []),
+								...(amountFilter
+									? [
+											{
+												Pricing: {
+													FixedPricing: {
+														Amounts: {
+															some: { amount: { gte: amountFilter.gte, lte: amountFilter.lte } },
+														},
+													},
+												},
+											},
+										]
+									: []),
 							],
 						}
 					: {}),
