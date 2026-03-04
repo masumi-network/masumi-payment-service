@@ -142,31 +142,64 @@ export default function Transactions() {
     searchQuery !== debouncedSearchQuery || (isFetchingTransactions && isPlaceholderData);
 
   // Client-side filter for instant feedback while server results are pending.
-  // Skip filtering only when the query matches the debounced value AND data is fresh
-  // (not placeholder). Otherwise always filter to avoid flashing stale unfiltered data.
+  // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
+  // to avoid items appearing/disappearing when the server responds.
   const displayTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
+    // Mirror backend parseAmountSearchRange: only match if query is purely numeric
+    const numericMatch = query.match(/^(\d+\.?\d*)$/);
+    let amountRange: { min: number; max: number } | undefined;
+    if (numericMatch) {
+      const numericValue = parseFloat(numericMatch[1]);
+      if (!isNaN(numericValue) && numericValue >= 0) {
+        const hasDecimal = numericMatch[1].includes('.');
+        if (hasDecimal) {
+          const decimalDigits = numericMatch[1].split('.')[1].length;
+          const precision = Math.pow(10, decimalDigits);
+          const min = Math.floor(numericValue * 1000000);
+          const nextStep = (Math.floor(numericValue * precision) + 1) / precision;
+          const max = Math.floor(nextStep * 1000000) - 1;
+          amountRange = { min, max };
+        } else {
+          const min = Math.floor(numericValue * 1000000);
+          const max = Math.floor((numericValue + 1) * 1000000) - 1;
+          amountRange = { min, max };
+        }
+      }
+    }
+
+    // Mirror backend buildMatchingStates
+    const matchingStates = [
+      'FundsLocked',
+      'FundsOrDatumInvalid',
+      'ResultSubmitted',
+      'RefundRequested',
+      'Disputed',
+      'Withdrawn',
+      'RefundWithdrawn',
+      'DisputedWithdrawn',
+    ].filter((s) => s.toLowerCase().includes(query));
+
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
       if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
-      if (tx.onChainState?.toLowerCase().includes(query)) return true;
-      if (formatStatus(tx.onChainState)?.toLowerCase().includes(query)) return true;
-      if (tx.type?.toLowerCase().includes(query)) return true;
-      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      // Match amounts (lovelace converted to ADA)
-      const funds =
-        tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
-      if (
-        funds?.some((f) => {
-          const ada = (parseInt(f.amount) / 1000000).toFixed(2);
-          return ada.includes(query) || f.amount.includes(query);
-        })
-      )
+      if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
+      if (amountRange) {
+        const funds =
+          tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
+        if (
+          funds?.some((f) => {
+            const amt = parseInt(f.amount);
+            return amt >= amountRange.min && amt <= amountRange.max;
+          })
+        )
+          return true;
+      }
       return false;
     });
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);

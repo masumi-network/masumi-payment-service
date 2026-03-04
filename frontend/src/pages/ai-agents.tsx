@@ -96,8 +96,8 @@ export default function AIAgentsPage() {
     searchQuery !== debouncedSearchQuery || (isFetchingAgents && isPlaceholderData);
 
   // Client-side filter for instant feedback while server results are pending.
-  // Skip filtering only when the query matches the debounced value AND data is fresh
-  // (not placeholder). Otherwise always filter to avoid flashing stale unfiltered data.
+  // Mirrors the backend Prisma OR filter in src/routes/api/registry/index.ts
+  // to avoid items appearing/disappearing when the server responds.
   const displayAgents = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
@@ -106,10 +106,10 @@ export default function AIAgentsPage() {
     return agents.filter((agent) => {
       if (agent.name?.toLowerCase().includes(query)) return true;
       if (agent.description?.toLowerCase().includes(query)) return true;
-      if (agent.Tags?.some((tag) => tag.toLowerCase().includes(query))) return true;
+      // Backend uses hasSome (exact match against tag array), not partial
+      if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
-      if (parseAgentStatus(agent.state).toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       return false;
     });
