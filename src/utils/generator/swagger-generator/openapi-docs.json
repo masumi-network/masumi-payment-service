@@ -3970,6 +3970,89 @@
                 }
             }
         },
+        "/swap/confirm/": {
+            "get": {
+                "description": "Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.",
+                "summary": "Get swap transaction confirmation status. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Transaction hash to check"
+                        },
+                        "required": true,
+                        "description": "Transaction hash to check",
+                        "name": "txHash",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Wallet verification key (vKey) that submitted the swap"
+                        },
+                        "required": true,
+                        "description": "Wallet verification key (vKey) that submitted the swap",
+                        "name": "walletVkey",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Confirmation status (pending, confirmed, or not_found)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "pending",
+                                                "confirmed",
+                                                "not_found"
+                                            ],
+                                            "description": "On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)"
+                                        },
+                                        "confirmations": {
+                                            "type": "integer",
+                                            "nullable": true,
+                                            "minimum": 0,
+                                            "description": "Number of block confirmations. Present when status is confirmed."
+                                        }
+                                    },
+                                    "required": [
+                                        "status"
+                                    ],
+                                    "example": {
+                                        "status": "confirmed",
+                                        "confirmations": 15
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (e.g. mainnet wallet required)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    }
+                }
+            }
+        },
         "/payment/": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",

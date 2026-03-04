@@ -7,9 +7,15 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { Network } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { decrypt } from '@/utils/security/encryption';
-import { swapTokensSchemaInput, swapTokensSchemaOutput } from './schemas';
+import { getBlockfrostInstance } from '@/utils/blockfrost';
+import {
+	swapTokensSchemaInput,
+	swapTokensSchemaOutput,
+	getSwapConfirmSchemaInput,
+	getSwapConfirmSchemaOutput,
+} from './schemas';
 
-export { swapTokensSchemaInput, swapTokensSchemaOutput };
+export { swapTokensSchemaInput, swapTokensSchemaOutput, getSwapConfirmSchemaInput, getSwapConfirmSchemaOutput };
 
 export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -127,6 +133,85 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					);
 				}
 			}
+		}
+	},
+});
+
+export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: getSwapConfirmSchemaInput,
+	output: getSwapConfirmSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof getSwapConfirmSchemaInput>; ctx: AuthContext }) => {
+		const startTime = Date.now();
+		try {
+			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+
+			const wallet = await prisma.hotWallet.findUnique({
+				where: { walletVkey: input.walletVkey },
+				include: {
+					PaymentSource: {
+						include: {
+							PaymentSourceConfig: true,
+						},
+					},
+				},
+			});
+
+			if (wallet == null || wallet.deletedAt != null) {
+				throw createHttpError(404, 'Wallet not found');
+			}
+
+			if (wallet.PaymentSource.network !== Network.Mainnet) {
+				throw createHttpError(400, 'Swap confirmation is only available for mainnet wallets');
+			}
+
+			const blockfrostApiKey = wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+			if (!blockfrostApiKey) {
+				throw createHttpError(400, 'Blockfrost API key not found in payment source configuration');
+			}
+
+			const blockfrost = getBlockfrostInstance(Network.Mainnet, blockfrostApiKey);
+
+			try {
+				const tx = await blockfrost.txs(input.txHash);
+				if (!tx.block) {
+					return { status: 'pending' as const };
+				}
+				const block = await blockfrost.blocks(tx.block);
+				return {
+					status: 'confirmed' as const,
+					confirmations: block.confirmations ?? null,
+				};
+			} catch (txError: unknown) {
+				const msg = txError instanceof Error ? txError.message : String(txError);
+				if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
+					return { status: 'not_found' as const };
+				}
+				recordBusinessEndpointError(
+					'/api/v1/swap/confirm',
+					'GET',
+					500,
+					txError instanceof Error ? txError : new Error(String(txError)),
+					{
+						user_id: ctx.id,
+						operation: 'swap_confirm_lookup',
+						duration: Date.now() - startTime,
+					},
+				);
+				throw txError;
+			}
+		} catch (error) {
+			const errorInstance = error instanceof Error ? error : new Error(String(error));
+			const statusCode =
+				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
+				(errorInstance as { statusCode?: number; status?: number }).status ||
+				500;
+			recordBusinessEndpointError('/api/v1/swap/confirm', 'GET', statusCode, errorInstance, {
+				user_id: ctx.id,
+				operation: 'swap_confirm',
+				duration: Date.now() - startTime,
+			});
+			throw error;
 		}
 	},
 });

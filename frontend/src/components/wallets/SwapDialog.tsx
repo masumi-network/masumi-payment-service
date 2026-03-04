@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
 import { FaExchangeAlt } from 'react-icons/fa';
 import { RefreshCw } from 'lucide-react';
-import { getUtxos, postSwap } from '@/lib/api/generated';
+import { getSwapConfirm, getUtxos, postSwap } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
@@ -322,7 +322,7 @@ export function SwapDialog({
             },
           }),
         {
-          onSuccess: (result) => {
+          onSuccess: async (result) => {
             const transactionHash =
               (result as any)?.data?.data?.txHash || (result as any)?.data?.txHash;
 
@@ -331,29 +331,53 @@ export function SwapDialog({
             }
 
             setSwapStatus('submitted');
-            toast.info('Swap transaction submitted!', { theme: 'dark' });
+            toast.info('Swap transaction submitted! Waiting for on-chain confirmation…', {
+              theme: 'dark',
+            });
 
-            if (transactionHash) {
-              setTimeout(async () => {
-                await fetchBalance();
-                setSwapStatus('confirmed');
-                toast.success('Swap completed successfully!', {
-                  theme: 'dark',
-                });
-                setIsSwapping(false);
-                setTimeout(() => setSwapStatus('idle'), 2000);
-              }, 3000);
+            if (transactionHash && walletVkey) {
+              const POLL_INTERVAL_MS = 4000;
+              const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
+              const startedAt = Date.now();
+
+              const poll = async (): Promise<void> => {
+                if (Date.now() - startedAt > MAX_POLL_MS) {
+                  toast.warning(
+                    'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
+                    { theme: 'dark' },
+                  );
+                  setIsSwapping(false);
+                  setTimeout(() => setSwapStatus('idle'), 2000);
+                  return;
+                }
+                try {
+                  const confirmResult = await getSwapConfirm({
+                    client: apiClient,
+                    query: { txHash: transactionHash, walletVkey },
+                  });
+                  const data = (confirmResult as any)?.data?.data ?? (confirmResult as any)?.data;
+                  const status = data?.status;
+                  if (status === 'confirmed') {
+                    await fetchBalance();
+                    setSwapStatus('confirmed');
+                    toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+                    setIsSwapping(false);
+                    setTimeout(() => setSwapStatus('idle'), 2000);
+                    return;
+                  }
+                  setTimeout(poll, POLL_INTERVAL_MS);
+                } catch {
+                  setTimeout(poll, POLL_INTERVAL_MS);
+                }
+              };
+              setTimeout(poll, POLL_INTERVAL_MS);
             } else {
-              console.error('Transaction hash not found in response:', result);
-              setTimeout(async () => {
-                await fetchBalance();
-                setSwapStatus('confirmed');
-                toast.success('Swap completed successfully!', {
-                  theme: 'dark',
-                });
-                setIsSwapping(false);
-                setTimeout(() => setSwapStatus('idle'), 2000);
-              }, 3000);
+              toast.warning('Swap submitted but confirmation unavailable (missing tx hash).', {
+                theme: 'dark',
+              });
+              await fetchBalance();
+              setIsSwapping(false);
+              setTimeout(() => setSwapStatus('idle'), 2000);
             }
           },
           onError: (error: any) => {
@@ -369,7 +393,6 @@ export function SwapDialog({
         return;
       }
     } catch (error: any) {
-      console.error('Swap error:', error);
       const errorMessage = error?.message || 'Swap failed';
       toast.error(`Swap failed: ${errorMessage}`, { theme: 'dark' });
       setError(errorMessage);

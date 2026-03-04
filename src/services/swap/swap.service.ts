@@ -3,12 +3,38 @@ import { TxBuilderLucidV3 } from '@sundaeswap/core/lucid';
 import { QueryProviderSundaeSwap } from '@sundaeswap/core';
 import { AssetAmount } from '@sundaeswap/asset';
 import { ESwapType, EDatumType } from '@sundaeswap/core';
+import { SundaeUtils } from '@sundaeswap/core/utilities';
+import type { IPoolData } from '@sundaeswap/core';
 import { logger } from '@/utils/logger';
 
 export interface Token {
 	policyId: string;
 	assetName: string;
 	name: string;
+}
+
+function tokenIsAda(token: Token): boolean {
+	return !token.policyId || token.policyId === '' || token.policyId.toLowerCase() === 'native';
+}
+
+/** Build assetId from API token (policyId + assetName) for comparison with pool assetId. */
+function tokenToAssetId(token: Token): string {
+	if (tokenIsAda(token)) return '';
+	const nameHex =
+		!token.assetName || token.assetName === ''
+			? ''
+			: /^[0-9a-fA-F]+$/i.test(token.assetName)
+				? token.assetName
+				: Buffer.from(token.assetName, 'utf8').toString('hex');
+	return nameHex ? `${token.policyId}.${nameHex}` : `${token.policyId}.`;
+}
+
+function requestedOutputMatchesPool(toToken: Token, expectedOutputAsset: IPoolData['assetA']): boolean {
+	const requestedAda = tokenIsAda(toToken);
+	const expectedAda = SundaeUtils.isAdaAsset(expectedOutputAsset);
+	if (requestedAda && expectedAda) return true;
+	if (requestedAda !== expectedAda) return false;
+	return SundaeUtils.isAssetIdsEqual(tokenToAssetId(toToken), expectedOutputAsset.assetId);
 }
 
 export interface SwapResult {
@@ -77,15 +103,24 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 			ident: params.poolId,
 		});
 
-		const isFromAda =
-			!params.fromToken.policyId ||
-			params.fromToken.policyId === '' ||
-			params.fromToken.policyId.toLowerCase() === 'native';
+		const fromTokenAssetId = tokenToAssetId(params.fromToken);
+		const matchesAssetA = SundaeUtils.isAssetIdsEqual(fromTokenAssetId, poolData.assetA.assetId);
+		const matchesAssetB = SundaeUtils.isAssetIdsEqual(fromTokenAssetId, poolData.assetB.assetId);
+		if (!matchesAssetA && !matchesAssetB) {
+			throw new Error(
+				`From token does not match either asset in this pool. Pool assets: ${poolData.assetA.assetId || 'ADA'}, ${poolData.assetB.assetId || 'ADA'}; requested: ${fromTokenAssetId || 'ADA'}.`,
+			);
+		}
+		const suppliedAssetMetadata = matchesAssetA ? poolData.assetA : poolData.assetB;
+		const scale = 10 ** suppliedAssetMetadata.decimals;
+		const suppliedAsset = new AssetAmount(BigInt(Math.round(params.fromAmount * scale)), suppliedAssetMetadata);
 
-		const suppliedAsset = new AssetAmount(
-			BigInt(params.fromAmount * 1_000_000),
-			isFromAda ? poolData.assetA : poolData.assetB,
-		);
+		const expectedOutputAsset = matchesAssetA ? poolData.assetB : poolData.assetA;
+		if (!requestedOutputMatchesPool(params.toToken, expectedOutputAsset)) {
+			throw new Error(
+				`Requested output token does not match pool output asset. Pool receives ${expectedOutputAsset.assetId}; requested ${tokenToAssetId(params.toToken) || 'ADA'}.`,
+			);
+		}
 
 		const slippage = params.slippage ?? 0.03;
 

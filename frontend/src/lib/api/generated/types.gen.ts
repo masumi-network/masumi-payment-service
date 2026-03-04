@@ -2073,6 +2073,55 @@ export type PostSwapResponses = {
 
 export type PostSwapResponse = PostSwapResponses[keyof PostSwapResponses];
 
+export type GetSwapConfirmData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Transaction hash to check
+         */
+        txHash: string;
+        /**
+         * Wallet verification key (vKey) that submitted the swap
+         */
+        walletVkey: string;
+    };
+    url: '/swap/confirm/';
+};
+
+export type GetSwapConfirmErrors = {
+    /**
+     * Bad Request (e.g. mainnet wallet required)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+};
+
+export type GetSwapConfirmResponses = {
+    /**
+     * Confirmation status (pending, confirmed, or not_found)
+     */
+    200: {
+        /**
+         * On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)
+         */
+        status: 'pending' | 'confirmed' | 'not_found';
+        /**
+         * Number of block confirmations. Present when status is confirmed.
+         */
+        confirmations?: number | null;
+    };
+};
+
+export type GetSwapConfirmResponse = GetSwapConfirmResponses[keyof GetSwapConfirmResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;

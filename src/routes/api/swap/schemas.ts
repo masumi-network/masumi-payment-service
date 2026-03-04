@@ -29,3 +29,21 @@ export const swapTokensSchemaOutput = z.object({
 	txHash: z.string().describe('Transaction hash of the swap'),
 	walletAddress: z.string().describe('Wallet address used for the swap'),
 });
+
+export const getSwapConfirmSchemaInput = z.object({
+	txHash: z.string().min(1).describe('Transaction hash to check'),
+	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) that submitted the swap'),
+});
+
+export const getSwapConfirmSchemaOutput = z.object({
+	status: z
+		.enum(['pending', 'confirmed', 'not_found'])
+		.describe('On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)'),
+	confirmations: z
+		.number()
+		.int()
+		.nonnegative()
+		.nullable()
+		.optional()
+		.describe('Number of block confirmations. Present when status is confirmed.'),
+});

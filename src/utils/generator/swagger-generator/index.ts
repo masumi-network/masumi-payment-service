@@ -327,7 +327,12 @@ import {
 	postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
-import { swapTokensSchemaInput, swapTokensSchemaOutput } from '@/routes/api/swap/schemas';
+import {
+	swapTokensSchemaInput,
+	swapTokensSchemaOutput,
+	getSwapConfirmSchemaInput,
+	getSwapConfirmSchemaOutput,
+} from '@/routes/api/swap/schemas';
 import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
@@ -677,6 +682,48 @@ export function generateOpenAPI() {
 			},
 			500: {
 				description: 'Internal Server Error (swap failed)',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/confirm/',
+		description:
+			'Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.',
+		summary: 'Get swap transaction confirmation status. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapConfirmSchemaInput.openapi({
+				example: {
+					txHash: 'abc123def456...',
+					walletVkey: 'wallet_verification_key_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Confirmation status (pending, confirmed, or not_found)',
+				content: {
+					'application/json': {
+						schema: getSwapConfirmSchemaOutput.openapi({
+							example: {
+								status: 'confirmed',
+								confirmations: 15,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (e.g. mainnet wallet required)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
 			},
 		},
 	});
