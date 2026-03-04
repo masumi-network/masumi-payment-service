@@ -7,7 +7,6 @@ import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contrac
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -261,7 +260,10 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
 			include: {
 				PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
 				HotWallets: {
-					where: { deletedAt: null },
+					where: {
+						deletedAt: null,
+						...(ctx.hotWalletIds !== null ? { id: { in: ctx.hotWalletIds } } : {}),
+					},
 					select: {
 						id: true,
 						walletVkey: true,
@@ -274,8 +276,6 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and Address combination not supported');
 		}
-		assertPaymentSourceInScope(paymentSource.id, ctx.paymentSourceIds);
-
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 		const wallet = paymentSource.HotWallets.find(
 			(wallet) => wallet.walletVkey == input.walletVKey && wallet.type == HotWalletType.Selling,

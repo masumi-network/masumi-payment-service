@@ -37,9 +37,9 @@ export const apiKeyOutputSchema = z
 			)
 			.describe('Remaining usage credits for this API key'),
 		status: z.nativeEnum(ApiKeyStatus).describe('Current status of the API key'),
-		PaymentSourceScopes: z
-			.array(z.object({ paymentSourceId: z.string() }))
-			.describe('PaymentSources this key is scoped to. Empty array means unscoped (access all).'),
+		WalletScopes: z
+			.array(z.object({ hotWalletId: z.string() }))
+			.describe('Wallets this key is scoped to. Empty array means unscoped (access all).'),
 	})
 	.openapi('APIKey');
 
@@ -57,7 +57,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			take: input.limit,
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
-				PaymentSourceScopes: { select: { paymentSourceId: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {
@@ -100,12 +100,12 @@ export const addAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.describe('The networks the API key is allowed to use'),
 	permission: z.nativeEnum(Permission).default(Permission.Read).describe('The permission of the API key'),
-	paymentSourceIds: z
+	walletIds: z
 		.array(z.string().max(250))
 		.max(50)
 		.default([])
 		.describe(
-			'Optional PaymentSource IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys.',
+			'Optional HotWallet IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys.',
 		),
 });
 
@@ -119,16 +119,16 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const isAdmin = input.permission == Permission.Admin;
 
 		// Admin keys are never scoped
-		const scopeIds = isAdmin ? [] : input.paymentSourceIds;
+		const scopeIds = isAdmin ? [] : input.walletIds;
 
-		// Validate all provided PaymentSource IDs exist
+		// Validate all provided HotWallet IDs exist
 		if (scopeIds.length > 0) {
-			const found = await prisma.paymentSource.findMany({
+			const found = await prisma.hotWallet.findMany({
 				where: { id: { in: scopeIds }, deletedAt: null },
 				select: { id: true },
 			});
 			if (found.length !== scopeIds.length) {
-				throw createHttpError(404, 'One or more paymentSourceIds not found');
+				throw createHttpError(404, 'One or more walletIds not found');
 			}
 		}
 
@@ -152,18 +152,18 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 						}),
 					},
 				},
-				PaymentSourceScopes:
+				WalletScopes:
 					scopeIds.length > 0
 						? {
 								createMany: {
-									data: scopeIds.map((psId) => ({ paymentSourceId: psId })),
+									data: scopeIds.map((wId) => ({ hotWalletId: wId })),
 								},
 							}
 						: undefined,
 			},
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
-				PaymentSourceScopes: { select: { paymentSourceId: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {
@@ -203,16 +203,12 @@ export const updateAPIKeySchemaInput = z.object({
 		.default([Network.Mainnet, Network.Preprod])
 		.optional()
 		.describe('The networks the API key is allowed to use'),
-	addPaymentSourceIds: z
+	addWalletIds: z.array(z.string().max(250)).max(50).optional().describe("HotWallet IDs to add to this key's scope"),
+	removeWalletIds: z
 		.array(z.string().max(250))
 		.max(50)
 		.optional()
-		.describe("PaymentSource IDs to add to this key's scope"),
-	removePaymentSourceIds: z
-		.array(z.string().max(250))
-		.max(50)
-		.optional()
-		.describe("PaymentSource IDs to remove from this key's scope"),
+		.describe("HotWallet IDs to remove from this key's scope"),
 });
 
 export const updateAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -271,27 +267,27 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					}
 				}
 
-				if (input.addPaymentSourceIds?.length) {
-					const found = await prisma.paymentSource.findMany({
-						where: { id: { in: input.addPaymentSourceIds }, deletedAt: null },
+				if (input.addWalletIds?.length) {
+					const found = await prisma.hotWallet.findMany({
+						where: { id: { in: input.addWalletIds }, deletedAt: null },
 						select: { id: true },
 					});
-					if (found.length !== input.addPaymentSourceIds.length) {
-						throw createHttpError(404, 'One or more addPaymentSourceIds not found');
+					if (found.length !== input.addWalletIds.length) {
+						throw createHttpError(404, 'One or more addWalletIds not found');
 					}
-					await prisma.apiKeyPaymentSourceScope.createMany({
-						data: input.addPaymentSourceIds.map((psId) => ({
+					await prisma.apiKeyWalletScope.createMany({
+						data: input.addWalletIds.map((wId) => ({
 							apiKeyId: input.id,
-							paymentSourceId: psId,
+							hotWalletId: wId,
 						})),
 						skipDuplicates: true,
 					});
 				}
-				if (input.removePaymentSourceIds?.length) {
-					await prisma.apiKeyPaymentSourceScope.deleteMany({
+				if (input.removeWalletIds?.length) {
+					await prisma.apiKeyWalletScope.deleteMany({
 						where: {
 							apiKeyId: input.id,
-							paymentSourceId: { in: input.removePaymentSourceIds },
+							hotWalletId: { in: input.removeWalletIds },
 						},
 					});
 				}
@@ -306,7 +302,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					},
 					include: {
 						RemainingUsageCredits: { select: { amount: true, unit: true } },
-						PaymentSourceScopes: { select: { paymentSourceId: true } },
+						WalletScopes: { select: { hotWalletId: true } },
 					},
 				});
 				return result;
@@ -340,7 +336,7 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 			data: { deletedAt: new Date(), status: ApiKeyStatus.Revoked },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
-				PaymentSourceScopes: { select: { paymentSourceId: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		return {

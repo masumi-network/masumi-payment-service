@@ -7,7 +7,7 @@ import { HotWalletType, Network } from '@/generated/prisma/client';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { assertHotWalletInScope } from '@/utils/scope/wallet-scope';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 
 export const getWalletSchemaInput = z.object({
@@ -63,7 +63,6 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						type: HotWalletType.Selling,
 						PaymentSource: {
 							network: { in: ctx.networkLimit },
-							...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 						},
 						deletedAt: null,
 					},
@@ -93,6 +92,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 					});
 					throw createHttpError(404, 'Selling wallet not found');
 				}
+				assertHotWalletInScope(result.id, ctx.hotWalletIds);
 
 				// Success is automatically recorded by middleware
 
@@ -139,7 +139,6 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 						type: HotWalletType.Purchasing,
 						PaymentSource: {
 							network: { in: ctx.networkLimit },
-							...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 						},
 						deletedAt: null,
 					},
@@ -164,6 +163,7 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 				if (result == null) {
 					throw createHttpError(404, 'Purchasing wallet not found');
 				}
+				assertHotWalletInScope(result.id, ctx.hotWalletIds);
 
 				// Success is automatically recorded by middleware
 
@@ -297,13 +297,13 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 			where: {
 				id: input.id,
 				deletedAt: null,
-				...(ctx.paymentSourceIds !== null ? { PaymentSource: { id: { in: ctx.paymentSourceIds } } } : {}),
 			},
 		});
 
 		if (wallet == null) {
 			throw createHttpError(404, `${input.id} wallet not found`);
 		}
+		assertHotWalletInScope(wallet.id, ctx.hotWalletIds);
 
 		const result = await prisma.hotWallet.update({
 			where: { id: wallet.id },

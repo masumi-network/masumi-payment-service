@@ -1,24 +1,24 @@
 -- CreateTable
-CREATE TABLE "ApiKeyPaymentSourceScope" (
+CREATE TABLE "ApiKeyWalletScope" (
     "id" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "apiKeyId" TEXT NOT NULL,
-    "paymentSourceId" TEXT NOT NULL,
+    "hotWalletId" TEXT NOT NULL,
 
-    CONSTRAINT "ApiKeyPaymentSourceScope_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ApiKeyWalletScope_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE INDEX "ApiKeyPaymentSourceScope_apiKeyId_idx" ON "ApiKeyPaymentSourceScope"("apiKeyId");
+CREATE INDEX "ApiKeyWalletScope_apiKeyId_idx" ON "ApiKeyWalletScope"("apiKeyId");
 
 -- CreateIndex
-CREATE INDEX "ApiKeyPaymentSourceScope_paymentSourceId_idx" ON "ApiKeyPaymentSourceScope"("paymentSourceId");
+CREATE INDEX "ApiKeyWalletScope_hotWalletId_idx" ON "ApiKeyWalletScope"("hotWalletId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ApiKeyPaymentSourceScope_apiKeyId_paymentSourceId_key" ON "ApiKeyPaymentSourceScope"("apiKeyId", "paymentSourceId");
+CREATE UNIQUE INDEX "ApiKeyWalletScope_apiKeyId_hotWalletId_key" ON "ApiKeyWalletScope"("apiKeyId", "hotWalletId");
 
 -- AddForeignKey
-ALTER TABLE "ApiKeyPaymentSourceScope" ADD CONSTRAINT "ApiKeyPaymentSourceScope_apiKeyId_fkey" FOREIGN KEY ("apiKeyId") REFERENCES "ApiKey"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ApiKeyWalletScope" ADD CONSTRAINT "ApiKeyWalletScope_apiKeyId_fkey" FOREIGN KEY ("apiKeyId") REFERENCES "ApiKey"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ApiKeyPaymentSourceScope" ADD CONSTRAINT "ApiKeyPaymentSourceScope_paymentSourceId_fkey" FOREIGN KEY ("paymentSourceId") REFERENCES "PaymentSource"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ApiKeyWalletScope" ADD CONSTRAINT "ApiKeyWalletScope_hotWalletId_fkey" FOREIGN KEY ("hotWalletId") REFERENCES "HotWallet"("id") ON DELETE CASCADE ON UPDATE CASCADE;

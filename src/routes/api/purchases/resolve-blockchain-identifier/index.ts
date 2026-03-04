@@ -3,7 +3,7 @@ import { Network } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getPaymentSourceHasWalletFilter } from '@/utils/scope/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import { transformPurchaseGetTimestamps, transformPurchaseGetAmounts } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
@@ -40,7 +40,7 @@ export const resolvePurchaseRequestPost = readAuthenticatedEndpointFactory.build
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
+					...getPaymentSourceHasWalletFilter(ctx.hotWalletIds),
 				},
 				blockchainIdentifier: input.blockchainIdentifier,
 			},

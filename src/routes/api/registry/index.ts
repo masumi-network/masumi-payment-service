@@ -12,7 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { assertHotWalletInScope, getSmartContractWalletScopeCondition } from '@/utils/scope/wallet-scope';
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
@@ -199,9 +199,9 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 					network: input.network,
 					deletedAt: null,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				SmartContractWallet: { deletedAt: null },
+				...getSmartContractWalletScopeCondition(ctx.hotWalletIds),
 				...(stateFilter ? { state: { in: stateFilter } } : {}),
 				...(searchLower
 					? {
@@ -338,6 +338,7 @@ export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
+				...getSmartContractWalletScopeCondition(ctx.hotWalletIds),
 			},
 		});
 
@@ -437,7 +438,6 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					PaymentSource: {
 						deletedAt: null,
 						network: input.network,
-						...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 					},
 				},
 				include: {
@@ -459,6 +459,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
+			assertHotWalletInScope(sellingWallet.id, ctx.hotWalletIds);
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
 			if (sellingWallet == null) {

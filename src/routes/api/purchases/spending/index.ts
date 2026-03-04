@@ -2,7 +2,7 @@ import { Network, OnChainState } from '@/generated/prisma/client';
 import { z } from 'zod';
 import { prisma } from '@/utils/db';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getPaymentSourceHasWalletFilter } from '@/utils/scope/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@/utils/security/auth/read-authenticated';
 import {
 	parseDateRange,
@@ -160,7 +160,7 @@ export const postPurchaseSpending = readAuthenticatedEndpointFactory.build({
 					PaymentSource: {
 						network: input.network,
 						deletedAt: null,
-						...getPaymentSourceIdFilter(ctx.paymentSourceIds),
+						...getPaymentSourceHasWalletFilter(ctx.hotWalletIds),
 					},
 				},
 				orderBy: [

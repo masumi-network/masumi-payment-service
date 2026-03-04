@@ -15,7 +15,7 @@ import { ez } from 'express-zod-api';
 import { createId } from '@paralleldrive/cuid2';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter, assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
+import { assertHotWalletInScope, getSmartContractWalletScopeCondition } from '@/utils/scope/wallet-scope';
 import { convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { metadataToString } from '@/utils/converter/metadata-string-convert';
@@ -281,8 +281,8 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
+				...getSmartContractWalletScopeCondition(ctx.hotWalletIds),
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 			},
@@ -443,6 +443,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
 				},
+				...getSmartContractWalletScopeCondition(ctx.hotWalletIds),
 			},
 		});
 
@@ -520,7 +521,6 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		assertPaymentSourceInScope(specifiedPaymentContract.id, ctx.paymentSourceIds);
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
@@ -609,6 +609,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (sellingWallet == null) {
 			throw createHttpError(404, 'Selling wallet not found');
 		}
+		assertHotWalletInScope(sellingWallet.id, ctx.hotWalletIds);
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
 		const blockchainIdentifier = {

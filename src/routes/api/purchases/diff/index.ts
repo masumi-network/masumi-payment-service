@@ -3,7 +3,7 @@ import { prisma } from '@/utils/db';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { Network, Prisma, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getPaymentSourceHasWalletFilter } from '@/utils/scope/wallet-scope';
 import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
@@ -51,21 +51,21 @@ function buildPurchaseDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
-	paymentSourceIds,
+	hotWalletIds,
 }: {
 	mode: PurchaseDiffMode;
 	since: Date;
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
-	paymentSourceIds: string[] | null;
+	hotWalletIds: string[] | null;
 }): Prisma.PurchaseRequestWhereInput {
 	const base: Prisma.PurchaseRequestWhereInput = {
 		PaymentSource: {
 			deletedAt: null,
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
-			...getPaymentSourceIdFilter(paymentSourceIds),
+			...getPaymentSourceHasWalletFilter(hotWalletIds),
 		},
 	};
 
@@ -149,7 +149,7 @@ async function queryPurchaseDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
-			paymentSourceIds: ctx.paymentSourceIds,
+			hotWalletIds: ctx.hotWalletIds,
 		}),
 		orderBy: buildPurchaseDiffOrderBy(mode),
 		take: input.limit,

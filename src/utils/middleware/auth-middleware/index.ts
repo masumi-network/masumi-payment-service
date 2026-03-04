@@ -10,7 +10,7 @@ export type AuthContext = {
 	permission: Permission;
 	networkLimit: Network[];
 	usageLimited: boolean;
-	paymentSourceIds: string[] | null; // null = unscoped (access all)
+	hotWalletIds: string[] | null; // null = unscoped (access all)
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -35,7 +35,7 @@ export const authMiddleware = (minPermission: Permission) =>
 						tokenHash: generateSHA256Hash(sentKey),
 					},
 					include: {
-						PaymentSourceScopes: { select: { paymentSourceId: true } },
+						WalletScopes: { select: { hotWalletId: true } },
 					},
 				});
 
@@ -76,11 +76,11 @@ export const authMiddleware = (minPermission: Permission) =>
 					usageLimited = false;
 				}
 
-				const paymentSourceIds =
+				const hotWalletIds =
 					apiKey.permission === Permission.Admin
 						? null
-						: apiKey.PaymentSourceScopes.length > 0
-							? apiKey.PaymentSourceScopes.map((s) => s.paymentSourceId)
+						: apiKey.WalletScopes.length > 0
+							? apiKey.WalletScopes.map((s) => s.hotWalletId)
 							: null;
 
 				return {
@@ -88,7 +88,7 @@ export const authMiddleware = (minPermission: Permission) =>
 					permission: apiKey.permission,
 					networkLimit: networkLimit,
 					usageLimited: usageLimited,
-					paymentSourceIds: paymentSourceIds,
+					hotWalletIds: hotWalletIds,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

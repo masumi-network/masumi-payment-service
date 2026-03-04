@@ -84,20 +84,20 @@
                         ],
                         "description": "Current status of the API key"
                     },
-                    "PaymentSourceScopes": {
+                    "WalletScopes": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "paymentSourceId": {
+                                "hotWalletId": {
                                     "type": "string"
                                 }
                             },
                             "required": [
-                                "paymentSourceId"
+                                "hotWalletId"
                             ]
                         },
-                        "description": "PaymentSources this key is scoped to. Empty array means unscoped (access all)."
+                        "description": "Wallets this key is scoped to. Empty array means unscoped (access all)."
                     }
                 },
                 "required": [
@@ -108,7 +108,7 @@
                     "networkLimit",
                     "RemainingUsageCredits",
                     "status",
-                    "PaymentSourceScopes"
+                    "WalletScopes"
                 ]
             },
             "Wallet": {
@@ -3515,7 +3515,7 @@
                                         "default": "Read",
                                         "description": "The permission of the API key"
                                     },
-                                    "paymentSourceIds": {
+                                    "walletIds": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
@@ -3523,7 +3523,7 @@
                                         },
                                         "maxItems": 50,
                                         "default": [],
-                                        "description": "Optional PaymentSource IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys."
+                                        "description": "Optional HotWallet IDs to scope this key to. Empty array means unscoped (access all). Ignored for Admin keys."
                                     }
                                 },
                                 "required": [
@@ -3679,23 +3679,23 @@
                                         ],
                                         "description": "The networks the API key is allowed to use"
                                     },
-                                    "addPaymentSourceIds": {
+                                    "addWalletIds": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
                                             "maxLength": 250
                                         },
                                         "maxItems": 50,
-                                        "description": "PaymentSource IDs to add to this key's scope"
+                                        "description": "HotWallet IDs to add to this key's scope"
                                     },
-                                    "removePaymentSourceIds": {
+                                    "removeWalletIds": {
                                         "type": "array",
                                         "items": {
                                             "type": "string",
                                             "maxLength": 250
                                         },
                                         "maxItems": 50,
-                                        "description": "PaymentSource IDs to remove from this key's scope"
+                                        "description": "HotWallet IDs to remove from this key's scope"
                                     }
                                 },
                                 "required": [

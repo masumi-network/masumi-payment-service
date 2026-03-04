@@ -4,7 +4,7 @@ import { Network, OnChainState, PaymentAction, Permission } from '@/generated/pr
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getSmartContractWalletIdFilter } from '@/utils/scope/wallet-scope';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
@@ -32,7 +32,6 @@ export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFacto
 				PaymentSource: {
 					network: input.network,
 					deletedAt: null,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
 				NextAction: {
 					requestedAction: {
@@ -44,6 +43,7 @@ export const authorizePaymentRefundEndpointPost = readAuthenticatedEndpointFacto
 				},
 				SmartContractWallet: {
 					deletedAt: null,
+					...getSmartContractWalletIdFilter(ctx.hotWalletIds),
 				},
 				CurrentTransaction: {
 					isNot: null,

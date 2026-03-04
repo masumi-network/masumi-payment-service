@@ -12,7 +12,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter, assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
+import { getPaymentSourceHasWalletFilter } from '@/utils/scope/wallet-scope';
 import { checkSignature, resolvePaymentKeyHash } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
 import { metadataSchema } from '../registry/wallet';
@@ -251,7 +251,7 @@ export const queryPurchaseRequestGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
+					...getPaymentSourceHasWalletFilter(ctx.hotWalletIds),
 				},
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'PaidFunds'),
@@ -399,6 +399,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					...getPaymentSourceHasWalletFilter(ctx.hotWalletIds),
 				},
 			},
 		});
@@ -602,7 +603,19 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				);
 				throw createHttpError(404, 'No payment source found for agent identifiers policy id');
 			}
-			assertPaymentSourceInScope(paymentSource.id, ctx.paymentSourceIds);
+			if (ctx.hotWalletIds !== null) {
+				const count = await prisma.hotWallet.count({
+					where: {
+						id: { in: ctx.hotWalletIds },
+						paymentSourceId: paymentSource.id,
+						type: HotWalletType.Purchasing,
+						deletedAt: null,
+					},
+				});
+				if (count === 0) {
+					throw createHttpError(403, 'Forbidden: no purchasing wallet in scope for this payment source');
+				}
+			}
 
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {

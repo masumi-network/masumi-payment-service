@@ -4,7 +4,7 @@ import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getSmartContractWalletScopeCondition } from '@/utils/scope/wallet-scope';
 import { logger } from '@/utils/logger';
 import { ez } from 'express-zod-api';
 import { paymentResponseSchema } from '..';
@@ -44,8 +44,8 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 				PaymentSource: {
 					network: input.network,
 					deletedAt: null,
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
 				},
+				...getSmartContractWalletScopeCondition(ctx.hotWalletIds),
 			},
 			include: {
 				NextAction: true,

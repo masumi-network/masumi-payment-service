@@ -22,20 +22,20 @@ model ApiKey {
   PurchaseRequest       PurchaseRequest[]
   RemainingUsageCredits UnitValue[]
   CreatedWebhooks       WebhookEndpoint[]
-  PaymentSourceScopes   ApiKeyPaymentSourceScope[]
+  WalletScopes          ApiKeyWalletScope[]
 }
 
-model ApiKeyPaymentSourceScope {
-  id              String        @id @default(cuid())
-  createdAt       DateTime      @default(now())
-  apiKeyId        String
-  paymentSourceId String
-  ApiKey          ApiKey        @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
-  PaymentSource   PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+model ApiKeyWalletScope {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  apiKeyId    String
+  hotWalletId String
+  ApiKey      ApiKey    @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  HotWallet   HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
 
-  @@unique([apiKeyId, paymentSourceId])
+  @@unique([apiKeyId, hotWalletId])
   @@index([apiKeyId])
-  @@index([paymentSourceId])
+  @@index([hotWalletId])
 }
 
 model UnitValue {
@@ -82,6 +82,7 @@ model HotWallet {
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
+  ApiKeyScopes         ApiKeyWalletScope[]
 }
 
 model Transaction {
@@ -369,8 +370,6 @@ model PaymentSource {
   RegistryRequest          RegistryRequest[]
   WalletBases              WalletBase[]
   WebhookEndpoints         WebhookEndpoint[]
-  ApiKeyScopes             ApiKeyPaymentSourceScope[]
-
   @@unique([network, smartContractAddress])
   @@unique([network, policyId])
 }

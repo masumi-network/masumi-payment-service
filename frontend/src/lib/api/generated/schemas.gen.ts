@@ -64,20 +64,20 @@ export const APIKeySchema = {
             ],
             description: 'Current status of the API key'
         },
-        PaymentSourceScopes: {
+        WalletScopes: {
             type: 'array',
             items: {
                 type: 'object',
                 properties: {
-                    paymentSourceId: {
+                    hotWalletId: {
                         type: 'string'
                     }
                 },
                 required: [
-                    'paymentSourceId'
+                    'hotWalletId'
                 ]
             },
-            description: 'PaymentSources this key is scoped to. Empty array means unscoped (access all).'
+            description: 'Wallets this key is scoped to. Empty array means unscoped (access all).'
         }
     },
     required: [
@@ -88,7 +88,7 @@ export const APIKeySchema = {
         'networkLimit',
         'RemainingUsageCredits',
         'status',
-        'PaymentSourceScopes'
+        'WalletScopes'
     ]
 } as const;
 

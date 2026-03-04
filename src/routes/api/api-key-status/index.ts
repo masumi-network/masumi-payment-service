@@ -18,7 +18,7 @@ export const queryAPIKeyStatusEndpointGet = readAuthenticatedEndpointFactory.bui
 			where: { id: ctx.id },
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
-				PaymentSourceScopes: { select: { paymentSourceId: true } },
+				WalletScopes: { select: { hotWalletId: true } },
 			},
 		});
 		if (!result) {

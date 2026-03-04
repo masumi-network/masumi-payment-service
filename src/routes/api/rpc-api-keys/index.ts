@@ -3,7 +3,7 @@ import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import { Network, RPCProvider } from '@/generated/prisma/client';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
-import { getPaymentSourceIdFilter } from '@/utils/scope/payment-source-scope';
+import { getPaymentSourceHasWalletFilter } from '@/utils/scope/wallet-scope';
 
 export const getRpcProviderKeysSchemaInput = z.object({
 	cursorId: z.string().min(1).max(250).optional().describe('Used to paginate through the rpc provider keys'),
@@ -38,7 +38,7 @@ export const queryRpcProviderKeysEndpointGet = adminAuthenticatedEndpointFactory
 				PaymentSource: {
 					deletedAt: null,
 					network: { in: ctx.networkLimit },
-					...getPaymentSourceIdFilter(ctx.paymentSourceIds),
+					...getPaymentSourceHasWalletFilter(ctx.hotWalletIds),
 				},
 			},
 			include: {

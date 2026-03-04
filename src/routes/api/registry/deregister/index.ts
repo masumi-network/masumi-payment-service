@@ -7,7 +7,7 @@ import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { DEFAULTS } from '@/utils/config';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { assertPaymentSourceInScope } from '@/utils/scope/payment-source-scope';
+import { getSmartContractWalletIdFilter } from '@/utils/scope/wallet-scope';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -58,8 +58,6 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 		if (paymentSource == null) {
 			throw createHttpError(404, 'Network and Address combination not supported');
 		}
-		assertPaymentSourceInScope(paymentSource.id, ctx.paymentSourceIds);
-
 		const blockfrost = getBlockfrostInstance(input.network, paymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
@@ -93,6 +91,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 				id: registryRequest.id,
 				SmartContractWallet: {
 					deletedAt: null,
+					...getSmartContractWalletIdFilter(ctx.hotWalletIds),
 				},
 			},
 			data: {
