@@ -160,6 +160,8 @@ export default function Transactions() {
       if (tx.id?.toLowerCase().includes(query)) return true;
       if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
+      if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (amountRange) {
