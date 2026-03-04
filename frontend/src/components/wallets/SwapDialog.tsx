@@ -255,12 +255,8 @@ export function SwapDialog({
   const formattedFromBalance = formatBalance(
     getBalanceForToken(selectedFromToken.symbol).toFixed(6),
   );
-  const formattedFromMax = formatBalance(
-    getMaxAmount(selectedFromToken.symbol).toFixed(2),
-  );
-  const formattedToBalance = formatBalance(
-    getBalanceForToken(selectedToToken.symbol).toFixed(6),
-  );
+  const formattedFromMax = formatBalance(getMaxAmount(selectedFromToken.symbol).toFixed(2));
+  const formattedToBalance = formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6));
 
   const handleSwapClick = () => {
     setTxHash(null);
@@ -290,13 +286,11 @@ export function SwapDialog({
 
       const fromToken = {
         policyId:
-          selectedFromToken.policyId === 'NATIVE' ||
-          selectedFromToken.policyId === ''
+          selectedFromToken.policyId === 'NATIVE' || selectedFromToken.policyId === ''
             ? ''
             : selectedFromToken.policyId || '',
         assetName:
-          selectedFromToken.assetName === 'ADA' ||
-          selectedFromToken.assetName === 'NATIVE'
+          selectedFromToken.assetName === 'ADA' || selectedFromToken.assetName === 'NATIVE'
             ? ''
             : selectedFromToken.assetName || '',
         name: selectedFromToken.name || selectedFromToken.symbol,
@@ -304,13 +298,11 @@ export function SwapDialog({
 
       const toToken = {
         policyId:
-          selectedToToken.policyId === 'NATIVE' ||
-          selectedToToken.policyId === ''
+          selectedToToken.policyId === 'NATIVE' || selectedToToken.policyId === ''
             ? ''
             : selectedToToken.policyId || '',
         assetName:
-          selectedToToken.assetName === 'ADA' ||
-          selectedToToken.assetName === 'NATIVE'
+          selectedToToken.assetName === 'ADA' || selectedToToken.assetName === 'NATIVE'
             ? ''
             : selectedToToken.assetName || '',
         name: selectedToToken.name || selectedToToken.symbol,
@@ -332,8 +324,7 @@ export function SwapDialog({
         {
           onSuccess: (result) => {
             const transactionHash =
-              (result as any)?.data?.data?.txHash ||
-              (result as any)?.data?.txHash;
+              (result as any)?.data?.data?.txHash || (result as any)?.data?.txHash;
 
             if (transactionHash) {
               setTxHash(transactionHash);
@@ -430,8 +421,7 @@ export function SwapDialog({
               <div className="flex flex-col space-y-2">
                 <DialogTitle>Swap Tokens</DialogTitle>
                 <DialogDescription>
-                  {network?.toLowerCase() === 'preprod' ? 'PREPROD' : 'MAINNET'}{' '}
-                  Network
+                  {network?.toLowerCase() === 'preprod' ? 'PREPROD' : 'MAINNET'} Network
                   <br />
                   <i>{shortenAddress(walletAddress, 6)}</i>
                 </DialogDescription>
@@ -447,9 +437,7 @@ export function SwapDialog({
                 disabled={isFetchingDetails || isSwapping}
                 title="Refresh Balance"
               >
-                <RefreshCw
-                  className={isFetchingDetails ? 'animate-spin' : ''}
-                />
+                <RefreshCw className={isFetchingDetails ? 'animate-spin' : ''} />
               </Button>
             </div>
           </DialogHeader>
@@ -475,12 +463,7 @@ export function SwapDialog({
                           <div className="flex items-center space-x-2">
                             <select
                               value={swappableTokens.indexOf(selectedFromToken)}
-                              onChange={(e) =>
-                                handleTokenChange(
-                                  'from',
-                                  parseInt(e.target.value),
-                                )
-                              }
+                              onChange={(e) => handleTokenChange('from', parseInt(e.target.value))}
                               className="bg-transparent text-foreground"
                             >
                               {swappableTokens.map((token, index) => (
@@ -506,8 +489,7 @@ export function SwapDialog({
                             <input
                               type="number"
                               className={`w-24 text-right bg-transparent border-b border-muted-foreground/50 focus:outline-none appearance-none text-[24px] font-bold mb-2 text-foreground ${
-                                fromAmount >
-                                getMaxAmount(selectedFromToken.symbol)
+                                fromAmount > getMaxAmount(selectedFromToken.symbol)
                                   ? 'text-red-500'
                                   : ''
                               }`}
@@ -544,12 +526,7 @@ export function SwapDialog({
                           <div className="flex items-center space-x-2">
                             <select
                               value={swappableTokens.indexOf(selectedToToken)}
-                              onChange={(e) =>
-                                handleTokenChange(
-                                  'to',
-                                  parseInt(e.target.value),
-                                )
-                              }
+                              onChange={(e) => handleTokenChange('to', parseInt(e.target.value))}
                               className="bg-transparent text-foreground"
                             >
                               {swappableTokens.map((token, index) => (
@@ -597,8 +574,7 @@ export function SwapDialog({
                       }
                     >
                       {isSwapping
-                        ? swapStatus === 'submitted' ||
-                          swapStatus === 'confirmed'
+                        ? swapStatus === 'submitted' || swapStatus === 'confirmed'
                           ? 'Confirming'
                           : 'Swap in Progress...'
                         : 'Swap'}{' '}
@@ -607,16 +583,10 @@ export function SwapDialog({
                     {error && <div className="text-red-500 mt-2">{error}</div>}
                     {txHash && (
                       <div className="mt-4 p-3 bg-muted/30 rounded-md border border-border/50">
-                        <div className="text-sm font-medium mb-2">
-                          Transaction Hash
-                        </div>
+                        <div className="text-sm font-medium mb-2">Transaction Hash</div>
                         <div className="flex items-center gap-2">
                           <a
-                            href={getExplorerUrl(
-                              txHash,
-                              network,
-                              'transaction',
-                            )}
+                            href={getExplorerUrl(txHash, network, 'transaction')}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm font-mono break-all hover:underline text-primary flex-1 bg-muted/30 rounded-md p-2 truncate"

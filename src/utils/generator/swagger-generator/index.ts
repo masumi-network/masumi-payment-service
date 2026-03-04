@@ -327,10 +327,7 @@ import {
 	postPurchaseRequestSchemaOutput,
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
-import {
-	swapTokensSchemaInput,
-	swapTokensSchemaOutput,
-} from '@/routes/api/swap';
+import { swapTokensSchemaInput, swapTokensSchemaOutput } from '@/routes/api/swap';
 import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
@@ -628,8 +625,7 @@ export function generateOpenAPI() {
 		path: '/swap/',
 		description:
 			'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
-		summary:
-			'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
+		summary: 'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
 		tags: ['swap'],
 		request: {
 			body: {
@@ -641,19 +637,16 @@ export function generateOpenAPI() {
 								walletVkey: 'wallet_verification_key_here',
 								amount: 1,
 								fromToken: {
-									policyId:
-										'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
 								},
 								toToken: {
-									policyId:
-										'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
 									assetName: '5553444d',
 									name: 'USDM',
 								},
-								poolId:
-									'64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
+								poolId: '64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
 								slippage: 0.03,
 							},
 						}),
@@ -680,8 +673,7 @@ export function generateOpenAPI() {
 				description: 'Bad Request (missing or invalid parameters)',
 			},
 			401: {
-				description:
-					'Unauthorized (invalid API key or insufficient permissions)',
+				description: 'Unauthorized (invalid API key or insufficient permissions)',
 			},
 			500: {
 				description: 'Internal Server Error (swap failed)',

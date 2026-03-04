@@ -82,8 +82,9 @@ export default function Overview() {
   const [isAddWalletDialogOpen, setAddWalletDialogOpen] = useState(false);
   const [isRegisterAgentDialogOpen, setRegisterAgentDialogOpen] = useState(false);
 
-  const [selectedWalletForSwap, setSelectedWalletForSwap] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
 
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -209,7 +210,6 @@ export default function Overview() {
                       </Link>
                     </>
                   </StatCard>
->>>>>>> origin/dev
                 )}
               </div>
             </div>

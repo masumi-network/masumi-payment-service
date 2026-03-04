@@ -65,10 +65,12 @@ export default function WalletsPage() {
   const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(new Set());
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { rate } = useRate();
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
-  const [selectedWalletForSwap, setSelectedWalletForSwap] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [activeTab, setActiveTab] = useState('All');
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -457,12 +459,12 @@ export default function WalletsPage() {
         />
 
         <SwapDialog
-        isOpen={!!selectedWalletForSwap}
-        onClose={() => setSelectedWalletForSwap(null)}
-        walletAddress={selectedWalletForSwap?.walletAddress || ''}
-        walletVkey={selectedWalletForSwap?.walletVkey || ''}
-        network={network}
-      />
+          isOpen={!!selectedWalletForSwap}
+          onClose={() => setSelectedWalletForSwap(null)}
+          walletAddress={selectedWalletForSwap?.walletAddress || ''}
+          walletVkey={selectedWalletForSwap?.walletVkey || ''}
+          network={network}
+        />
 
         <TransakWidget
           isOpen={!!selectedWalletForTopup}

@@ -65,10 +65,12 @@ export function WalletDetailsDialog({
   const [tokenBalances, setTokenBalances] = useState<TokenBalance[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { rate } = useRate();
-  const [selectedWalletForSwap, setSelectedWalletForSwap] =
-    useState<WalletWithBalance | null>(null);
-  const [selectedWalletForTopup, setSelectedWalletForTopup] =
-    useState<WalletWithBalance | null>(null);
+  const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
+    null,
+  );
+  const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
+    null,
+  );
   const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);

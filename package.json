@@ -78,6 +78,7 @@
 		"lucid-cardano": "0.10.7",
 		"lz-string": "^1.5.0",
 		"pg": "^8.17.1",
+		"@sundaeswap/asset": "1.0.11",
 		"@sundaeswap/core": "1.3.47",
 		"spacetime": "^7.12.0",
 		"swagger-ui-express": "^5.0.1",
