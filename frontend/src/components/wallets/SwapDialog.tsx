@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -51,7 +51,6 @@ export function SwapDialog({
 
   const [fromAmount, setFromAmount] = useState<number>(1);
   const [adaToUsdRate, setAdaToUsdRate] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(false);
   const [isFetchingDetails, setIsFetchingDetails] = useState<boolean>(true);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
   const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
@@ -68,6 +67,9 @@ export function SwapDialog({
   const [swapStatus, setSwapStatus] = useState<'idle' | 'processing' | 'submitted' | 'confirmed'>(
     'idle',
   );
+
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCancelledRef = useRef(false);
 
   const fetchTokenRates = async () => {
     try {
@@ -113,7 +115,14 @@ export function SwapDialog({
         fetchBalance();
       }, 20000);
 
-      return () => clearInterval(balanceInterval);
+      return () => {
+        clearInterval(balanceInterval);
+        pollCancelledRef.current = true;
+        if (pollTimeoutRef.current) {
+          clearTimeout(pollTimeoutRef.current);
+          pollTimeoutRef.current = null;
+        }
+      };
     }
   }, [isOpen]);
 
@@ -369,15 +378,24 @@ export function SwapDialog({
               const POLL_INTERVAL_MS = 4000;
               const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
               const startedAt = Date.now();
+              pollCancelledRef.current = false;
+              if (pollTimeoutRef.current) {
+                clearTimeout(pollTimeoutRef.current);
+                pollTimeoutRef.current = null;
+              }
 
               const poll = async (): Promise<void> => {
+                if (pollCancelledRef.current) return;
                 if (Date.now() - startedAt > MAX_POLL_MS) {
+                  if (pollCancelledRef.current) return;
                   toast.warning(
                     'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
                     { theme: 'dark' },
                   );
                   setIsSwapping(false);
-                  setTimeout(() => setSwapStatus('idle'), 2000);
+                  pollTimeoutRef.current = setTimeout(() => {
+                    if (!pollCancelledRef.current) setSwapStatus('idle');
+                  }, 2000);
                   return;
                 }
                 try {
@@ -385,29 +403,39 @@ export function SwapDialog({
                     client: apiClient,
                     query: { txHash: transactionHash, walletVkey },
                   });
+                  if (pollCancelledRef.current) return;
                   const data = (confirmResult as any)?.data?.data ?? (confirmResult as any)?.data;
                   const status = data?.status;
                   if (status === 'confirmed') {
+                    if (pollCancelledRef.current) return;
                     await fetchBalance();
+                    if (pollCancelledRef.current) return;
                     setSwapStatus('confirmed');
                     toast.success('Swap confirmed on-chain.', { theme: 'dark' });
                     setIsSwapping(false);
-                    setTimeout(() => setSwapStatus('idle'), 2000);
+                    pollTimeoutRef.current = setTimeout(() => {
+                      if (!pollCancelledRef.current) setSwapStatus('idle');
+                    }, 2000);
                     return;
                   }
-                  setTimeout(poll, POLL_INTERVAL_MS);
+                  pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
                 } catch {
-                  setTimeout(poll, POLL_INTERVAL_MS);
+                  if (!pollCancelledRef.current) {
+                    pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+                  }
                 }
               };
-              setTimeout(poll, POLL_INTERVAL_MS);
+              pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
             } else {
               toast.warning('Swap submitted but confirmation unavailable (missing tx hash).', {
                 theme: 'dark',
               });
               await fetchBalance();
               setIsSwapping(false);
-              setTimeout(() => setSwapStatus('idle'), 2000);
+              if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+              pollTimeoutRef.current = setTimeout(() => {
+                if (!pollCancelledRef.current) setSwapStatus('idle');
+              }, 2000);
             }
           },
           onError: (error: any) => {
