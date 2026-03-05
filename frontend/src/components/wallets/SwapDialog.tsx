@@ -193,7 +193,7 @@ export function SwapDialog({
     adaBalance > 0 &&
     selectedFromToken.symbol !== selectedToToken.symbol &&
     network === 'Mainnet' &&
-    walletVkey !== null;
+    !!walletVkey;
 
   const handleSwitch = () => {
     if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
