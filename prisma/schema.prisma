@@ -64,27 +64,30 @@ model UnitValue {
 }
 
 model HotWallet {
-  id                      String              @id @default(cuid())
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-  walletVkey              String              @unique
-  walletAddress           String
-  type                    HotWalletType
-  secretId                String
-  collectionAddress       String?
-  pendingTransactionId    String?             @unique
-  paymentSourceId         String
-  lockedAt                DateTime?
-  note                    String?
-  deletedAt               DateTime?
-  PaymentSource           PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction      Transaction?        @relation(fields: [pendingTransactionId], references: [id])
-  Secret                  WalletSecret        @relation(fields: [secretId], references: [id])
-  PaymentRequest          PaymentRequest[]
-  PurchaseRequest         PurchaseRequest[]
-  RegistryRequest         RegistryRequest[]
-  apiKeyWalletScopes      ApiKeyWalletScope[]
-  LimitedPurchaseRequests PurchaseRequest[]   @relation("HotWalletLimit")
+  id                       String              @id @default(cuid())
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  walletVkey               String              @unique
+  walletAddress            String
+  type                     HotWalletType
+  secretId                 String
+  collectionAddress        String?
+  pendingTransactionId     String?             @unique
+  pendingSwapTransactionId String?             @unique
+  paymentSourceId          String
+  lockedAt                 DateTime?
+  note                     String?
+  deletedAt                DateTime?
+  PaymentSource            PaymentSource       @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?        @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?    @relation(fields: [pendingSwapTransactionId], references: [id])
+  SwapTransactionHistory   SwapTransaction[]   @relation("SwapTransactionHistory")
+  Secret                   WalletSecret        @relation(fields: [secretId], references: [id])
+  PaymentRequest           PaymentRequest[]
+  PurchaseRequest          PurchaseRequest[]
+  RegistryRequest          RegistryRequest[]
+  apiKeyWalletScopes       ApiKeyWalletScope[]
+  LimitedPurchaseRequests  PurchaseRequest[]   @relation("HotWalletLimit")
 }
 
 model Transaction {
@@ -114,6 +117,29 @@ model Transaction {
   RegistryRequest          RegistryRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+}
+
+model SwapTransaction {
+  id               String            @id @default(cuid())
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  txHash           String?
+  status           TransactionStatus
+  swapStatus       SwapStatus        @default(OrderPending)
+  confirmations    Int?
+  lastCheckedAt    DateTime?
+  fromPolicyId     String
+  fromAssetName    String
+  fromAmount       String
+  toPolicyId       String
+  toAssetName      String
+  poolId           String
+  slippage         Float?
+  cancelTxHash     String?
+  orderOutputIndex Int?
+  hotWalletId      String?
+  BlocksWallet     HotWallet?
+  HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
 }
 
 model WalletSecret {
@@ -458,6 +484,16 @@ enum TransactionStatus {
   FailedViaTimeout
   FailedViaManualReset
   RolledBack
+}
+
+enum SwapStatus {
+  OrderPending
+  OrderConfirmed
+  CancelPending
+  CancelConfirmed
+  Completed
+  OrderSubmitTimeout
+  CancelSubmitTimeout
 }
 
 enum OnChainState {

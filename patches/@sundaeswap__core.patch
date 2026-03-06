@@ -1,0 +1,25 @@
+diff --git a/dist/cjs/DatumBuilders/ContractTypes/index.js b/dist/cjs/DatumBuilders/ContractTypes/index.js
+index b6eaa74ccb73045340a6a57be8c22bfb282ff68b..8f66066c9cf734b6584b57f731fcb9ab15d38d1c 100644
+--- a/dist/cjs/DatumBuilders/ContractTypes/index.js
++++ b/dist/cjs/DatumBuilders/ContractTypes/index.js
+@@ -4,9 +4,8 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" ==
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.V3Types = exports.V1Types = void 0;
+-var _V1Types = _interopRequireWildcard(require("./Contract.Blaze.v1.js"));
+-exports.V1Types = _V1Types;
++exports.V3Types = void 0;
++// V1Types (Blaze) omitted to avoid loading @blaze-cardano/sdk when only using Lucid
+ var _V3Types = _interopRequireWildcard(require("./Contract.Lucid.v3.js"));
+ exports.V3Types = _V3Types;
+ function _getRequireWildcardCache(e) { if ("function" != typeof WeakMap) return null; var r = new WeakMap(), t = new WeakMap(); return (_getRequireWildcardCache = function _getRequireWildcardCache(e) { return e ? t : r; })(e); }
+diff --git a/dist/esm/DatumBuilders/ContractTypes/index.js b/dist/esm/DatumBuilders/ContractTypes/index.js
+index 45749bc3291dfe54454a29285b66e96b68e72a2d..9b96fc62fc507678c3903c83df4f8e9712808c1f 100644
+--- a/dist/esm/DatumBuilders/ContractTypes/index.js
++++ b/dist/esm/DatumBuilders/ContractTypes/index.js
+@@ -1,3 +1,3 @@
+-export * as V1Types from "./Contract.Blaze.v1.js";
++// V1Types (Blaze) omitted to avoid loading @blaze-cardano/sdk when only using Lucid
+ export * as V3Types from "./Contract.Lucid.v3.js";
+ //# sourceMappingURL=index.js.map

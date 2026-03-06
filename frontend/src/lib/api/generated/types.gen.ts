@@ -2008,6 +2008,432 @@ export type PostApiKeyResponses = {
 
 export type PostApiKeyResponse = PostApiKeyResponses[keyof PostApiKeyResponses];
 
+export type PostSwapData = {
+    /**
+     * Swap request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) to identify the wallet
+         */
+        walletVkey: string;
+        /**
+         * Amount to swap (in ADA or token units). Capped to prevent overflow/DoS.
+         */
+        amount: number;
+        /**
+         * Source token information
+         */
+        fromToken: {
+            /**
+             * Policy ID of the source token. Use empty string "" for ADA (native token)
+             */
+            policyId: string;
+            /**
+             * Asset name of the source token. Use empty string "" for ADA
+             */
+            assetName: string;
+            /**
+             * Name of the source token
+             */
+            name: string;
+        };
+        /**
+         * Destination token information
+         */
+        toToken: {
+            /**
+             * Policy ID of the destination token. Use empty string "" for ADA (native token)
+             */
+            policyId: string;
+            /**
+             * Asset name of the destination token. Use empty string "" for ADA
+             */
+            assetName: string;
+            /**
+             * Name of the destination token
+             */
+            name: string;
+        };
+        /**
+         * SundaeSwap pool identifier
+         */
+        poolId: string;
+        /**
+         * Slippage tolerance (0-1, default: 0.03 for 3%)
+         */
+        slippage?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/';
+};
+
+export type PostSwapErrors = {
+    /**
+     * Bad Request (missing or invalid parameters)
+     */
+    400: unknown;
+    /**
+     * Unauthorized (invalid API key or insufficient permissions)
+     */
+    401: unknown;
+    /**
+     * Internal Server Error (swap failed)
+     */
+    500: unknown;
+};
+
+export type PostSwapResponses = {
+    /**
+     * Swap executed successfully
+     */
+    200: {
+        /**
+         * Transaction hash of the swap
+         */
+        txHash: string;
+        /**
+         * Wallet address used for the swap
+         */
+        walletAddress: string;
+    };
+};
+
+export type PostSwapResponse = PostSwapResponses[keyof PostSwapResponses];
+
+export type GetSwapConfirmData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Transaction hash to check
+         */
+        txHash: string;
+        /**
+         * Wallet verification key (vKey) that submitted the swap
+         */
+        walletVkey: string;
+    };
+    url: '/swap/confirm/';
+};
+
+export type GetSwapConfirmErrors = {
+    /**
+     * Bad Request (e.g. mainnet wallet required)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+};
+
+export type GetSwapConfirmResponses = {
+    /**
+     * Confirmation status (pending, confirmed, or not_found)
+     */
+    200: {
+        /**
+         * On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)
+         */
+        status: 'pending' | 'confirmed' | 'not_found';
+        /**
+         * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
+         */
+        swapStatus?: string;
+        /**
+         * SwapTransaction ID, returned when lifecycle transition occurs
+         */
+        swapTransactionId?: string;
+        /**
+         * Number of block confirmations. Present when status is confirmed.
+         */
+        confirmations?: number | null;
+    };
+};
+
+export type GetSwapConfirmResponse = GetSwapConfirmResponses[keyof GetSwapConfirmResponses];
+
+export type GetSwapTransactionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Wallet verification key (vKey) to filter swap transactions
+         */
+        walletVkey: string;
+        /**
+         * Number of swap transactions to return
+         */
+        limit?: number;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+    };
+    url: '/swap/transactions/';
+};
+
+export type GetSwapTransactionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+};
+
+export type GetSwapTransactionsResponses = {
+    /**
+     * List of swap transactions
+     */
+    200: {
+        /**
+         * List of swap transactions
+         */
+        swapTransactions: Array<{
+            /**
+             * Swap transaction ID
+             */
+            id: string;
+            /**
+             * Creation timestamp
+             */
+            createdAt: string;
+            /**
+             * On-chain transaction hash
+             */
+            txHash: string | null;
+            /**
+             * Transaction status
+             */
+            status: string;
+            /**
+             * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
+             */
+            swapStatus: string;
+            /**
+             * Number of block confirmations
+             */
+            confirmations?: number | null;
+            /**
+             * Source token policy ID
+             */
+            fromPolicyId: string;
+            /**
+             * Source token asset name
+             */
+            fromAssetName: string;
+            /**
+             * Amount swapped
+             */
+            fromAmount: string;
+            /**
+             * Destination token policy ID
+             */
+            toPolicyId: string;
+            /**
+             * Destination token asset name
+             */
+            toAssetName: string;
+            /**
+             * SundaeSwap pool ID
+             */
+            poolId: string;
+            /**
+             * Slippage tolerance used
+             */
+            slippage?: number | null;
+            /**
+             * Transaction hash of cancel transaction
+             */
+            cancelTxHash?: string | null;
+            /**
+             * Output index of the order UTXO
+             */
+            orderOutputIndex?: number | null;
+        }>;
+    };
+};
+
+export type GetSwapTransactionsResponse = GetSwapTransactionsResponses[keyof GetSwapTransactionsResponses];
+
+export type GetSwapEstimateData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Policy ID of the source token. Use empty string "" for ADA
+         */
+        fromPolicyId: string;
+        /**
+         * Asset name (hex) of the source token. Use empty string "" for ADA
+         */
+        fromAssetName: string;
+        /**
+         * Policy ID of the destination token. Use empty string "" for ADA
+         */
+        toPolicyId: string;
+        /**
+         * Asset name (hex) of the destination token. Use empty string "" for ADA
+         */
+        toAssetName: string;
+        /**
+         * SundaeSwap pool identifier
+         */
+        poolId: string;
+    };
+    url: '/swap/estimate/';
+};
+
+export type GetSwapEstimateErrors = {
+    /**
+     * Bad request (invalid pool or token)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetSwapEstimateResponses = {
+    /**
+     * Swap estimate
+     */
+    200: {
+        /**
+         * Estimated conversion rate (toToken per 1 fromToken, after pool fee)
+         */
+        rate: number;
+        /**
+         * Pool fee as a decimal (e.g. 0.003 for 0.3%)
+         */
+        fee: number;
+        /**
+         * Decimal places of the source token
+         */
+        fromDecimals: number;
+        /**
+         * Decimal places of the destination token
+         */
+        toDecimals: number;
+    };
+};
+
+export type GetSwapEstimateResponse = GetSwapEstimateResponses[keyof GetSwapEstimateResponses];
+
+export type PostSwapCancelData = {
+    /**
+     * Cancel swap request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) of the wallet that placed the order
+         */
+        walletVkey: string;
+        /**
+         * ID of the SwapTransaction to cancel
+         */
+        swapTransactionId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/cancel/';
+};
+
+export type PostSwapCancelErrors = {
+    /**
+     * Bad Request (swap not in cancellable state)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Swap transaction or wallet not found
+     */
+    404: unknown;
+    /**
+     * Wallet is currently locked
+     */
+    409: unknown;
+};
+
+export type PostSwapCancelResponses = {
+    /**
+     * Cancel transaction submitted
+     */
+    200: {
+        /**
+         * Transaction hash of the cancel transaction
+         */
+        cancelTxHash: string;
+    };
+};
+
+export type PostSwapCancelResponse = PostSwapCancelResponses[keyof PostSwapCancelResponses];
+
+export type PostSwapAcknowledgeTimeoutData = {
+    /**
+     * Acknowledge timeout request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) of the wallet
+         */
+        walletVkey: string;
+        /**
+         * ID of the timed-out SwapTransaction
+         */
+        swapTransactionId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/acknowledge-timeout/';
+};
+
+export type PostSwapAcknowledgeTimeoutErrors = {
+    /**
+     * Bad Request (swap not in timeout state)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Swap transaction or wallet not found
+     */
+    404: unknown;
+};
+
+export type PostSwapAcknowledgeTimeoutResponses = {
+    /**
+     * Timeout acknowledged, state recovered
+     */
+    200: {
+        /**
+         * New swap status after acknowledgement
+         */
+        swapStatus: string;
+        /**
+         * Human-readable explanation of what happened
+         */
+        message: string;
+    };
+};
+
+export type PostSwapAcknowledgeTimeoutResponse = PostSwapAcknowledgeTimeoutResponses[keyof PostSwapAcknowledgeTimeoutResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;

@@ -8,7 +8,7 @@
 ALTER TABLE "ApiKey" ADD COLUMN     "walletScopeEnabled" BOOLEAN NOT NULL DEFAULT false;
 
 -- AlterTable
-ALTER TABLE "PurchaseRequest" ADD COLUMN     "isLimitedToHotWallets" BOOLEAN NOT NULL;
+ALTER TABLE "PurchaseRequest" ADD COLUMN     "isLimitedToHotWallets" BOOLEAN NOT NULL DEFAULT false;
 
 -- CreateTable
 CREATE TABLE "ApiKeyWalletScope" (

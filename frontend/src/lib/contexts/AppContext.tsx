@@ -52,7 +52,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [authorized, setAuthorized] = useState(false);
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [network, setNetwork] = useState<NetworkType>('Preprod');
+  const [network, setNetworkState] = useState<NetworkType>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('masumi_network');
+      if (stored === 'Mainnet' || stored === 'Preprod') return stored;
+    }
+    return 'Preprod';
+  });
+  const setNetwork = useCallback((value: NetworkType) => {
+    setNetworkState(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('masumi_network', value);
+    }
+  }, []);
   const [isSetupMode, setIsSetupModeState] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('masumi_setup_mode') === 'true';
@@ -113,7 +125,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setNetwork(newNetwork);
       setSelectedPaymentSourceIdAndPersist(null);
     },
-    [setSelectedPaymentSourceIdAndPersist],
+    [setNetwork, setSelectedPaymentSourceIdAndPersist],
   );
 
   useEffect(() => {
@@ -171,7 +183,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('userIgnoredSetup');
     localStorage.removeItem('masumi_last_transactions_visit');
     localStorage.removeItem('masumi_new_transactions_count');
-  }, [setIsSetupMode]);
+    localStorage.removeItem('masumi_network');
+  }, [setIsSetupMode, setNetwork]);
 
   return (
     <AppContext.Provider

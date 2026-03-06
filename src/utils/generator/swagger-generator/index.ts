@@ -330,6 +330,20 @@ import {
 } from '@/routes/api/purchases/resolve-blockchain-identifier';
 import { postRevealDataSchemaOutput, postVerifyDataRevealSchemaInput } from '@/routes/api/signature/verify/reveal-data';
 import {
+	swapTokensSchemaInput,
+	swapTokensSchemaOutput,
+	getSwapConfirmSchemaInput,
+	getSwapConfirmSchemaOutput,
+	getSwapTransactionsSchemaInput,
+	getSwapTransactionsSchemaOutput,
+	getSwapEstimateSchemaInput,
+	getSwapEstimateSchemaOutput,
+	cancelSwapSchemaInput,
+	cancelSwapSchemaOutput,
+	acknowledgeSwapTimeoutSchemaInput,
+	acknowledgeSwapTimeoutSchemaOutput,
+} from '@/routes/api/swap/schemas';
+import {
 	paymentErrorStateRecoverySchemaInput,
 	paymentErrorStateRecoverySchemaOutput,
 } from '@/routes/api/payments/error-state-recovery';
@@ -616,6 +630,310 @@ export function generateOpenAPI() {
 			},
 			500: {
 				description: 'Internal Server Error',
+			},
+		},
+	});
+
+	/********************* SWAP *****************************/
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/',
+		description:
+			'Swap ADA for CNTs (Cardano Native Tokens) or CNTs for ADA using SundaeSwap DEX. This endpoint is mainnet-only.',
+		summary: 'Execute a token swap on SundaeSwap. (admin access required, mainnet only)',
+		tags: ['swap'],
+		request: {
+			body: {
+				description: 'Swap request parameters',
+				content: {
+					'application/json': {
+						schema: swapTokensSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								amount: 1,
+								fromToken: {
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									assetName: '5553444d',
+									name: 'USDM',
+								},
+								toToken: {
+									policyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+									assetName: '5553444d',
+									name: 'USDM',
+								},
+								poolId: '64f35d26b237ad58e099041bc14c687ea7fdc58969d7d5b66e2540ef',
+								slippage: 0.03,
+							},
+						}),
+					},
+				},
+			},
+		},
+		security: [{ [apiKeyAuth.name]: [] }],
+		responses: {
+			200: {
+				description: 'Swap executed successfully',
+				content: {
+					'application/json': {
+						schema: swapTokensSchemaOutput.openapi({
+							example: {
+								txHash: 'abc123def456...',
+								walletAddress: 'addr1...',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (missing or invalid parameters)',
+			},
+			401: {
+				description: 'Unauthorized (invalid API key or insufficient permissions)',
+			},
+			500: {
+				description: 'Internal Server Error (swap failed)',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/confirm/',
+		description:
+			'Check on-chain confirmation status of a swap transaction by transaction hash. Use after POST /swap/ to poll until status is confirmed. Mainnet only.',
+		summary: 'Get swap transaction confirmation status. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapConfirmSchemaInput.openapi({
+				example: {
+					txHash: 'abc123def456...',
+					walletVkey: 'wallet_verification_key_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Confirmation status (pending, confirmed, or not_found)',
+				content: {
+					'application/json': {
+						schema: getSwapConfirmSchemaOutput.openapi({
+							example: {
+								status: 'confirmed',
+								swapStatus: 'OrderConfirmed',
+								confirmations: 15,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (e.g. mainnet wallet required)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/transactions/',
+		description: 'List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.',
+		summary: 'List swap transactions. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapTransactionsSchemaInput.openapi({
+				example: {
+					walletVkey: 'wallet_verification_key_here',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of swap transactions',
+				content: {
+					'application/json': {
+						schema: getSwapTransactionsSchemaOutput.openapi({
+							example: {
+								swapTransactions: [
+									{
+										id: 'clx1abc...',
+										createdAt: '2026-03-06T12:00:00.000Z',
+										txHash: 'abc123def456...',
+										status: 'Confirmed',
+										swapStatus: 'Completed',
+										confirmations: 15,
+										fromPolicyId: '',
+										fromAssetName: '',
+										fromAmount: '10',
+										toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+										toAssetName: '0014df105553444d',
+										poolId: 'pool_id_here',
+										slippage: 0.03,
+										cancelTxHash: null,
+										orderOutputIndex: null,
+									},
+								],
+							},
+						}),
+					},
+				},
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/estimate/',
+		description:
+			'Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.',
+		summary: 'Get swap price estimate. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapEstimateSchemaInput.openapi({
+				example: {
+					fromPolicyId: '',
+					fromAssetName: '',
+					toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+					toAssetName: '0014df105553444d',
+					poolId: 'pool_id_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Swap estimate',
+				content: {
+					'application/json': {
+						schema: getSwapEstimateSchemaOutput.openapi({
+							example: {
+								rate: 2.45,
+								fee: 0.003,
+								fromDecimals: 6,
+								toDecimals: 6,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad request (invalid pool or token)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/cancel/',
+		description:
+			'Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.',
+		summary: 'Cancel a pending swap order. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Cancel swap request parameters',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Cancel transaction submitted',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaOutput.openapi({
+							example: {
+								cancelTxHash: 'abc123def456...',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in cancellable state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
+			},
+			409: {
+				description: 'Wallet is currently locked',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/acknowledge-timeout/',
+		description:
+			'Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.',
+		summary: 'Acknowledge a swap timeout and recover state. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Acknowledge timeout request parameters',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Timeout acknowledged, state recovered',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaOutput.openapi({
+							example: {
+								swapStatus: 'OrderConfirmed',
+								message: 'Cancel tx failed but order UTXO still exists. You can retry cancelling.',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in timeout state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
 			},
 		},
 	});
