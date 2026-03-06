@@ -39,6 +39,25 @@ export const getSwapConfirmSchemaInput = z.object({
 	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) that submitted the swap'),
 });
 
+export const cancelSwapSchemaInput = z.object({
+	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) of the wallet that placed the order'),
+	swapTransactionId: z.string().min(1).describe('ID of the SwapTransaction to cancel'),
+});
+
+export const cancelSwapSchemaOutput = z.object({
+	cancelTxHash: z.string().describe('Transaction hash of the cancel transaction'),
+});
+
+export const acknowledgeSwapTimeoutSchemaInput = z.object({
+	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) of the wallet'),
+	swapTransactionId: z.string().min(1).describe('ID of the timed-out SwapTransaction'),
+});
+
+export const acknowledgeSwapTimeoutSchemaOutput = z.object({
+	swapStatus: z.string().describe('New swap status after acknowledgement'),
+	message: z.string().describe('Human-readable explanation of what happened'),
+});
+
 export const getSwapTransactionsSchemaInput = z.object({
 	walletVkey: z.string().min(1).describe('Wallet verification key (vKey) to filter swap transactions'),
 	limit: z.coerce.number().min(1).max(100).default(10).describe('Number of swap transactions to return'),
@@ -50,6 +69,9 @@ export const swapTransactionSchema = z.object({
 	createdAt: z.string().describe('Creation timestamp'),
 	txHash: z.string().nullable().describe('On-chain transaction hash'),
 	status: z.string().describe('Transaction status'),
+	swapStatus: z
+		.string()
+		.describe('Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)'),
 	confirmations: z.number().nullable().optional().describe('Number of block confirmations'),
 	fromPolicyId: z.string().describe('Source token policy ID'),
 	fromAssetName: z.string().describe('Source token asset name'),
@@ -58,6 +80,8 @@ export const swapTransactionSchema = z.object({
 	toAssetName: z.string().describe('Destination token asset name'),
 	poolId: z.string().describe('SundaeSwap pool ID'),
 	slippage: z.number().nullable().optional().describe('Slippage tolerance used'),
+	cancelTxHash: z.string().nullable().optional().describe('Transaction hash of cancel transaction'),
+	orderOutputIndex: z.number().nullable().optional().describe('Output index of the order UTXO'),
 });
 
 export const getSwapTransactionsSchemaOutput = z.object({
@@ -83,6 +107,11 @@ export const getSwapConfirmSchemaOutput = z.object({
 	status: z
 		.enum(['pending', 'confirmed', 'not_found'])
 		.describe('On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)'),
+	swapStatus: z
+		.string()
+		.optional()
+		.describe('Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)'),
+	swapTransactionId: z.string().optional().describe('SwapTransaction ID, returned when lifecycle transition occurs'),
 	confirmations: z
 		.number()
 		.int()

@@ -6,6 +6,7 @@ import { ESwapType, EDatumType } from '@sundaeswap/core';
 import { SundaeUtils } from '@sundaeswap/core/utilities';
 import type { IPoolData } from '@sundaeswap/core';
 import { logger } from '@/utils/logger';
+import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
 
 export interface Token {
 	policyId: string;
@@ -55,7 +56,7 @@ async function initializeLucid(blockfrostApiKey: string): Promise<Lucid> {
 	return await Lucid.new(new Blockfrost('https://cardano-mainnet.blockfrost.io/api/v0', blockfrostApiKey), 'Mainnet');
 }
 
-async function getWalletFromMnemonic(
+export async function getWalletFromMnemonic(
 	mnemonic: string,
 	blockfrostApiKey: string,
 ): Promise<{ address: string; lucid: Lucid }> {
@@ -229,4 +230,65 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 		});
 		throw error;
 	}
+}
+
+export interface CancelSwapParams {
+	mnemonic: string;
+	orderTxHash: string;
+	orderOutputIndex: number;
+}
+
+export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey: string): Promise<{ txHash: string }> {
+	const startTime = Date.now();
+	try {
+		logger.info('Initializing swap cancel transaction', {
+			component: 'swap-service',
+			orderTxHash: params.orderTxHash,
+			orderOutputIndex: params.orderOutputIndex,
+		});
+
+		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
+		const txBuilder = new TxBuilderLucidV3(wallet.lucid, 'mainnet');
+
+		const { build } = await txBuilder.cancel({
+			utxo: { hash: params.orderTxHash, index: params.orderOutputIndex },
+			ownerAddress: wallet.address,
+		});
+		const builtTx = await build();
+		const { submit } = await builtTx.sign();
+		const txHash = await submit();
+
+		logger.info('Cancel transaction submitted', {
+			component: 'swap-service',
+			txHash,
+			duration: Date.now() - startTime,
+		});
+
+		return { txHash };
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+		logger.error('Swap cancel failed', {
+			component: 'swap-service',
+			error: errorMessage,
+			duration: Date.now() - startTime,
+		});
+		throw error;
+	}
+}
+
+export async function findOrderOutputIndex(
+	txHash: string,
+	blockfrost: BlockFrostAPI,
+	walletAddress: string,
+): Promise<number> {
+	const txUtxos = await blockfrost.txsUtxos(txHash);
+
+	// The order output is the one sent to the script address (not back to the wallet)
+	for (const output of txUtxos.outputs) {
+		if (output.address !== walletAddress) {
+			return output.output_index;
+		}
+	}
+
+	throw new Error(`Could not find order output in transaction ${txHash}`);
 }

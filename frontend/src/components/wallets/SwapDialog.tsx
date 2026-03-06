@@ -10,8 +10,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
-import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
-import { getSwapConfirm, getSwapEstimate, getUtxos, postSwap } from '@/lib/api/generated';
+import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
+import {
+  getSwapConfirm,
+  getSwapEstimate,
+  getUtxos,
+  postSwap,
+  postSwapCancel,
+  postSwapAcknowledgeTimeout,
+} from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
@@ -139,9 +146,18 @@ export function SwapDialog({
 
   const [conversionRate, setConversionRate] = useState<number>(0);
 
-  const [swapStatus, setSwapStatus] = useState<'idle' | 'processing' | 'submitted' | 'confirmed'>(
-    'idle',
-  );
+  const [swapStatus, setSwapStatus] = useState<
+    | 'idle'
+    | 'processing'
+    | 'submitted'
+    | 'orderConfirmed'
+    | 'cancelling'
+    | 'cancelConfirmed'
+    | 'confirmed'
+    | 'timeout'
+  >('idle');
+
+  const [swapTransactionId, setSwapTransactionId] = useState<string | null>(null);
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
@@ -205,6 +221,7 @@ export function SwapDialog({
       setTxHash(null);
       setError(null);
       setSwapStatus('idle');
+      setSwapTransactionId(null);
       setIsSwapping(false);
       setShowConfirmation(false);
       fetchBalance();
@@ -391,6 +408,182 @@ export function SwapDialog({
 
   const formattedToBalance = formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6));
 
+  const startPolling = (transactionHash: string) => {
+    const POLL_INTERVAL_MS = 4000;
+    const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
+    const startedAt = Date.now();
+    pollCancelledRef.current = false;
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+
+    const poll = async (): Promise<void> => {
+      if (pollCancelledRef.current) return;
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        if (pollCancelledRef.current) return;
+        toast.warning(
+          'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
+          { theme: 'dark' },
+        );
+        setIsSwapping(false);
+        return;
+      }
+      try {
+        const confirmResult = await getSwapConfirm({
+          client: apiClient,
+          query: { txHash: transactionHash, walletVkey },
+        });
+        if (pollCancelledRef.current) return;
+        const data = (confirmResult as any)?.data?.data ?? (confirmResult as any)?.data;
+        const status = data?.status;
+        const backendSwapStatus = data?.swapStatus;
+        const returnedSwapTxId = data?.swapTransactionId;
+
+        // Check for timeout transitions (returned as not_found with timeout swapStatus)
+        if (
+          backendSwapStatus === 'OrderSubmitTimeout' ||
+          backendSwapStatus === 'CancelSubmitTimeout'
+        ) {
+          if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+          setSwapStatus('timeout');
+          setIsSwapping(false);
+          toast.error('Transaction timed out. You can acknowledge and check on-chain state.', {
+            theme: 'dark',
+          });
+          return;
+        }
+
+        if (status === 'confirmed') {
+          if (pollCancelledRef.current) return;
+
+          if (backendSwapStatus === 'OrderConfirmed') {
+            // Order is on-chain at script address, wallet is unlocked — can cancel
+            if (returnedSwapTxId) setSwapTransactionId(returnedSwapTxId);
+            setSwapStatus('orderConfirmed');
+            setIsSwapping(false);
+            toast.info('Swap order placed on-chain. Awaiting scooper execution.', {
+              theme: 'dark',
+            });
+            return;
+          }
+
+          if (backendSwapStatus === 'CancelConfirmed') {
+            await fetchBalance();
+            if (pollCancelledRef.current) return;
+            onSwapComplete?.();
+            setSwapStatus('cancelConfirmed');
+            toast.success('Swap order cancelled. Funds returned.', { theme: 'dark' });
+            setIsSwapping(false);
+            pollTimeoutRef.current = setTimeout(() => {
+              if (!pollCancelledRef.current) setSwapStatus('idle');
+            }, 3000);
+            return;
+          }
+
+          // Default: completed or legacy
+          await fetchBalance();
+          if (pollCancelledRef.current) return;
+          onSwapComplete?.();
+          setSwapStatus('confirmed');
+          toast.success('Swap confirmed on-chain.', { theme: 'dark' });
+          setIsSwapping(false);
+          pollTimeoutRef.current = setTimeout(() => {
+            if (!pollCancelledRef.current) setSwapStatus('idle');
+          }, 2000);
+          return;
+        }
+        pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+      } catch {
+        if (!pollCancelledRef.current) {
+          pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      }
+    };
+    pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+  };
+
+  const handleCancelSwap = async () => {
+    if (!swapTransactionId || !walletVkey || !txHash) return;
+    setError(null);
+    setSwapStatus('cancelling');
+    setIsSwapping(true);
+
+    await handleApiCall(
+      () =>
+        postSwapCancel({
+          client: apiClient,
+          body: { walletVkey, swapTransactionId },
+        }),
+      {
+        onSuccess: (response: any) => {
+          const data = response?.data?.data ?? response?.data;
+          const cancelTxHash = data?.cancelTxHash;
+          if (cancelTxHash) {
+            toast.info('Cancel submitted. Waiting for confirmation...', { theme: 'dark' });
+            startPolling(cancelTxHash);
+          } else {
+            toast.warning('Cancel submitted but no tx hash returned.', { theme: 'dark' });
+            setIsSwapping(false);
+            setSwapStatus('orderConfirmed');
+          }
+        },
+        onError: (err: any) => {
+          const msg = err?.message || 'Cancel failed — order may have been executed already.';
+          setError(msg);
+          setIsSwapping(false);
+          setSwapStatus('orderConfirmed');
+        },
+        errorMessage: 'Cancel failed',
+      },
+    );
+  };
+
+  const handleAcknowledgeTimeout = async () => {
+    if (!swapTransactionId || !walletVkey) return;
+    setError(null);
+    setIsSwapping(true);
+
+    await handleApiCall(
+      () =>
+        postSwapAcknowledgeTimeout({
+          client: apiClient,
+          body: { walletVkey, swapTransactionId },
+        }),
+      {
+        onSuccess: (response: any) => {
+          const data = response?.data?.data ?? response?.data;
+          const newStatus = data?.swapStatus;
+          const message = data?.message;
+
+          if (newStatus === 'OrderConfirmed') {
+            setSwapStatus('orderConfirmed');
+            toast.info(message || 'Order recovered — you can retry cancelling.', {
+              theme: 'dark',
+            });
+          } else if (newStatus === 'CancelConfirmed' || newStatus === 'Completed') {
+            onSwapComplete?.();
+            fetchBalance();
+            setSwapStatus('confirmed');
+            toast.success(message || 'Swap resolved.', { theme: 'dark' });
+            pollTimeoutRef.current = setTimeout(() => {
+              if (!pollCancelledRef.current) setSwapStatus('idle');
+            }, 3000);
+          } else {
+            toast.warning(message || 'Transaction was never confirmed.', { theme: 'dark' });
+            setSwapStatus('idle');
+          }
+          setIsSwapping(false);
+        },
+        onError: (err: any) => {
+          setError(err?.message || 'Failed to acknowledge timeout');
+          setIsSwapping(false);
+        },
+        errorMessage: 'Acknowledge timeout failed',
+      },
+    );
+  };
+
   const handleSwapClick = () => {
     setTxHash(null);
     setShowConfirmation(true);
@@ -470,58 +663,7 @@ export function SwapDialog({
             });
 
             if (transactionHash && walletVkey) {
-              const POLL_INTERVAL_MS = 4000;
-              const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
-              const startedAt = Date.now();
-              pollCancelledRef.current = false;
-              if (pollTimeoutRef.current) {
-                clearTimeout(pollTimeoutRef.current);
-                pollTimeoutRef.current = null;
-              }
-
-              const poll = async (): Promise<void> => {
-                if (pollCancelledRef.current) return;
-                if (Date.now() - startedAt > MAX_POLL_MS) {
-                  if (pollCancelledRef.current) return;
-                  toast.warning(
-                    'Confirmation is taking longer than expected. You can check the transaction in the explorer.',
-                    { theme: 'dark' },
-                  );
-                  setIsSwapping(false);
-                  pollTimeoutRef.current = setTimeout(() => {
-                    if (!pollCancelledRef.current) setSwapStatus('idle');
-                  }, 2000);
-                  return;
-                }
-                try {
-                  const confirmResult = await getSwapConfirm({
-                    client: apiClient,
-                    query: { txHash: transactionHash, walletVkey },
-                  });
-                  if (pollCancelledRef.current) return;
-                  const data = (confirmResult as any)?.data?.data ?? (confirmResult as any)?.data;
-                  const status = data?.status;
-                  if (status === 'confirmed') {
-                    if (pollCancelledRef.current) return;
-                    await fetchBalance();
-                    if (pollCancelledRef.current) return;
-                    onSwapComplete?.();
-                    setSwapStatus('confirmed');
-                    toast.success('Swap confirmed on-chain.', { theme: 'dark' });
-                    setIsSwapping(false);
-                    pollTimeoutRef.current = setTimeout(() => {
-                      if (!pollCancelledRef.current) setSwapStatus('idle');
-                    }, 2000);
-                    return;
-                  }
-                  pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-                } catch {
-                  if (!pollCancelledRef.current) {
-                    pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
-                  }
-                }
-              };
-              pollTimeoutRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+              startPolling(transactionHash);
             } else {
               toast.warning('Swap submitted but confirmation unavailable (missing tx hash).', {
                 theme: 'dark',
@@ -557,41 +699,49 @@ export function SwapDialog({
 
   const isOverMax = fromAmount > getMaxAmount(selectedFromToken.symbol);
 
-  const statusLabel =
-    swapStatus === 'processing'
-      ? 'Signing transaction...'
-      : swapStatus === 'submitted'
-        ? 'Waiting for confirmation...'
-        : swapStatus === 'confirmed'
-          ? 'Swap confirmed!'
-          : null;
+  const statusLabelMap: Record<string, string> = {
+    processing: 'Signing transaction...',
+    submitted: 'Waiting for order confirmation...',
+    orderConfirmed: 'Order placed — awaiting execution',
+    cancelling: 'Cancelling order...',
+    cancelConfirmed: 'Order cancelled',
+    confirmed: 'Swap confirmed!',
+    timeout: 'Transaction timed out',
+  };
+  const statusLabel = statusLabelMap[swapStatus] || null;
 
-  const statusColor =
-    swapStatus === 'processing'
-      ? 'text-orange-400'
-      : swapStatus === 'submitted'
-        ? 'text-blue-400'
-        : swapStatus === 'confirmed'
-          ? 'text-green-400'
-          : '';
+  const statusColorMap: Record<string, string> = {
+    processing: 'text-orange-400',
+    submitted: 'text-blue-400',
+    orderConfirmed: 'text-yellow-400',
+    cancelling: 'text-orange-400',
+    cancelConfirmed: 'text-green-400',
+    confirmed: 'text-green-400',
+    timeout: 'text-red-400',
+  };
+  const statusColor = statusColorMap[swapStatus] || '';
 
-  const progressWidth =
-    swapStatus === 'processing'
-      ? '20%'
-      : swapStatus === 'submitted'
-        ? '66%'
-        : swapStatus === 'confirmed'
-          ? '100%'
-          : '0%';
+  const progressWidthMap: Record<string, string> = {
+    processing: '20%',
+    submitted: '50%',
+    orderConfirmed: '66%',
+    cancelling: '80%',
+    cancelConfirmed: '100%',
+    confirmed: '100%',
+    timeout: '100%',
+  };
+  const progressWidth = progressWidthMap[swapStatus] || '0%';
 
-  const progressColor =
-    swapStatus === 'processing'
-      ? 'bg-orange-500'
-      : swapStatus === 'submitted'
-        ? 'bg-blue-500'
-        : swapStatus === 'confirmed'
-          ? 'bg-green-500'
-          : 'bg-transparent';
+  const progressColorMap: Record<string, string> = {
+    processing: 'bg-orange-500',
+    submitted: 'bg-blue-500',
+    orderConfirmed: 'bg-yellow-500',
+    cancelling: 'bg-orange-500',
+    cancelConfirmed: 'bg-green-500',
+    confirmed: 'bg-green-500',
+    timeout: 'bg-red-500',
+  };
+  const progressColor = progressColorMap[swapStatus] || 'bg-transparent';
 
   return (
     <>
@@ -746,6 +896,54 @@ export function SwapDialog({
                   'Swap'
                 )}
               </Button>
+
+              {/* Order confirmed — cancel button */}
+              {swapStatus === 'orderConfirmed' && !isSwapping && (
+                <div className="mt-3 space-y-2">
+                  <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-yellow-500 transition-all duration-1000 ease-out"
+                      style={{ width: '66%' }}
+                    />
+                  </div>
+                  <p className="text-xs text-center font-medium text-yellow-400">{statusLabel}</p>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-sm rounded-xl border-destructive/50 text-destructive hover:bg-destructive/10"
+                    onClick={handleCancelSwap}
+                    disabled={!swapTransactionId}
+                  >
+                    <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                    Cancel Order
+                  </Button>
+                </div>
+              )}
+
+              {/* Timeout — acknowledge button */}
+              {swapStatus === 'timeout' && !isSwapping && (
+                <div className="mt-3 space-y-2">
+                  <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-red-500 transition-all duration-1000 ease-out"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <p className="text-xs text-center font-medium text-red-400">{statusLabel}</p>
+                  <p className="text-xs text-center text-muted-foreground">
+                    The transaction was not confirmed in time. Acknowledge to check on-chain state
+                    and recover.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-sm rounded-xl border-red-500/50 text-red-400 hover:bg-red-500/10"
+                    onClick={handleAcknowledgeTimeout}
+                    disabled={!swapTransactionId}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    Acknowledge &amp; Recover
+                  </Button>
+                </div>
+              )}
 
               {/* Progress bar */}
               {isSwapping && (

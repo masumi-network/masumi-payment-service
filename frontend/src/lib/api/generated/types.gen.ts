@@ -2143,6 +2143,14 @@ export type GetSwapConfirmResponses = {
          */
         status: 'pending' | 'confirmed' | 'not_found';
         /**
+         * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
+         */
+        swapStatus?: string;
+        /**
+         * SwapTransaction ID, returned when lifecycle transition occurs
+         */
+        swapTransactionId?: string;
+        /**
          * Number of block confirmations. Present when status is confirmed.
          */
         confirmations?: number | null;
@@ -2208,6 +2216,10 @@ export type GetSwapTransactionsResponses = {
              */
             status: string;
             /**
+             * Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)
+             */
+            swapStatus: string;
+            /**
              * Number of block confirmations
              */
             confirmations?: number | null;
@@ -2239,6 +2251,14 @@ export type GetSwapTransactionsResponses = {
              * Slippage tolerance used
              */
             slippage?: number | null;
+            /**
+             * Transaction hash of cancel transaction
+             */
+            cancelTxHash?: string | null;
+            /**
+             * Output index of the order UTXO
+             */
+            orderOutputIndex?: number | null;
         }>;
     };
 };
@@ -2309,6 +2329,110 @@ export type GetSwapEstimateResponses = {
 };
 
 export type GetSwapEstimateResponse = GetSwapEstimateResponses[keyof GetSwapEstimateResponses];
+
+export type PostSwapCancelData = {
+    /**
+     * Cancel swap request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) of the wallet that placed the order
+         */
+        walletVkey: string;
+        /**
+         * ID of the SwapTransaction to cancel
+         */
+        swapTransactionId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/cancel/';
+};
+
+export type PostSwapCancelErrors = {
+    /**
+     * Bad Request (swap not in cancellable state)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Swap transaction or wallet not found
+     */
+    404: unknown;
+    /**
+     * Wallet is currently locked
+     */
+    409: unknown;
+};
+
+export type PostSwapCancelResponses = {
+    /**
+     * Cancel transaction submitted
+     */
+    200: {
+        /**
+         * Transaction hash of the cancel transaction
+         */
+        cancelTxHash: string;
+    };
+};
+
+export type PostSwapCancelResponse = PostSwapCancelResponses[keyof PostSwapCancelResponses];
+
+export type PostSwapAcknowledgeTimeoutData = {
+    /**
+     * Acknowledge timeout request parameters
+     */
+    body?: {
+        /**
+         * Wallet verification key (vKey) of the wallet
+         */
+        walletVkey: string;
+        /**
+         * ID of the timed-out SwapTransaction
+         */
+        swapTransactionId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/swap/acknowledge-timeout/';
+};
+
+export type PostSwapAcknowledgeTimeoutErrors = {
+    /**
+     * Bad Request (swap not in timeout state)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Swap transaction or wallet not found
+     */
+    404: unknown;
+};
+
+export type PostSwapAcknowledgeTimeoutResponses = {
+    /**
+     * Timeout acknowledged, state recovered
+     */
+    200: {
+        /**
+         * New swap status after acknowledgement
+         */
+        swapStatus: string;
+        /**
+         * Human-readable explanation of what happened
+         */
+        message: string;
+    };
+};
+
+export type PostSwapAcknowledgeTimeoutResponse = PostSwapAcknowledgeTimeoutResponses[keyof PostSwapAcknowledgeTimeoutResponses];
 
 export type GetPaymentData = {
     body?: never;

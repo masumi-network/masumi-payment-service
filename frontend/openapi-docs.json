@@ -4091,6 +4091,14 @@
                                             ],
                                             "description": "On-chain status: pending (not yet in a block), confirmed (in a block), not_found (tx unknown)"
                                         },
+                                        "swapStatus": {
+                                            "type": "string",
+                                            "description": "Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)"
+                                        },
+                                        "swapTransactionId": {
+                                            "type": "string",
+                                            "description": "SwapTransaction ID, returned when lifecycle transition occurs"
+                                        },
                                         "confirmations": {
                                             "type": "integer",
                                             "nullable": true,
@@ -4103,6 +4111,7 @@
                                     ],
                                     "example": {
                                         "status": "confirmed",
+                                        "swapStatus": "OrderConfirmed",
                                         "confirmations": 15
                                     }
                                 }
@@ -4199,6 +4208,10 @@
                                                         "type": "string",
                                                         "description": "Transaction status"
                                                     },
+                                                    "swapStatus": {
+                                                        "type": "string",
+                                                        "description": "Swap lifecycle status (OrderPending, OrderConfirmed, CancelPending, CancelConfirmed, Completed)"
+                                                    },
                                                     "confirmations": {
                                                         "type": "number",
                                                         "nullable": true,
@@ -4232,6 +4245,16 @@
                                                         "type": "number",
                                                         "nullable": true,
                                                         "description": "Slippage tolerance used"
+                                                    },
+                                                    "cancelTxHash": {
+                                                        "type": "string",
+                                                        "nullable": true,
+                                                        "description": "Transaction hash of cancel transaction"
+                                                    },
+                                                    "orderOutputIndex": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Output index of the order UTXO"
                                                     }
                                                 },
                                                 "required": [
@@ -4239,6 +4262,7 @@
                                                     "createdAt",
                                                     "txHash",
                                                     "status",
+                                                    "swapStatus",
                                                     "fromPolicyId",
                                                     "fromAssetName",
                                                     "fromAmount",
@@ -4260,6 +4284,7 @@
                                                 "createdAt": "2026-03-06T12:00:00.000Z",
                                                 "txHash": "abc123def456...",
                                                 "status": "Confirmed",
+                                                "swapStatus": "Completed",
                                                 "confirmations": 15,
                                                 "fromPolicyId": "",
                                                 "fromAssetName": "",
@@ -4267,7 +4292,9 @@
                                                 "toPolicyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
                                                 "toAssetName": "0014df105553444d",
                                                 "poolId": "pool_id_here",
-                                                "slippage": 0.03
+                                                "slippage": 0.03,
+                                                "cancelTxHash": null,
+                                                "orderOutputIndex": null
                                             }
                                         ]
                                     }
@@ -4395,6 +4422,169 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/swap/cancel/": {
+            "post": {
+                "description": "Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.",
+                "summary": "Cancel a pending swap order. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Cancel swap request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) of the wallet that placed the order"
+                                    },
+                                    "swapTransactionId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the SwapTransaction to cancel"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "swapTransactionId"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "swapTransactionId": "clx1abc..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Cancel transaction submitted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "cancelTxHash": {
+                                            "type": "string",
+                                            "description": "Transaction hash of the cancel transaction"
+                                        }
+                                    },
+                                    "required": [
+                                        "cancelTxHash"
+                                    ],
+                                    "example": {
+                                        "cancelTxHash": "abc123def456..."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (swap not in cancellable state)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Swap transaction or wallet not found"
+                    },
+                    "409": {
+                        "description": "Wallet is currently locked"
+                    }
+                }
+            }
+        },
+        "/swap/acknowledge-timeout/": {
+            "post": {
+                "description": "Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.",
+                "summary": "Acknowledge a swap timeout and recover state. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Acknowledge timeout request parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet verification key (vKey) of the wallet"
+                                    },
+                                    "swapTransactionId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the timed-out SwapTransaction"
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "swapTransactionId"
+                                ],
+                                "example": {
+                                    "walletVkey": "wallet_verification_key_here",
+                                    "swapTransactionId": "clx1abc..."
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Timeout acknowledged, state recovered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "swapStatus": {
+                                            "type": "string",
+                                            "description": "New swap status after acknowledgement"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "Human-readable explanation of what happened"
+                                        }
+                                    },
+                                    "required": [
+                                        "swapStatus",
+                                        "message"
+                                    ],
+                                    "example": {
+                                        "swapStatus": "OrderConfirmed",
+                                        "message": "Cancel tx failed but order UTXO still exists. You can retry cancelling."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request (swap not in timeout state)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Swap transaction or wallet not found"
                     }
                 }
             }

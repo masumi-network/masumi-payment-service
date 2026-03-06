@@ -81,6 +81,7 @@ export function WalletDetailsDialog({
     createdAt: string;
     txHash: string | null;
     status: string;
+    swapStatus?: string;
     confirmations?: number | null;
     fromPolicyId: string;
     fromAssetName: string;
@@ -89,6 +90,8 @@ export function WalletDetailsDialog({
     toAssetName: string;
     poolId: string;
     slippage?: number | null;
+    cancelTxHash?: string | null;
+    orderOutputIndex?: number | null;
   }
   const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
   const [swapTxLoading, setSwapTxLoading] = useState(false);
@@ -538,12 +541,29 @@ export function WalletDetailsDialog({
                   {swapTransactions.map((tx) => {
                     const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';
                     const toLabel = tx.toPolicyId ? shortenAddress(tx.toPolicyId) : 'ADA';
-                    const statusColor =
-                      tx.status === 'Confirmed'
-                        ? 'text-green-500'
-                        : tx.status === 'Pending'
-                          ? 'text-yellow-500'
-                          : 'text-red-500';
+                    const displayStatus = tx.swapStatus || tx.status;
+                    const statusColorMap: Record<string, string> = {
+                      OrderPending: 'text-yellow-500',
+                      OrderConfirmed: 'text-blue-500',
+                      CancelPending: 'text-orange-500',
+                      CancelConfirmed: 'text-purple-500',
+                      Completed: 'text-green-500',
+                      Confirmed: 'text-green-500',
+                      Pending: 'text-yellow-500',
+                      OrderSubmitTimeout: 'text-red-500',
+                      CancelSubmitTimeout: 'text-red-500',
+                    };
+                    const statusColor = statusColorMap[displayStatus] || 'text-red-500';
+                    const statusLabelMap: Record<string, string> = {
+                      OrderPending: 'Order Pending',
+                      OrderConfirmed: 'Awaiting Execution',
+                      CancelPending: 'Cancel Pending',
+                      CancelConfirmed: 'Cancelled',
+                      Completed: 'Completed',
+                      OrderSubmitTimeout: 'Order Timeout',
+                      CancelSubmitTimeout: 'Cancel Timeout',
+                    };
+                    const statusLabel = statusLabelMap[displayStatus] || displayStatus;
                     return (
                       <div
                         key={tx.id}
@@ -553,20 +573,35 @@ export function WalletDetailsDialog({
                           <span className="text-sm font-medium">
                             {tx.fromAmount} {fromLabel} → {toLabel}
                           </span>
-                          <span className={`text-xs font-medium ${statusColor}`}>{tx.status}</span>
+                          <span className={`text-xs font-medium ${statusColor}`}>
+                            {statusLabel}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between text-xs text-muted-foreground">
                           <span>{new Date(tx.createdAt).toLocaleString()}</span>
-                          {tx.txHash && (
-                            <a
-                              href={getExplorerUrl(tx.txHash, network, 'transaction')}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline text-primary"
-                            >
-                              {shortenAddress(tx.txHash, 6)}
-                            </a>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {tx.cancelTxHash && (
+                              <a
+                                href={getExplorerUrl(tx.cancelTxHash, network, 'transaction')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline text-orange-500"
+                                title="Cancel tx"
+                              >
+                                cancel: {shortenAddress(tx.cancelTxHash, 4)}
+                              </a>
+                            )}
+                            {tx.txHash && (
+                              <a
+                                href={getExplorerUrl(tx.txHash, network, 'transaction')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:underline text-primary"
+                              >
+                                {shortenAddress(tx.txHash, 6)}
+                              </a>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );

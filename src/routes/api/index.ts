@@ -56,6 +56,8 @@ import {
 	getSwapConfirmEndpointGet,
 	getSwapTransactionsEndpointGet,
 	getSwapEstimateEndpointGet,
+	cancelSwapEndpointPost,
+	acknowledgeSwapTimeoutEndpointPost,
 } from './swap';
 
 export const apiRouter: Routing = {
@@ -175,6 +177,12 @@ export const apiRouter: Routing = {
 		swap: {
 			post: swapTokensEndpointPost,
 			confirm: getSwapConfirmEndpointGet,
+			cancel: {
+				post: cancelSwapEndpointPost,
+			},
+			'acknowledge-timeout': {
+				post: acknowledgeSwapTimeoutEndpointPost,
+			},
 			transactions: {
 				get: getSwapTransactionsEndpointGet,
 			},

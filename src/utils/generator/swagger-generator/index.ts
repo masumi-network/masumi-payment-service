@@ -338,6 +338,10 @@ import {
 	getSwapTransactionsSchemaOutput,
 	getSwapEstimateSchemaInput,
 	getSwapEstimateSchemaOutput,
+	cancelSwapSchemaInput,
+	cancelSwapSchemaOutput,
+	acknowledgeSwapTimeoutSchemaInput,
+	acknowledgeSwapTimeoutSchemaOutput,
 } from '@/routes/api/swap/schemas';
 import {
 	paymentErrorStateRecoverySchemaInput,
@@ -716,6 +720,7 @@ export function generateOpenAPI() {
 						schema: getSwapConfirmSchemaOutput.openapi({
 							example: {
 								status: 'confirmed',
+								swapStatus: 'OrderConfirmed',
 								confirmations: 15,
 							},
 						}),
@@ -762,6 +767,7 @@ export function generateOpenAPI() {
 										createdAt: '2026-03-06T12:00:00.000Z',
 										txHash: 'abc123def456...',
 										status: 'Confirmed',
+										swapStatus: 'Completed',
 										confirmations: 15,
 										fromPolicyId: '',
 										fromAssetName: '',
@@ -770,6 +776,8 @@ export function generateOpenAPI() {
 										toAssetName: '0014df105553444d',
 										poolId: 'pool_id_here',
 										slippage: 0.03,
+										cancelTxHash: null,
+										orderOutputIndex: null,
 									},
 								],
 							},
@@ -826,6 +834,106 @@ export function generateOpenAPI() {
 			},
 			401: {
 				description: 'Unauthorized',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/cancel/',
+		description:
+			'Cancel a pending SundaeSwap order that is sitting at the script address. Only orders in OrderConfirmed state can be cancelled.',
+		summary: 'Cancel a pending swap order. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Cancel swap request parameters',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Cancel transaction submitted',
+				content: {
+					'application/json': {
+						schema: cancelSwapSchemaOutput.openapi({
+							example: {
+								cancelTxHash: 'abc123def456...',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in cancellable state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
+			},
+			409: {
+				description: 'Wallet is currently locked',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/swap/acknowledge-timeout/',
+		description:
+			'Acknowledge a timed-out swap transaction. Checks on-chain state and recovers to the correct status: OrderConfirmed if the order UTXO still exists (allowing retry), Completed if the DEX executed the swap, or keeps the timeout state if the order tx never confirmed.',
+		summary: 'Acknowledge a swap timeout and recover state. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'Acknowledge timeout request parameters',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaInput.openapi({
+							example: {
+								walletVkey: 'wallet_verification_key_here',
+								swapTransactionId: 'clx1abc...',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: {
+				description: 'Timeout acknowledged, state recovered',
+				content: {
+					'application/json': {
+						schema: acknowledgeSwapTimeoutSchemaOutput.openapi({
+							example: {
+								swapStatus: 'OrderConfirmed',
+								message: 'Cancel tx failed but order UTXO still exists. You can retry cancelling.',
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad Request (swap not in timeout state)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Swap transaction or wallet not found',
 			},
 		},
 	});
