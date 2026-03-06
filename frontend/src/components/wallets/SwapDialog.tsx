@@ -156,8 +156,7 @@ export function SwapDialog({
     queryFn: async () => {
       if (selectedFromToken.symbol === selectedToToken.symbol) return 0;
 
-      const nonAdaToken =
-        selectedFromToken.symbol !== 'ADA' ? selectedFromToken : selectedToToken;
+      const nonAdaToken = selectedFromToken.symbol !== 'ADA' ? selectedFromToken : selectedToToken;
       const poolId = (nonAdaToken as { poolId?: string }).poolId;
       if (!poolId) return 0;
 
