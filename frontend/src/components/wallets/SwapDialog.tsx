@@ -257,11 +257,14 @@ export function SwapDialog({
               }, 0)
             );
           }, 0) ?? 0;
-        others[token.symbol] = sum / 1_000_000;
+        const decimals = (token as { decimals?: number }).decimals ?? 6;
+        others[token.symbol] = sum / Math.pow(10, decimals);
       }
 
-      setAdaBalance(lovelace / 1000000);
-      setUsdmBalance(usdm / 1000000);
+      const adaDecimals = swappableTokens.find((t) => t.symbol === 'ADA')?.decimals ?? 6;
+      const usdmDecimals = swappableTokens.find((t) => t.symbol === 'USDM')?.decimals ?? 6;
+      setAdaBalance(lovelace / Math.pow(10, adaDecimals));
+      setUsdmBalance(usdm / Math.pow(10, usdmDecimals));
       setOtherTokenBalances(others);
       setBalanceError(null);
     } catch (error) {
@@ -363,7 +366,7 @@ export function SwapDialog({
   const formattedFromBalance = formatBalance(
     getBalanceForToken(selectedFromToken.symbol).toFixed(6),
   );
-  const formattedFromMax = formatBalance(getMaxAmount(selectedFromToken.symbol).toFixed(2));
+
   const formattedToBalance = formatBalance(getBalanceForToken(selectedToToken.symbol).toFixed(6));
 
   const handleSwapClick = () => {
