@@ -244,6 +244,9 @@ model PaymentRequest {
   invoiceBase                                   InvoiceBase?        @relation(fields: [invoiceBaseId], references: [id])
   invoiceBaseId                                 String?
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -253,6 +256,7 @@ model PaymentRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([layer])
 }
 
 model PaymentActionData {
@@ -309,6 +313,9 @@ model PurchaseRequest {
   PaidFunds                                     UnitValue[]
   WithdrawnForSeller                            UnitValue[]          @relation("SellerWithdrawnPurchaseRequest")
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -318,6 +325,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
+  @@index([layer])
 }
 
 model PurchaseActionData {
