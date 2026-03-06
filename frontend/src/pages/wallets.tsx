@@ -3,7 +3,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus } from 'lucide-react';
 import { FaExchangeAlt } from 'react-icons/fa';
 import { RefreshButton } from '@/components/RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
@@ -59,7 +59,6 @@ export default function WalletsPage() {
   } = useWallets();
 
   const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
-  const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>([]);
 
   const isLoading = isLoadingWallets && allWallets.length === 0;
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
@@ -82,56 +81,53 @@ export default function WalletsPage() {
 
   // Initialize wallets from cached data and fetch collection balances
   useEffect(() => {
-    if (walletsList && walletsList.length > 0) {
-      const walletsWithCollections: WalletWithBalance[] = walletsList.map(
-        (wallet) =>
-          ({
-            ...wallet,
-            collectionBalance: null,
-            isLoadingCollectionBalance: !!(wallet as any).collectionAddress,
-          }) as WalletWithBalance,
-      );
-      setAllWallets(walletsWithCollections);
+    if (!walletsList) return;
 
-      // Fetch collection balances for wallets that have collection addresses
-      walletsWithCollections.forEach(async (wallet) => {
-        const collectionAddress = (wallet as any).collectionAddress;
-        if (collectionAddress) {
-          try {
-            const collectionNetwork = wallet.network;
-            const collectionBalance = await fetchWalletBalance(
-              apiClient,
-              collectionNetwork,
-              collectionAddress,
-            );
-            setAllWallets((prev) =>
-              prev.map((w) =>
-                w.id === wallet.id
-                  ? {
-                      ...w,
-                      collectionBalance: {
-                        ada: collectionBalance.ada,
-                        usdm: collectionBalance.usdm,
-                      },
-                      isLoadingCollectionBalance: false,
-                    }
-                  : w,
-              ),
-            );
-          } catch (error) {
-            console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
-            setAllWallets((prev) =>
-              prev.map((w) =>
-                w.id === wallet.id ? { ...w, isLoadingCollectionBalance: false } : w,
-              ),
-            );
-          }
+    const walletsWithCollections: WalletWithBalance[] = walletsList.map(
+      (wallet) =>
+        ({
+          ...wallet,
+          collectionBalance: null,
+          isLoadingCollectionBalance: !!(wallet as any).collectionAddress,
+        }) as WalletWithBalance,
+    );
+    setAllWallets(walletsWithCollections);
+
+    // Fetch collection balances for wallets that have collection addresses
+    walletsWithCollections.forEach(async (wallet) => {
+      const collectionAddress = (wallet as any).collectionAddress;
+      if (collectionAddress) {
+        try {
+          const collectionNetwork = wallet.network;
+          const collectionBalance = await fetchWalletBalance(
+            apiClient,
+            collectionNetwork,
+            collectionAddress,
+          );
+          setAllWallets((prev) =>
+            prev.map((w) =>
+              w.id === wallet.id
+                ? {
+                    ...w,
+                    collectionBalance: {
+                      ada: collectionBalance.ada,
+                      usdm: collectionBalance.usdm,
+                    },
+                    isLoadingCollectionBalance: false,
+                  }
+                : w,
+            ),
+          );
+        } catch (error) {
+          console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
+          setAllWallets((prev) =>
+            prev.map((w) =>
+              w.id === wallet.id ? { ...w, isLoadingCollectionBalance: false } : w,
+            ),
+          );
         }
-      });
-    } else if (walletsList && walletsList.length === 0) {
-      // Handle empty wallets array
-      setAllWallets([]);
-    }
+      }
+    });
   }, [apiClient, network, walletsList]);
   // Helper to refetch wallets (uses React Query refetch)
   const refetchWallets = useCallback(async () => {
@@ -140,21 +136,25 @@ export default function WalletsPage() {
 
   // Initial load is handled by useWallets hook - no useEffect needed
 
-  // Initialize searchQuery from router query parameter
+  // Initialize searchQuery from router query parameter (only on first load)
   useEffect(() => {
+    if (!router.isReady) return;
+
     if (router.query.searched && typeof router.query.searched === 'string') {
       setSearchQuery(router.query.searched);
     }
-  }, [router.query.searched]);
+  }, [router.isReady]);
 
   // Handle action query parameter from search
   useEffect(() => {
+    if (!router.isReady) return;
+
     if (router.query.action === 'add_wallet') {
       setIsAddDialogOpen(true);
       // Clean up the query parameter
       router.replace('/wallets', undefined, { shallow: true });
     }
-  }, [router.query.action, router]);
+  }, [router.isReady, router]);
 
   const filterWallets = useCallback(() => {
     let filtered = [...allWallets];
@@ -188,7 +188,7 @@ export default function WalletsPage() {
 
   useEffect(() => {
     filterWallets();
-  }, [allWallets, searchQuery, activeTab, filterWallets]);
+  }, [allWallets, searchQuery, activeTab]);
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
