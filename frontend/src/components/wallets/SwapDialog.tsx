@@ -585,7 +585,7 @@ export function SwapDialog({
       >
         <DialogContent className="sm:max-w-[440px] overflow-y-hidden p-0 gap-0 border-border/50">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+          <div className="flex items-center justify-between px-5 pt-10 pb-3">
             <div>
               <DialogHeader className="space-y-0.5">
                 <DialogTitle className="text-base">Swap</DialogTitle>
@@ -782,7 +782,7 @@ export function SwapDialog({
       {showConfirmation && (
         <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
           <DialogContent className="sm:max-w-[380px] p-0 gap-0 border-border/50">
-            <div className="p-5 space-y-4">
+            <div className="px-5 pb-5 pt-10 space-y-4">
               <DialogHeader className="space-y-1">
                 <DialogTitle className="text-base">Confirm Swap</DialogTitle>
                 <DialogDescription className="text-xs">

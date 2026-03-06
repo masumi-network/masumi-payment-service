@@ -63,7 +63,7 @@ const DialogContent = React.forwardRef<
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'fixed left-[50%] top-[50%] z-1000 grid w-full max-w-lg max-h-[80vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg',
+            'fixed left-[50%] top-[50%] z-1000 grid w-full max-w-lg max-h-[80vh] overflow-y-auto translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background px-6 pb-6 pt-10 shadow-lg sm:rounded-lg',
             defaultAnimationClasses,
             variantClass,
             isPushedBack !== undefined && 'dialog-content-stackable',
