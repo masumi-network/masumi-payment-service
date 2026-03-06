@@ -176,6 +176,7 @@ export function WalletDetailsDialog({
           if (newStatus) {
             updateSwapTxStatus(tx.id, { swapStatus: newStatus });
           }
+          fetchTokenBalances();
           toast.info(message || 'Timeout acknowledged.', { theme: 'dark' });
         },
         onError: () => {
@@ -212,9 +213,7 @@ export function WalletDetailsDialog({
               ) {
                 updateSwapTxStatus(txId, { swapStatus });
                 setPollingTxId(null);
-                if (swapStatus === 'CancelConfirmed' || swapStatus === 'Completed') {
-                  fetchTokenBalances();
-                }
+                fetchTokenBalances();
                 toast.success(
                   swapStatus === 'CancelConfirmed'
                     ? 'Cancel confirmed!'
@@ -575,8 +574,27 @@ export function WalletDetailsDialog({
           onBack={isChild ? onClose : undefined}
         >
           <DialogHeader>
-            <DialogTitle>Wallet Details</DialogTitle>
-            <DialogDescription>{wallet.type} Wallet</DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>Wallet Details</DialogTitle>
+                <DialogDescription>{wallet.type} Wallet</DialogDescription>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  fetchTokenBalances();
+                  if (network === 'Mainnet') {
+                    setSwapTxCursor(undefined);
+                    fetchSwapTransactions();
+                  }
+                }}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 mt-4">
@@ -606,18 +624,7 @@ export function WalletDetailsDialog({
             </div>
 
             <div className="bg-muted rounded-lg p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">Token Balances</div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={fetchTokenBalances}
-                  disabled={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
+              <div className="text-sm font-medium">Token Balances</div>
               {isLoading ? (
                 <div className="flex justify-center py-4">
                   <Spinner size={20} />
@@ -715,21 +722,7 @@ export function WalletDetailsDialog({
 
             {network === 'Mainnet' && swapTransactions.length > 0 && (
               <div className="bg-muted rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">Swap Transactions</div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => {
-                      setSwapTxCursor(undefined);
-                      fetchSwapTransactions();
-                    }}
-                    disabled={swapTxLoading}
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
+                <div className="text-sm font-medium">Swap Transactions</div>
                 <div className="space-y-2">
                   {swapTransactions.map((tx) => {
                     const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';

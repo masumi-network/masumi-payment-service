@@ -27,12 +27,6 @@ export const swapTokensSchemaInput = z.object({
 		.describe('Destination token information'),
 	poolId: z.string().describe('SundaeSwap pool identifier'),
 	slippage: z.number().min(0).max(1).optional().describe('Slippage tolerance (0-1, default: 0.03 for 3%)'),
-	outputMultiplier: z
-		.number()
-		.min(1)
-		.max(100)
-		.optional()
-		.describe('Test-only: multiply the expected output by this factor to create an unfillable order'),
 });
 
 export const swapTokensSchemaOutput = z.object({

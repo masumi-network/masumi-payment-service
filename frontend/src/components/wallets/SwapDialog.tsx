@@ -158,8 +158,6 @@ export function SwapDialog({
   >('idle');
 
   const [swapTransactionId, setSwapTransactionId] = useState<string | null>(null);
-  const [testForceFail, setTestForceFail] = useState(false);
-
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
 
@@ -659,7 +657,6 @@ export function SwapDialog({
               toToken,
               poolId,
               slippage: 0.03,
-              ...(testForceFail ? { outputMultiplier: 10 } : {}),
             },
           }),
         {
@@ -887,7 +884,7 @@ export function SwapDialog({
                       {selectedToToken.symbol}
                     </span>
                     <span className="text-border">|</span>
-                    <span>{testForceFail ? '10x output ⚠️' : '3% slippage'}</span>
+                    <span>3% slippage</span>
                   </div>
                 )}
               </div>
@@ -910,20 +907,6 @@ export function SwapDialog({
                   'Swap'
                 )}
               </Button>
-
-              {/* TEST: Force-fail toggle (sends 1000x amount so tx build fails) */}
-              {!isSwapping && swapStatus === 'idle' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={`w-full mt-2 h-8 text-xs rounded-xl ${testForceFail ? 'border-red-500/60 text-red-400' : 'border-border/40 text-muted-foreground'}`}
-                  onClick={() => setTestForceFail((v) => !v)}
-                >
-                  {testForceFail
-                    ? '🧪 Force-fail ON (10x min output — unfillable)'
-                    : '🧪 Force-fail OFF (normal)'}
-                </Button>
-              )}
 
               {/* Order confirmed — awaiting execution */}
               {swapStatus === 'orderConfirmed' && !isSwapping && (
@@ -1099,12 +1082,6 @@ export function SwapDialog({
                   <span className="text-muted-foreground">Slippage</span>
                   <span>3%</span>
                 </div>
-                {testForceFail && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-red-400">Test override</span>
-                    <span className="text-red-400">10x min output ⚠️</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">DEX</span>
                   <span>SundaeSwap</span>

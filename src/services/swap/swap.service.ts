@@ -50,8 +50,6 @@ export interface SwapParams {
 	toToken: Token;
 	poolId: string;
 	slippage?: number;
-	/** Test-only: inflate minReceivable by this factor so the scooper never fills the order */
-	outputMultiplier?: number;
 }
 
 async function initializeLucid(blockfrostApiKey: string): Promise<Lucid> {
@@ -180,24 +178,10 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 
 		const slippage = params.slippage ?? 0.03;
 
-		// Calculate swap type: LIMIT with inflated minReceivable for test, or MARKET normally
-		const swapType = params.outputMultiplier
-			? (() => {
-					const multiplier = params.outputMultiplier ?? 1;
-					const aReserve = matchesAssetA ? poolData.liquidity.aReserve : poolData.liquidity.bReserve;
-					const bReserve = matchesAssetA ? poolData.liquidity.bReserve : poolData.liquidity.aReserve;
-					const inputRaw = BigInt(Math.round(params.fromAmount * scale));
-					const rawOutput = (bReserve * inputRaw) / (aReserve + inputRaw);
-					const inflatedOutput = rawOutput * BigInt(Math.round(multiplier));
-					return {
-						type: ESwapType.LIMIT as const,
-						minReceivable: new AssetAmount(inflatedOutput, expectedOutputAsset),
-					};
-				})()
-			: {
-					type: ESwapType.MARKET as const,
-					slippage,
-				};
+		const swapType = {
+			type: ESwapType.MARKET as const,
+			slippage,
+		};
 
 		const args = {
 			swapType,
@@ -216,7 +200,6 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 		logger.info('Building swap transaction', {
 			component: 'swap-service',
 			slippage,
-			outputMultiplier: params.outputMultiplier,
 		});
 
 		const { build } = await txBuilder.swap(args);

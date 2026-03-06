@@ -118,7 +118,6 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					toToken: input.toToken as Token,
 					poolId: input.poolId,
 					slippage: input.slippage,
-					outputMultiplier: input.outputMultiplier,
 				},
 				blockfrostApiKey,
 			);
