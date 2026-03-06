@@ -380,11 +380,8 @@ export function WalletDetailsDialog({
       });
       const txs = (result as any)?.data?.data?.swapTransactions ?? [];
       if (cursor) {
-        let merged: SwapTx[] = [];
-        setSwapTransactions((prev) => {
-          merged = [...prev, ...txs];
-          return merged;
-        });
+        const merged = [...swapTransactions, ...txs];
+        setSwapTransactions(merged);
         checkPendingSwapStatuses(merged);
       } else {
         setSwapTransactions(txs);

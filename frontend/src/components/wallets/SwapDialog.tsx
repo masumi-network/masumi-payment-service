@@ -130,7 +130,6 @@ export function SwapDialog({
   const [adaBalance, setAdaBalance] = useState<number>(0);
   const [usdmBalance, setUsdmBalance] = useState<number>(0);
   const [otherTokenBalances, setOtherTokenBalances] = useState<Record<string, number>>({});
-  const [balanceError, setBalanceError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [fromAmount, setFromAmount] = useState<number>(1);
@@ -290,10 +289,10 @@ export function SwapDialog({
       setAdaBalance(lovelace / Math.pow(10, adaDecimals));
       setUsdmBalance(usdm / Math.pow(10, usdmDecimals));
       setOtherTokenBalances(others);
-      setBalanceError(null);
+      setError(null);
     } catch (error) {
       console.error('Failed to fetch balance', error);
-      setBalanceError('Failed to fetch balance');
+      setError('Failed to fetch balance');
     } finally {
       setIsFetchingDetails(false);
     }
