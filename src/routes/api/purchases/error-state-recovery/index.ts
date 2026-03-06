@@ -8,6 +8,7 @@ import { logger } from '@/utils/logger';
 import { ez } from 'express-zod-api';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the purchase request'),
@@ -58,6 +59,7 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 				'Purchase request not found with the provided blockchain identifier or it was changed',
 			);
 		}
+		assertWalletInScope(ctx.walletScopeIds, purchaseRequest.smartContractWalletId);
 		if (!purchaseRequest.onChainState) {
 			throw createHttpError(
 				400,

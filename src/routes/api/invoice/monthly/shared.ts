@@ -1,6 +1,7 @@
 import { z } from '@/utils/zod-openapi';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { generateInvoicePDFBase64, generateCancellationInvoicePDFBase64 } from '@/utils/invoice/pdf-generator';
@@ -179,6 +180,7 @@ interface GenerateMonthlyInvoiceInput {
 interface GenerateMonthlyInvoiceOptions {
 	walletAddress?: string;
 	metricPath?: string;
+	walletScopeIds?: string[] | null;
 }
 
 export async function generateMonthlyInvoice(
@@ -224,12 +226,14 @@ export async function generateMonthlyInvoice(
 		TransactionHistory: { select: { txHash: true as const } },
 	};
 
+	const walletScopePaymentFilter = buildWalletScopeFilter(options?.walletScopeIds ?? null);
 	const preUninvoicedPayments = await prisma.paymentRequest.findMany({
 		where: {
 			BuyerWallet: { walletVkey: input.buyerWalletVkey },
 			...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
 			invoiceBaseId: null,
 			OR: billableStateFilter,
+			...walletScopePaymentFilter,
 		},
 		include: paymentIncludes,
 	});
@@ -585,6 +589,7 @@ export async function generateMonthlyInvoice(
 					...(input.sellerWalletVkey ? { SmartContractWallet: { walletVkey: input.sellerWalletVkey } } : {}),
 					invoiceBaseId: null,
 					OR: txBillableStateFilter,
+					...walletScopePaymentFilter,
 				},
 				include: paymentIncludes,
 			});

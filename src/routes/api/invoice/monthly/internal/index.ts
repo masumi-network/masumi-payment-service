@@ -1,27 +1,28 @@
-import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { z } from '@/utils/zod-openapi';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
 import { invoiceGenerationSchemaInput, invoiceGenerationSchemaOutput, generateMonthlyInvoice } from '../shared';
 
-export const postAdminGenerateMonthlyInvoiceSchemaInput = invoiceGenerationSchemaInput;
-export const postAdminGenerateMonthlyInvoiceSchemaOutput = invoiceGenerationSchemaOutput;
+export const postInternalGenerateMonthlyInvoiceSchemaInput = invoiceGenerationSchemaInput;
+export const postInternalGenerateMonthlyInvoiceSchemaOutput = invoiceGenerationSchemaOutput;
 
-export const postAdminGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpointFactory.build({
+export const postInternalGenerateMonthlyInvoiceEndpoint = payAuthenticatedEndpointFactory.build({
 	method: 'post',
-	input: postAdminGenerateMonthlyInvoiceSchemaInput,
-	output: postAdminGenerateMonthlyInvoiceSchemaOutput,
+	input: postInternalGenerateMonthlyInvoiceSchemaInput,
+	output: postInternalGenerateMonthlyInvoiceSchemaOutput,
 	handler: async ({
 		input,
 		ctx,
 	}: {
-		input: z.infer<typeof postAdminGenerateMonthlyInvoiceSchemaInput>;
+		input: z.infer<typeof postInternalGenerateMonthlyInvoiceSchemaInput>;
 		ctx: AuthContext;
 	}) => {
 		const startTime = Date.now();
 		try {
 			const result = await generateMonthlyInvoice(input, {
-				metricPath: '/api/v1/invoice/monthly/admin',
+				metricPath: '/api/v1/invoice/monthly/internal',
+				walletScopeIds: ctx.walletScopeIds,
 			});
 
 			return result;
@@ -31,9 +32,9 @@ export const postAdminGenerateMonthlyInvoiceEndpoint = adminAuthenticatedEndpoin
 				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
 				(errorInstance as { statusCode?: number; status?: number }).status ||
 				500;
-			recordBusinessEndpointError('/api/v1/invoice/monthly/admin', 'POST', statusCode, errorInstance, {
+			recordBusinessEndpointError('/api/v1/invoice/monthly/internal', 'POST', statusCode, errorInstance, {
 				user_id: ctx.id,
-				operation: 'admin_generate_invoice',
+				operation: 'internal_generate_invoice',
 				duration: Date.now() - startTime,
 			});
 			throw error;

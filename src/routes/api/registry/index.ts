@@ -16,6 +16,7 @@ import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-a
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { parseAmountSearchRange } from '@/utils/shared/queries';
+import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 
 enum FilterStatus {
 	Registered = 'Registered',
@@ -200,6 +201,7 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 				...(stateFilter ? { state: { in: stateFilter } } : {}),
 				...(searchLower
 					? {
@@ -336,6 +338,7 @@ export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 
@@ -456,6 +459,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				});
 				throw createHttpError(404, 'Network and Address combination not supported');
 			}
+			assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
 			if (sellingWallet == null) {

@@ -8,7 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
@@ -17,6 +17,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Badge } from '@/components/ui/badge';
+import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { shortenAddress } from '@/lib/utils';
 
 interface AddApiKeyDialogProps {
   open: boolean;
@@ -33,6 +36,8 @@ const apiKeySchema = z
       lovelace: z.string().optional(),
       usdm: z.string().optional(),
     }),
+    walletScopeEnabled: z.boolean(),
+    walletScopeIds: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
     if (
@@ -54,6 +59,38 @@ type ApiKeyFormValues = z.infer<typeof apiKeySchema>;
 export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogProps) {
   const [isLoading, setIsLoading] = useState(false);
   const { apiClient } = useAppContext();
+  const { paymentSources } = usePaymentSourceExtendedAll();
+
+  const allWallets = useMemo(() => {
+    const wallets: Array<{
+      id: string;
+      type: 'Purchasing' | 'Selling';
+      network: string;
+      walletAddress: string;
+      note: string | null;
+    }> = [];
+    for (const ps of paymentSources) {
+      for (const w of ps.PurchasingWallets ?? []) {
+        wallets.push({
+          id: w.id,
+          type: 'Purchasing',
+          network: ps.network,
+          walletAddress: w.walletAddress,
+          note: w.note,
+        });
+      }
+      for (const w of ps.SellingWallets ?? []) {
+        wallets.push({
+          id: w.id,
+          type: 'Selling',
+          network: ps.network,
+          walletAddress: w.walletAddress,
+          note: w.note,
+        });
+      }
+    }
+    return wallets;
+  }, [paymentSources]);
 
   const {
     register,
@@ -69,15 +106,22 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       usageLimited: true,
       networks: ['Preprod', 'Mainnet'],
       credits: { lovelace: '', usdm: '' },
+      walletScopeEnabled: false,
+      walletScopeIds: [],
     },
   });
 
   const permission = useWatch({ control, name: 'permission', defaultValue: 'Read' });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
+  const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
+  const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
 
   useEffect(() => {
     if (permission === 'Admin') {
       setValue('usageLimited', false);
+      setValue('networks', ['Preprod', 'Mainnet']);
+      setValue('walletScopeEnabled', false);
+      setValue('walletScopeIds', []);
     } else if (permission === 'Read') {
       setValue('usageLimited', true);
     }
@@ -121,6 +165,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                       : []),
                   ]
                 : [],
+            walletScopeEnabled: data.walletScopeEnabled.toString(),
+            WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
           },
         }),
       {
@@ -183,6 +229,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Preprod')}
+                      disabled={permission === 'Admin'}
                       onCheckedChange={() => {
                         if (field.value.includes('Preprod')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Preprod'));
@@ -202,6 +249,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   render={({ field }) => (
                     <Checkbox
                       checked={field.value.includes('Mainnet')}
+                      disabled={permission === 'Admin'}
                       onCheckedChange={() => {
                         if (field.value.includes('Mainnet')) {
                           field.onChange(field.value.filter((n: string) => n !== 'Mainnet'));
@@ -229,7 +277,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   <Checkbox
                     checked={field.value}
                     onCheckedChange={field.onChange}
-                    disabled={permission === 'Read'}
+                    disabled={permission === 'Read' || permission === 'Admin'}
                   />
                 )}
               />
@@ -237,7 +285,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             </div>
           </div>
 
-          {usageLimited && permission !== 'Read' && (
+          {usageLimited && permission !== 'Read' && permission !== 'Admin' && (
             <>
               <div className="space-y-2">
                 <label className="text-sm font-medium">ADA Limit</label>
@@ -261,6 +309,88 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   </p>
                 )}
               </div>
+            </>
+          )}
+
+          {permission !== 'Admin' && (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Controller
+                    control={control}
+                    name="walletScopeEnabled"
+                    render={({ field }) => (
+                      <Checkbox
+                        checked={field.value}
+                        onCheckedChange={(checked) => {
+                          field.onChange(checked);
+                          if (!checked) {
+                            setValue('walletScopeIds', []);
+                          }
+                        }}
+                      />
+                    )}
+                  />
+                  <label className="text-sm font-medium">Restrict to specific wallets</label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, this API key can only access data for the selected wallets.
+                </p>
+              </div>
+
+              {walletScopeEnabled && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Wallets in scope</label>
+                  <div className="border rounded-md max-h-48 overflow-y-auto">
+                    {allWallets.length === 0 ? (
+                      <p className="text-xs text-muted-foreground p-3">No wallets available</p>
+                    ) : (
+                      allWallets.map((wallet) => (
+                        <label
+                          key={wallet.id}
+                          className="flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer border-b last:border-b-0"
+                        >
+                          <Checkbox
+                            checked={walletScopeIds.includes(wallet.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setValue('walletScopeIds', [...walletScopeIds, wallet.id]);
+                              } else {
+                                setValue(
+                                  'walletScopeIds',
+                                  walletScopeIds.filter((id) => id !== wallet.id),
+                                );
+                              }
+                            }}
+                          />
+                          <span className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                              {wallet.type}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {wallet.network}
+                            </span>
+                            <span className="font-mono text-xs truncate">
+                              {shortenAddress(wallet.walletAddress)}
+                            </span>
+                            {wallet.note && (
+                              <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                                ({wallet.note})
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {walletScopeIds.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {walletScopeIds.length} wallet{walletScopeIds.length !== 1 ? 's' : ''}{' '}
+                      selected
+                    </p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

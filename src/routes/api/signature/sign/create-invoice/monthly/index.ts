@@ -5,6 +5,7 @@ import { HotWalletType } from '@prisma/client';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 import { AuthContext } from '@/utils/middleware/auth-middleware';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import stringify from 'canonical-json';
 import { generateHash } from '@/utils/crypto';
@@ -72,6 +73,7 @@ export const postMonthlySignatureEndpoint = payAuthenticatedEndpointFactory.buil
 			if (wallet == null) {
 				throw createHttpError(404, 'No wallet found');
 			}
+			assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 
 			const { wallet: meshWallet } = await generateWalletExtended(
 				wallet.PaymentSource.network,

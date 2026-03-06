@@ -31,6 +31,8 @@ describe('authMiddleware', () => {
 			token: 'valid',
 			usageLimited: true,
 			networkLimit: [],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		});
 		const { responseMock } = await testMiddleware({
 			middleware: authMiddleware(Permission.Admin),
@@ -119,6 +121,8 @@ describe('authMiddleware', () => {
 			tokenHash: generateSHA256Hash('valid'),
 			token: 'valid',
 			usageLimited: true,
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		});
 
 		const { responseMock } = await testMiddleware({
@@ -137,6 +141,8 @@ describe('authMiddleware', () => {
 			token: 'valid',
 			usageLimited: true,
 			networkLimit: [Network.Preprod],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		});
 
 		const { responseMock } = await testMiddleware({
@@ -155,6 +161,8 @@ describe('authMiddleware', () => {
 			token: 'valid',
 			usageLimited: true,
 			networkLimit: [Network.Preprod],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		});
 
 		const { responseMock } = await testMiddleware({
@@ -174,6 +182,8 @@ describe('authMiddleware', () => {
 			token: 'valid',
 			usageLimited: true,
 			networkLimit: [],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		};
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
@@ -187,6 +197,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			usageLimited: mockApiKey.usageLimited,
 			networkLimit: mockApiKey.networkLimit,
+			walletScopeIds: null,
 		});
 	});
 
@@ -197,6 +208,8 @@ describe('authMiddleware', () => {
 			status: ApiKeyStatus.Active,
 			usageLimited: true,
 			networkLimit: [],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		};
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
@@ -210,6 +223,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			usageLimited: mockApiKey.usageLimited,
 			networkLimit: [],
+			walletScopeIds: null,
 		});
 	});
 	it('should pass validation with valid admin token', async () => {
@@ -219,6 +233,8 @@ describe('authMiddleware', () => {
 			status: ApiKeyStatus.Active,
 			usageLimited: false,
 			networkLimit: [],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		};
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
@@ -232,6 +248,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			networkLimit: [Network.Mainnet, Network.Preprod],
 			usageLimited: false,
+			walletScopeIds: null,
 		});
 	});
 	it('should pass validation with valid network ', async () => {
@@ -241,6 +258,8 @@ describe('authMiddleware', () => {
 			status: ApiKeyStatus.Active,
 			usageLimited: false,
 			networkLimit: [Network.Preprod, Network.Mainnet],
+			walletScopeEnabled: false,
+			WalletScopes: [],
 		};
 		mockFindUnique.mockResolvedValue(mockApiKey);
 
@@ -255,6 +274,7 @@ describe('authMiddleware', () => {
 			permission: mockApiKey.permission,
 			networkLimit: mockApiKey.networkLimit,
 			usageLimited: mockApiKey.usageLimited,
+			walletScopeIds: null,
 		});
 	});
 });

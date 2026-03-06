@@ -7,6 +7,7 @@ import createHttpError from 'http-errors';
 import { queryPurchaseRequestSchemaOutput } from '@/routes/api/purchases';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
+import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -50,12 +51,14 @@ function buildPurchaseDiffWhere({
 	sinceId,
 	network,
 	filterSmartContractAddress,
+	walletScopeIds,
 }: {
 	mode: PurchaseDiffMode;
 	since: Date;
 	sinceId?: string;
 	network: Prisma.PaymentSourceWhereInput['network'];
 	filterSmartContractAddress?: string | null;
+	walletScopeIds: string[] | null;
 }): Prisma.PurchaseRequestWhereInput {
 	const base: Prisma.PurchaseRequestWhereInput = {
 		PaymentSource: {
@@ -63,6 +66,7 @@ function buildPurchaseDiffWhere({
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
 		},
+		...buildWalletScopeFilter(walletScopeIds),
 	};
 
 	switch (mode) {
@@ -145,6 +149,7 @@ async function queryPurchaseDiffByMode({
 			sinceId,
 			network: input.network,
 			filterSmartContractAddress: input.filterSmartContractAddress,
+			walletScopeIds: ctx.walletScopeIds,
 		}),
 		orderBy: buildPurchaseDiffOrderBy(mode),
 		take: input.limit,
