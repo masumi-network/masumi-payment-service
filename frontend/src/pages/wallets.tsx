@@ -58,10 +58,19 @@ export default function WalletsPage() {
     refetch: refetchWalletsQuery,
   } = useWallets();
 
-  const [allWallets, setAllWallets] = useState<WalletWithBalance[]>([]);
+  // Collection balance overrides fetched asynchronously
+  const [collectionBalanceMap, setCollectionBalanceMap] = useState<
+    Record<string, { ada: string; usdm: string }>
+  >({});
 
-  const isLoading = isLoadingWallets && allWallets.length === 0;
-  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  // State-based previous value tracking for router query initialization
+  // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
+  const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
+  const routerAddAction = router.isReady && router.query.action === 'add_wallet';
+  const [handledAddAction, setHandledAddAction] = useState(false);
+
+  const { apiClient, network } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -79,11 +88,10 @@ export default function WalletsPage() {
     { name: 'Selling', count: null },
   ];
 
-  // Initialize wallets from cached data and fetch collection balances
-  useEffect(() => {
-    if (!walletsList) return;
-
-    const walletsWithCollections: WalletWithBalance[] = walletsList.map(
+  // Derive base wallets from walletsList via useMemo (no effect needed)
+  const baseWallets = useMemo<WalletWithBalance[]>(() => {
+    if (!walletsList) return [];
+    return walletsList.map(
       (wallet) =>
         ({
           ...wallet,
@@ -91,72 +99,71 @@ export default function WalletsPage() {
           isLoadingCollectionBalance: !!(wallet as any).collectionAddress,
         }) as WalletWithBalance,
     );
-    setAllWallets(walletsWithCollections);
+  }, [walletsList]);
 
-    // Fetch collection balances for wallets that have collection addresses
-    walletsWithCollections.forEach(async (wallet) => {
+  // Merge base wallets with fetched collection balances
+  const allWallets = useMemo(() => {
+    return baseWallets.map((wallet) => {
+      const balance = collectionBalanceMap[wallet.id];
+      if (balance) {
+        return { ...wallet, collectionBalance: balance, isLoadingCollectionBalance: false };
+      }
+      return wallet;
+    });
+  }, [baseWallets, collectionBalanceMap]);
+
+  const isLoading = isLoadingWallets && allWallets.length === 0;
+
+  // Fetch collection balances (setState only in async callbacks after await)
+  useEffect(() => {
+    if (!walletsList) return;
+
+    walletsList.forEach(async (wallet) => {
       const collectionAddress = (wallet as any).collectionAddress;
-      if (collectionAddress) {
-        try {
-          const collectionNetwork = wallet.network;
-          const collectionBalance = await fetchWalletBalance(
-            apiClient,
-            collectionNetwork,
-            collectionAddress,
-          );
-          setAllWallets((prev) =>
-            prev.map((w) =>
-              w.id === wallet.id
-                ? {
-                    ...w,
-                    collectionBalance: {
-                      ada: collectionBalance.ada,
-                      usdm: collectionBalance.usdm,
-                    },
-                    isLoadingCollectionBalance: false,
-                  }
-                : w,
-            ),
-          );
-        } catch (error) {
-          console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
-          setAllWallets((prev) =>
-            prev.map((w) =>
-              w.id === wallet.id ? { ...w, isLoadingCollectionBalance: false } : w,
-            ),
-          );
-        }
+      if (!collectionAddress) return;
+
+      try {
+        const collectionBalance = await fetchWalletBalance(
+          apiClient,
+          wallet.network,
+          collectionAddress,
+        );
+        setCollectionBalanceMap((prev) => ({
+          ...prev,
+          [wallet.id]: { ada: collectionBalance.ada, usdm: collectionBalance.usdm },
+        }));
+      } catch (error) {
+        console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
       }
     });
   }, [apiClient, network, walletsList]);
+
   // Helper to refetch wallets (uses React Query refetch)
   const refetchWallets = useCallback(async () => {
     await refetchWalletsQuery();
   }, [refetchWalletsQuery]);
 
-  // Initial load is handled by useWallets hook - no useEffect needed
-
-  // Initialize searchQuery from router query parameter (only on first load)
-  useEffect(() => {
-    if (!router.isReady) return;
-
-    if (router.query.searched && typeof router.query.searched === 'string') {
-      setSearchQuery(router.query.searched);
+  // Adjust state during render when router query changes
+  if (routerSearched !== prevRouterSearched) {
+    setPrevRouterSearched(routerSearched);
+    if (routerSearched) {
+      setSearchQuery(routerSearched);
     }
-  }, [router.isReady]);
+  }
 
-  // Handle action query parameter from search
+  if (routerAddAction && !handledAddAction) {
+    setHandledAddAction(true);
+    setIsAddDialogOpen(true);
+  }
+
+  // Clean up the add_wallet query parameter (side effect only, no setState)
   useEffect(() => {
-    if (!router.isReady) return;
-
-    if (router.query.action === 'add_wallet') {
-      setIsAddDialogOpen(true);
-      // Clean up the query parameter
+    if (router.isReady && router.query.action === 'add_wallet') {
       router.replace('/wallets', undefined, { shallow: true });
     }
   }, [router.isReady, router]);
 
-  const filterWallets = useCallback(() => {
+  const filteredWallets = useMemo(() => {
     let filtered = [...allWallets];
 
     if (activeTab === 'Purchasing') {
@@ -183,11 +190,7 @@ export default function WalletsPage() {
       });
     }
 
-    setFilteredWallets(filtered);
-  }, [allWallets, searchQuery, activeTab]);
-
-  useEffect(() => {
-    filterWallets();
+    return filtered;
   }, [allWallets, searchQuery, activeTab]);
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
