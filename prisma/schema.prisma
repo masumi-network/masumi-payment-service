@@ -809,7 +809,7 @@ model HydraHead {
 }
 
 /// A participant in a Hydra head.
-/// Each head has exactly 2 participants (matching the relation).
+/// Each head has exactly 2 participants (matching the relation - seller and buyer).
 /// Node URLs and keys can differ per head, so they live here, not on the relation.
 model HydraParticipant {
   id        String   @id @default(cuid())
