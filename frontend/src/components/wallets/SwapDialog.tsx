@@ -207,6 +207,9 @@ export function SwapDialog({
       setSwapTransactionId(null);
       setIsSwapping(false);
       setShowConfirmation(false);
+      setSelectedFromToken(swappableTokens[adaIndex]);
+      setSelectedToToken(swappableTokens[usdmIndex]);
+      setFromAmount(1);
       fetchBalance();
 
       const balanceInterval = setInterval(() => {
