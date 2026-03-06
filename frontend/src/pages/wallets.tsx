@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { FaExchangeAlt } from 'react-icons/fa';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
@@ -62,7 +62,6 @@ export default function WalletsPage() {
   const [filteredWallets, setFilteredWallets] = useState<WalletWithBalance[]>([]);
 
   const isLoading = isLoadingWallets && allWallets.length === 0;
-  const [refreshingBalances, setRefreshingBalances] = useState<Set<string>>(new Set());
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
@@ -190,50 +189,6 @@ export default function WalletsPage() {
   useEffect(() => {
     filterWallets();
   }, [allWallets, searchQuery, activeTab, filterWallets]);
-
-  const refreshWalletBalance = useCallback(
-    async (wallet: WalletWithBalance, isCollection: boolean = false) => {
-      try {
-        const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
-        setRefreshingBalances((prev) => new Set(prev).add(walletId));
-        const address = isCollection ? wallet.collectionAddress! : wallet.walletAddress;
-        const walletNetwork = wallet.network;
-        const balances = await fetchWalletBalance(apiClient, walletNetwork, address);
-
-        setFilteredWallets((prev) =>
-          prev.map((w) => {
-            if (w.id === wallet.id) {
-              if (isCollection) {
-                return {
-                  ...w,
-                  collectionBalance: {
-                    ada: balances.ada,
-                    usdm: balances.usdm,
-                  },
-                };
-              }
-              return {
-                ...w,
-                balance: balances.ada,
-                usdmBalance: balances.usdm,
-              };
-            }
-            return w;
-          }),
-        );
-      } catch (error) {
-        console.error('Error refreshing wallet balance:', error);
-      } finally {
-        const walletId = isCollection ? `collection-${wallet.id}` : wallet.id;
-        setRefreshingBalances((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(walletId);
-          return newSet;
-        });
-      }
-    },
-    [apiClient],
-  );
 
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
@@ -370,7 +325,7 @@ export default function WalletsPage() {
                         <td className="p-4">
                           <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-2">
-                              {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
+                              {wallet.isLoadingBalance ? (
                                 <Spinner size={16} />
                               ) : (
                                 <span>
@@ -380,22 +335,19 @@ export default function WalletsPage() {
                                 </span>
                               )}
                             </div>
-                            {!refreshingBalances.has(wallet.id) &&
-                              !wallet.isLoadingBalance &&
-                              wallet.balance &&
-                              rate && (
-                                <span className="text-xs text-muted-foreground">
-                                  $
-                                  {formatBalance(
-                                    ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
-                                  ) || ''}
-                                </span>
-                              )}
+                            {!wallet.isLoadingBalance && wallet.balance && rate && (
+                              <span className="text-xs text-muted-foreground">
+                                $
+                                {formatBalance(
+                                  ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
+                                ) || ''}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            {refreshingBalances.has(wallet.id) || wallet.isLoadingBalance ? (
+                            {wallet.isLoadingBalance ? (
                               <Spinner size={16} />
                             ) : (
                               <span>
@@ -408,17 +360,6 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4 pr-8">
                           <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                refreshWalletBalance(wallet);
-                              }}
-                            >
-                              <RefreshCw className="h-4 w-4" />
-                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"

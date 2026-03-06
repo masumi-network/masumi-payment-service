@@ -722,7 +722,21 @@ export function WalletDetailsDialog({
 
             {network === 'Mainnet' && swapTransactions.length > 0 && (
               <div className="bg-muted rounded-lg p-4 space-y-2">
-                <div className="text-sm font-medium">Swap Transactions</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Swap Transactions</div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setSwapTxCursor(undefined);
+                      fetchSwapTransactions();
+                    }}
+                    disabled={swapTxLoading}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${swapTxLoading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
                 <div className="space-y-2">
                   {swapTransactions.map((tx) => {
                     const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';
