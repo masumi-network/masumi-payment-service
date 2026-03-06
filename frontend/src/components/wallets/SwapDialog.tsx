@@ -940,8 +940,8 @@ export function SwapDialog({
                     </div>
                   </div>
                   <Button
-                    variant="outline"
-                    className="w-full h-9 text-sm rounded-xl border-destructive/40 text-destructive hover:bg-destructive/10"
+                    variant="destructive"
+                    className="w-full h-9 text-sm rounded-xl"
                     onClick={handleCancelSwap}
                     disabled={!swapTransactionId}
                   >

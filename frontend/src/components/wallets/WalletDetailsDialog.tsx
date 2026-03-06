@@ -845,9 +845,9 @@ export function WalletDetailsDialog({
                           <div className="pt-1">
                             {displayStatus === 'OrderConfirmed' && (
                               <Button
-                                variant="outline"
+                                variant="destructive"
                                 size="sm"
-                                className="w-full h-7 text-xs rounded-md border-destructive/40 text-destructive hover:bg-destructive/10"
+                                className="w-full h-7 text-xs rounded-md"
                                 onClick={() => handleCancelSwap(tx)}
                                 disabled={actionLoadingId === tx.id || pollingTxId === tx.id}
                               >
