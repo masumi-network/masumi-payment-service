@@ -4054,6 +4054,169 @@
                 }
             }
         },
+        "/swap/transactions/": {
+            "get": {
+                "description": "List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.",
+                "summary": "List swap transactions. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Wallet verification key (vKey) to filter swap transactions"
+                        },
+                        "required": true,
+                        "description": "Wallet verification key (vKey) to filter swap transactions",
+                        "name": "walletVkey",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "number",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 10,
+                            "description": "Number of swap transactions to return"
+                        },
+                        "required": false,
+                        "description": "Number of swap transactions to return",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor ID for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor ID for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of swap transactions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "swapTransactions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {
+                                                        "type": "string",
+                                                        "description": "Swap transaction ID"
+                                                    },
+                                                    "createdAt": {
+                                                        "type": "string",
+                                                        "description": "Creation timestamp"
+                                                    },
+                                                    "txHash": {
+                                                        "type": "string",
+                                                        "nullable": true,
+                                                        "description": "On-chain transaction hash"
+                                                    },
+                                                    "status": {
+                                                        "type": "string",
+                                                        "description": "Transaction status"
+                                                    },
+                                                    "confirmations": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Number of block confirmations"
+                                                    },
+                                                    "fromPolicyId": {
+                                                        "type": "string",
+                                                        "description": "Source token policy ID"
+                                                    },
+                                                    "fromAssetName": {
+                                                        "type": "string",
+                                                        "description": "Source token asset name"
+                                                    },
+                                                    "fromAmount": {
+                                                        "type": "string",
+                                                        "description": "Amount swapped"
+                                                    },
+                                                    "toPolicyId": {
+                                                        "type": "string",
+                                                        "description": "Destination token policy ID"
+                                                    },
+                                                    "toAssetName": {
+                                                        "type": "string",
+                                                        "description": "Destination token asset name"
+                                                    },
+                                                    "poolId": {
+                                                        "type": "string",
+                                                        "description": "SundaeSwap pool ID"
+                                                    },
+                                                    "slippage": {
+                                                        "type": "number",
+                                                        "nullable": true,
+                                                        "description": "Slippage tolerance used"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "id",
+                                                    "createdAt",
+                                                    "txHash",
+                                                    "status",
+                                                    "fromPolicyId",
+                                                    "fromAssetName",
+                                                    "fromAmount",
+                                                    "toPolicyId",
+                                                    "toAssetName",
+                                                    "poolId"
+                                                ]
+                                            },
+                                            "description": "List of swap transactions"
+                                        }
+                                    },
+                                    "required": [
+                                        "swapTransactions"
+                                    ],
+                                    "example": {
+                                        "swapTransactions": [
+                                            {
+                                                "id": "clx1abc...",
+                                                "createdAt": "2026-03-06T12:00:00.000Z",
+                                                "txHash": "abc123def456...",
+                                                "status": "Confirmed",
+                                                "confirmations": 15,
+                                                "fromPolicyId": "",
+                                                "fromAssetName": "",
+                                                "fromAmount": "10",
+                                                "toPolicyId": "c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad",
+                                                "toAssetName": "0014df105553444d",
+                                                "poolId": "pool_id_here",
+                                                "slippage": 0.03
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Wallet not found"
+                    }
+                }
+            }
+        },
         "/payment/": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",

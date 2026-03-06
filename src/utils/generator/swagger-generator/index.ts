@@ -332,6 +332,8 @@ import {
 	swapTokensSchemaOutput,
 	getSwapConfirmSchemaInput,
 	getSwapConfirmSchemaOutput,
+	getSwapTransactionsSchemaInput,
+	getSwapTransactionsSchemaOutput,
 } from '@/routes/api/swap/schemas';
 import {
 	paymentErrorStateRecoverySchemaInput,
@@ -718,6 +720,58 @@ export function generateOpenAPI() {
 			},
 			400: {
 				description: 'Bad Request (e.g. mainnet wallet required)',
+			},
+			401: {
+				description: 'Unauthorized',
+			},
+			404: {
+				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/transactions/',
+		description: 'List swap transactions for a wallet, ordered by most recent first. Supports cursor-based pagination.',
+		summary: 'List swap transactions. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapTransactionsSchemaInput.openapi({
+				example: {
+					walletVkey: 'wallet_verification_key_here',
+					limit: 10,
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'List of swap transactions',
+				content: {
+					'application/json': {
+						schema: getSwapTransactionsSchemaOutput.openapi({
+							example: {
+								swapTransactions: [
+									{
+										id: 'clx1abc...',
+										createdAt: '2026-03-06T12:00:00.000Z',
+										txHash: 'abc123def456...',
+										status: 'Confirmed',
+										confirmations: 15,
+										fromPolicyId: '',
+										fromAssetName: '',
+										fromAmount: '10',
+										toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+										toAssetName: '0014df105553444d',
+										poolId: 'pool_id_here',
+										slippage: 0.03,
+									},
+								],
+							},
+						}),
+					},
+				},
 			},
 			401: {
 				description: 'Unauthorized',

@@ -539,6 +539,88 @@ export async function updateWalletTransactionHash() {
 			}),
 		);
 
+		// Handle wallets with pending swap transactions
+		const swapLockedWallets = await prisma.hotWallet.findMany({
+			where: {
+				PendingSwapTransaction: {
+					OR: [{ lastCheckedAt: { lte: new Date(Date.now() - 1000 * 60 * 1) } }, { lastCheckedAt: null }],
+				},
+				deletedAt: null,
+			},
+			include: {
+				PendingSwapTransaction: true,
+				PaymentSource: {
+					include: { PaymentSourceConfig: true },
+				},
+			},
+		});
+
+		await Promise.allSettled(
+			swapLockedWallets.map(async (wallet) => {
+				try {
+					if (wallet.PendingSwapTransaction == null) {
+						logger.error(`Wallet ${wallet.id} has no pending swap transaction when expected. Skipping...`);
+						return;
+					}
+					const swapTxId = wallet.PendingSwapTransaction.id;
+					const txHash = wallet.PendingSwapTransaction.txHash;
+					const isTimedOut =
+						wallet.lockedAt && new Date(wallet.lockedAt) < new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
+
+					// Determine swap tx final status
+					let finalStatus: TransactionStatus | null = null;
+					let shouldUnlock = false;
+
+					if (txHash == null) {
+						finalStatus = TransactionStatus.FailedViaTimeout;
+						shouldUnlock = true;
+					} else {
+						const blockfrostKey = wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey;
+						const provider = new BlockfrostProvider(blockfrostKey);
+						try {
+							const txInfo = await provider.fetchTxInfo(txHash);
+							if (txInfo) {
+								finalStatus = TransactionStatus.Confirmed;
+								shouldUnlock = true;
+							} else if (isTimedOut) {
+								finalStatus = TransactionStatus.FailedViaTimeout;
+								shouldUnlock = true;
+							}
+						} catch {
+							// Blockfrost error (e.g. 404) — tx not found on-chain yet
+							if (isTimedOut) {
+								finalStatus = TransactionStatus.FailedViaTimeout;
+								shouldUnlock = true;
+							}
+						}
+					}
+
+					// Update swap transaction status (best effort)
+					try {
+						await prisma.swapTransaction.update({
+							where: { id: swapTxId },
+							data: {
+								...(finalStatus ? { status: finalStatus } : {}),
+								lastCheckedAt: new Date(),
+							},
+						});
+					} catch (swapTxError) {
+						logger.error(`Failed to update swap transaction ${swapTxId}: ${errorToString(swapTxError)}`);
+					}
+
+					// Always unlock the wallet if needed — even if swap tx update failed
+					if (shouldUnlock) {
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: { pendingSwapTransactionId: null, lockedAt: null },
+						});
+					}
+				} catch (error) {
+					logger.error(`Error updating swap wallet transaction hash: ${errorToString(error)}`);
+				}
+			}),
+		);
+
 		const timedOutLockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				lockedAt: {
@@ -546,6 +628,7 @@ export async function updateWalletTransactionHash() {
 				},
 				deletedAt: null,
 				PendingTransaction: null,
+				PendingSwapTransaction: null,
 			},
 			include: {
 				PaymentSource: { include: { PaymentSourceConfig: true } },
@@ -651,6 +734,39 @@ export async function updateWalletTransactionHash() {
 			}
 		} catch (error) {
 			logger.error(`Error updating wallet transaction hash`, { error: error });
+		}
+		try {
+			const errorSwapHotWallets = await prisma.hotWallet.findMany({
+				where: {
+					PendingSwapTransaction: { isNot: null },
+					lockedAt: null,
+					deletedAt: null,
+				},
+				include: { PendingSwapTransaction: true },
+			});
+			for (const hotWallet of errorSwapHotWallets) {
+				logger.error(
+					`Hot wallet ${hotWallet.id} was in an invalid locked state for swap: ${hotWallet.PendingSwapTransaction?.txHash}`,
+				);
+				if (hotWallet.pendingSwapTransactionId) {
+					try {
+						await prisma.swapTransaction.update({
+							where: { id: hotWallet.pendingSwapTransactionId },
+							data: { status: TransactionStatus.FailedViaTimeout, lastCheckedAt: new Date() },
+						});
+					} catch (swapTxError) {
+						logger.error(
+							`Failed to update swap transaction ${hotWallet.pendingSwapTransactionId}: ${errorToString(swapTxError)}`,
+						);
+					}
+				}
+				await prisma.hotWallet.update({
+					where: { id: hotWallet.id, deletedAt: null },
+					data: { lockedAt: null, pendingSwapTransactionId: null },
+				});
+			}
+		} catch (error) {
+			logger.error(`Error updating swap wallet transaction hash`, { error: error });
 		}
 	} catch (error) {
 		logger.error(`Error updating wallet transaction hash`, { error: error });

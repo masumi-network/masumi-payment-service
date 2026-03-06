@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { RefreshCw, Share, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getUtxos, getWallet, patchWallet } from '@/lib/api/generated';
+import { getUtxos, getWallet, patchWallet, getSwapTransactions } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import {
   handleApiCall,
@@ -75,6 +75,26 @@ export function WalletDetailsDialog({
   const [isExporting, setIsExporting] = useState(false);
   const [isEditingCollectionAddress, setIsEditingCollectionAddress] = useState(false);
   const [newCollectionAddress, setNewCollectionAddress] = useState('');
+
+  interface SwapTx {
+    id: string;
+    createdAt: string;
+    txHash: string | null;
+    status: string;
+    confirmations?: number | null;
+    fromPolicyId: string;
+    fromAssetName: string;
+    fromAmount: string;
+    toPolicyId: string;
+    toAssetName: string;
+    poolId: string;
+    slippage?: number | null;
+  }
+  const [swapTransactions, setSwapTransactions] = useState<SwapTx[]>([]);
+  const [swapTxLoading, setSwapTxLoading] = useState(false);
+  const [swapTxCursor, setSwapTxCursor] = useState<string | undefined>(undefined);
+  const [hasMoreSwapTx, setHasMoreSwapTx] = useState(true);
+  const SWAP_TX_LIMIT = 5;
 
   const fetchTokenBalances = async () => {
     if (!wallet) return;
@@ -149,6 +169,35 @@ export function WalletDetailsDialog({
     );
   };
 
+  const fetchSwapTransactions = async (cursor?: string) => {
+    if (!wallet) return;
+    setSwapTxLoading(true);
+    try {
+      const result = await getSwapTransactions({
+        client: apiClient,
+        query: {
+          walletVkey: wallet.walletVkey,
+          limit: SWAP_TX_LIMIT,
+          cursorId: cursor,
+        },
+      });
+      const txs = (result as any)?.data?.data?.swapTransactions ?? [];
+      if (cursor) {
+        setSwapTransactions((prev) => [...prev, ...txs]);
+      } else {
+        setSwapTransactions(txs);
+      }
+      setHasMoreSwapTx(txs.length === SWAP_TX_LIMIT);
+      if (txs.length > 0) {
+        setSwapTxCursor(txs[txs.length - 1].id);
+      }
+    } catch {
+      // Silently fail — swap transactions are supplementary info
+    } finally {
+      setSwapTxLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && wallet) {
       // Reset states when dialog is opened
@@ -156,7 +205,13 @@ export function WalletDetailsDialog({
       setError(null);
       setIsLoading(true);
       setExportedMnemonic(null);
+      setSwapTransactions([]);
+      setSwapTxCursor(undefined);
+      setHasMoreSwapTx(true);
       fetchTokenBalances();
+      if (network === 'Mainnet') {
+        fetchSwapTransactions();
+      }
     }
   }, [isOpen, wallet?.walletAddress]);
 
@@ -462,6 +517,75 @@ export function WalletDetailsDialog({
               )}
             </div>
 
+            {network === 'Mainnet' && swapTransactions.length > 0 && (
+              <div className="bg-muted rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Swap Transactions</div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      setSwapTxCursor(undefined);
+                      fetchSwapTransactions();
+                    }}
+                    disabled={swapTxLoading}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {swapTransactions.map((tx) => {
+                    const fromLabel = tx.fromPolicyId ? shortenAddress(tx.fromPolicyId) : 'ADA';
+                    const toLabel = tx.toPolicyId ? shortenAddress(tx.toPolicyId) : 'ADA';
+                    const statusColor =
+                      tx.status === 'Confirmed'
+                        ? 'text-green-500'
+                        : tx.status === 'Pending'
+                          ? 'text-yellow-500'
+                          : 'text-red-500';
+                    return (
+                      <div
+                        key={tx.id}
+                        className="rounded-md border dark:border-muted-foreground/20 p-3 space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            {tx.fromAmount} {fromLabel} → {toLabel}
+                          </span>
+                          <span className={`text-xs font-medium ${statusColor}`}>{tx.status}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{new Date(tx.createdAt).toLocaleString()}</span>
+                          {tx.txHash && (
+                            <a
+                              href={getExplorerUrl(tx.txHash, network, 'transaction')}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline text-primary"
+                            >
+                              {shortenAddress(tx.txHash, 6)}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {hasMoreSwapTx && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => fetchSwapTransactions(swapTxCursor)}
+                    disabled={swapTxLoading}
+                  >
+                    {swapTxLoading ? <Spinner size={16} /> : 'Load more'}
+                  </Button>
+                )}
+              </div>
+            )}
+
             {wallet.type !== 'Collection' && (
               <div className="flex items-center gap-2">
                 <Button
@@ -590,6 +714,10 @@ export function WalletDetailsDialog({
         walletAddress={selectedWalletForSwap?.walletAddress || ''}
         walletVkey={selectedWalletForSwap?.walletVkey || ''}
         network={network}
+        onSwapComplete={() => {
+          fetchTokenBalances();
+          fetchSwapTransactions();
+        }}
       />
 
       <TransakWidget

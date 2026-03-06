@@ -2122,6 +2122,100 @@ export type GetSwapConfirmResponses = {
 
 export type GetSwapConfirmResponse = GetSwapConfirmResponses[keyof GetSwapConfirmResponses];
 
+export type GetSwapTransactionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Wallet verification key (vKey) to filter swap transactions
+         */
+        walletVkey: string;
+        /**
+         * Number of swap transactions to return
+         */
+        limit?: number;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+    };
+    url: '/swap/transactions/';
+};
+
+export type GetSwapTransactionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wallet not found
+     */
+    404: unknown;
+};
+
+export type GetSwapTransactionsResponses = {
+    /**
+     * List of swap transactions
+     */
+    200: {
+        /**
+         * List of swap transactions
+         */
+        swapTransactions: Array<{
+            /**
+             * Swap transaction ID
+             */
+            id: string;
+            /**
+             * Creation timestamp
+             */
+            createdAt: string;
+            /**
+             * On-chain transaction hash
+             */
+            txHash: string | null;
+            /**
+             * Transaction status
+             */
+            status: string;
+            /**
+             * Number of block confirmations
+             */
+            confirmations?: number | null;
+            /**
+             * Source token policy ID
+             */
+            fromPolicyId: string;
+            /**
+             * Source token asset name
+             */
+            fromAssetName: string;
+            /**
+             * Amount swapped
+             */
+            fromAmount: string;
+            /**
+             * Destination token policy ID
+             */
+            toPolicyId: string;
+            /**
+             * Destination token asset name
+             */
+            toAssetName: string;
+            /**
+             * SundaeSwap pool ID
+             */
+            poolId: string;
+            /**
+             * Slippage tolerance used
+             */
+            slippage?: number | null;
+        }>;
+    };
+};
+
+export type GetSwapTransactionsResponse = GetSwapTransactionsResponses[keyof GetSwapTransactionsResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;

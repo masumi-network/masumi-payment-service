@@ -51,7 +51,7 @@ import {
 	queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
-import { swapTokensEndpointPost, getSwapConfirmEndpointGet } from './swap';
+import { swapTokensEndpointPost, getSwapConfirmEndpointGet, getSwapTransactionsEndpointGet } from './swap';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -170,6 +170,9 @@ export const apiRouter: Routing = {
 		swap: {
 			post: swapTokensEndpointPost,
 			confirm: getSwapConfirmEndpointGet,
+			transactions: {
+				get: getSwapTransactionsEndpointGet,
+			},
 		},
 		invoice: {
 			monthly: {

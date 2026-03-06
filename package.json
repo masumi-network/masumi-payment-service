@@ -25,6 +25,7 @@
 		"prisma:migrate:dev": "pnpm exec prisma migrate dev --config prisma/prisma.config.ts",
 		"prisma:migrate:reset": "pnpm exec prisma migrate reset --config prisma/prisma.config.ts",
 		"prisma:seed": "pnpm exec prisma db seed --config prisma/prisma.config.ts",
+		"prisma:studio": "pnpm exec prisma studio --config prisma/prisma.config.ts",
 		"dev": "tsx watch ./src/index.ts",
 		"build": "pnpm exec prisma generate && tsc --noEmit && pkgroll",
 		"start": "cross-env NODE_ENV=production node ./dist/index.js",

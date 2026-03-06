@@ -57,14 +57,16 @@ model HotWallet {
   type                 HotWalletType
   secretId             String
   collectionAddress    String?
-  pendingTransactionId String?           @unique
-  paymentSourceId      String
-  lockedAt             DateTime?
-  note                 String?
-  deletedAt            DateTime?
-  PaymentSource        PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
-  PendingTransaction   Transaction?      @relation(fields: [pendingTransactionId], references: [id])
-  Secret               WalletSecret      @relation(fields: [secretId], references: [id])
+  pendingTransactionId     String?           @unique
+  pendingSwapTransactionId String?           @unique
+  paymentSourceId          String
+  lockedAt                 DateTime?
+  note                     String?
+  deletedAt                DateTime?
+  PaymentSource            PaymentSource     @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+  PendingTransaction       Transaction?      @relation(fields: [pendingTransactionId], references: [id])
+  PendingSwapTransaction   SwapTransaction?  @relation(fields: [pendingSwapTransactionId], references: [id])
+  Secret                   WalletSecret      @relation(fields: [secretId], references: [id])
   PaymentRequest       PaymentRequest[]
   PurchaseRequest      PurchaseRequest[]
   RegistryRequest      RegistryRequest[]
@@ -97,6 +99,24 @@ model Transaction {
   RegistryRequest          RegistryRequest[]
   PaymentRequestHistory    PaymentRequest?   @relation("PaymentTransactionHistory", fields: [paymentRequestHistoryId], references: [id])
   PurchaseRequestHistory   PurchaseRequest?  @relation("PurchaseTransactionHistory", fields: [purchaseRequestHistoryId], references: [id])
+}
+
+model SwapTransaction {
+  id            String            @id @default(cuid())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  txHash        String?
+  status        TransactionStatus
+  confirmations Int?
+  lastCheckedAt DateTime?
+  fromPolicyId  String
+  fromAssetName String
+  fromAmount    String
+  toPolicyId    String
+  toAssetName   String
+  poolId        String
+  slippage      Float?
+  BlocksWallet  HotWallet?
 }
 
 model WalletSecret {

@@ -4,18 +4,28 @@ import createHttpError from 'http-errors';
 import { swapTokens, Token } from '@/services/swap';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
-import { Network } from '@prisma/client';
+import { Network, TransactionStatus } from '@prisma/client';
 import { prisma } from '@/utils/db';
 import { decrypt } from '@/utils/security/encryption';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { logger } from '@/utils/logger';
 import {
 	swapTokensSchemaInput,
 	swapTokensSchemaOutput,
 	getSwapConfirmSchemaInput,
 	getSwapConfirmSchemaOutput,
+	getSwapTransactionsSchemaInput,
+	getSwapTransactionsSchemaOutput,
 } from './schemas';
 
-export { swapTokensSchemaInput, swapTokensSchemaOutput, getSwapConfirmSchemaInput, getSwapConfirmSchemaOutput };
+export {
+	swapTokensSchemaInput,
+	swapTokensSchemaOutput,
+	getSwapConfirmSchemaInput,
+	getSwapConfirmSchemaOutput,
+	getSwapTransactionsSchemaInput,
+	getSwapTransactionsSchemaOutput,
+};
 
 export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -97,21 +107,29 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 				blockfrostApiKey,
 			);
 
+			await prisma.hotWallet.update({
+				where: { id: wallet.id, deletedAt: null },
+				data: {
+					PendingSwapTransaction: {
+						create: {
+							txHash: result.txHash,
+							status: TransactionStatus.Pending,
+							lastCheckedAt: new Date(),
+							fromPolicyId: input.fromToken.policyId,
+							fromAssetName: input.fromToken.assetName,
+							fromAmount: String(input.amount),
+							toPolicyId: input.toToken.policyId,
+							toAssetName: input.toToken.assetName,
+							poolId: input.poolId,
+							slippage: input.slippage ?? null,
+						},
+					},
+				},
+			});
+
 			return result;
 		} catch (error) {
-			const errorInstance = error instanceof Error ? error : new Error(String(error));
-			const statusCode =
-				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
-				(errorInstance as { statusCode?: number; status?: number }).status ||
-				500;
-			recordBusinessEndpointError('/api/v1/swap', 'POST', statusCode, errorInstance, {
-				user_id: ctx.id,
-				operation: 'swap_tokens',
-				duration: Date.now() - startTime,
-			});
-			throw error;
-		} finally {
-			// Always unlock the wallet, even if the swap failed
+			// Unlock wallet on failure so it can be reused
 			if (walletId != null) {
 				try {
 					await prisma.hotWallet.update({
@@ -133,6 +151,18 @@ export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
 					);
 				}
 			}
+
+			const errorInstance = error instanceof Error ? error : new Error(String(error));
+			const statusCode =
+				(errorInstance as { statusCode?: number; status?: number }).statusCode ||
+				(errorInstance as { statusCode?: number; status?: number }).status ||
+				500;
+			recordBusinessEndpointError('/api/v1/swap', 'POST', statusCode, errorInstance, {
+				user_id: ctx.id,
+				operation: 'swap_tokens',
+				duration: Date.now() - startTime,
+			});
+			throw error;
 		}
 	},
 });
@@ -184,6 +214,44 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 					return { status: 'pending' as const };
 				}
 				const block = await blockfrost.blocks(tx.block);
+
+				// Unlock wallet now that the swap tx is confirmed on-chain
+				if (wallet.lockedAt != null || wallet.pendingSwapTransactionId != null) {
+					if (wallet.pendingSwapTransactionId) {
+						try {
+							await prisma.swapTransaction.update({
+								where: { id: wallet.pendingSwapTransactionId },
+								data: {
+									status: TransactionStatus.Confirmed,
+									confirmations: block.confirmations ?? null,
+									lastCheckedAt: new Date(),
+								},
+							});
+						} catch (swapTxError) {
+							logger.error('Failed to update swap transaction status', {
+								swapTransactionId: wallet.pendingSwapTransactionId,
+								txHash: input.txHash,
+								error: swapTxError instanceof Error ? swapTxError.message : String(swapTxError),
+							});
+						}
+					}
+					try {
+						await prisma.hotWallet.update({
+							where: { id: wallet.id, deletedAt: null },
+							data: {
+								lockedAt: null,
+								pendingSwapTransactionId: null,
+							},
+						});
+					} catch (unlockError) {
+						logger.error('Failed to unlock wallet after swap confirmation', {
+							walletId: wallet.id,
+							txHash: input.txHash,
+							error: unlockError instanceof Error ? unlockError.message : String(unlockError),
+						});
+					}
+				}
+
 				return {
 					status: 'confirmed' as const,
 					confirmations: block.confirmations ?? null,
@@ -219,5 +287,54 @@ export const getSwapConfirmEndpointGet = adminAuthenticatedEndpointFactory.build
 			});
 			throw error;
 		}
+	},
+});
+
+export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: getSwapTransactionsSchemaInput,
+	output: getSwapTransactionsSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof getSwapTransactionsSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, Network.Mainnet, ctx.permission);
+
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				walletVkey: input.walletVkey,
+				deletedAt: null,
+				PaymentSource: {
+					network: { in: ctx.networkLimit },
+				},
+			},
+		});
+
+		if (wallet == null) {
+			throw createHttpError(404, 'Wallet not found');
+		}
+
+		const swapTransactions = await prisma.swapTransaction.findMany({
+			where: {
+				BlocksWallet: { id: wallet.id },
+			},
+			orderBy: { createdAt: 'desc' },
+			cursor: input.cursorId ? { id: input.cursorId } : undefined,
+			take: input.limit,
+		});
+
+		return {
+			swapTransactions: swapTransactions.map((tx) => ({
+				id: tx.id,
+				createdAt: tx.createdAt.toISOString(),
+				txHash: tx.txHash,
+				status: tx.status,
+				confirmations: tx.confirmations,
+				fromPolicyId: tx.fromPolicyId,
+				fromAssetName: tx.fromAssetName,
+				fromAmount: tx.fromAmount,
+				toPolicyId: tx.toPolicyId,
+				toAssetName: tx.toAssetName,
+				poolId: tx.poolId,
+				slippage: tx.slippage,
+			})),
+		};
 	},
 });
