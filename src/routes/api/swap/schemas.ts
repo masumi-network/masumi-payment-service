@@ -64,6 +64,21 @@ export const getSwapTransactionsSchemaOutput = z.object({
 	swapTransactions: z.array(swapTransactionSchema).describe('List of swap transactions'),
 });
 
+export const getSwapEstimateSchemaInput = z.object({
+	fromPolicyId: z.string().describe('Policy ID of the source token. Use empty string "" for ADA'),
+	fromAssetName: z.string().describe('Asset name (hex) of the source token. Use empty string "" for ADA'),
+	toPolicyId: z.string().describe('Policy ID of the destination token. Use empty string "" for ADA'),
+	toAssetName: z.string().describe('Asset name (hex) of the destination token. Use empty string "" for ADA'),
+	poolId: z.string().min(1).describe('SundaeSwap pool identifier'),
+});
+
+export const getSwapEstimateSchemaOutput = z.object({
+	rate: z.number().describe('Estimated conversion rate (toToken per 1 fromToken, after pool fee)'),
+	fee: z.number().describe('Pool fee as a decimal (e.g. 0.003 for 0.3%)'),
+	fromDecimals: z.number().describe('Decimal places of the source token'),
+	toDecimals: z.number().describe('Decimal places of the destination token'),
+});
+
 export const getSwapConfirmSchemaOutput = z.object({
 	status: z
 		.enum(['pending', 'confirmed', 'not_found'])

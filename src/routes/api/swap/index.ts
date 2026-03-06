@@ -1,7 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { z } from 'zod';
 import createHttpError from 'http-errors';
-import { swapTokens, Token } from '@/services/swap';
+import { swapTokens, getPoolEstimate, Token } from '@/services/swap';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/middleware/auth-middleware';
 import { Network, TransactionStatus } from '@prisma/client';
@@ -16,6 +16,8 @@ import {
 	getSwapConfirmSchemaOutput,
 	getSwapTransactionsSchemaInput,
 	getSwapTransactionsSchemaOutput,
+	getSwapEstimateSchemaInput,
+	getSwapEstimateSchemaOutput,
 } from './schemas';
 
 export {
@@ -25,6 +27,8 @@ export {
 	getSwapConfirmSchemaOutput,
 	getSwapTransactionsSchemaInput,
 	getSwapTransactionsSchemaOutput,
+	getSwapEstimateSchemaInput,
+	getSwapEstimateSchemaOutput,
 };
 
 export const swapTokensEndpointPost = adminAuthenticatedEndpointFactory.build({
@@ -336,5 +340,27 @@ export const getSwapTransactionsEndpointGet = adminAuthenticatedEndpointFactory.
 				slippage: tx.slippage,
 			})),
 		};
+	},
+});
+
+export const getSwapEstimateEndpointGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: getSwapEstimateSchemaInput,
+	output: getSwapEstimateSchemaOutput,
+	handler: async ({ input }: { input: z.infer<typeof getSwapEstimateSchemaInput>; ctx: AuthContext }) => {
+		try {
+			return await getPoolEstimate({
+				fromToken: { policyId: input.fromPolicyId, assetName: input.fromAssetName, name: '' },
+				toToken: { policyId: input.toPolicyId, assetName: input.toAssetName, name: '' },
+				poolId: input.poolId,
+			});
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+			logger.error('Swap estimate failed', {
+				component: 'swap-estimate',
+				error: errorMessage,
+			});
+			throw createHttpError(400, errorMessage);
+		}
 	},
 });

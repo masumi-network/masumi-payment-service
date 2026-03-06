@@ -67,6 +67,59 @@ async function getWalletFromMnemonic(
 	};
 }
 
+export interface PoolEstimateParams {
+	fromToken: Token;
+	toToken: Token;
+	poolId: string;
+}
+
+export interface PoolEstimateResult {
+	/** How many toToken units per 1 fromToken (human-readable, accounting for decimals & fee). */
+	rate: number;
+	fee: number;
+	fromDecimals: number;
+	toDecimals: number;
+}
+
+/**
+ * Query the SundaeSwap pool and compute a conversion rate using constant-product AMM math.
+ * rate = (bReserve / (aReserve + 1 unit)) * (1 - fee)
+ */
+export async function getPoolEstimate(params: PoolEstimateParams): Promise<PoolEstimateResult> {
+	const queryProvider = new QueryProviderSundaeSwap('mainnet');
+	const poolData = await queryProvider.findPoolData({ ident: params.poolId });
+
+	const fromTokenAssetId = tokenToAssetId(params.fromToken);
+	const matchesAssetA = SundaeUtils.isAssetIdsEqual(fromTokenAssetId, poolData.assetA.assetId);
+	const matchesAssetB = SundaeUtils.isAssetIdsEqual(fromTokenAssetId, poolData.assetB.assetId);
+	if (!matchesAssetA && !matchesAssetB) {
+		throw new Error(
+			`From token does not match either asset in this pool. Pool assets: ${poolData.assetA.assetId || 'ADA'}, ${poolData.assetB.assetId || 'ADA'}; requested: ${fromTokenAssetId || 'ADA'}.`,
+		);
+	}
+
+	const fromAsset = matchesAssetA ? poolData.assetA : poolData.assetB;
+	const toAsset = matchesAssetA ? poolData.assetB : poolData.assetA;
+
+	const aReserve = matchesAssetA ? poolData.liquidity.aReserve : poolData.liquidity.bReserve;
+	const bReserve = matchesAssetA ? poolData.liquidity.bReserve : poolData.liquidity.aReserve;
+
+	// Constant-product: output = (bReserve * dx) / (aReserve + dx), then subtract fee
+	// For rate per 1 unit: dx = 10^fromDecimals (1 whole token)
+	const dx = BigInt(10 ** fromAsset.decimals);
+	const rawOutput = (bReserve * dx) / (aReserve + dx);
+	const fee = poolData.currentFee;
+	const outputAfterFee = Number(rawOutput) * (1 - fee);
+	const rate = outputAfterFee / 10 ** toAsset.decimals;
+
+	return {
+		rate,
+		fee,
+		fromDecimals: fromAsset.decimals,
+		toDecimals: toAsset.decimals,
+	};
+}
+
 export async function swapTokens(params: SwapParams, blockfrostApiKey: string): Promise<SwapResult> {
 	const startTime = Date.now();
 	try {

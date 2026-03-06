@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
-import { getSwapConfirm, getUtxos, postSwap } from '@/lib/api/generated';
+import { getSwapConfirm, getSwapEstimate, getUtxos, postSwap } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
 import BlinkingUnderscore from '../BlinkingUnderscore';
@@ -137,7 +137,7 @@ export function SwapDialog({
   const [selectedFromToken, setSelectedFromToken] = useState(swappableTokens[adaIndex]);
   const [selectedToToken, setSelectedToToken] = useState(swappableTokens[usdmIndex]);
 
-  const [tokenRates, setTokenRates] = useState<Record<string, number>>({});
+  const [conversionRate, setConversionRate] = useState<number>(0);
 
   const [swapStatus, setSwapStatus] = useState<'idle' | 'processing' | 'submitted' | 'confirmed'>(
     'idle',
@@ -146,31 +146,56 @@ export function SwapDialog({
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCancelledRef = useRef(false);
 
-  const fetchTokenRates = async () => {
+  const fetchConversionRate = async (
+    fromToken: (typeof swappableTokens)[number],
+    toToken: (typeof swappableTokens)[number],
+  ) => {
+    if (fromToken.symbol === toToken.symbol) {
+      setConversionRate(0);
+      return;
+    }
+
+    // Determine which token is non-ADA to get the poolId
+    const nonAdaToken = fromToken.symbol !== 'ADA' ? fromToken : toToken;
+    const poolId = (nonAdaToken as { poolId?: string }).poolId;
+    if (!poolId) {
+      setConversionRate(0);
+      return;
+    }
+
+    const fromPolicyId = fromToken.policyId === 'NATIVE' ? '' : fromToken.policyId || '';
+    const fromAssetName =
+      fromToken.hexedAssetName === 'NATIVE'
+        ? ''
+        : (fromToken as { hexedAssetName?: string }).hexedAssetName || '';
+    const toPolicyId = toToken.policyId === 'NATIVE' ? '' : toToken.policyId || '';
+    const toAssetName =
+      toToken.hexedAssetName === 'NATIVE'
+        ? ''
+        : (toToken as { hexedAssetName?: string }).hexedAssetName || '';
+
+    try {
+      const result = await getSwapEstimate({
+        client: apiClient,
+        query: { fromPolicyId, fromAssetName, toPolicyId, toAssetName, poolId },
+      });
+      const rate = (result as any)?.data?.data?.rate ?? (result as any)?.data?.rate ?? 0;
+      setConversionRate(rate);
+    } catch (err) {
+      console.error('Failed to fetch conversion rate', err);
+      setConversionRate(0);
+    }
+  };
+
+  const fetchAdaUsdRate = async () => {
     try {
       const response = await fetch(
         'https://api.coingecko.com/api/v3/simple/price?ids=cardano&vs_currencies=usd',
       );
       const data = await response.json();
       setAdaToUsdRate(data?.cardano?.usd || 0);
-
-      const rates: Record<string, number> = {};
-      for (const token of swappableTokens) {
-        if (token.symbol !== 'ADA' && token.policyId && token.hexedAssetName) {
-          const url = `https://dhapi.io/swap/averagePrice/ADA/${token.policyId}${token.hexedAssetName}`;
-          try {
-            const response = await fetch(url);
-            const data = await response.json();
-            rates[token.symbol] = data.price_ab || 0;
-          } catch (error) {
-            console.error(`Failed to fetch rate for ${token.symbol}`, error);
-            rates[token.symbol] = 0;
-          }
-        }
-      }
-      setTokenRates(rates);
-    } catch (error) {
-      console.error('Failed to fetch rates', error);
+    } catch (err) {
+      console.error('Failed to fetch ADA/USD rate', err);
     }
   };
 
@@ -183,7 +208,8 @@ export function SwapDialog({
       setIsSwapping(false);
       setShowConfirmation(false);
       fetchBalance();
-      fetchTokenRates();
+      fetchAdaUsdRate();
+      fetchConversionRate(selectedFromToken, selectedToToken);
 
       const balanceInterval = setInterval(() => {
         fetchBalance();
@@ -199,6 +225,13 @@ export function SwapDialog({
       };
     }
   }, [isOpen]);
+
+  // Re-fetch conversion rate when tokens change
+  useEffect(() => {
+    if (isOpen) {
+      fetchConversionRate(selectedFromToken, selectedToToken);
+    }
+  }, [selectedFromToken.symbol, selectedToToken.symbol]);
 
   const fetchBalance = async () => {
     try {
@@ -283,8 +316,10 @@ export function SwapDialog({
 
   const handleSwitch = () => {
     if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
+      const prevToAmount = fromAmount * conversionRate;
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
+      setFromAmount(prevToAmount);
     }
   };
 
@@ -339,19 +374,6 @@ export function SwapDialog({
     setFromAmount(normalizedValue);
   };
 
-  const getConversionRate = () => {
-    if (selectedFromToken.symbol === 'ADA') {
-      return tokenRates[selectedToToken.symbol] || 0;
-    } else if (selectedToToken.symbol === 'ADA') {
-      return 1 / (tokenRates[selectedFromToken.symbol] || 1);
-    } else {
-      const fromTokenInAda = tokenRates[selectedFromToken.symbol] || 0;
-      const toTokenInAda = tokenRates[selectedToToken.symbol] || 0;
-      return fromTokenInAda > 0 ? toTokenInAda / fromTokenInAda : 0;
-    }
-  };
-
-  const conversionRate = getConversionRate();
   const toAmount = fromAmount * conversionRate;
 
   const STABLECOIN_SYMBOLS = ['USDM', 'USDCx'];

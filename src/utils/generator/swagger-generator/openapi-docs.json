@@ -4284,6 +4284,121 @@
                 }
             }
         },
+        "/swap/estimate/": {
+            "get": {
+                "description": "Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.",
+                "summary": "Get swap price estimate. (admin access required, mainnet only)",
+                "tags": [
+                    "swap"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Policy ID of the source token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Policy ID of the source token. Use empty string \"\" for ADA",
+                        "name": "fromPolicyId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Asset name (hex) of the source token. Use empty string \"\" for ADA",
+                        "name": "fromAssetName",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Policy ID of the destination token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Policy ID of the destination token. Use empty string \"\" for ADA",
+                        "name": "toPolicyId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA"
+                        },
+                        "required": true,
+                        "description": "Asset name (hex) of the destination token. Use empty string \"\" for ADA",
+                        "name": "toAssetName",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "SundaeSwap pool identifier"
+                        },
+                        "required": true,
+                        "description": "SundaeSwap pool identifier",
+                        "name": "poolId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Swap estimate",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "rate": {
+                                            "type": "number",
+                                            "description": "Estimated conversion rate (toToken per 1 fromToken, after pool fee)"
+                                        },
+                                        "fee": {
+                                            "type": "number",
+                                            "description": "Pool fee as a decimal (e.g. 0.003 for 0.3%)"
+                                        },
+                                        "fromDecimals": {
+                                            "type": "number",
+                                            "description": "Decimal places of the source token"
+                                        },
+                                        "toDecimals": {
+                                            "type": "number",
+                                            "description": "Decimal places of the destination token"
+                                        }
+                                    },
+                                    "required": [
+                                        "rate",
+                                        "fee",
+                                        "fromDecimals",
+                                        "toDecimals"
+                                    ],
+                                    "example": {
+                                        "rate": 2.45,
+                                        "fee": 0.003,
+                                        "fromDecimals": 6,
+                                        "toDecimals": 6
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (invalid pool or token)"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
         "/payment/": {
             "get": {
                 "description": "Gets the payment status. It needs to be created first with a POST request.",

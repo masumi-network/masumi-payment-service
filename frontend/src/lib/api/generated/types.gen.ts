@@ -2245,6 +2245,71 @@ export type GetSwapTransactionsResponses = {
 
 export type GetSwapTransactionsResponse = GetSwapTransactionsResponses[keyof GetSwapTransactionsResponses];
 
+export type GetSwapEstimateData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Policy ID of the source token. Use empty string "" for ADA
+         */
+        fromPolicyId: string;
+        /**
+         * Asset name (hex) of the source token. Use empty string "" for ADA
+         */
+        fromAssetName: string;
+        /**
+         * Policy ID of the destination token. Use empty string "" for ADA
+         */
+        toPolicyId: string;
+        /**
+         * Asset name (hex) of the destination token. Use empty string "" for ADA
+         */
+        toAssetName: string;
+        /**
+         * SundaeSwap pool identifier
+         */
+        poolId: string;
+    };
+    url: '/swap/estimate/';
+};
+
+export type GetSwapEstimateErrors = {
+    /**
+     * Bad request (invalid pool or token)
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetSwapEstimateResponses = {
+    /**
+     * Swap estimate
+     */
+    200: {
+        /**
+         * Estimated conversion rate (toToken per 1 fromToken, after pool fee)
+         */
+        rate: number;
+        /**
+         * Pool fee as a decimal (e.g. 0.003 for 0.3%)
+         */
+        fee: number;
+        /**
+         * Decimal places of the source token
+         */
+        fromDecimals: number;
+        /**
+         * Decimal places of the destination token
+         */
+        toDecimals: number;
+    };
+};
+
+export type GetSwapEstimateResponse = GetSwapEstimateResponses[keyof GetSwapEstimateResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;

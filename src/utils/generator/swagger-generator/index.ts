@@ -336,6 +336,8 @@ import {
 	getSwapConfirmSchemaOutput,
 	getSwapTransactionsSchemaInput,
 	getSwapTransactionsSchemaOutput,
+	getSwapEstimateSchemaInput,
+	getSwapEstimateSchemaOutput,
 } from '@/routes/api/swap/schemas';
 import {
 	paymentErrorStateRecoverySchemaInput,
@@ -780,6 +782,50 @@ export function generateOpenAPI() {
 			},
 			404: {
 				description: 'Wallet not found',
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/swap/estimate/',
+		description:
+			'Get a swap price estimate from the SundaeSwap pool. Returns the conversion rate based on current pool reserves.',
+		summary: 'Get swap price estimate. (admin access required, mainnet only)',
+		tags: ['swap'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getSwapEstimateSchemaInput.openapi({
+				example: {
+					fromPolicyId: '',
+					fromAssetName: '',
+					toPolicyId: 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad',
+					toAssetName: '0014df105553444d',
+					poolId: 'pool_id_here',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Swap estimate',
+				content: {
+					'application/json': {
+						schema: getSwapEstimateSchemaOutput.openapi({
+							example: {
+								rate: 2.45,
+								fee: 0.003,
+								fromDecimals: 6,
+								toDecimals: 6,
+							},
+						}),
+					},
+				},
+			},
+			400: {
+				description: 'Bad request (invalid pool or token)',
+			},
+			401: {
+				description: 'Unauthorized',
 			},
 		},
 	});
