@@ -347,7 +347,7 @@ export function SwapDialog({
     } else {
       const fromTokenInAda = tokenRates[selectedFromToken.symbol] || 0;
       const toTokenInAda = tokenRates[selectedToToken.symbol] || 0;
-      return toTokenInAda > 0 ? fromTokenInAda / toTokenInAda : 0;
+      return fromTokenInAda > 0 ? toTokenInAda / fromTokenInAda : 0;
     }
   };
 
