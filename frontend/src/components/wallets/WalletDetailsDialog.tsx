@@ -362,7 +362,7 @@ export function WalletDetailsDialog({
   return (
     <>
       <Dialog
-        open={isOpen && !selectedWalletForTopup && !selectedWalletForSwap}
+        open={isOpen}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedWalletForSwap(null);
@@ -374,7 +374,7 @@ export function WalletDetailsDialog({
         <DialogContent
           className="sm:max-w-[600px]"
           variant={isChild ? 'slide-from-right' : 'default'}
-          isPushedBack={!!selectedWalletForTopup}
+          isPushedBack={!!selectedWalletForTopup || !!selectedWalletForSwap}
           hideOverlay={isChild}
           onBack={isChild ? onClose : undefined}
         >
