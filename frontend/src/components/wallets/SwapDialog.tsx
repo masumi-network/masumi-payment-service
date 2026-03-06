@@ -199,6 +199,7 @@ export function SwapDialog({
 
   useEffect(() => {
     if (isOpen) {
+      pollCancelledRef.current = false;
       setIsFetchingDetails(true);
       setTxHash(null);
       setError(null);

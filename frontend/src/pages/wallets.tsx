@@ -1,7 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus } from 'lucide-react';
-import { FaExchangeAlt } from 'react-icons/fa';
+import { Plus, ArrowLeftRight, PlusCircle } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
@@ -363,17 +362,19 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4 pr-8">
                           <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedWalletForSwap(wallet);
-                              }}
-                            >
-                              <FaExchangeAlt className="h-4 w-4" />
-                            </Button>
+                            {wallet.network === 'Mainnet' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedWalletForSwap(wallet);
+                                }}
+                              >
+                                <ArrowLeftRight className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               className="h-8"
                               variant="muted"
@@ -382,6 +383,7 @@ export default function WalletsPage() {
                                 setSelectedWalletForTopup(wallet);
                               }}
                             >
+                              <PlusCircle className="h-3.5 w-3.5" />
                               Top Up
                             </Button>
                           </div>

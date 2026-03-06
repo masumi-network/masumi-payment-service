@@ -1,7 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { RefreshCw, Share, X, XCircle, AlertTriangle } from 'lucide-react';
+import {
+  RefreshCw,
+  Share,
+  X,
+  XCircle,
+  AlertTriangle,
+  ArrowLeftRight,
+  PlusCircle,
+} from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -937,23 +945,27 @@ export function WalletDetailsDialog({
                   disabled={isExporting}
                   title="Export Wallet"
                 >
-                  <span>Export Wallet</span>
                   <Share className="h-4 w-4" />
+                  <span>Export Wallet</span>
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => setSelectedWalletForTopup(wallet)}
                   title="Top Up"
                 >
+                  <PlusCircle className="h-4 w-4" />
                   <span>Top Up</span>
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedWalletForSwap(wallet)}
-                  title="Swap Assets"
-                >
-                  <span>Swap Assets</span>
-                </Button>
+                {network === 'Mainnet' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedWalletForSwap(wallet)}
+                    title="Swap Assets"
+                  >
+                    <ArrowLeftRight className="h-4 w-4" />
+                    <span>Swap Assets</span>
+                  </Button>
+                )}
               </div>
             )}
             {exportedMnemonic && (

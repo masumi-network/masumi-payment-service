@@ -3,7 +3,16 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
-import { ChevronRight, Plus, Bot, DollarSign, Wallet, ArrowUpDown } from 'lucide-react';
+import {
+  ChevronRight,
+  Plus,
+  Bot,
+  DollarSign,
+  Wallet,
+  ArrowUpDown,
+  ArrowLeftRight,
+  PlusCircle,
+} from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { shortenAddress } from '@/lib/utils';
 import { useState, useMemo } from 'react';
@@ -23,7 +32,6 @@ import { StatCardSkeleton } from '@/components/skeletons/StatCardSkeleton';
 import { AgentListSkeleton } from '@/components/skeletons/AgentListSkeleton';
 import { WalletListSkeleton } from '@/components/skeletons/WalletListSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { FaExchangeAlt } from 'react-icons/fa';
 import formatBalance from '@/lib/formatBalance';
 import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
@@ -408,17 +416,19 @@ export default function Overview() {
                                 </td>
                                 <td className="py-3 px-2 w-32">
                                   <div className="flex items-center gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedWalletForSwap(wallet);
-                                      }}
-                                    >
-                                      <FaExchangeAlt className="h-4 w-4" />
-                                    </Button>
+                                    {wallet.network === 'Mainnet' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedWalletForSwap(wallet);
+                                        }}
+                                      >
+                                        <ArrowLeftRight className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="muted"
                                       className="h-8 btn-hover-lift"
@@ -427,6 +437,7 @@ export default function Overview() {
                                         setSelectedWalletForTopup(wallet);
                                       }}
                                     >
+                                      <PlusCircle className="h-3.5 w-3.5" />
                                       Top Up
                                     </Button>
                                   </div>
