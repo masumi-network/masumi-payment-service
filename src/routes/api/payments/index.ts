@@ -31,6 +31,7 @@ import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
+import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -281,6 +282,7 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
 				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 			},
@@ -441,6 +443,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
 				},
+				...buildWalletScopeFilter(ctx.walletScopeIds),
 			},
 		});
 
@@ -606,6 +609,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		if (sellingWallet == null) {
 			throw createHttpError(404, 'Selling wallet not found');
 		}
+		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
 		const blockchainIdentifier = {

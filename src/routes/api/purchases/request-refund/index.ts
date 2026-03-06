@@ -7,6 +7,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { purchaseResponseSchema } from '@/routes/api/purchases';
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const requestPurchaseRefundSchemaInput = z.object({
 	blockchainIdentifier: z.string().max(8000).describe('The identifier of the purchase to be refunded'),
@@ -52,6 +53,7 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 		if (purchase == null) {
 			throw createHttpError(404, 'Purchase not found or not in valid state');
 		}
+		assertWalletInScope(ctx.walletScopeIds, purchase.smartContractWalletId);
 
 		if (purchase.requestedById != ctx.id && ctx.permission != Permission.Admin) {
 			throw createHttpError(403, 'You are not authorized to request a refund for this purchase');

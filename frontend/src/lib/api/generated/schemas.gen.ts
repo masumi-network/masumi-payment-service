@@ -63,6 +63,26 @@ export const APIKeySchema = {
                 'Revoked'
             ],
             description: 'Current status of the API key'
+        },
+        walletScopeEnabled: {
+            type: 'boolean',
+            description: 'Whether wallet scope filtering is enabled for this API key'
+        },
+        WalletScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    hotWalletId: {
+                        type: 'string',
+                        description: 'ID of the hot wallet in scope'
+                    }
+                },
+                required: [
+                    'hotWalletId'
+                ]
+            },
+            description: 'List of hot wallets this API key is scoped to'
         }
     },
     required: [
@@ -72,7 +92,9 @@ export const APIKeySchema = {
         'usageLimited',
         'networkLimit',
         'RemainingUsageCredits',
-        'status'
+        'status',
+        'walletScopeEnabled',
+        'WalletScopes'
     ]
 } as const;
 

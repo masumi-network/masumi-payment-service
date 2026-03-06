@@ -10,6 +10,7 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { logger } from '@/utils/logger';
 import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 
 export const metadataSchema = z.object({
 	name: z
@@ -281,6 +282,7 @@ export const queryAgentFromWalletGet = payAuthenticatedEndpointFactory.build({
 		if (wallet == null) {
 			throw createHttpError(404, 'Wallet not found');
 		}
+		assertHotWalletInScope(ctx.walletScopeIds, wallet.id);
 		const { policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
 
 		const addressInfo = await blockfrost.addresses(wallet.walletAddress);
