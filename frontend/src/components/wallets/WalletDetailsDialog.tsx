@@ -189,12 +189,21 @@ export function WalletDetailsDialog({
     setActionLoadingId(null);
   };
 
+  const MAX_POLL_MS = 5 * 60 * 1000; // 5 minutes
+
   const startPollingConfirm = useCallback(
     (txId: string, txHash: string) => {
       if (!wallet) return;
       setPollingTxId(txId);
+      const startTime = Date.now();
 
       const poll = () => {
+        if (Date.now() - startTime > MAX_POLL_MS) {
+          setPollingTxId(null);
+          toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
+          return;
+        }
+
         handleApiCall(
           () =>
             getSwapConfirm({
@@ -232,11 +241,9 @@ export function WalletDetailsDialog({
                 return;
               }
 
-              // Still pending — poll again
               pollRef.current = setTimeout(poll, 4000);
             },
             onError: () => {
-              // On error, keep polling
               pollRef.current = setTimeout(poll, 4000);
             },
             errorMessage: '',

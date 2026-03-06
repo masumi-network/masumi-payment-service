@@ -332,7 +332,7 @@ export function SwapDialog({
 
   const handleSwitch = () => {
     if (selectedFromToken.symbol === 'ADA' || selectedToToken.symbol === 'ADA') {
-      const prevToAmount = fromAmount * conversionRate;
+      const prevToAmount = conversionRate > 0 ? fromAmount * conversionRate : fromAmount;
       setSelectedFromToken(selectedToToken);
       setSelectedToToken(selectedFromToken);
       setFromAmount(prevToAmount);
