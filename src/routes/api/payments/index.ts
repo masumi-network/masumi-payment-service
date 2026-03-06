@@ -28,7 +28,9 @@ import {
 import { validateHexString } from '@/utils/validator/hex';
 import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/utils/shared/transformers';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
+import { parseAmountSearchRange, buildMatchingStates, buildTransactionSearchFilter } from '@/utils/shared/queries';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -44,13 +46,30 @@ export const queryPaymentsSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
-
+	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	searchQuery: z
+		.string()
+		.optional()
+		.describe('Search query to filter by ID, hash, state, network, wallet address, or amount'),
 	includeHistory: z
 		.string()
 		.default('false')
 		.optional()
 		.transform((val) => val?.toLowerCase() == 'true')
 		.describe('Whether to include the full transaction and action history of the payments'),
+});
+
+export const queryPaymentCountSchemaInput = z.object({
+	network: z.nativeEnum(Network).describe('The network the payments were made on'),
+	filterSmartContractAddress: z
+		.string()
+		.optional()
+		.nullable()
+		.describe('The smart contract address of the payment source'),
+});
+
+export const queryPaymentCountSchemaOutput = z.object({
+	total: z.number().describe('Total number of payments'),
 });
 
 export const paymentResponseSchema = z
@@ -251,6 +270,10 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentsSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
 
+		const searchLower = input.searchQuery?.toLowerCase();
+		const matchingStates = buildMatchingStates(searchLower);
+		const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
+
 		const result = await prisma.paymentRequest.findMany({
 			where: {
 				PaymentSource: {
@@ -258,6 +281,8 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 					deletedAt: null,
 				},
+				...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
+				...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
 			},
 			orderBy: { createdAt: 'desc' },
 			cursor: input.cursorId
@@ -402,6 +427,29 @@ export const queryPaymentEntryGet = readAuthenticatedEndpointFactory.build({
 	},
 });
 
+export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: queryPaymentCountSchemaInput,
+	output: queryPaymentCountSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		const total = await prisma.paymentRequest.count({
+			where: {
+				PaymentSource: {
+					network: input.network,
+					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+					deletedAt: null,
+				},
+			},
+		});
+
+		return {
+			total,
+		};
+	},
+});
+
 export const createPaymentsSchemaInput = z.object({
 	inputHash: z
 		.string()
@@ -447,7 +495,7 @@ export const createPaymentSchemaOutput = paymentResponseSchema.omit({
 	ActionHistory: true,
 });
 
-export const paymentInitPost = readAuthenticatedEndpointFactory.build({
+export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: createPaymentsSchemaInput,
 	output: createPaymentSchemaOutput,

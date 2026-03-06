@@ -15,8 +15,17 @@ import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@/utils/m
 import { adminAuthenticatedEndpointFactory } from '@/utils/security/auth/admin-authenticated';
 import { recordBusinessEndpointError } from '@/utils/metrics';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
+import { parseAmountSearchRange } from '@/utils/shared/queries';
+
+enum FilterStatus {
+	Registered = 'Registered',
+	Deregistered = 'Deregistered',
+	Pending = 'Pending',
+	Failed = 'Failed',
+}
 
 export const queryRegistryRequestSchemaInput = z.object({
+	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of registry entries to return'),
 	cursorId: z.string().optional().describe('The cursor id to paginate through the results'),
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
 	filterSmartContractAddress: z
@@ -24,6 +33,11 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.optional()
 		.nullable()
 		.describe('The smart contract address of the payment source'),
+	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
+	searchQuery: z
+		.string()
+		.optional()
+		.describe('Search query to filter by name, description, tags, wallet address, state, or price'),
 });
 
 export const registryRequestOutputSchema = z
@@ -129,12 +143,54 @@ export const queryRegistryRequestSchemaOutput = z.object({
 	Assets: z.array(registryRequestOutputSchema),
 });
 
+export const queryRegistryCountSchemaInput = z.object({
+	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
+	filterSmartContractAddress: z
+		.string()
+		.optional()
+		.nullable()
+		.describe('The smart contract address of the payment source'),
+});
+
+export const queryRegistryCountSchemaOutput = z.object({
+	total: z.number().describe('Total number of AI agents'),
+});
+
 export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: queryRegistryRequestSchemaInput,
 	output: queryRegistryRequestSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryRequestSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		// Build status filter based on filterStatus
+		let stateFilter: RegistrationState[] | undefined;
+		if (input.filterStatus === FilterStatus.Registered) {
+			stateFilter = [RegistrationState.RegistrationConfirmed];
+		} else if (input.filterStatus === FilterStatus.Deregistered) {
+			stateFilter = [RegistrationState.DeregistrationConfirmed];
+		} else if (input.filterStatus === FilterStatus.Pending) {
+			stateFilter = [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested];
+		} else if (input.filterStatus === FilterStatus.Failed) {
+			stateFilter = [RegistrationState.RegistrationFailed, RegistrationState.DeregistrationFailed];
+		}
+
+		// Build search query filter
+		const searchLower = input.searchQuery?.toLowerCase();
+		const matchingStates = searchLower
+			? Object.values(RegistrationState).filter(
+					(s) =>
+						s.toLowerCase().includes(searchLower) ||
+						s
+							.replace(/([A-Z])/g, ' $1')
+							.trim()
+							.toLowerCase()
+							.includes(searchLower),
+				)
+			: undefined;
+		const amountFilter: { gte: bigint; lte: bigint } | undefined = searchLower
+			? parseAmountSearchRange(searchLower)
+			: undefined;
 
 		const result = await prisma.registryRequest.findMany({
 			where: {
@@ -144,11 +200,52 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
 				},
 				SmartContractWallet: { deletedAt: null },
+				...(stateFilter ? { state: { in: stateFilter } } : {}),
+				...(searchLower
+					? {
+							OR: [
+								{
+									name: {
+										contains: searchLower,
+										mode: 'insensitive' as const,
+									},
+								},
+								{
+									description: {
+										contains: searchLower,
+										mode: 'insensitive' as const,
+									},
+								},
+								{ tags: { hasSome: [searchLower] } },
+								{
+									SmartContractWallet: {
+										walletAddress: {
+											contains: searchLower,
+											mode: 'insensitive' as const,
+										},
+									},
+								},
+								...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
+								...('free'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Free } }] : []),
+								...(amountFilter
+									? [
+											{
+												Pricing: {
+													FixedPricing: {
+														Amounts: {
+															some: { amount: { gte: amountFilter.gte, lte: amountFilter.lte } },
+														},
+													},
+												},
+											},
+										]
+									: []),
+							],
+						}
+					: {}),
 			},
-			orderBy: {
-				createdAt: 'desc',
-			},
-			take: 10,
+			orderBy: { createdAt: 'desc' },
+			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 			include: {
 				SmartContractWallet: {
@@ -220,6 +317,30 @@ export const queryRegistryRequestGet = payAuthenticatedEndpointFactory.build({
 						}
 					: null,
 			})),
+		};
+	},
+});
+
+export const queryRegistryCountGet = payAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: queryRegistryCountSchemaInput,
+	output: queryRegistryCountSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof queryRegistryCountSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network, ctx.permission);
+
+		const total = await prisma.registryRequest.count({
+			where: {
+				PaymentSource: {
+					network: input.network,
+					deletedAt: null,
+					smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				},
+				SmartContractWallet: { deletedAt: null },
+			},
+		});
+
+		return {
+			total,
 		};
 	},
 });

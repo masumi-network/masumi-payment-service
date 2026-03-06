@@ -2000,6 +2000,14 @@ export type GetPaymentData = {
          */
         filterSmartContractAddress?: string | null;
         /**
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
+        /**
          * Whether to include the full transaction and action history of the payments
          */
         includeHistory?: string;
@@ -2488,6 +2496,72 @@ export type GetPaymentDiffNextActionResponses = {
 };
 
 export type GetPaymentDiffNextActionResponse = GetPaymentDiffNextActionResponses[keyof GetPaymentDiffNextActionResponses];
+
+export type GetPaymentCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The network the payments were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/payment/count';
+};
+
+export type GetPaymentCountResponses = {
+    /**
+     * Total payments count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of payments
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetPaymentCountResponse = GetPaymentCountResponses[keyof GetPaymentCountResponses];
+
+export type GetPurchaseCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The network the purchases were made on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/purchase/count';
+};
+
+export type GetPurchaseCountResponses = {
+    /**
+     * Total purchases count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of purchases
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetPurchaseCountResponse = GetPurchaseCountResponses[keyof GetPurchaseCountResponses];
 
 export type GetPaymentDiffOnchainStateOrResultData = {
     body?: never;
@@ -3917,6 +3991,39 @@ export type PostInvoiceMonthlyResponses = {
 
 export type PostInvoiceMonthlyResponse = PostInvoiceMonthlyResponses[keyof PostInvoiceMonthlyResponses];
 
+export type GetRegistryCountData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Cardano network used to register the agent on
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The smart contract address of the payment source
+         */
+        filterSmartContractAddress?: string | null;
+    };
+    url: '/registry/count';
+};
+
+export type GetRegistryCountResponses = {
+    /**
+     * Total AI agents count
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Total number of AI agents
+             */
+            total: number;
+        };
+    };
+};
+
+export type GetRegistryCountResponse = GetRegistryCountResponses[keyof GetRegistryCountResponses];
+
 export type PostInvoiceMonthlyAdminData = {
     body?: {
         /**
@@ -4192,6 +4299,14 @@ export type GetPurchaseData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Search query to filter by ID, hash, state, network, wallet address, or amount
+         */
+        searchQuery?: string;
         /**
          * Whether to include the full transaction and action history of the purchases
          */
@@ -5689,6 +5804,10 @@ export type GetRegistryData = {
     path?: never;
     query: {
         /**
+         * The number of registry entries to return
+         */
+        limit?: number;
+        /**
          * The cursor id to paginate through the results
          */
         cursorId?: string;
@@ -5700,6 +5819,14 @@ export type GetRegistryData = {
          * The smart contract address of the payment source
          */
         filterSmartContractAddress?: string | null;
+        /**
+         * Filter by registration status category
+         */
+        filterStatus?: 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
+        /**
+         * Search query to filter by name, description, tags, wallet address, state, or price
+         */
+        searchQuery?: string;
     };
     url: '/registry/';
 };
