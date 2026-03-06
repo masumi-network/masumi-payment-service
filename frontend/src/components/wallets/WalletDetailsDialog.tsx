@@ -119,6 +119,7 @@ export function WalletDetailsDialog({
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [pollingTxId, setPollingTxId] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchTokenBalancesRef = useRef<() => void>(() => {});
 
   const updateSwapTxStatus = useCallback((txId: string, updates: Partial<SwapTx>) => {
     setSwapTransactions((prev) => prev.map((tx) => (tx.id === txId ? { ...tx, ...updates } : tx)));
@@ -230,7 +231,7 @@ export function WalletDetailsDialog({
               ) {
                 updateSwapTxStatus(txId, { swapStatus });
                 setPollingTxId(null);
-                fetchTokenBalances();
+                fetchTokenBalancesRef.current();
                 toast.success(
                   swapStatus === 'CancelConfirmed'
                     ? 'Cancel confirmed!'
@@ -343,6 +344,7 @@ export function WalletDetailsDialog({
       },
     );
   };
+  fetchTokenBalancesRef.current = fetchTokenBalances;
 
   const checkPendingSwapStatuses = useCallback(
     async (txs: SwapTx[]) => {
@@ -388,9 +390,11 @@ export function WalletDetailsDialog({
       });
       const txs = (result as any)?.data?.data?.swapTransactions ?? [];
       if (cursor) {
-        const merged = [...swapTransactions, ...txs];
-        setSwapTransactions(merged);
-        checkPendingSwapStatuses(merged);
+        setSwapTransactions((prev) => {
+          const merged = [...prev, ...txs];
+          checkPendingSwapStatuses(merged);
+          return merged;
+        });
       } else {
         setSwapTransactions(txs);
         checkPendingSwapStatuses(txs);
