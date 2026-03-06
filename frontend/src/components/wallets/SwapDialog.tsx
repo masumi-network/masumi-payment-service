@@ -337,11 +337,7 @@ export function SwapDialog({
   };
 
   const getConversionRate = () => {
-    if (selectedFromToken.symbol === 'ADA' && selectedToToken.symbol === 'USDM') {
-      return adaToUsdRate;
-    } else if (selectedFromToken.symbol === 'USDM' && selectedToToken.symbol === 'ADA') {
-      return 1 / adaToUsdRate;
-    } else if (selectedFromToken.symbol === 'ADA') {
+    if (selectedFromToken.symbol === 'ADA') {
       return tokenRates[selectedToToken.symbol] || 0;
     } else if (selectedToToken.symbol === 'ADA') {
       return 1 / (tokenRates[selectedFromToken.symbol] || 1);
